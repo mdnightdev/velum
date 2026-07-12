@@ -1,0 +1,10 @@
+node_modules/
+*.sqlite
+.env
+dist/
+.env
+.superdesign
+data/server.log
+data/velum_state_v3.bin
+server/services/ws.log
+docs/

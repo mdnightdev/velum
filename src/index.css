@@ -1,0 +1,291 @@
+@import "tailwindcss";
+
+@theme {
+  /* ---- Neutral Scale (warm charcoal) ---- */
+  --color-velum-900: #08090C;   /* canvas (deepest background) */
+  --color-velum-850: #0C0E12;   /* sidebars, drawers, overlays */
+  --color-velum-800: #101218;   /* elevated surfaces (cards, panels) */
+  --color-velum-750: #15171E;   /* inputs, modals, footer cards */
+  --color-velum-700: #1A1D24;   /* hover state for cards/rows */
+  --color-velum-600: #22262E;   /* subtle borders and dividers */
+  --color-velum-500: #2E323B;   /* muted separators, disabled states */
+
+  /* ---- Primary Accent (rose gold) ---- */
+  --color-accent:        #C89B8A;
+  --color-accent-10:     rgba(200, 155, 138, 0.1);
+  --color-accent-20:     rgba(200, 155, 138, 0.2);
+  --color-accent-40:     rgba(200, 155, 138, 0.4);
+  --color-accent-hover:  #D9AFA0;   /* brighter variant for hover */
+
+  /* ---- Premium Institutional Bank Palette (Steel Sapphire / Platinum Cobalt) ---- */
+  --color-bank-accent:        #5585E2;
+  --color-bank-accent-10:     rgba(85, 133, 226, 0.1);
+  --color-bank-accent-20:     rgba(85, 133, 226, 0.2);
+  --color-bank-accent-40:     rgba(85, 133, 226, 0.4);
+  --color-bank-accent-hover:  #7AA3FA;
+  --color-bank-emerald:       #10B981;
+  --color-bank-rose:          #EF4444;
+
+  /* ---- Secondary Accent (muted teal) ---- */
+  --color-accent-secondary:        #5B9A8B;
+  --color-accent-secondary-10:     rgba(91, 154, 139, 0.1);
+  --color-accent-secondary-20:     rgba(91, 154, 139, 0.2);
+
+  /* ---- Text ---- */
+  --color-text-primary:    #F5F2EB;   /* warm ivory – high contrast */
+  --color-text-secondary:  #9B9790;   /* muted sand – labels, descriptions */
+  --color-text-disabled:   #5A5550;   /* disabled or placeholder text */
+
+  /* ---- Status Indicators (standard) ---- */
+  --color-status-online:    #10B981;
+  --color-status-away:      #F59E0B;
+  --color-status-dnd:       #F43F5E;
+  --color-status-invisible: #71717A;
+
+  /* ---- Opacity Overlays (white / black) ---- */
+  --color-white-2:   rgba(255, 255, 255, 0.02);
+  --color-white-5:   rgba(255, 255, 255, 0.05);
+  --color-white-10:  rgba(255, 255, 255, 0.1);
+  --color-black-40:  rgba(0, 0, 0, 0.4);
+  --color-black-60:  rgba(0, 0, 0, 0.6);
+
+  /* ---- Typography ---- */
+  --font-sans:    'Satoshi', 'Poppins', system-ui, sans-serif;
+  --font-admin:   'Manrope', 'Satoshi', system-ui, sans-serif;
+  --font-mono:    'Fira Code', 'JetBrains Mono', monospace;
+  --font-display: 'Poppins', 'Satoshi', system-ui, sans-serif;
+
+  /* ---- Border Radius ---- */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-xl:  24px;
+
+}
+
+:root {
+  --viewport-height: 100dvh;
+}
+
+html, body, #root {
+    height: var(--viewport-height);
+    width: 100%;
+    overflow: hidden;
+    position: fixed;
+}
+
+body {
+    background-color: var(--color-velum-900);
+    color: var(--color-text-primary);
+}
+
+
+body::before,
+body::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+}
+
+body::before {
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background-color: var(--color-accent-10);
+  filter: blur(120px);
+  animation: float-slow 22s ease-in-out infinite;
+}
+
+body::after {
+  bottom: -10%;
+  right: -10%;
+  width: 60vw;
+  height: 60vw;
+  background-color: var(--color-accent-secondary-20);
+  filter: blur(150px);
+  animation: float-reverse 24s ease-in-out infinite;
+}
+
+/* Hide bottom navigation bar instantly when user is typing */
+body:has(input:focus, textarea:focus) .bottom-nav {
+  transform: translate(-50%, 100%) !important;
+}
+
+@keyframes float-slow {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(40px, -60px) scale(1.15);
+  }
+}
+
+@keyframes float-delayed {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1.1);
+  }
+  50% {
+    transform: translate(-50px, 50px) scale(0.9);
+  }
+}
+
+@keyframes float-reverse {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(-30px, -30px) scale(1.05);
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 22s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float-delayed 26s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: float-reverse 24s ease-in-out infinite;
+}
+
+/* Glassmorphism System Utilities */
+.glass-panel {
+  background-color: rgba(10, 12, 16, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+}
+
+/* Optimized responsive glass for mobile devices (phones/tablets) */
+@media (max-width: 1024px) {
+  .glass-panel {
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    background-color: rgba(10, 12, 16, 0.72) !important; /* Slightly more opaque to boost performance, but still translucent */
+  }
+  .glass-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: rgba(255, 255, 255, 0.035) !important; /* Neutralize nested blurs on cards on mobile */
+  }
+}
+
+.glass-card {
+  background-color: rgba(255, 255, 255, 0.01);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-md);
+}
+
+/* Neutralize nested inner glass to prevent double-blur (compositing lag) */
+.glass-panel .glass-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-color: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.glass-input {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-md);
+  padding: 0.625rem;
+  outline: none;
+  transition: all 0.2s ease-in-out;
+}
+
+.glass-input:focus {
+  border-color: rgba(200, 155, 138, 0.4);
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* --- Contextual color overrides inside glass containers --- */
+.glass-panel {
+  --color-velum-850: rgba(0, 0, 0, 0.25);       /* Headers, secondary sidebars, and chat menu areas */
+  --color-velum-800: rgba(255, 255, 255, 0.025);/* Panels, cards, and list containers */
+  --color-velum-750: rgba(255, 255, 255, 0.045);/* Elevated inputs, modals, and preview cards */
+  --color-velum-700: rgba(255, 255, 255, 0.06); /* Hover state */
+  --color-velum-600: rgba(255, 255, 255, 0.05); /* Subtle borders and dividers */
+}
+
+/* Explicitly target deep background classes to avoid breaking text-velum-900 colors */
+.glass-panel .bg-velum-900 {
+  background-color: transparent !important;
+}
+
+/* --- Universal input styling inside glass panels --- */
+.glass-panel input[type="text"]:not(.bg-transparent),
+.glass-panel input[type="number"]:not(.bg-transparent),
+.glass-panel input[type="password"]:not(.bg-transparent),
+.glass-panel select,
+.glass-panel textarea {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--color-text-primary) !important;
+  border-radius: var(--radius-md) !important;
+  outline: none !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.glass-panel input[type="text"]:not(.bg-transparent):focus,
+.glass-panel input[type="number"]:not(.bg-transparent):focus,
+.glass-panel input[type="password"]:not(.bg-transparent):focus,
+.glass-panel select:focus,
+.glass-panel textarea:focus {
+  border-color: rgba(200, 155, 138, 0.4) !important;
+  background-color: rgba(255, 255, 255, 0.06) !important;
+
+}
+
+  /* --- Master Split-Pane Layout --- */
+  
+  /* 1. Mobile (Default): Single column. Sidebar will stack or be hidden */
+  .dashboard-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100vw;
+    height: var(--viewport-height);
+    overflow: hidden;
+  }
+  
+  /* 2. Tablet Screens (768px and up): Split pane with a compact sidebar */
+  @media (min-width: 768px) {
+    .dashboard-layout {
+      grid-template-columns: 260px 1fr; /* Fixed sidebar width, rest goes to content */
+    }
+  }
+  
+  /* 3. PC / Large Desktop Screens (1280px and up): Generous spacious sidebar */
+  @media (min-width: 1280px) {
+    .dashboard-layout {
+      grid-template-columns: 320px 1fr; /* Wider sidebar for massive screens */ 
+ 	}
+
+}
+
+/* Allow the body's glowing blobs to shine through the outer containers */
+.bg-velum-900,
+[class*="DashboardLayout_dark"],
+[class*="DashboardLayout_root"] {
+  background-color: transparent !important;
+}
+
+/* Prevent iOS browser automatic zoom on focus by ensuring at least 16px font-size on mobile inputs */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="password"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

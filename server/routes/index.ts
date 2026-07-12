@@ -1,0 +1,26 @@
+import express from 'express';
+import { authRouter } from './auth.js';
+import { messagesRouter } from './messages.js';
+import { friendsRouter } from './friends.js';
+import { ticketsRouter } from './tickets.js';
+import { adminRouter } from './admin.js';
+import { profileRouter } from './profile.js';
+import { publicRouter } from './public.js';
+import { loungesRouter } from './lounges.js';
+import { marketplaceRouter } from './marketplace.js';
+import { paymentsRouter } from './payments.js';
+import { bankRouter } from './bank.js';
+
+export const apiRouter = express.Router();
+
+apiRouter.use(authRouter);
+apiRouter.use(messagesRouter);
+apiRouter.use(friendsRouter);
+apiRouter.use(ticketsRouter);
+apiRouter.use(adminRouter);
+apiRouter.use(profileRouter);
+apiRouter.use(publicRouter);
+apiRouter.use(loungesRouter);
+apiRouter.use(marketplaceRouter);
+apiRouter.use(paymentsRouter);
+apiRouter.use(bankRouter);
