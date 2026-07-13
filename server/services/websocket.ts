@@ -13,6 +13,7 @@ import { checkCredential } from '../utils/crypto.js';
 import { verifySessionToken } from '../middlewares/auth.js';
 import { isCloudBackupDisabled } from './sync.js';
 import { updateUserPresence } from './presence.js';
+import { generatePrefixedId } from '../utils/ulid.js';
 
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -301,7 +302,7 @@ wss.on('connection', (ws, req) => {
           }
         }
 
-        const msgId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+        const msgId = generatePrefixedId('msg');
         const userObjInfo = db.users.find(u => u.user_id === userId);
 
         const newMsg: Message = {

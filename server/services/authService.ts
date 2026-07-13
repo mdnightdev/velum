@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { db, saveDb, ensureVelumSystemDM } from '../db.js';
 import { verifyArgon2id, hashArgon2id } from '../utils/crypto.js';
-import { generateUlid } from '../utils/ulid.js';
+import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
 import { cleanIp, getIpGeoLocation } from '../utils.js';
 import { Session, User } from '../../src/types.js';
 import { userRepository } from '../db/userRepository.js';
@@ -194,7 +194,7 @@ export async function performUserRegistration(params: {
     device_fingerprint: deviceFingerprint || 'Generic Web User Agent'
   } as any);
 
-  const deviceId = `dev_${Date.now()}`;
+  const deviceId = generatePrefixedId('dev');
   db.devices.push({
     device_id: deviceId,
     user_id: userId,
@@ -206,7 +206,7 @@ export async function performUserRegistration(params: {
     status: 'trusted'
   });
 
-  const ipId = `ip_${Date.now()}`;
+  const ipId = generatePrefixedId('ip');
   db.ip_addresses.push({
     ip_id: ipId,
     user_id: userId,

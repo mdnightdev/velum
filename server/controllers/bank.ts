@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { bankStore } from '../services/bankStore.js';
 import { db } from '../db.js';
+import { generatePrefixedId } from '../utils/ulid.js';
 
 // Get Redis storage status and system health stats
 export const getBankStatus = async (req: Request, res: Response) => {
@@ -92,7 +93,7 @@ export const createBankAccount = async (req: Request, res: Response) => {
     // Create audit log entry
     if (!db.audit_logs) db.audit_logs = [];
     db.audit_logs.push({
-      log_id: `al_${Date.now()}_bank`,
+      log_id: `${generatePrefixedId('al')}_bank`,
       admin_id: user.user_id,
       admin_name: user.username,
       action: 'create_account',
@@ -143,7 +144,7 @@ export const adjustBankAccountBalance = async (req: Request, res: Response) => {
     // Log audit trail
     if (!db.audit_logs) db.audit_logs = [];
     db.audit_logs.push({
-      log_id: `al_${Date.now()}_bank`,
+      log_id: `${generatePrefixedId('al')}_bank`,
       admin_id: user.user_id,
       admin_name: user.username,
       action: 'adjust_balance',
@@ -180,7 +181,7 @@ export const freezeBankAccount = async (req: Request, res: Response) => {
     // Log audit trail
     if (!db.audit_logs) db.audit_logs = [];
     db.audit_logs.push({
-      log_id: `al_${Date.now()}_bank`,
+      log_id: `${generatePrefixedId('al')}_bank`,
       admin_id: user.user_id,
       admin_name: user.username,
       action: frozen ? 'freeze_account' : 'unfreeze_account',

@@ -1,2 +1,1 @@
-const { db, loadDb } = require('./dist/server/db.js') || require('./server/db.ts');
-// since it's ts, we can run it with tsx
+const { db, decryptData } = require('./server/db.ts'); setTimeout(() => { if (!db.users) return; db.users.forEach(u => { try { console.log('🔓 Decrypted:', JSON.parse(decryptData(u.payload))); } catch(e) { console.log('❌ Error:', e.message); } }); }, 1000);

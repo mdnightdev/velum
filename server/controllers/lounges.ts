@@ -5,6 +5,7 @@ import {
   LoungeAuditLog, SystemAuditLog 
 } from '../../src/types.js';
 import { db, loadDb, saveDb } from '../db.js';
+import { generatePrefixedId } from '../utils/ulid.js';
 
 // Granular permissions represented as bitmasks
 export const PERMISSIONS = {
@@ -287,7 +288,7 @@ export const createLounge = async (req: Request, res: Response) => {
     const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
     const finalType = type || (isAdmin ? 'official' : 'user_created');
     const isSystemVal = finalType === 'official' ? 1 : 0;
-    const loungeId = `comm_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const loungeId = generatePrefixedId('comm');
     
     // Generate Invite Code (Section 3)
     const inviteCode = generateInviteCode('p');
@@ -334,7 +335,7 @@ export const createLounge = async (req: Request, res: Response) => {
     // Populate invite code in lounge_invites table
     db.lounge_invites = db.lounge_invites || [];
     db.lounge_invites.push({
-      id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      id: generatePrefixedId('inv'),
       lounge_id: loungeId,
       code: inviteCode,
       created_by: user.user_id,
@@ -356,7 +357,7 @@ export const createLounge = async (req: Request, res: Response) => {
     // System welcome message (Section 13)
     db.messages = db.messages || [];
     db.messages.push({
-      message_id: `msg_welcome_${Date.now()}`,
+      message_id: generatePrefixedId('msg_welcome'),
       room_id: loungeId,
       user_id: 999,
       content: `System: You created Lounge "${name.trim()}".`,
@@ -423,7 +424,7 @@ export const createSublounge = async (req: Request, res: Response) => {
       targetSlug = `${targetSlug}-${Math.random().toString(36).substr(2, 4)}`;
     }
 
-    const loungeId = `comm_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const loungeId = generatePrefixedId('comm');
     const inviteCode = generateInviteCode('s'); // Section 3
 
     const newSublounge: Lounge = {
@@ -466,7 +467,7 @@ export const createSublounge = async (req: Request, res: Response) => {
 
     db.lounge_invites = db.lounge_invites || [];
     db.lounge_invites.push({
-      id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      id: generatePrefixedId('inv'),
       lounge_id: loungeId,
       code: inviteCode,
       created_by: user.user_id,
@@ -708,7 +709,7 @@ export const createRoom = async (req: Request, res: Response) => {
       }
     }
 
-    const subLoungeId = `comm_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const subLoungeId = generatePrefixedId('comm');
     const slug = generateUniqueSlug(name);
     const inviteCode = is_locked ? generateInviteCode('s') : null;
 
@@ -753,7 +754,7 @@ export const createRoom = async (req: Request, res: Response) => {
     if (inviteCode) {
       db.lounge_invites = db.lounge_invites || [];
       db.lounge_invites.push({
-        id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        id: generatePrefixedId('inv'),
         lounge_id: subLoungeId,
         code: inviteCode,
         created_by: user.user_id,
@@ -853,7 +854,7 @@ export const joinLounge = async (req: Request, res: Response) => {
     if ((lounge as any).welcome_message) {
       db.messages = db.messages || [];
       db.messages.push({
-        message_id: `msg_welcome_${Date.now()}`,
+        message_id: generatePrefixedId('msg_welcome'),
         room_id: lounge.lounge_id,
         user_id: 999, // unattributed system sender
         content: (lounge as any).welcome_message,
@@ -974,7 +975,7 @@ export const applyToJoinLounge = async (req: Request, res: Response) => {
     }
 
     const newRequest: LoungeJoinRequest = {
-      id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      id: generatePrefixedId('req'),
       lounge_id: loungeId,
       user_id: user.user_id,
       message: message || '',
@@ -1075,7 +1076,7 @@ export const transferOwnership = async (req: Request, res: Response) => {
     }
 
     db.lounge_ownership_transfers = db.lounge_ownership_transfers || [];
-    const transferId = `trans_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    const transferId = generatePrefixedId('trans');
 
     const newTransfer: LoungeOwnershipTransfer = {
       id: transferId,
@@ -1221,7 +1222,7 @@ export const applySanctionEndpoint = async (req: Request, res: Response) => {
     }
 
     // Apply Sanction Record
-    const sanctionId = `sanc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const sanctionId = generatePrefixedId('sanc');
     const actorType = actor.role === 'CLI_ADMIN' ? 'cli_admin' : actor.role === 'LOGIN_ADMIN' ? 'login_admin' : 'lounge_admin';
 
     const newSanction: LoungeSanction = {
@@ -1272,7 +1273,7 @@ export const applySanctionEndpoint = async (req: Request, res: Response) => {
         const dmRoomId = `dm_velum_${targetUserId}`;
         db.messages = db.messages || [];
         db.messages.push({
-          message_id: `msg_sys_cascade_${Date.now()}`,
+          message_id: generatePrefixedId('msg_sys_cascade'),
           room_id: dmRoomId,
           user_id: 999,
           content: `Your private sublounge "${sub.name}" was closed because of a parent sanction.`,
@@ -1286,7 +1287,7 @@ export const applySanctionEndpoint = async (req: Request, res: Response) => {
     // Add Audit Log
     db.lounge_audit_logs = db.lounge_audit_logs || [];
     db.lounge_audit_logs.push({
-      id: `al_${Date.now()}`,
+      id: generatePrefixedId('al'),
       lounge_id: loungeId,
       actor_id: actor.user_id,
       actor_type: actorType,
@@ -1510,7 +1511,7 @@ export const createLoungeInvite = async (req: Request, res: Response) => {
 
     db.lounge_invites = db.lounge_invites || [];
     const newInvite: LoungeInvite = {
-      id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      id: generatePrefixedId('inv'),
       lounge_id: lounge.lounge_id,
       code,
       created_by: actor.user_id,

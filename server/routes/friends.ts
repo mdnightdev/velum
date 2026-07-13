@@ -1,7 +1,8 @@
 import { FriendRequest, PeerRelationship } from '../../src/types.js';
 import express from 'express';
-import { db, loadDb, saveDb, ensureVelumSystemDM, isUserBlocked } from '../db.js';
+import { db, loadDb, saveDb, ensureVelumSystemDM, isUserBlocked, rebuildBlocksCache } from '../db.js';
 import { authenticateUser } from '../middleware.js';
+import { generatePrefixedId } from '../utils/ulid.js';
 
 export const friendsRouter = express.Router();
 
@@ -98,7 +99,7 @@ friendsRouter.post('/friends/requests', authenticateUser, (req, res) => {
     }
 
     const newRequest: FriendRequest = {
-      request_id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      request_id: generatePrefixedId('req'),
       sender_id: user.user_id,
       receiver_id: target.user_id,
       status: 'pending',
@@ -147,11 +148,12 @@ friendsRouter.post('/friends/unblock', authenticateUser, (req, res) => {
     const { targetUserId } = req.body;
     
     loadDb();
-    db.peer_relationships = db.peer_relationships || [];
+    db.user_blocks = db.user_blocks || [];
     
-    const idx = db.peer_relationships.findIndex(pr => Number(pr.userId) === Number(user.user_id) && Number(pr.friendId) === Number(targetUserId) && pr.status === 'blocked');
+    const idx = db.user_blocks.findIndex(b => Number(b.blocker_id) === Number(user.user_id) && Number(b.blocked_id) === Number(targetUserId));
     if (idx !== -1) {
-      db.peer_relationships.splice(idx, 1);
+      db.user_blocks.splice(idx, 1);
+      rebuildBlocksCache();
       saveDb();
     }
     
@@ -193,14 +195,14 @@ friendsRouter.post('/friends/requests/:requestId/respond', authenticateUser, (re
       db.peer_relationships = db.peer_relationships || [];
       
       const newRelation1: PeerRelationship = {
-        id: `rel_${Date.now()}_1`,
+        id: `${generatePrefixedId('rel')}_1`,
         userId: inviteReq.sender_id,
         friendId: inviteReq.receiver_id,
         status: 'accepted',
         created_at: new Date().toISOString()
       };
       const newRelation2: PeerRelationship = {
-        id: `rel_${Date.now()}_2`,
+        id: `${generatePrefixedId('rel')}_2`,
         userId: inviteReq.receiver_id,
         friendId: inviteReq.sender_id,
         status: 'accepted',

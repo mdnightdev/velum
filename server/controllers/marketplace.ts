@@ -13,7 +13,7 @@ import { userRepository } from '../db/userRepository.js';
 import { marketRepository } from '../db/marketRepository.js';
 import { walletRepository } from '../db/walletRepository.js';
 import { calculateOrderSettlement } from '../utils/marketEngine.js';
-import { generateUlid } from '../utils/ulid.js';
+import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
 
 // Helper to enrich escrow with dynamic calculated values or defaults for SQLite loaded records
 function enrichEscrow(esc: any) {
@@ -129,7 +129,7 @@ export const createListing = async (req: Request, res: Response) => {
       verification_status = 'PENDING_REVIEW';
     }
 
-    const listingId = `list_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const listingId = generatePrefixedId('list');
     const newListing: MarketListing = {
       listing_id: listingId,
       seller_id: Number(user.user_id),
@@ -149,7 +149,7 @@ export const createListing = async (req: Request, res: Response) => {
     // Save SKU variants if provided
     if (sku_variants && Array.isArray(sku_variants)) {
       sku_variants.forEach((v: any, index: number) => {
-        const skuId = `sku_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 5)}`;
+        const skuId = `${generatePrefixedId('sku')}_${index}`;
         const variant: MarketSkuVariant = {
           sku_id: skuId,
           variant_id: skuId,
@@ -169,7 +169,7 @@ export const createListing = async (req: Request, res: Response) => {
       db.market_asset_media = db.market_asset_media || [];
       media_list.forEach((m: any, index: number) => {
         const newMedia: MarketAssetMedia = {
-          media_id: `med_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 5)}`,
+          media_id: `${generatePrefixedId('med')}_${index}`,
           listing_id: listingId,
           url: m.url,
           is_banner: !!m.is_banner,
@@ -186,7 +186,7 @@ export const createListing = async (req: Request, res: Response) => {
     // Create verification checks
     if (hasProhibited) {
       db.listing_verification_checks.push({
-        check_id: `chk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        check_id: generatePrefixedId('chk'),
         listing_id: listingId,
         check_type: 'AUTOMATED_CONTENT_SCAN',
         result: 'FAIL',
@@ -195,7 +195,7 @@ export const createListing = async (req: Request, res: Response) => {
       });
     } else {
       db.listing_verification_checks.push({
-        check_id: `chk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        check_id: generatePrefixedId('chk'),
         listing_id: listingId,
         check_type: 'AUTOMATED_CONTENT_SCAN',
         result: 'PASS',
@@ -206,7 +206,7 @@ export const createListing = async (req: Request, res: Response) => {
 
     if (isSellerVerified) {
       db.listing_verification_checks.push({
-        check_id: `chk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        check_id: generatePrefixedId('chk'),
         listing_id: listingId,
         check_type: 'SELLER_KYC_VERIFICATION',
         result: 'PASS',
@@ -215,7 +215,7 @@ export const createListing = async (req: Request, res: Response) => {
       });
     } else {
       db.listing_verification_checks.push({
-        check_id: `chk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        check_id: generatePrefixedId('chk'),
         listing_id: listingId,
         check_type: 'SELLER_KYC_VERIFICATION',
         result: 'FAIL',
@@ -254,7 +254,7 @@ export const addListingMedia = async (req: Request, res: Response) => {
 
     db.market_asset_media = db.market_asset_media || [];
     const newMedia: MarketAssetMedia = {
-      media_id: `med_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      media_id: generatePrefixedId('med'),
       listing_id: listingId,
       url,
       is_banner: !!is_banner,
@@ -338,7 +338,7 @@ export const createListingReview = async (req: Request, res: Response) => {
     }
 
     const newReview: MarketReview = {
-      review_id: `rev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      review_id: generatePrefixedId('rev'),
       listing_id: listingId,
       buyer_id: user.user_id,
       buyer_username: user.username,
@@ -439,7 +439,7 @@ export const createCoupon = async (req: Request, res: Response) => {
       : 0;
 
     const newCoupon: MarketCoupon = {
-      coupon_id: `cpn_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      coupon_id: generatePrefixedId('cpn'),
       code: uppercaseCode,
       discount_type: finalType,
       value_cents_or_pct: finalValueCentsOrPct,
@@ -566,7 +566,7 @@ export const createDiscussion = async (req: Request, res: Response) => {
 
     loadDb();
     const newDisc: MarketDiscussion = {
-      discussion_id: `disc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      discussion_id: generatePrefixedId('disc'),
       listing_id: listingId,
       user_id: user.user_id,
       username: user.username,
@@ -713,12 +713,12 @@ export const createEscrow = async (req: Request, res: Response) => {
     const platformFee = parseFloat((settlement.platform_fee_deduction_cents / 100).toFixed(2));
     const finalPayout = parseFloat((settlement.payout_net_amount_cents / 100).toFixed(2));
 
-    const transactionId = `esc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const transactionId = generatePrefixedId('esc');
 
     walletRepository.updateWalletBalance(user.user_id, buyerWallet.balance_cents - priceCents);
 
     walletRepository.createLedgerEntry({
-      entry_id: `led_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      entry_id: generatePrefixedId('led'),
       user_id: Number(user.user_id),
       entry_type: 'ESCROW_HOLD',
       amount_cents: -priceCents,
@@ -853,7 +853,7 @@ export const releaseEscrow = async (req: Request, res: Response) => {
     walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents + payoutCents);
 
     walletRepository.createLedgerEntry({
-      entry_id: `led_${Date.now()}_1_${Math.random().toString(36).substr(2, 5)}`,
+      entry_id: `${generatePrefixedId('led')}_1`,
       user_id: Number(escrow.seller_id),
       entry_type: 'ESCROW_RELEASE',
       amount_cents: releaseCents,
@@ -866,7 +866,7 @@ export const releaseEscrow = async (req: Request, res: Response) => {
     });
 
     walletRepository.createLedgerEntry({
-      entry_id: `led_${Date.now()}_2_${Math.random().toString(36).substr(2, 5)}`,
+      entry_id: `${generatePrefixedId('led')}_2`,
       user_id: Number(escrow.seller_id),
       entry_type: 'PLATFORM_FEE',
       amount_cents: -feeCents,
@@ -929,7 +929,7 @@ export const revertEscrow = async (req: Request, res: Response) => {
     walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
 
     walletRepository.createLedgerEntry({
-      entry_id: `led_${Date.now()}_rf_${Math.random().toString(36).substr(2, 5)}`,
+      entry_id: `${generatePrefixedId('led')}_rf`,
       user_id: Number(esc.buyer_id),
       entry_type: 'ESCROW_REFUND',
       amount_cents: refundCents,
@@ -986,7 +986,7 @@ export const createRefundRequest = async (req: Request, res: Response) => {
       });
     }
 
-    const refundId = `ref_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const refundId = generatePrefixedId('ref');
     const newRefundRequest = {
       request_id: refundId,
       escrow_transaction_id: escrowTransactionId,
@@ -1004,7 +1004,7 @@ export const createRefundRequest = async (req: Request, res: Response) => {
     walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
 
     walletRepository.createLedgerEntry({
-      entry_id: `led_${Date.now()}_rf_${Math.random().toString(36).substr(2, 5)}`,
+      entry_id: `${generatePrefixedId('led')}_rf`,
       user_id: Number(esc.buyer_id),
       entry_type: 'ESCROW_REFUND',
       amount_cents: refundCents,
@@ -1058,7 +1058,7 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
       walletRepository.updateWalletBalance(esc.seller_id, sellerWallet.balance_cents + payoutCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_mr_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_mr`,
         user_id: Number(esc.seller_id),
         entry_type: 'ESCROW_RELEASE',
         amount_cents: releaseCents,
@@ -1071,7 +1071,7 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
       });
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_mf_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_mf`,
         user_id: Number(esc.seller_id),
         entry_type: 'PLATFORM_FEE',
         amount_cents: -feeCents,
@@ -1102,7 +1102,7 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
       walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_mrf_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_mrf`,
         user_id: Number(esc.buyer_id),
         entry_type: 'ESCROW_REFUND',
         amount_cents: refundCents,
@@ -1117,7 +1117,7 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid action type.' });
     }
 
-    const logId = `aud_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const logId = generatePrefixedId('aud');
     marketRepository.createPlatformFinancialAuditLog({
       log_id: logId,
       acting_admin_id: admin.admin_id,
@@ -1181,7 +1181,7 @@ export const triggerAutoSettlement = async (req: Request, res: Response) => {
       });
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_af_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_af`,
         user_id: Number(esc.seller_id),
         entry_type: 'PLATFORM_FEE',
         amount_cents: -feeCents,
@@ -1193,7 +1193,7 @@ export const triggerAutoSettlement = async (req: Request, res: Response) => {
         created_at: Date.now()
       });
 
-      const actionId = `aut_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const actionId = generatePrefixedId('aut');
       marketRepository.createAutomationAction({
         action_id: actionId,
         escrow_transaction_id: esc.transaction_id,

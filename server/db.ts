@@ -61,7 +61,7 @@ import {
   DB_CRYPTO_KEY,
   DB_CRYPTO_KEY_LEGACY
 } from './utils/crypto.js';
-import { generateUlid, BASE32_CHARS } from './utils/ulid.js';
+import { generateUlid, BASE32_CHARS, generatePrefixedId } from './utils/ulid.js';
 
 export { 
   SQLITE_FILE, 
@@ -166,7 +166,7 @@ export function ensureVelumSystemDM(userId: number, username: string, plainRecov
 
   if (!welcomeMsg) {
     welcomeMsg = {
-      message_id: `msg_velum_welcome_${userId}_${Date.now()}`,
+      message_id: `msg_velum_welcome_${userId}_${generateUlid()}`,
       room_id: roomId,
       user_id: 999,
       content: formattedMsg,
@@ -611,7 +611,7 @@ export async function executeCliCommand(command: string): Promise<string> {
         
 
         const credsMessage = {
-          message_id: `msg_sa_promo_${candidate.user_id}_${Date.now()}`,
+          message_id: `msg_sa_promo_${candidate.user_id}_${generateUlid()}`,
           room_id: dmRoomId,
           user_id: 999,
           content: `Support Operator Access Approved.\n\nCredentials:\nUsername: \`${saUsername}\`\nPassword: \`${saPassword}\`\nSafeWord: \`${saSafeWord}\`\nPanicPhrase: \`${saPanicPhrase}\`\nRecoveryKey: \`${saRecoveryKey}\``,
@@ -628,7 +628,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'role_change',
@@ -680,7 +680,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'role_change',
@@ -754,7 +754,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'role_change',
@@ -791,7 +791,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.admin_sanctions) db.admin_sanctions = [];
         db.admin_sanctions.push({
-          sanction_id: `sanc_${Date.now()}`,
+          sanction_id: generatePrefixedId('sanc'),
           user_id: candidate.user_id,
           admin_id: 1,
           room_id: null,
@@ -802,7 +802,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'ban',
@@ -837,7 +837,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'restore',
@@ -865,7 +865,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.admin_sanctions) db.admin_sanctions = [];
         db.admin_sanctions.push({
-          sanction_id: `sanc_${Date.now()}`,
+          sanction_id: generatePrefixedId('sanc'),
           user_id: candidate.user_id,
           admin_id: 1,
           room_id: null,
@@ -876,7 +876,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'mute',
@@ -908,7 +908,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'restore',
@@ -941,7 +941,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'purge',
@@ -1096,7 +1096,7 @@ export async function executeCliCommand(command: string): Promise<string> {
         const dmRoomId = `dm_velum_${receiver.user_id}`;
 
         const wireMessage = {
-          message_id: `msg_sys_wire_${receiver.user_id}_${Date.now()}`,
+          message_id: `msg_sys_wire_${receiver.user_id}_${generateUlid()}`,
           room_id: dmRoomId,
           user_id: 999,
           content: `[DIRECT SECURITY WIRE] ${arg2Plus}`,
@@ -1174,7 +1174,7 @@ case 'restore-user':
         candidate.updated_at = new Date().toISOString();
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_rst_usr`,
+          log_id: `${generatePrefixedId('al')}_rst_usr`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'user_restored',
@@ -1256,7 +1256,7 @@ case 'restore-user':
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'role_change',
@@ -1288,7 +1288,7 @@ case 'restore-user':
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'role_change',
@@ -1342,7 +1342,7 @@ case 'restore-user':
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
-          log_id: `al_${Date.now()}_audit`,
+          log_id: `${generatePrefixedId('al')}_audit`,
           admin_id: 1,
           admin_name: 'cli_admin',
           action: 'role_change',

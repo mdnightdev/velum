@@ -2,7 +2,9 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db, loadDb, saveDb, ensureVelumSystemDM, executeCliCommand, hashArgon2id } from '../db.js';
 import { broadcastToRoom, connectedClients } from '../websocket.js';
+import { generatePrefixedId } from '../utils/ulid.js';
 import { User, Ticket, Session, AdminSanction, Invite } from '../../src/types.js';
+
 
 export const broadcastMessage = async (req: Request, res: Response) => {
   try {
@@ -34,7 +36,7 @@ export const broadcastMessage = async (req: Request, res: Response) => {
 
       // Broadcast is sent from VELUM (User 999) without disclosing who actually triggered it (admin details hidden)
       const broadcastMsg = {
-        message_id: `msg_broadcast_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        message_id: generatePrefixedId('msg_broadcast'),
         lounge_id: 'dm',
         room_id: roomId,
         user_id: 999, // VELUM System Bot
@@ -67,7 +69,7 @@ export const broadcastMessage = async (req: Request, res: Response) => {
 
     // Log who actually issued it (admin audit logging - visible behind the scenes to admins)
     db.audit_logs.push({
-      log_id: `al_${Date.now()}_bdc_trigger`,
+      log_id: `${generatePrefixedId('al')}_bdc_trigger`,
       admin_id: admin.user_id,
       admin_name: admin.username,
       action: 'restore',
@@ -163,7 +165,7 @@ export const deleteTicket = async (req: Request, res: Response) => {
     db.tickets = db.tickets.filter(t => t.ticket_id !== ticket_id);
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}_del_tkt`,
+      log_id: `${generatePrefixedId('al')}_del_tkt`,
       admin_id: admin.user_id,
       admin_name: admin.username,
       action: 'role_change',
@@ -222,7 +224,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       db.sessions = db.sessions.filter(s => s.user_id !== uId);
 
       db.audit_logs.push({
-        log_id: `al_${Date.now()}_del_usr_soft`,
+        log_id: `${generatePrefixedId('al')}_del_usr_soft`,
         admin_id: admin.user_id,
         admin_name: admin.username,
         action: 'user_purged_soft',
@@ -262,7 +264,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     db.join_requests = (db.join_requests || []).filter(jr => jr.user_id !== uId);
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}_del_usr_hard`,
+      log_id: `${generatePrefixedId('al')}_del_usr_hard`,
       admin_id: admin.user_id,
       admin_name: admin.username,
       action: 'user_purged_hard',
@@ -327,7 +329,7 @@ export const approveRecovery = async (req: Request, res: Response) => {
       }
 
       db.recovery_events.push({
-        event_id: `rec_${Date.now()}`,
+        event_id: generatePrefixedId('rec'),
         user_id: user.user_id,
         method: 'compromised_recovery',
         approved_by: admin.user_id,
@@ -336,7 +338,7 @@ export const approveRecovery = async (req: Request, res: Response) => {
       });
 
       db.audit_logs.push({
-        log_id: `al_${Date.now()}`,
+        log_id: generatePrefixedId('al'),
         admin_id: admin.user_id,
         admin_name: admin.username,
         action: 'restore',
@@ -404,7 +406,7 @@ export const sanctionUser = async (req: Request, res: Response) => {
     const expiresAt = new Date(Date.now() + (minutes || 60) * 60000).toISOString();
 
     const newSanction: AdminSanction = {
-      sanction_id: `sanc_${Date.now()}`,
+      sanction_id: generatePrefixedId('sanc'),
       user_id: target.user_id,
       admin_id: admin.user_id,
       room_id: room_id || null,
@@ -441,7 +443,7 @@ export const sanctionUser = async (req: Request, res: Response) => {
     }
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}`,
+      log_id: generatePrefixedId('al'),
       admin_id: admin.user_id,
       admin_name: admin.username,
       action: type === 'ban' ? 'ban' : 'mute',
@@ -507,7 +509,7 @@ export const revokeSanction = async (req: Request, res: Response) => {
     }
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}`,
+      log_id: generatePrefixedId('al'),
       admin_id: admin.user_id,
       admin_name: admin.username,
       action: 'restore',
@@ -572,7 +574,7 @@ export const lockUser = async (req: Request, res: Response) => {
       }
 
       db.audit_logs.push({
-        log_id: `al_${Date.now()}`,
+        log_id: generatePrefixedId('al'),
         admin_id: admin.user_id,
         admin_name: admin.username,
         action: 'panic_lock',
@@ -585,7 +587,7 @@ export const lockUser = async (req: Request, res: Response) => {
       target.status = 'active';
 
       db.audit_logs.push({
-        log_id: `al_${Date.now()}`,
+        log_id: generatePrefixedId('al'),
         admin_id: admin.user_id,
         admin_name: admin.username,
         action: 'restore',
@@ -688,7 +690,7 @@ export const createInvite = async (req: Request, res: Response) => {
     const expiresAt = new Date(Date.now() + (expiresDays || 7) * 86400000).toISOString();
 
     const invite: Invite = {
-      invite_id: `inv_${Date.now()}`,
+      invite_id: generatePrefixedId('inv'),
       code,
       creator_id: admin.user_id,
       created_by: admin.user_id,
@@ -750,7 +752,7 @@ export const nominateSupport = async (req: Request, res: Response) => {
     targetUser.updated_at = new Date().toISOString();
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}`,
+      log_id: generatePrefixedId('al'),
       admin_id: admin.user_id,
       admin_name: admin.username,
       action: 'role_change',
@@ -799,7 +801,7 @@ export const renameExecutive = async (req: Request, res: Response) => {
     admin.updated_at = new Date().toISOString();
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}`,
+      log_id: generatePrefixedId('al'),
       admin_id: admin.user_id,
       admin_name: trimmedNew,
       action: 'role_change',
@@ -810,7 +812,7 @@ export const renameExecutive = async (req: Request, res: Response) => {
     });
 
     db.suspicious_events.push({
-      event_id: `se_${Date.now()}`,
+      event_id: generatePrefixedId('se'),
       entity_type: 'user',
       entity_id: String(admin.user_id),
       risk_level: 'intermediate',
@@ -873,7 +875,7 @@ export const reviewVerification = async (req: Request, res: Response) => {
     
     db.listing_verification_checks = db.listing_verification_checks || [];
     db.listing_verification_checks.push({
-      check_id: `chk_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+      check_id: generatePrefixedId('chk'),
       listing_id: listingId,
       check_type: 'MANUAL_REVIEW',
       result: result,
@@ -996,7 +998,7 @@ export const restoreUser = async (req: Request, res: Response) => {
     targetUser.updated_at = new Date().toISOString();
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}_rst_usr`,
+      log_id: `${generatePrefixedId('al')}_rst_usr`,
       admin_id: admin.user_id,
       admin_name: admin.username,
       action: 'user_restored',

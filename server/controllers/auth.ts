@@ -16,7 +16,7 @@ import {
   checkStepOTP, 
   getStepOTP 
 } from '../utils/crypto.js';
-import { generateUlid } from '../utils/ulid.js';
+import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
 import { generateSessionToken, rateLimiterCache } from '../middleware.js';
 import { cleanIp, getIpGeoLocation } from '../utils.js';
 import { calculateBackoffMs } from '../crypto.js';
@@ -153,8 +153,8 @@ export const loginUser = async (req: Request, res: Response) => {
       if (isPanicPhrase) {
         executePanicWipe();
 
-        const deviceId = `dev_${Date.now()}`;
-        const ipId = `ip_${Date.now()}`;
+        const deviceId = generatePrefixedId('dev');
+        const ipId = generatePrefixedId('ip');
         const ipClean = cleanIp(req);
         const geoBase = await getIpGeoLocation(ipClean);
         const { sessionId } = createNewSession(user.user_id, deviceId, ipId);
@@ -217,7 +217,7 @@ export const loginUser = async (req: Request, res: Response) => {
       rateLimiterCache.set(ipRlKey, ipRecord);
 
       db.suspicious_events.push({
-        event_id: `se_${Date.now()}`,
+        event_id: generatePrefixedId('se'),
         entity_type: 'user',
         entity_id: username,
         risk_level: 'intermediate',
@@ -243,7 +243,7 @@ export const loginUser = async (req: Request, res: Response) => {
       db.tickets = db.tickets || [];
       let ticket = db.tickets.find(t => t.user_id === user.user_id && t.issue_type === 'recovery_request' && t.status !== 'resolved');
       if (!ticket) {
-        const ticketId = `t_${Date.now()}`;
+        const ticketId = generatePrefixedId('t');
         const tracking_uuid = `ticket_t_${crypto.randomUUID()}`;
         ticket = {
           ticket_id: ticketId,
@@ -273,7 +273,7 @@ export const loginUser = async (req: Request, res: Response) => {
         };
         db.tickets.push(ticket);
         db.audit_logs.push({
-          log_id: `al_${Date.now()}`,
+          log_id: generatePrefixedId('al'),
           admin_id: 0,
           admin_name: 'SYSTEM',
           action: 'panic_lock',
@@ -331,7 +331,7 @@ export const loginUser = async (req: Request, res: Response) => {
       console.warn(`[SYS-SECURE] Suspicious login detected for user ${user.username}: New IP or device fingerprint.`);
       db.suspicious_events = db.suspicious_events || [];
       db.suspicious_events.push({
-        event_id: `se_${Date.now()}`,
+        event_id: generatePrefixedId('se'),
         user_id: user.user_id,
         ip_address: ipClean,
         device_fingerprint: resolvedFingerprint,
@@ -341,7 +341,7 @@ export const loginUser = async (req: Request, res: Response) => {
       } as any);
     }
 
-    const ipId = `ip_${Date.now()}`;
+    const ipId = generatePrefixedId('ip');
     db.ip_addresses.push({
       ip_id: ipId,
       user_id: user.user_id,
@@ -352,7 +352,7 @@ export const loginUser = async (req: Request, res: Response) => {
       last_seen: new Date().toISOString()
     });
 
-    const deviceId = `dev_${Date.now()}`;
+    const deviceId = generatePrefixedId('dev');
     db.devices.push({
       device_id: deviceId,
       user_id: user.user_id,
@@ -438,7 +438,7 @@ export const registerPermanentOtp = async (req: Request, res: Response) => {
       profile.updated_at = new Date().toISOString();
     }
 
-    const ipId = `ip_${Date.now()}`;
+    const ipId = generatePrefixedId('ip');
     db.ip_addresses.push({
       ip_id: ipId,
       user_id: user.user_id,
@@ -449,7 +449,7 @@ export const registerPermanentOtp = async (req: Request, res: Response) => {
       last_seen: new Date().toISOString()
     });
 
-    const deviceId = `dev_${Date.now()}`;
+    const deviceId = generatePrefixedId('dev');
     db.devices.push({
       device_id: deviceId,
       user_id: user.user_id,
@@ -698,7 +698,7 @@ export const panicUser = async (req: Request, res: Response) => {
     db.tickets = db.tickets || [];
     let ticket = db.tickets.find(t => t.user_id === user.user_id && t.issue_type === 'recovery_request' && t.status !== 'resolved');
     if (!ticket) {
-      const ticketId = `t_${Date.now()}`;
+      const ticketId = generatePrefixedId('t');
       const tracking_uuid = `ticket_t_${crypto.randomUUID()}`;
       ticket = {
         ticket_id: ticketId,
@@ -730,7 +730,7 @@ export const panicUser = async (req: Request, res: Response) => {
     }
 
     db.suspicious_events.push({
-      event_id: `se_${Date.now()}`,
+      event_id: generatePrefixedId('se'),
       entity_type: 'user',
       entity_id: user.user_id.toString(),
       risk_level: 'critical',
@@ -740,7 +740,7 @@ export const panicUser = async (req: Request, res: Response) => {
 
     db.audit_logs = db.audit_logs || [];
     db.audit_logs.push({
-      log_id: `al_${Date.now()}`,
+      log_id: generatePrefixedId('al'),
       admin_id: 0,
       admin_name: 'SYSTEM',
       action: 'panic_lock',
@@ -896,7 +896,7 @@ async function executeAccountRestoration(req: Request, res: Response) {
 
   if (!db.recovery_events) db.recovery_events = [];
   db.recovery_events.push({
-    event_id: `rec_auto_${Date.now()}`,
+    event_id: generatePrefixedId('rec_auto'),
     user_id: user.user_id,
     method: 'automatic_recovery',
     approved_by: null,
@@ -906,7 +906,7 @@ async function executeAccountRestoration(req: Request, res: Response) {
 
   if (!db.audit_logs) db.audit_logs = [];
   db.audit_logs.push({
-    log_id: `al_${Date.now()}`,
+    log_id: generatePrefixedId('al'),
     admin_id: 0,
     admin_name: 'SYSTEM',
     action: 'restore',
@@ -981,7 +981,7 @@ export const redeemRestoreCode = async (req: Request, res: Response) => {
     }
 
     db.recovery_events.push({
-      event_id: `rec_code_${Date.now()}`,
+      event_id: generatePrefixedId('rec_code'),
       user_id: user.user_id,
       method: 'restoration_code_redemption' as any,
       approved_by: null,
@@ -990,7 +990,7 @@ export const redeemRestoreCode = async (req: Request, res: Response) => {
     });
 
     db.audit_logs.push({
-      log_id: `al_${Date.now()}`,
+      log_id: generatePrefixedId('al'),
       admin_id: 0,
       admin_name: 'SYSTEM',
       action: 'restore',
@@ -1048,7 +1048,7 @@ export const recoverSafeword = async (req: Request, res: Response) => {
       user.updated_at = new Date().toISOString();
 
       db.recovery_events.push({
-        event_id: `rec_sw_${Date.now()}`,
+        event_id: generatePrefixedId('rec_sw'),
         user_id: user.user_id,
         method: 'automatic_recovery',
         approved_by: null,

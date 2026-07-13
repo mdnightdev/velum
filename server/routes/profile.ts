@@ -5,6 +5,7 @@ import path from 'path';
 import { db, loadDb, saveDb, rebuildBlocksCache } from '../db.js';
 import { authenticateUser } from '../middleware.js';
 import { broadcastToRoom } from '../websocket.js';
+import { generatePrefixedId, generateUlid } from '../utils/ulid.js';
 
 export const profileRouter = express.Router();
 
@@ -26,7 +27,7 @@ profileRouter.get('/user/:userId/profile', authenticateUser, (req, res) => {
     // Defensive default seeding to guarantee uptime and avoid empty screens
     if (!profile) {
       profile = {
-        profile_id: `prof_${targetUserId}_${Date.now()}`,
+        profile_id: `p_${targetUserId}`,
         user_id: targetUserId,
         bio: 'Secured Velum channel member.',
         avatar: '',
@@ -70,7 +71,7 @@ profileRouter.post('/user/upload-avatar', authenticateUser, express.raw({ type: 
       fs.mkdirSync(publicDir, { recursive: true });
     }
     
-    const filename = `avatar_${user.user_id}_${Date.now()}.jpg`;
+    const filename = `avatar_${user.user_id}_${generateUlid()}.jpg`;
     const filepath = path.join(publicDir, filename);
     fs.writeFileSync(filepath, buffer);
     
@@ -106,7 +107,7 @@ profileRouter.post('/user/upload-media', authenticateUser, express.raw({ type: [
     else if (contentType.includes('audio/webm')) ext = '.webm';
     else if (contentType.includes('audio/ogg')) ext = '.ogg';
     
-    const filename = `media_${user.user_id}_${Date.now()}${ext}`;
+    const filename = `media_${user.user_id}_${generateUlid()}${ext}`;
     const filepath = path.join(mediaDir, filename);
     fs.writeFileSync(filepath, buffer);
     
@@ -133,7 +134,7 @@ profileRouter.post('/user/profile', authenticateUser, (req, res) => {
 
     if (profileIndex === -1) {
       profile = {
-        profile_id: `prof_${user.user_id}_${Date.now()}`,
+        profile_id: `p_${user.user_id}`,
         user_id: Number(user.user_id),
         displayName: displayName || '',
         bio: bio || '',
@@ -188,7 +189,7 @@ profileRouter.post('/user/:targetId/block', authenticateUser, (req, res) => {
     } else {
       // Block
       db.user_blocks.push({
-        block_id: `blk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        block_id: generatePrefixedId('blk'),
         blocker_id: user.user_id,
         blocked_id: targetId,
         created_at: new Date().toISOString()
@@ -267,7 +268,7 @@ profileRouter.post('/user/:targetId/mute', authenticateUser, (req, res) => {
     } else {
       // Mute
       db.user_mutes.push({
-        mute_id: `mute_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        mute_id: generatePrefixedId('mute'),
         muter_id: user.user_id,
         muted_id: targetId,
         created_at: new Date().toISOString()
@@ -309,7 +310,7 @@ profileRouter.post('/user/:targetId/report', authenticateUser, (req, res) => {
     const isHigh = reason?.toLowerCase().includes('scam') || reason?.toLowerCase().includes('fraud');
 
     const newReport: Report = {
-      report_id: `rep_${Date.now()}`,
+      report_id: generatePrefixedId('rep'),
       reporter_id: user.user_id,
       reporter_name: user.username,
       target_user_id: targetId ? parseInt(targetId, 10) : null,
@@ -348,7 +349,7 @@ profileRouter.post('/reports', authenticateUser, (req, res) => {
     const isHigh = reason?.toLowerCase().includes('scam') || reason?.toLowerCase().includes('fraud');
 
     const newReport: Report = {
-      report_id: `rep_${Date.now()}`,
+      report_id: generatePrefixedId('rep'),
       reporter_id: user.user_id,
       reporter_name: user.username,
       type: type === 'bug' || type === 'bug_report' ? 'bug_report' : 'suggestion',

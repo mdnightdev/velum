@@ -91,7 +91,9 @@ export function initSqlite() {
       'wallet_balances', 'currencies', 'exchange_rates', 'platform_admins',
       // New marketplace tables
       'market_assets', 'market_sku_variants', 'market_asset_media', 'market_reviews',
-      'market_coupons', 'market_discussions', 'market_support_chats', 'listing_verification_checks'
+      'market_coupons', 'market_discussions', 'market_support_chats', 'listing_verification_checks',
+      // Missing tables to avoid data loss
+      'platform_financial_audit_logs', 'automation_actions', 'refund_requests'
     ];
     
     for (const table of tables) {
@@ -156,24 +158,27 @@ export function initSqlite() {
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN hide_member_list INTEGER DEFAULT 0`); } catch (_) {}
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN is_locked INTEGER DEFAULT 0`); } catch (_) {}
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN last_active_at INTEGER`); } catch (_) {}
+
+    // Ensure new columns exist for market_listings
+    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN seller_username TEXT`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN discount_price REAL`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN verification_status TEXT`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN inventory_count INTEGER`); } catch (_) {}
+
+    // Ensure new columns exist for escrow_transactions
+    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN coupon_applied TEXT`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN sku_variant_id TEXT`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN platform_fee REAL`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN payout_amount REAL`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN sandbox_logs TEXT`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN sandbox_state TEXT`); } catch (_) {}
     
     // Parent Index
     try {
       conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_parent ON lounges(parent_lounge_id)`);
     } catch (_) {}
 
-    // Lounge Rooms table schema
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_rooms (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        is_locked INTEGER DEFAULT 0,
-        invite_code TEXT,
-        created_by TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-    try { conn.exec(`ALTER TABLE lounge_rooms ADD COLUMN invite_code TEXT`); } catch (_) {}
+    // Lounge Rooms table schema: DEPRECATED (lounge_rooms are represented as sublounges in lounges table)
 
     // Nodes (polymorphic fractal tree nodes representing channels, workspaces, sub-spaces)
     conn.exec(`CREATE TABLE IF NOT EXISTS nodes (
@@ -367,8 +372,7 @@ export function initSqlite() {
       conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_official ON lounges (is_official)`);
       conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_invite_code ON lounges (invite_code)`);
 
-      // Lounge Rooms Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_rooms_parent ON lounge_rooms (lounge_id)`);
+      // Lounge Rooms Table Index: DEPRECATED
 
       // Node Views Table Index
       conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_views_node ON node_views (node_id)`);
@@ -727,6 +731,11 @@ export function loadDb(force = false) {
         db.market_support_chats = loadPayloadTable('market_support_chats', 'chat_id');
         db.listing_verification_checks = loadPayloadTable('listing_verification_checks', 'check_id');
 
+        // Load Missing Tables
+        db.platform_financial_audit_logs = loadPayloadTable('platform_financial_audit_logs', 'log_id');
+        db.automation_actions = loadPayloadTable('automation_actions', 'action_id');
+        db.refund_requests = loadPayloadTable('refund_requests', 'request_id');
+
         // Load structured tables
         const loadTableRows = (tableName: string) => {
           try {
@@ -759,7 +768,12 @@ export function loadDb(force = false) {
             updated_at: r.updated_at ? Number(r.updated_at) : Number(r.created_at),
             is_system: r.is_system !== undefined ? Number(r.is_system) : (Number(r.is_official) === 1 ? 1 : 0),
             visibility: r.visibility || (Number(r.is_private) === 1 ? 'private' : 'public'),
-            status: r.status || 'active'
+            status: r.status || 'active',
+            type: r.type || (Number(r.is_system || r.is_official) === 1 ? 'official' : 'user_created'),
+            owner_user_id: r.owner_user_id !== null && r.owner_user_id !== undefined ? Number(r.owner_user_id) : Number(r.owner_id),
+            hide_member_list: r.hide_member_list ? Number(r.hide_member_list) : 0,
+            is_locked: r.is_locked ? Number(r.is_locked) : 0,
+            last_active_at: r.last_active_at ? Number(r.last_active_at) : Number(r.last_message_at || r.created_at)
           }));
         }
 
@@ -898,12 +912,16 @@ export function loadDb(force = false) {
         if (marketListingsRows) {
           db.market_listings = marketListingsRows.map((r: any) => ({
             listing_id: r.listing_id,
-            seller_id: r.seller_id,
+            seller_id: Number(r.seller_id),
             title: r.title,
             description: r.description,
             price: Number(r.price),
             status: r.status,
-            created_at: Number(r.created_at)
+            created_at: Number(r.created_at),
+            seller_username: r.seller_username || undefined,
+            discount_price: r.discount_price !== null && r.discount_price !== undefined ? Number(r.discount_price) : undefined,
+            verification_status: r.verification_status || undefined,
+            inventory_count: r.inventory_count !== null && r.inventory_count !== undefined ? Number(r.inventory_count) : undefined
           }));
         }
 
@@ -912,12 +930,18 @@ export function loadDb(force = false) {
           db.escrow_transactions = escrowTransactionsRows.map((r: any) => ({
             transaction_id: r.transaction_id,
             listing_id: r.listing_id,
-            buyer_id: r.buyer_id,
-            seller_id: r.seller_id,
+            buyer_id: Number(r.buyer_id),
+            seller_id: Number(r.seller_id),
             amount: Number(r.amount),
             status: r.status,
             created_at: Number(r.created_at),
-            updated_at: Number(r.updated_at)
+            updated_at: Number(r.updated_at),
+            coupon_applied: r.coupon_applied || undefined,
+            sku_variant_id: r.sku_variant_id || undefined,
+            platform_fee: r.platform_fee !== null && r.platform_fee !== undefined ? Number(r.platform_fee) : undefined,
+            payout_amount: r.payout_amount !== null && r.payout_amount !== undefined ? Number(r.payout_amount) : undefined,
+            sandbox_logs: r.sandbox_logs || undefined,
+            sandbox_state: r.sandbox_state || undefined
           }));
         }
 
@@ -1209,6 +1233,11 @@ export function executeSaveDb() {
       saveTable('market_support_chats', db.market_support_chats || [], 'chat_id');
       saveTable('listing_verification_checks', db.listing_verification_checks || [], 'check_id');
 
+      // Save Missing Tables
+      saveTable('platform_financial_audit_logs', db.platform_financial_audit_logs || [], 'log_id');
+      saveTable('automation_actions', db.automation_actions || [], 'action_id');
+      saveTable('refund_requests', db.refund_requests || [], 'request_id');
+
       const saveLoungesDb = () => {
         try {
           conn.exec(`DELETE FROM lounges`);
@@ -1274,9 +1303,21 @@ export function executeSaveDb() {
       const saveMarketListingsDb = () => {
         try {
           conn.exec(`DELETE FROM market_listings`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO market_listings (listing_id, seller_id, title, description, price, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT OR REPLACE INTO market_listings (listing_id, seller_id, title, description, price, status, created_at, seller_username, discount_price, verification_status, inventory_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const l of db.market_listings || []) {
-            stmt.run(l.listing_id, String(l.seller_id), l.title, l.description || '', Number(l.price || 0), l.status || 'ACTIVE', Number(l.created_at || Date.now()));
+            stmt.run(
+              l.listing_id,
+              String(l.seller_id),
+              l.title,
+              l.description || '',
+              Number(l.price || 0),
+              l.status || 'ACTIVE',
+              Number(l.created_at || Date.now()),
+              l.seller_username || null,
+              l.discount_price !== undefined && l.discount_price !== null ? Number(l.discount_price) : null,
+              l.verification_status || null,
+              l.inventory_count !== undefined && l.inventory_count !== null ? Number(l.inventory_count) : null
+            );
           }
         } catch (err) {
           console.error('[SYS-SECURE] Save market_listings SQLite failed:', err);
@@ -1286,9 +1327,24 @@ export function executeSaveDb() {
       const saveEscrowTransactionsDb = () => {
         try {
           conn.exec(`DELETE FROM escrow_transactions`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO escrow_transactions (transaction_id, listing_id, buyer_id, seller_id, amount, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT OR REPLACE INTO escrow_transactions (transaction_id, listing_id, buyer_id, seller_id, amount, status, created_at, updated_at, coupon_applied, sku_variant_id, platform_fee, payout_amount, sandbox_logs, sandbox_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const t of db.escrow_transactions || []) {
-            stmt.run(t.transaction_id, t.listing_id, String(t.buyer_id), String(t.seller_id), Number(t.amount || 0), t.status, Number(t.created_at || Date.now()), Number(t.updated_at || Date.now()));
+            stmt.run(
+              t.transaction_id,
+              t.listing_id,
+              String(t.buyer_id),
+              String(t.seller_id),
+              Number(t.amount || 0),
+              t.status,
+              Number(t.created_at || Date.now()),
+              Number(t.updated_at || Date.now()),
+              t.coupon_applied || null,
+              t.sku_variant_id || null,
+              t.platform_fee !== undefined && t.platform_fee !== null ? Number(t.platform_fee) : null,
+              t.payout_amount !== undefined && t.payout_amount !== null ? Number(t.payout_amount) : null,
+              t.sandbox_logs || null,
+              t.sandbox_state || null
+            );
           }
         } catch (err) {
           console.error('[SYS-SECURE] Save escrow_transactions SQLite failed:', err);

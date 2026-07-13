@@ -3,6 +3,7 @@ import express from 'express';
 import { db, loadDb, saveDb, isUserBlocked } from '../db.js';
 import { authenticateUser } from '../middleware.js';
 import { broadcastToRoom } from '../websocket.js';
+import { generatePrefixedId } from '../utils/ulid.js';
 
 export const messagesRouter = express.Router();
 
@@ -215,7 +216,7 @@ messagesRouter.post('/rooms/:roomId/messages', authenticateUser, (req, res) => {
     }
     
     const newMessage: Message = {
-      message_id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      message_id: generatePrefixedId('msg'),
       lounge_id: resolvedLoungeId,
       room_id: resolvedRoomId || '',
       user_id: user.user_id,

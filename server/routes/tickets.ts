@@ -4,7 +4,7 @@ import path from 'path';
 import express from 'express';
 import { db, loadDb, saveDb, hardResetAndSeedDatabase, ensureVelumSystemDM } from '../db.js';
 import { encryptData, decryptData, hashArgon2id, verifyArgon2id, checkStepOTP, getStepOTP } from '../utils/crypto.js';
-import { generateUlid } from '../utils/ulid.js';
+import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
 import { authRateLimiter, authenticateAdmin, authenticateUser, generateSessionToken } from '../middleware.js';
 import { broadcastToRoom, connectedClients } from '../websocket.js';
 import crypto from 'crypto';
@@ -78,7 +78,7 @@ ticketsRouter.post('/tickets', (req, res) => {
 
   const isReportType = actualIssueType === 'compromise_report' || actualIssueType === 'report_user' || actualIssueType === 'system_bug' || actualIssueType === 'suggestion' || actualIssueType === 'user_misconduct' || actualIssueType === 'bug_report';
   if (isReportType) {
-    const reportId = `rep_${Date.now()}`;
+    const reportId = generatePrefixedId('rep');
     const isHigh = actualDisputeText?.toLowerCase().includes('scam') || actualDisputeText?.toLowerCase().includes('fraud');
     const newReport: Report = {
       report_id: reportId,
@@ -102,7 +102,7 @@ ticketsRouter.post('/tickets', (req, res) => {
     });
   }
 
-  const ticketId = `t_${Date.now()}`;
+  const ticketId = generatePrefixedId('t');
   const tracking_uuid = `ticket_t_${crypto.randomUUID()}`;
 
   const newTicket: Ticket = {

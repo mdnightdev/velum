@@ -20,3 +20,8 @@ export function generateUlid(seedTime: number = Date.now()): string {
 
   return timePart + randomPart;
 }
+
+export function generatePrefixedId(prefix: string): string {
+  return `${prefix}_${generateUlid()}`;
+}
+
