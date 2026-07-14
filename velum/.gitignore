@@ -1,6 +1,0 @@
-node_modules/
-*.sqlite
-.env
-dist/
-.env
-.superdesign

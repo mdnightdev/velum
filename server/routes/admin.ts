@@ -56,4 +56,5 @@ adminRouter.get('/admin/invites', authenticateAdmin, getInvites);
 adminRouter.post('/admin/nominate', authenticateAdmin, nominateSupport);
 adminRouter.post('/admin/rename-executive', authenticateAdmin, renameExecutive);
 adminRouter.post('/admin/cli/exec', authenticateAdmin, executeCli);
+
 adminRouter.post('/admin/update-settings', authenticateAdmin, updateSettings);

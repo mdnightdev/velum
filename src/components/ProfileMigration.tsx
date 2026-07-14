@@ -113,7 +113,7 @@ export default function ProfileMigration({
               Identity Transition Required
             </h1>
             <p className="text-[10px] text-text-secondary font-mono mt-0.5">
-              ACCOUNT: @{migrationUsername} (ID: {migrationUserId})
+              ACCOUNT: {migrationUsername} (ID: {migrationUserId})
             </p>
           </div>
         </div>

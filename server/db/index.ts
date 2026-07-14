@@ -656,7 +656,7 @@ export function loadDb(force = false) {
     
     // 1. Try to load directly from the relational SQLite database SQLITE_FILE
     if (fs.existsSync(SQLITE_FILE)) {
-      console.log('[SYS-SECURE] SQLITE_FILE found. Loading state from local relational SQLite database...');
+//      console.log('[SYS-SECURE] SQLITE_FILE found. Loading state from local relational SQLite database...');
       let conn: any = null;
       try {
         conn = new DatabaseSync(SQLITE_FILE);
@@ -682,7 +682,7 @@ export function loadDb(force = false) {
               }
             }).filter(Boolean);
           } catch (err) {
-            console.warn(`[SYS-SECURE] Error loading table ${tableName}:`, err);
+        //    console.warn(`[SYS-SECURE] Error loading table ${tableName}:`, err);
             return [];
           }
         };
@@ -945,7 +945,7 @@ export function loadDb(force = false) {
           }));
         }
 
-        console.log('[SYS-SECURE] Local relational SQLite database successfully loaded.');
+        // console.log('[SYS-SECURE] Local relational SQLite database successfully loaded.');
         sqliteLoaded = true;
       } catch (err: any) {
         console.error('[SYS-SECURE] Failed loading from SQLITE_FILE directly:', err.message || err);
@@ -963,7 +963,7 @@ export function loadDb(force = false) {
       if (fs.existsSync(DB_FILE)) {
         const fileContent = fs.readFileSync(DB_FILE);
         if (fileContent.length > 15 && fileContent.toString('utf8', 0, 15) === "SQLite format 3") {
-          console.log('[SYS-SECURE] DB_FILE has SQLite format. Performing schema load...');
+          // console.log('[SYS-SECURE] DB_FILE has SQLite format. Performing schema load...');
           try {
             const conn = new DatabaseSync(DB_FILE);
             const loadTable = (tableName: string) => {
@@ -1000,7 +1000,7 @@ export function loadDb(force = false) {
               conn.close?.();
             } catch (_) {}
             
-            console.log('[SYS-SECURE] Successfully extracted tables. Converting to clean SQLite system database.');
+            // console.log('[SYS-SECURE] Successfully extracted tables. Converting to clean SQLite system database.');
             sqliteLoaded = true;
             executeSaveDb();
           } catch (err) {
@@ -1014,7 +1014,7 @@ export function loadDb(force = false) {
               throw new Error('Decrypted content is empty.');
             }
             db = JSON.parse(decryptedData);
-            console.log('[SYS-SECURE] Migrating local encrypted State Engine JSON to relational SQLite database.');
+            // console.log('[SYS-SECURE] Migrating local encrypted State Engine JSON to relational SQLite database.');
             sqliteLoaded = true;
             executeSaveDb(); // This will save directly to SQLite SQLITE_FILE
           } catch (err: any) {
@@ -1022,7 +1022,7 @@ export function loadDb(force = false) {
             try {
               const backupPath = `${DB_FILE}.corrupt_${Date.now()}`;
               fs.renameSync(DB_FILE, backupPath);
-              console.log(`[SYS-SECURE] Corrupt DB_FILE renamed to ${backupPath}`);
+              // console.log(`[SYS-SECURE] Corrupt DB_FILE renamed to ${backupPath}`);
             } catch (_) {}
           }
         }
@@ -1030,7 +1030,7 @@ export function loadDb(force = false) {
     }
     
     if (!sqliteLoaded) {
-      console.log('[SYS-SECURE] Relational databases absent. Generating default seeds...');
+      // console.log('[SYS-SECURE] Relational databases absent. Generating default seeds...');
       db = { ...defaultDb };
       executeSaveDb();
     }

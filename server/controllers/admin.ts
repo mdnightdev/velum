@@ -240,6 +240,18 @@ export const deleteUser = async (req: Request, res: Response) => {
     }
 
     // CLI_ADMIN: Hard-Purge
+    db.purged_users = db.purged_users || [];
+    if (!db.purged_users.some(u => u.user_id === targetUser.user_id)) {
+      db.purged_users.push(targetUser);
+    }
+    const targetProfile = db.profiles.find(p => p.user_id === uId);
+    if (targetProfile) {
+      db.purged_profiles = db.purged_profiles || [];
+      if (!db.purged_profiles.some(p => p.user_id === uId)) {
+        db.purged_profiles.push(targetProfile);
+      }
+    }
+
     db.users = db.users.filter(u => u.user_id !== uId);
     db.profiles = db.profiles.filter(p => p.user_id !== uId);
     db.user_blocks = db.user_blocks.filter(b => b.blocker_id !== uId && b.blocked_id !== uId);
@@ -985,17 +997,37 @@ export const restoreUser = async (req: Request, res: Response) => {
     const uId = parseInt(user_id, 10);
     loadDb();
 
-    const targetUser = db.users.find(u => u.user_id === uId);
+    let targetUser = db.users.find(u => u.user_id === uId);
+    let isHardPurged = false;
+
     if (!targetUser) {
-      return res.status(404).json({ error: 'User not found.' });
+      targetUser = db.purged_users && db.purged_users.find(u => u.user_id === uId);
+      if (!targetUser) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+      isHardPurged = true;
     }
 
-    if (targetUser.status !== 'purged') {
+    if (!isHardPurged && targetUser.status !== 'purged') {
       return res.status(400).json({ error: 'User is not purged.' });
     }
 
     targetUser.status = 'active';
     targetUser.updated_at = new Date().toISOString();
+
+    if (isHardPurged) {
+      db.purged_users = (db.purged_users || []).filter(u => u.user_id !== uId);
+      db.users.push(targetUser);
+
+      if (db.purged_profiles) {
+        const archivedProfile = db.purged_profiles.find(p => p.user_id === uId);
+        if (archivedProfile) {
+          db.purged_profiles = (db.purged_profiles || []).filter(p => p.user_id !== uId);
+          db.profiles = db.profiles || [];
+          db.profiles.push(archivedProfile);
+        }
+      }
+    }
 
     db.audit_logs.push({
       log_id: `${generatePrefixedId('al')}_rst_usr`,

@@ -1168,7 +1168,7 @@ export const triggerAutoSettlement = async (req: Request, res: Response) => {
       walletRepository.updateWalletBalance(esc.seller_id, sellerWallet.balance_cents + payoutCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_ar_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_ar`,
         user_id: Number(esc.seller_id),
         entry_type: 'ESCROW_RELEASE',
         amount_cents: releaseCents,
@@ -1265,7 +1265,7 @@ export const createSupportChat = async (req: Request, res: Response) => {
     if (existing) {
       // Append message to existing thread
       const newMsg = {
-        message_id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        message_id: generatePrefixedId('msg'),
         sender_id: user.user_id,
         sender_username: user.username,
         content: first_message,
@@ -1286,7 +1286,7 @@ export const createSupportChat = async (req: Request, res: Response) => {
       return res.json(existing);
     }
 
-    const chatId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const chatId = generatePrefixedId('chat');
     const newChat = {
       chat_id: chatId,
       order_id,
@@ -1296,7 +1296,7 @@ export const createSupportChat = async (req: Request, res: Response) => {
       created_at: Date.now(),
       messages: [
         {
-          message_id: `msg_${Date.now()}_0`,
+          message_id: `${generatePrefixedId('msg')}_0`,
           sender_id: user.user_id,
           sender_username: user.username,
           content: first_message,
@@ -1340,7 +1340,7 @@ export const addSupportChatMessage = async (req: Request, res: Response) => {
     }
 
     const newMsg = {
-      message_id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      message_id: generatePrefixedId('msg'),
       sender_id: user.user_id,
       sender_username: user.username,
       content,
@@ -1400,7 +1400,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
       walletRepository.updateWalletBalance(escrow.buyer_id, buyerWallet.balance_cents + escrowAmountCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_bref_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_bref`,
         user_id: Number(escrow.buyer_id),
         entry_type: 'ESCROW_REFUND',
         amount_cents: escrowAmountCents,
@@ -1427,7 +1427,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
 
         // Record Seller Penalty
         walletRepository.createLedgerEntry({
-          entry_id: `led_${Date.now()}_spen_${Math.random().toString(36).substr(2, 5)}`,
+          entry_id: `${generatePrefixedId('led')}_spen`,
           user_id: Number(escrow.seller_id),
           entry_type: 'AUTOMATED_ADJUSTMENT',
           amount_cents: -penaltyCents,
@@ -1441,7 +1441,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
 
         // Record Buyer Reward
         walletRepository.createLedgerEntry({
-          entry_id: `led_${Date.now()}_brewd_${Math.random().toString(36).substr(2, 5)}`,
+          entry_id: `${generatePrefixedId('led')}_brewd`,
           user_id: Number(escrow.buyer_id),
           entry_type: 'AUTOMATED_ADJUSTMENT',
           amount_cents: penaltyCents,
@@ -1461,7 +1461,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
       walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents + payoutCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_srel_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_srel`,
         user_id: Number(escrow.seller_id),
         entry_type: 'ESCROW_RELEASE',
         amount_cents: escrowAmountCents,
@@ -1474,7 +1474,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
       });
 
       walletRepository.createLedgerEntry({
-        entry_id: `led_${Date.now()}_sfee_${Math.random().toString(36).substr(2, 5)}`,
+        entry_id: `${generatePrefixedId('led')}_sfee`,
         user_id: Number(escrow.seller_id),
         entry_type: 'PLATFORM_FEE',
         amount_cents: -platformFeeCents,
@@ -1501,7 +1501,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
 
         // Record Buyer Penalty
         walletRepository.createLedgerEntry({
-          entry_id: `led_${Date.now()}_bpen_${Math.random().toString(36).substr(2, 5)}`,
+          entry_id: `${generatePrefixedId('led')}_bpen`,
           user_id: Number(escrow.buyer_id),
           entry_type: 'AUTOMATED_ADJUSTMENT',
           amount_cents: -penaltyCents,
@@ -1515,7 +1515,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
 
         // Record Seller Reward
         walletRepository.createLedgerEntry({
-          entry_id: `led_${Date.now()}_srewd_${Math.random().toString(36).substr(2, 5)}`,
+          entry_id: `${generatePrefixedId('led')}_srewd`,
           user_id: Number(escrow.seller_id),
           entry_type: 'AUTOMATED_ADJUSTMENT',
           amount_cents: penaltyCents,
@@ -1537,7 +1537,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
     
     // Add resolving message to chat
     chat.messages.push({
-      message_id: `msg_${Date.now()}_res`,
+      message_id: `${generatePrefixedId('msg')}_res`,
       sender_id: user.user_id,
       sender_username: 'SYSTEM',
       content: `Dispute officially resolved by Administrator '${user.username}'. Verdict: ${resolution}. Penalty: ${penalty_applied_to}.`,

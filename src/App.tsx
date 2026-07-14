@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import AuthPortal from './components/AuthPortal';
 import DashboardLayout from './components/DashboardLayout';
 import { useWebSocket } from './hooks/useWebSocket';
+import ProfileMigration from './components/ProfileMigration';
 
 const AdminControlDesk = lazy(() => import('./views/AdminControlDesk'));
 const CliConsole = lazy(() => import('./components/CliConsole'));
@@ -12,6 +13,7 @@ function AppContent() {
   const [isDark, setIsDark] = useState<boolean>(true);
   const [activeRoomId, setActiveRoomId] = useState<string>('');
   const [activeChatPeer, setActiveChatPeer] = useState<{ userId: number; username: string } | null>(null);
+  const [migrationUser, setMigrationUser] = useState<{ userId: number; username: string } | null>(null);
 
   // Set up visual viewport height tracking to handle mobile keyboard resizing properly
   useEffect(() => {
@@ -79,6 +81,23 @@ function AppContent() {
     );
   }
 
+  if (migrationUser) {
+    return (
+      <div className={`w-full h-dvh overflow-hidden flex flex-col ${isDark ? 'bg-velum-900' : 'bg-text-primary'}`}>
+        <ProfileMigration 
+          migrationUserId={migrationUser.userId} 
+          migrationUsername={migrationUser.username} 
+          onComplete={() => {
+            setMigrationUser(null);
+          }} 
+          onCancel={() => {
+            setMigrationUser(null);
+          }} 
+        />
+      </div>
+    );
+  }
+
   if (!isAuthenticated || !user) {
     return (
       <div className={`w-full h-dvh overflow-hidden flex flex-col ${isDark ? 'bg-velum-900' : 'bg-text-primary'}`}>
@@ -88,6 +107,9 @@ function AppContent() {
           onLoginSuccess={(loggedUser, sId, dId, activeView) => {
             handleLoginSuccess(loggedUser, sId, dId, activeView);
           }} 
+          onMigrationRequired={(userId, username) => {
+            setMigrationUser({ userId, username });
+          }}
           tabPrefix="velum"
         />
       </div>

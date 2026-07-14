@@ -1,1 +1,0 @@
-const { db, decryptData } = require('./server/db.ts'); setTimeout(() => { if (!db.users) return; db.users.forEach(u => { try { console.log('🔓 Decrypted:', JSON.parse(decryptData(u.payload))); } catch(e) { console.log('❌ Error:', e.message); } }); }, 1000);

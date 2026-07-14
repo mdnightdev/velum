@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <!-- Background for app launcher icon -->
-  <rect width="24" height="24" rx="5.5" fill="#08080A"/>
-  <!-- Glow/Halo effect -->
-  <circle cx="12" cy="12" r="8" fill="#C89B8A" opacity="0.05"/>
-  <!-- Logo paths using the hardcoded brand accent color (#C89B8A) since CSS variables do not resolve in standalone OS icon contexts -->
-  <path d="M4 4L11 20C11 20 11.5 21 12 21C12.5 21 13 20 13 20L20 4" stroke="#C89B8A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M8 4L12 13L16 4" stroke="#C89B8A" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
-</svg>

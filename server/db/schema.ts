@@ -12,6 +12,8 @@ import {
 export interface DbSchema {
   users: User[];
   profiles: Profile[];
+  purged_users?: User[];
+  purged_profiles?: Profile[];
   sessions: Session[];
   devices: Device[];
   ip_addresses: IpAddress[];

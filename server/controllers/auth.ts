@@ -235,7 +235,7 @@ export const loginUser = async (req: Request, res: Response) => {
     }
     rateLimiterCache.delete(`ip:${successIpStr}`);
 
-    if (user.role === 'USER' && (user.needs_reset || !user.salt)) {
+    if (user.needs_reset || !user.salt) {
       return res.json({ needsMigration: true, userId: user.user_id, username: user.username });
     }
 
@@ -518,11 +518,15 @@ export const migrateUser = async (req: Request, res: Response) => {
     }
 
     let formattedUsername = username.trim();
-    if (formattedUsername.includes(' ')) {
-      return res.status(400).json({ error: 'Username must not contain any spaces.' });
-    }
-    if (!formattedUsername.startsWith('@')) {
-      formattedUsername = `@${formattedUsername}`;
+    if (user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN') {
+      formattedUsername = user.username;
+    } else {
+      if (formattedUsername.includes(' ')) {
+        return res.status(400).json({ error: 'Username must not contain any spaces.' });
+      }
+      if (!formattedUsername.startsWith('@')) {
+        formattedUsername = `@${formattedUsername}`;
+      }
     }
 
     const duplicate = userRepository.findByUsername(formattedUsername);
