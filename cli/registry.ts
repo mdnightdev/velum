@@ -362,8 +362,13 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
     'escrows': {
         desc: 'Audit active escrow locks for timeout anomalies and balance mismatches',
         risk: 'MEDIUM'
-    }
-  },
+    },
+   repair: {
+      desc: 'Inject ledger repair delta and re-bake hash chain',
+      risk: 'HIGH',
+      args: ['<user_id>', '<amount_cents>']
+    },
+    },
   '/fraud': {
     seize: {
       desc: 'Seize all user ledger assets & escrows to treasury',

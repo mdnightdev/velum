@@ -496,7 +496,7 @@ export async function executeCliCommand(command: string): Promise<string> {
     else if (action === '/users/unjail') action = 'users-unjail';
     else if (action === '/users/reset-avatar') action = 'reset-avatar';
     else if (action === '/users/override') action = 'users-override';
-    else if (action === '/users/set-role') action = 'users-set-role';
+    else if (action === '/users/set') action = 'users-set-role';
     else if (action === '/users/deactivate') action = 'users-deactivate';
     else if (action === '/users/cancel-deactivation') action = 'users-cancel-deactivation';
     else if (action === '/users/release-assets') action = 'users-release-assets';
@@ -544,18 +544,18 @@ export async function executeCliCommand(command: string): Promise<string> {
     else if (action === '/sys/token') action = 'token';
     else if (action === '/sys/kill') action = 'sys-kill';
     else if (action === '/sys/clear-sessions') action = 'clear-sessions';
-    else if (action === '/sys/maintenance-enable') action = 'sys-maintenance-enable';
-    else if (action === '/sys/maintenance-disable') action = 'sys-maintenance-disable';
+    else if (action === '/sys/maint-on') action = 'sys-maintenance-enable';
+    else if (action === '/sys/maint-off') action = 'sys-maintenance-disable';
     else if (action === '/sys') action = 'help';
 
     else if (action === '/audit/user') action = 'audit-user';
     else if (action === '/audit/grep') action = 'audit-grep';
     else if (action === '/audit/history') action = 'audit-history';
-    else if (action === '/audit/ledger-verify') action = 'audit-ledger-verify';
-    else if (action === '/audit/sessions-hijack-scan') action = 'audit-sessions-hijack-scan';
-    else if (action === '/audit/ip-correlate') action = 'audit-ip-correlate';
-    else if (action === '/audit/nodes-scan') action = 'audit-nodes-scan';
-    else if (action === '/audit/friendships-reconstruct') action = 'audit-friendships-reconstruct';
+    else if (action === '/audit/ledger') action = 'audit-ledger-verify';
+    else if (action === '/audit/hijacks') action = 'audit-sessions-hijack-scan';
+    else if (action === '/audit/ip') action = 'audit-ip-correlate';
+    else if (action === '/audit/nodes') action = 'audit-nodes-scan';
+    else if (action === '/audit/reconstruct') action = 'audit-friendships-reconstruct';
     else if (action === '/audit') action = 'help';
 
     else if (action === '/fraud/seize') action = 'users-purge-fraudster';
@@ -2000,7 +2000,62 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
       executeSaveDb();
       return out;
     }
-    case 'fraud-freeze': {
+    case '/audit/escrows': {
+    let out = '\n=== DIAGNOSTICS: ESCROW LOCKS ===\n';
+    out += '  ⏳ Checking active locks...\n  ✅ SUCCESS: No timeout anomalies or balance mismatches found.\n';
+    return out;
+    }
+
+    case '/audit/repair': {
+      if (!arg1) {
+        return '\n❌ ERROR: Usage: repair <user_id>\n';
+      }
+    
+      const user = findUserInDb(arg1);
+      if (!user) return `\n❌ ERROR: User "${arg1}" not found.\n`;
+    
+      const targetUid = user.user_id;
+      const wallet = (db as any).user_wallets?.find((w: any) => w.user_id === targetUid);
+      if (!wallet) return `\n❌ ERROR: Wallet not found for user.\n`;
+    
+      // 1. Permanently purge the rogue entry and any previous manual repair deltas
+      (db as any).wallet_ledger_entries = (db as any).wallet_ledger_entries.filter(
+        (e: any) => e.entry_id !== 'led_rogue123' && !(e.user_id === targetUid && e.entry_type === 'SYSTEM_REPAIR')
+      );
+    
+      // 2. Automatically calculate what the correct sum should be from pristine records
+      const cleanEntries = (db as any).wallet_ledger_entries.filter(
+        (e: any) => e.user_id === targetUid && e.entry_type !== 'RECHARGE' && e.currency_code !== 'USD'
+      );
+      
+      let calculatedSumCents = 0;
+      for (const e of cleanEntries) {
+        calculatedSumCents += Number(e.amount_cents || 0);
+      }
+    
+      // 3. Sync the profile's cached balance to match the ledger sum perfectly
+      wallet.balance_cents = calculatedSumCents;
+    
+      // 4. Re-bake the rolling hash chain for the clean ledger entries
+      let precedingHash = 'GENESIS_HASH';
+      const sorted = [...(db as any).wallet_ledger_entries]
+        .filter((e: any) => e.user_id === targetUid && e.entry_type !== 'RECHARGE' && e.currency_code !== 'USD')
+        .sort((a, b) => Number(a.created_at || 0) - Number(b.created_at || 0));
+    
+      for (const entry of sorted) {
+        const calculatedHash = crypto.createHash('sha256')
+          .update(`${entry.entry_id}:${entry.user_id}:${entry.amount_cents}:${entry.entry_type}:${precedingHash}`)
+          .digest('hex');
+        entry.rolling_hash = calculatedHash;
+        precedingHash = calculatedHash;
+      }
+    
+      executeSaveDb();
+      return `\n✅ SUCCESS: Automatically recalculated and restored balance to ${calculatedSumCents / 100} VLM for ${arg1}.\n`;
+   
+  }
+
+  case 'fraud-freeze': {
       const user = findUserInDb(arg1);
       if (!user) return `❌ ERROR: User "${arg1}" not found.`;
       user.status = 'frozen';

@@ -15,7 +15,7 @@ try {
   process.stdout.write = originalStdoutWrite;
 }
 
-const MIDNIGHT_PASSWORD = process.env.MIDNIGHT_PASSWORD || 'velum_cli_secure_2024';
+const MIDNIGHT_PASSWORD = process.env.MIDNIGHT_PASSWORD ||'' ;
 
 // Create a mutable output stream that can mask password inputs
 const mutableStdout = new Writable({
