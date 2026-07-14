@@ -55,7 +55,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
     // fixed duplicate user_wallets mock
     // fixed duplicate user_wallets mock
     db.external_financial_accounts = [
-      { account_token: 'ext_1', simulated_institution: 'Test Bank', account_kind: 'BANK_ACCOUNT', masked_number: '1234', is_active: true, simulated_available_cents: 1000000, created_at: Date.now() }
+      { account_token: 'ext_1', user_id: 102, simulated_institution: 'Test Bank', account_kind: 'BANK_ACCOUNT', masked_number: '1234', is_active: true, simulated_available_cents: 1000000, created_at: Date.now() }
     ];
   });
 

@@ -1880,8 +1880,8 @@ case 'restore-user':
       let out = `\n=== DIAGNOSTICS: LEDGER INTEGRITY CHECK ===\n`;
       (db.user_wallets || []).forEach((w: any) => {
         const user = db.users.find((u: any) => u.user_id === w.user_id);
-        const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) => e.user_id === w.user_id);
-        
+const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) => e.user_id === w.user_id && e.entry_type !== 'RECHARGE' && e.currency_code !== 'USD');
+         
         let sum = 0;
         for (const e of ledgerEntries) {
           sum += Number(e.amount_cents || 0) / 100;

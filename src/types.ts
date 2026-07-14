@@ -20,6 +20,7 @@ export interface User {
   permanent_otp?: string | null;
   support_nomination?: string | null;
   uid?: number | string;
+  preferred_currency?: string;
 }
 
 export interface Profile {
@@ -550,6 +551,7 @@ export interface PaymentMethod {
 
 export interface ExternalFinancialAccount {
   account_token: string;
+  user_id: number;
   account_kind: 'CARD' | 'BANK_ACCOUNT' | string;
   simulated_institution: string;
   masked_number: string;

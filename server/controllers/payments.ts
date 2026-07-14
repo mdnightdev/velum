@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { db, loadDb, saveDb } from '../db.js';
 import { generateUlid } from '../utils/ulid.js';
+import { walletRepository } from '../db/walletRepository.js';
 import { 
   UserWallet, 
   WalletLedgerEntry, 
@@ -220,19 +221,18 @@ export const getPaymentMethods = async (req: Request, res: Response) => {
     const activeMethods = db.payment_methods.filter(
       m => Number(m.user_id) === Number(user.user_id) && m.status !== 'REMOVED'
     );
-
-    const enrichedMethods = activeMethods.map(m => {
-      const ext = db.external_financial_accounts?.find(
-        acc => acc.account_token === m.external_account_token
-      );
-      return {
-        ...m,
-        method_id: m.payment_method_id,
-        simulated_institution: ext?.simulated_institution || 'Unknown Institution',
-        masked_number: ext?.masked_number || '••••',
-        simulated_external_balance_cents: ext?.simulated_available_cents ?? 0
-      };
-    });
+  const enrichedMethods = activeMethods.map(m => {
+    const ext = db.external_financial_accounts?.find(
+      acc => acc.account_token === m.external_account_token && Number(acc.user_id) === Number(user.user_id)
+    );
+    return {
+      ...m,
+      method_id: m.payment_method_id,
+      simulated_institution: ext?.simulated_institution || 'Unknown Institution',
+      masked_number: ext?.masked_number || '••••',
+      simulated_external_balance_cents: ext?.simulated_available_cents ?? 0
+    };
+  });
 
     res.json(enrichedMethods);
   } catch (err) {
@@ -280,6 +280,7 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
 
     const extAccount: ExternalFinancialAccount = {
       account_token: accountToken,
+      user_id: Number(user.user_id),
       account_kind: methodType,
       simulated_institution: simulatedInstitution,
       masked_number: formattedMaskedNumber,
@@ -349,6 +350,33 @@ export const removePaymentMethod = async (req: Request, res: Response) => {
 };
 
 // 4. Recharge Balance (Deposits)
+export const updateSimulatedAccountBalance = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { token, balanceCents } = req.body;
+
+    if (!token || balanceCents === undefined) {
+      return res.status(400).json({ error: 'Missing token or balanceCents.' });
+    }
+
+    loadDb();
+    const updated = walletRepository.updateExternalAccountBalance(
+      token, 
+      Number(user.user_id), 
+      Number(balanceCents)
+    );
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Simulated account not found or access denied.' });
+    }
+
+    res.json({ success: true, account: updated });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update simulated balance.' });
+  }
+};
+
+
 export const rechargeWallet = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -412,18 +440,23 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       extAccount.simulated_available_cents = chargeSim.new_available_cents;
       newRequest.status = 'SIMULATED_COMPLETE';
 
-      // Ledger update
+     // Ledger update (Legacy)
       const wallet = getOrCreateWallet(user.user_id);
       const balanceAfter = wallet.balance_cents + amount;
       wallet.balance_cents = balanceAfter;
       wallet.updated_at = Date.now();
+
+      // Multi-currency balance update (USD) - This fixes the UI!
+      const usdWallet = getOrCreateWalletBalance(user.user_id, 'USD');
+      usdWallet.balance_cents += amount;
+      usdWallet.updated_at = Date.now();
 
       const ledgerEntry: WalletLedgerEntry = {
         entry_id: `led_${generateUlid()}`,
         user_id: user.user_id,
         entry_type: 'RECHARGE',
         amount_cents: amount,
-        balance_after_cents: balanceAfter,
+        balance_after_cents: usdWallet.balance_cents, // Log the updated USD balance
         actor_type: 'USER',
         actor_id: String(user.user_id),
         is_simulated: true,
@@ -431,14 +464,14 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       };
       db.wallet_ledger_entries.push(ledgerEntry);
 
-      saveDb(true);
+      savedDb(true);
       return res.json({
         success: true,
         status: 'SIMULATED_COMPLETE',
         amount_cents: amount,
-        wallet,
-        event: processorEvent
+        wallet: usdWallet, // Return the updated USD wallet state to the frontend
       });
+
     } else {
       newRequest.status = 'FAILED';
       saveDb(true);

@@ -16,8 +16,9 @@ import {
   getCurrencies,
   getWalletBalances,
   getExchangeRates,
-  exchangeCurrencyAction
-} from '../controllers/payments.js';
+  exchangeCurrencyAction,
+  updateSimulatedAccountBalance,}
+   from '../controllers/payments.js';
 
 export const paymentsRouter = express.Router();
 
@@ -33,6 +34,8 @@ paymentsRouter.post('/payments/kyc/review', authenticateUser, simulateKycReview)
 paymentsRouter.get('/payments/methods', authenticateUser, getPaymentMethods);
 paymentsRouter.post('/payments/methods', authenticateUser, addPaymentMethod);
 paymentsRouter.delete('/payments/methods/:methodId', authenticateUser, removePaymentMethod);
+paymentsRouter.put('/payments/methods/balance', authenticateUser, updateSimulatedAccountBalance);
+
 
 paymentsRouter.post('/payments/recharge', authenticateUser, rechargeWallet);
 paymentsRouter.post('/payments/withdraw', authenticateUser, requestWithdrawal);

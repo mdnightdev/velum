@@ -148,9 +148,10 @@ export const walletRepository = {
   // ==========================================
   // EXTERNAL FINANCIAL ACCOUNTS (SIMULATION)
   // ==========================================
-
-  findExternalAccountByToken(token: string): ExternalFinancialAccount | undefined {
-    return (db.external_financial_accounts || []).find(a => a && a.account_token === token);
+  findExternalAccountByToken(token: string, userId: number): ExternalFinancialAccount | undefined {
+    return (db.external_financial_accounts || []).find(
+      a => a && a.account_token === token && Number(a.user_id) === Number(userId)
+    );
   },
 
   createExternalAccount(account: ExternalFinancialAccount): void {
@@ -158,14 +159,19 @@ export const walletRepository = {
     db.external_financial_accounts.push(account);
     saveDb(true);
   },
-
-  updateExternalAccountBalance(token: string, newBalanceCents: number): ExternalFinancialAccount | undefined {
-    const account = this.findExternalAccountByToken(token);
+  updateExternalAccountBalance(token: string, userId: number, newBalanceCents: number): ExternalFinancialAccount | undefined {
+    const account = this.findExternalAccountByToken(token, userId);
     if (account) {
       account.simulated_available_cents = newBalanceCents;
       saveDb(true);
     }
     return account;
+  },
+
+  findExternalAccountsByUserId(userId: number): ExternalFinancialAccount[] {
+    return (db.external_financial_accounts || []).filter(
+      a => a && Number(a.user_id) === Number(userId)
+    );
   },
 
   // ==========================================

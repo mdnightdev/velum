@@ -58,7 +58,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       risk: 'MEDIUM',
       args: ['<uid/username>']
     },
-    'reset-avatar': {
+    'reset': {
       desc: 'Revert user profile avatar',
       risk: 'MEDIUM',
       args: ['<uid/username>'],
@@ -74,7 +74,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
         '--reason <reason>': 'Override authorization reason'
       }
     },
-    'set-role': {
+    'set': {
       desc: 'Change global user role (USER, SUPPORT_ADMIN, LOGIN_ADMIN, CLI_ADMIN)',
       risk: 'HIGH',
       args: ['<uid/username>', '<role>'],
@@ -90,12 +90,12 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
         '--reason <reason>': 'Deactivation audit reason'
       }
     },
-    'cancel-deactivation': {
+    'cancel': {
       desc: 'Reverse pending soft-deletion',
       risk: 'MEDIUM',
       args: ['<uid/username>']
     },
-    'release-assets': {
+    'release': {
       desc: 'Trigger 2-day verification & asset release',
       risk: 'HIGH',
       args: ['<uid/username>'],
@@ -103,7 +103,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
         '--reason <reason>': 'Verification audit reason'
       }
     },
-    'confirm-purge': {
+    'purge': {
       desc: 'Irreversible final database purge (requires release-assets first)',
       risk: 'CRITICAL',
       args: ['<uid/username>'],
@@ -111,7 +111,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
         '--reason <reason>': 'Purge verification audit reason'
       }
     },
-    'purge-fraudster': {
+    'nuke': {
       desc: 'Instant purge & immediate treasury asset takeover',
       risk: 'CRITICAL',
       args: ['<uid/username>'],
@@ -133,7 +133,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       risk: 'HIGH',
       args: ['<id>']
     },
-    'pending-deletions': {
+    'pending': {
       desc: 'View users in deactivation grace periods',
       risk: 'LOW'
     },
@@ -168,7 +168,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
         '--reason <reason>': 'Clean logic audit reason'
       }
     },
-    'restore-messages': {
+    'restore': {
       desc: 'Restore messages from an encrypted restore point',
       risk: 'CRITICAL',
       args: ['<restore_point_id>']
@@ -243,12 +243,12 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       desc: 'Audit foreign keys and database coherence',
       risk: 'LOW'
     },
-    'orphans-scan': {
+    'orphans': {
       desc: 'Scan for orphaned relational records',
       risk: 'LOW'
     },
-    'orphans-clean': {
-      desc: 'Clean orphaned relational profiles and sessions',
+    'clean': {
+	      desc: 'Clean orphaned relational profiles and sessions',
       risk: 'HIGH'
     },
     backup: {
@@ -304,18 +304,18 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       risk: 'MEDIUM',
       args: ['<session_id>']
     },
-    'clear-sessions': {
+    'flush': {
       desc: 'Flush all active sessions, forcing global re-auth',
       risk: 'HIGH'
     },
-    'maintenance-enable': {
+    'main-on': {
       desc: 'Put server in maintenance mode',
       risk: 'HIGH',
       flags: {
         '--reason <reason>': 'Maintenance reason'
       }
     },
-    'maintenance-disable': {
+    'maint-off': {
       desc: 'Lift maintenance mode restrictions',
       risk: 'MEDIUM'
     }
@@ -335,25 +335,33 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       desc: 'Display recent administrative audit logs sequence',
       risk: 'LOW'
     },
-    'ledger-verify': {
+    'ledger': {
       desc: 'Execute HMAC rolling hash & mathematical verification (Power 2)',
       risk: 'LOW'
     },
-    'sessions-hijack-scan': {
+    'hijacks': {
       desc: 'Evaluate active sessions for hijacked footprints (Power 1)',
       risk: 'LOW'
     },
-    'ip-correlate': {
+    'ip': {
       desc: 'Cross-correlate accounts sharing identical subnets/profiles (Power 3)',
       risk: 'LOW'
     },
-    'nodes-scan': {
+    'nodes': {
       desc: 'Scan fractal categories for RBAC inheritance leaks (Power 4)',
       risk: 'LOW'
     },
-    'friendships-reconstruct': {
+    'reconstruct': {
       desc: 'Rebuild broken mutual friend relationships (Power 5)',
       risk: 'HIGH'
+    },
+    'scan': {
+        desc: 'Evaluate active sessions for hijacked footprints (Power 1)',
+        risk: 'LOW'
+    },
+    'escrows': {
+        desc: 'Audit active escrow locks for timeout anomalies and balance mismatches',
+        risk: 'MEDIUM'
     }
   },
   '/fraud': {

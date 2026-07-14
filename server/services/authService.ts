@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { db, saveDb, ensureVelumSystemDM } from '../db.js';
 import { verifyArgon2id, hashArgon2id } from '../utils/crypto.js';
 import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
-import { cleanIp, getIpGeoLocation } from '../utils.js';
+import { cleanIp, getIpGeoLocation, getIpGeoData, getCurrencyForCountryCode } from '../utils.js';
 import { Session, User } from '../../src/types.js';
 import { userRepository } from '../db/userRepository.js';
 
@@ -161,6 +161,8 @@ export async function performUserRegistration(params: {
   const panic_phrase_hash_raw = await hashArgon2id(panicPhraseHex, saltBuf);
   const panic_phrase_hash = `argon2id:${panic_phrase_hash_raw}`;
 
+  const geoBase = await getIpGeoData(ipAddress);
+
   const newUser: User = {
     user_id: userId,
     username: formattedUsername,
@@ -173,14 +175,13 @@ export async function performUserRegistration(params: {
     status: 'active',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    uid: `VEL-UID-${Math.floor(100000 + Math.random() * 900000)}`
+    uid: `VEL-UID-${Math.floor(100000 + Math.random() * 900000)}`,
+    preferred_currency: getCurrencyForCountryCode(geoBase.countryCode)
   };
 
   userRepository.create(newUser);
 
   ensureVelumSystemDM(newUser.user_id, newUser.username, plainRecoveryKey || serverGeneratedPlainKey || '');
-
-  const geoBase = await getIpGeoLocation(ipAddress);
 
   db.profiles.push({
     profile_id: `p_${userId}`,
@@ -189,7 +190,7 @@ export async function performUserRegistration(params: {
     avatar: 'user',
     settings: { theme: 'slate', notificationsEnabled: true, burnDefaultSeconds: 0 },
     updated_at: new Date().toISOString(),
-    location: geoBase ?? null,
+    location: geoBase.location ?? null,
     ip_address: ipAddress,
     device_fingerprint: deviceFingerprint || 'Generic Web User Agent'
   } as any);
