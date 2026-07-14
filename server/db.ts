@@ -280,15 +280,15 @@ export async function hardResetAndSeedDatabase(force = false) {
     }
   }
 
-  const midnight_pass = process.env.MIDNIGHT_PASSWORD || 'velum_cli_secure_2024';
-  const midnight_safe = process.env.MIDNIGHT_SAFE_WORD || 'omega';
-  const midnight_panic = process.env.MIDNIGHT_PANIC_PHRASE || 'burn the systems';
-  const midnight_rec = process.env.MIDNIGHT_RECOVERY_KEY || 'CLI-REC-999';
+  const midnight_pass = process.env.MIDNIGHT_PASSWORD || '';
+  const midnight_safe = process.env.MIDNIGHT_SAFE_WORD || '';
+  const midnight_panic = process.env.MIDNIGHT_PANIC_PHRASE || '';
+  const midnight_rec = process.env.MIDNIGHT_RECOVERY_KEY || '';
 
-  const lexie_pass = process.env.LEXIE_PASSWORD || 'velum_admin_secure_2024';
-  const lexie_safe = process.env.LEXIE_SAFE_WORD || 'vortex';
-  const lexie_panic = process.env.LEXIE_PANIC_PHRASE || 'lock account immediate';
-  const lexie_rec = process.env.LEXIE_RECOVERY_KEY || 'LGN-REC-111';
+  const lexie_pass = process.env.LEXIE_PASSWORD || '';
+  const lexie_safe = process.env.LEXIE_SAFE_WORD || '';
+  const lexie_panic = process.env.LEXIE_PANIC_PHRASE || '';
+  const lexie_rec = process.env.LEXIE_RECOVERY_KEY || '';
 
   // Verify compatibility with the client-side pre-hashing flow
   const midnight = db.users && db.users.find(u => u.role === 'CLI_ADMIN');
@@ -432,7 +432,7 @@ export async function hardResetAndSeedDatabase(force = false) {
 
 export async function executeCliCommand(command: string): Promise<string> {
   if (!command) {
-    return '❌ ERROR: Command cannot be empty.';
+    return ' ERROR: Command cannot be empty.';
   }
   const parts = command.trim().split(/\s+/);
   let action = parts[0].toLowerCase();
@@ -641,16 +641,16 @@ export async function executeCliCommand(command: string): Promise<string> {
     case 'approve': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "approve" requires a <username> argument.`;
+          return ` ERROR: Command "approve" requires a <username> argument.`;
         }
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase());
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered in central databases.`;
+          return ` ERROR: Account "${arg1}" is not registered in central databases.`;
         }
 
         const isNominated = candidate.promotion_status === 'PENDING_SUPPORT' || candidate.support_nomination === 'nominated';
         if (!isNominated) {
-          return `❌ ERROR: Account "${candidate.username}" is not currently in a PENDING_SUPPORT nomination state.`;
+          return ` ERROR: Account "${candidate.username}" is not currently in a PENDING_SUPPORT nomination state.`;
         }
 
         candidate.role = 'USER';
@@ -663,7 +663,7 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         let saUser = db.users.find(u => u.username.toLowerCase() === saUsername.toLowerCase());
         if (saUser) {
-          return `❌ ERROR: Dedicated Support Admin account "${saUsername}" already exists.`;
+          return ` ERROR: Dedicated Support Admin account "${saUsername}" already exists.`;
         }
 
         const saPassword = `SA-PASS-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -764,19 +764,19 @@ export async function executeCliCommand(command: string): Promise<string> {
         }).catch(err => {
           console.warn('[PROMO] Failed to dispatch real-time websocket broadcast for promotion credentials:', err);
         });
-        return `💖 SUCCESS: Approved Support nomination for "${candidate.username}". Created dedicated SA profile "${saUsername}". Credentials wire dispatched securely! 💖\n\nSupport ID: ${saUserId}\nHandle: ${saUsername}\nPassword: ${saPassword}\nSafe Word: ${saSafeWord}\nPanic Word: ${saPanicPhrase}\nRecovery Key: ${saRecoveryKey}`;
+        return ` SUCCESS: Approved Support nomination for "${candidate.username}". Created dedicated SA profile "${saUsername}". Credentials wire dispatched securely! \n\nSupport ID: ${saUserId}\nHandle: ${saUsername}\nPassword: ${saPassword}\nSafe Word: ${saSafeWord}\nPanic Word: ${saPanicPhrase}\nRecovery Key: ${saRecoveryKey}`;
       } catch (err: any) {
-        return `💥 ERROR: Approved support task failure: ${err.message || err}`;
+        return ` ERROR: Approved support task failure: ${err.message || err}`;
       }
     }
     case 'reject': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "reject" requires a <username> argument.`;
+          return ` ERROR: Command "reject" requires a <username> argument.`;
         }
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase());
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered in central databases.`;
+          return ` ERROR: Account "${arg1}" is not registered in central databases.`;
         }
         candidate.support_nomination = null;
         candidate.promotion_status = 'REJECTED_SUPPORT';
@@ -795,15 +795,15 @@ export async function executeCliCommand(command: string): Promise<string> {
         });
 
         executeSaveDb();
-        return `✨ SUCCESS: Rejected Support Admin nomination for "${candidate.username}". Saved to main ledger.`;
+        return ` SUCCESS: Rejected Support Admin nomination for "${candidate.username}". Saved to main ledger.`;
       } catch (err: any) {
-        return `💥 ERROR: Nomination rejection task failed: ${err.message || err}`;
+        return ` ERROR: Nomination rejection task failed: ${err.message || err}`;
       }
     }
     case 'demote': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "demote" requires a <username> argument.`;
+          return ` ERROR: Command "demote" requires a <username> argument.`;
         }
         const queryName = arg1.trim();
         const cleanName = queryName.replace(/^@?SA-@?|^@/, '').toLowerCase();
@@ -822,7 +822,7 @@ export async function executeCliCommand(command: string): Promise<string> {
         });
 
         if (!baseUser && !saUser) {
-          return `❌ ERROR: Target "${arg1}" not found in registries.`;
+          return ` ERROR: Target "${arg1}" not found in registries.`;
         }
 
         if (baseUser) {
@@ -869,23 +869,23 @@ export async function executeCliCommand(command: string): Promise<string> {
         });
 
         executeSaveDb();
-        return `💔 SUCCESS: Demoted and removed companion Support Operator access for "${arg1}". All specialized tokens immediately purged.`;
+        return ` SUCCESS: Demoted and removed companion Support Operator access for "${arg1}". All specialized tokens immediately purged.`;
       } catch (err: any) {
-        return `💥 ERROR: Demotion sequence faulted: ${err.message || err}`;
+        return ` ERROR: Demotion sequence faulted: ${err.message || err}`;
       }
     }
     case 'ban': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "ban" requires a <username> argument.`;
+          return ` ERROR: Command "ban" requires a <username> argument.`;
         }
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase());
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered in registries.`;
+          return ` ERROR: Account "${arg1}" is not registered in registries.`;
         }
 
         if (candidate.role === 'CLI_ADMIN') {
-          return `❌ ERROR: Severe security privilege violation - cannot ban Root CLI Administrator.`;
+          return ` ERROR: Severe security privilege violation - cannot ban Root CLI Administrator.`;
         }
 
         candidate.status = 'suspended';
@@ -925,11 +925,11 @@ export async function executeCliCommand(command: string): Promise<string> {
     case 'unban': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "unban" requires a <username> argument.`;
+          return ` ERROR: Command "unban" requires a <username> argument.`;
         }
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase());
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered.`;
+          return ` ERROR: Account "${arg1}" is not registered.`;
         }
 
         candidate.status = 'active';
@@ -952,19 +952,19 @@ export async function executeCliCommand(command: string): Promise<string> {
         });
 
         executeSaveDb();
-        return `✨ SUCCESS: Restored and unbanned user "${candidate.username}". Entry sequence authorized.`;
+        return ` SUCCESS: Restored and unbanned user "${candidate.username}". Entry sequence authorized.`;
       } catch (err: any) {
-        return `💥 ERROR during unban task: ${err.message || err}`;
+        return ` ERROR during unban task: ${err.message || err}`;
       }
     }
     case 'mute': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "mute" requires a <username> argument.`;
+          return ` ERROR: Command "mute" requires a <username> argument.`;
         }
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase());
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered.`;
+          return ` ERROR: Account "${arg1}" is not registered.`;
         }
 
         if (!db.admin_sanctions) db.admin_sanctions = [];
@@ -991,19 +991,19 @@ export async function executeCliCommand(command: string): Promise<string> {
         });
 
         executeSaveDb();
-        return `🔇 SUCCESS: Muted user "${candidate.username}" globally from sending secure channel messages.`;
+        return ` SUCCESS: Muted user "${candidate.username}" globally from sending secure channel messages.`;
       } catch (err: any) {
-        return `💥 ERROR muting user: ${err.message || err}`;
+        return ` ERROR muting user: ${err.message || err}`;
       }
     }
     case 'unmute': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "unmute" requires a <username> argument.`;
+          return ` ERROR: Command "unmute" requires a <username> argument.`;
         }
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase());
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered.`;
+          return ` ERROR: Account "${arg1}" is not registered.`;
         }
 
         if (db.admin_sanctions) {
@@ -1023,9 +1023,9 @@ export async function executeCliCommand(command: string): Promise<string> {
         });
 
         executeSaveDb();
-        return `🔊 SUCCESS: Unmuted user "${candidate.username}". Channel write privileges restored.`;
+        return ` SUCCESS: Unmuted user "${candidate.username}". Channel write privileges restored.`;
       } catch (err: any) {
-        return `💥 ERROR unmuting user: ${err.message || err}`;
+        return ` ERROR unmuting user: ${err.message || err}`;
       }
     }
     case 'clean-lounge': {
@@ -1082,22 +1082,22 @@ export async function executeCliCommand(command: string): Promise<string> {
 
         if (!isCloudBackupDisabled) {
           await executeCloudBackup();
-          return `💖 SUCCESS: Velum Relational Database wiped and purged completely! 💖\n` +
-            `✨ Local storage has been reset, default administrative seeds redeployed, and cloud backups have been synchronized immediately on this server. Cloud backups cleared!`;
+          return ` SUCCESS: Velum Relational Database wiped and purged completely! \n` +
+            ` Local storage has been reset, default administrative seeds redeployed, and cloud backups have been synchronized immediately on this server. Cloud backups cleared!`;
         }
-        return `💖 SUCCESS: Velum Relational Database wiped and purged locally! 💖\n` +
-          `✨ Local storage has been reset and default administrative seeds successfully deployed. (Cloud storage status: Offline)`;
+        return ` SUCCESS: Velum Relational Database wiped and purged locally! \n` +
+          ` Local storage has been reset and default administrative seeds successfully deployed. (Cloud storage status: Offline)`;
       } catch (err: any) {
-        return `💥 ERROR during deep database purge task: ${err.message || err}`;
+        return ` ERROR during deep database purge task: ${err.message || err}`;
       }
     }
     case 'seed': {
       try {
         await hardResetAndSeedDatabase(false);
         executeSaveDb();
-        return `✨ INFO: Seeding check completed. Retained existing records safely.`;
+        return ` INFO: Seeding check completed. Retained existing records safely.`;
       } catch (err: any) {
-        return `💥 ERROR seeding database: ${err.message || err}`;
+        return ` ERROR seeding database: ${err.message || err}`;
       }
     }
     case 'integrity': {
@@ -1119,14 +1119,14 @@ export async function executeCliCommand(command: string): Promise<string> {
       try {
         const logsList = db.audit_logs || [];
         if (logsList.length === 0) {
-          return '📋 INFO: No server log entries registered.';
+          return ' INFO: No server log entries registered.';
         }
-        return `📜 VELUM SERVER AUDIT LOGS 📜\n` +
+        return ` VELUM SERVER AUDIT LOGS \n` +
           `========================================================\n` +
           logsList.map(log => `[${log.timestamp}] [${log.action.toUpperCase()}] ${log.reason} (${log.admin_name || 'root'})`).join('\n') +
           `\n========================================================`;
       } catch (err: any) {
-        return `💥 ERROR querying audit logs: ${err.message || err}`;
+        return ` ERROR querying audit logs: ${err.message || err}`;
       }
     }
     case 'vacuum':
@@ -1145,7 +1145,7 @@ export async function executeCliCommand(command: string): Promise<string> {
           `• Truncated older security anomaly records logs.\n` +
           `• SQLite relational schemas successfully optimized and compacted.`;
       } catch (err: any) {
-        return `💥 ERROR during SQL compact vacuum: ${err.message || err}`;
+        return ` ERROR during SQL compact vacuum: ${err.message || err}`;
       }
     }
     case 'clear-sessions':
@@ -1174,27 +1174,27 @@ export async function executeCliCommand(command: string): Promise<string> {
     case 'risk-report': {
       try {
         if (!db.suspicious_events || db.suspicious_events.length === 0) {
-          return '💚 SEC_OK: 0 active threats detected on system.';
+          return ' SEC_OK: 0 active threats detected on system.';
         }
-        let output = `⚠️ VELUM ANOMALOUS DETECTIONS AUDIT INDEX ⚠️\n========================================================\n`;
+        let output = ` VELUM ANOMALOUS DETECTIONS AUDIT INDEX \n========================================================\n`;
         db.suspicious_events.forEach(ev => {
           output += `[${ev.risk_level?.toUpperCase() || 'WARNING'}] ${ev.description} @ ${ev.created_at}\n`;
         });
         output += `========================================================`;
         return output;
       } catch (err: any) {
-        return `💥 ERROR: Failed to query analytics reports: ${err.message || err}`;
+        return ` ERROR: Failed to query analytics reports: ${err.message || err}`;
       }
     }
     case 'wire':
     case 'send-system-wire': {
       try {
         if (!arg1 || !arg2Plus) {
-          return '❌ ERROR: Command "wire" requires a target <username> and a <message>.';
+          return ' ERROR: Command "wire" requires a target <username> and a <message>.';
         }
         const receiver = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase() || u.username.toLowerCase() === `@${arg1.replace(/^@/, '').toLowerCase()}`);
         if (!receiver) {
-          return `❌ ERROR: Target user "${arg1}" not found in database.`;
+          return ` ERROR: Target user "${arg1}" not found in database.`;
         }
 
         const dmRoomId = `dm_velum_${receiver.user_id}`;
@@ -1216,9 +1216,9 @@ export async function executeCliCommand(command: string): Promise<string> {
         db.messages.push(wireMessage);
 
         executeSaveDb();
-        return `📡 SUCCESS: Successfully synchronized and transmitted direct system wire payload to user "${receiver.username}".`;
+        return ` SUCCESS: Successfully synchronized and transmitted direct system wire payload to user "${receiver.username}".`;
       } catch (err: any) {
-        return `💥 ERROR: Failed to transmit secure wire signal: ${err.message || err}`;
+        return ` ERROR: Failed to transmit secure wire signal: ${err.message || err}`;
       }
     }
     case 'token':
@@ -1233,21 +1233,21 @@ export async function executeCliCommand(command: string): Promise<string> {
         const otp = String(numericValue % 1000000).padStart(6, '0');
 
         executeSaveDb();
-        return `🔑 TOKEN GENERATED SUCCESSFULLY\n---------------------------------\n` +
+        return ` TOKEN GENERATED SUCCESSFULLY\n---------------------------------\n` +
           `• Single-Use Alpha Token: ${tokenVal}\n` +
           `• Dynamic 6-Digit 2FA Code: ${otp} (Valid for 10 min window)\n` +
           `• Sync active across secure channels.`;
       } catch (err: any) {
-        return `💥 ERROR generating temporary credentials: ${err.message || err}`;
+        return ` ERROR generating temporary credentials: ${err.message || err}`;
       }
     }
     case 'delete-lounge':
     case 'delete_lounge': {
-      if (!arg1) return '❌ ERROR: Command "delete-lounge" requires a <lounge_id> argument.';
+      if (!arg1) return ' ERROR: Command "delete-lounge" requires a <lounge_id> argument.';
       try {
         const loungeIndex = (db.lounges || []).findIndex(l => l.lounge_id === arg1 || l.id === arg1);
         if (loungeIndex === -1) {
-          return `❌ ERROR: Lounge with ID '${arg1}' not found.`;
+          return ` ERROR: Lounge with ID '${arg1}' not found.`;
         }
         
         if (db.lounges) {
@@ -1258,28 +1258,28 @@ export async function executeCliCommand(command: string): Promise<string> {
         }
         
         saveDb(true);
-        return `✅ SUCCESS: Lounge '${arg1}' has been permanently deleted.`;
+        return ` SUCCESS: Lounge '${arg1}' has been permanently deleted.`;
       } catch (err: any) {
-        return `❌ ERROR deleting lounge: ${err.message || err}`;
+        return ` ERROR deleting lounge: ${err.message || err}`;
       }
     }
 case 'restore-user':
     case 'restore_user': {
       try {
-        if (!arg1) return '❌ ERROR: Command "restore-user" requires a <username> argument.';
+        if (!arg1) return ' ERROR: Command "restore-user" requires a <username> argument.';
         let candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase() || u.username.toLowerCase() === `@${arg1.replace(/^@/, '').toLowerCase()}`);
         let isHardPurged = false;
 
         if (!candidate) {
           candidate = db.purged_users && db.purged_users.find(u => u.username.toLowerCase() === arg1.toLowerCase() || u.username.toLowerCase() === `@${arg1.replace(/^@/, '').toLowerCase()}`);
           if (!candidate) {
-            return `❌ ERROR: Account "${arg1}" is not registered.`;
+            return ` ERROR: Account "${arg1}" is not registered.`;
           }
           isHardPurged = true;
         }
 
         if (!isHardPurged && candidate.status !== 'purged') {
-          return `❌ ERROR: User @${candidate.username} is not purged.`;
+          return ` ERROR: User @${candidate.username} is not purged.`;
         }
 
         candidate.status = 'active';
@@ -1311,18 +1311,18 @@ case 'restore-user':
           timestamp: new Date().toISOString()
         });
         saveDb(true);
-        return `✅ SUCCESS: User @${candidate.username} successfully restored to active status.`;
+        return ` SUCCESS: User @${candidate.username} successfully restored to active status.`;
       } catch (err: any) {
-        return `❌ ERROR restoring user: ${err.message || err}`;
+        return ` ERROR restoring user: ${err.message || err}`;
       }
     }
     case 'reset-avatar':
     case 'reset_avatar': {
       try {
-        if (!arg1) return '❌ ERROR: Command "reset-avatar" requires a <username> argument.';
+        if (!arg1) return ' ERROR: Command "reset-avatar" requires a <username> argument.';
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase() || u.username.toLowerCase() === `@${arg1.replace(/^@/, '').toLowerCase()}`);
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered.`;
+          return ` ERROR: Account "${arg1}" is not registered.`;
         }
         const uId = candidate.user_id;
         const profile = db.profiles && db.profiles.find(p => p.user_id === uId);
@@ -1330,27 +1330,27 @@ case 'restore-user':
           profile.avatar = "";
           profile.updated_at = new Date().toISOString();
           saveDb(true);
-          return `✅ SUCCESS: Avatar for user @${candidate.username} has been reset.`;
+          return ` SUCCESS: Avatar for user @${candidate.username} has been reset.`;
         } else {
-          return `❌ ERROR: Profile for user @${candidate.username} not found.`;
+          return ` ERROR: Profile for user @${candidate.username} not found.`;
         }
       } catch (err: any) {
-        return `❌ ERROR resetting avatar: ${err.message || err}`;
+        return ` ERROR resetting avatar: ${err.message || err}`;
       }
     }
     case 'delete-user':
     case 'delete_user': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "delete-user" requires a <username> argument.`;
+          return ` ERROR: Command "delete-user" requires a <username> argument.`;
         }
         const candidate = db.users.find(u => u.username.toLowerCase() === arg1.toLowerCase() || u.username.toLowerCase() === `@${arg1.replace(/^@/, '').toLowerCase()}`);
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered.`;
+          return ` ERROR: Account "${arg1}" is not registered.`;
         }
 
         if (candidate.role === 'CLI_ADMIN' || candidate.role === 'LOGIN_ADMIN') {
-          return `❌ ERROR: Severe privilege violation - cannot delete system-level initial accounts.`;
+          return ` ERROR: Severe privilege violation - cannot delete system-level initial accounts.`;
         }
 
         const uId = candidate.user_id;
@@ -1416,12 +1416,12 @@ case 'restore-user':
     case 'delete_ticket': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "delete-ticket" requires a <ticket_id> argument.`;
+          return ` ERROR: Command "delete-ticket" requires a <ticket_id> argument.`;
         }
         const ticketId = arg1.trim();
         const ticket = db.tickets.find(t => t.ticket_id === ticketId);
         if (!ticket) {
-          return `❌ ERROR: Ticket with id "${ticketId}" not found in database.`;
+          return ` ERROR: Ticket with id "${ticketId}" not found in database.`;
         }
 
         db.tickets = db.tickets.filter(t => t.ticket_id !== ticketId);
@@ -1448,18 +1448,18 @@ case 'restore-user':
     case 'override_user': {
       try {
         if (!arg1) {
-          return `❌ ERROR: Command "override-user" requires a <username> argument. Syntax: override-user <username> <new_password> [new_recovery_key] [new_safe_word]`;
+          return ` ERROR: Command "override-user" requires a <username> argument. Syntax: override-user <username> <new_password> [new_recovery_key] [new_safe_word]`;
         }
         const queryName = arg1.trim();
         const candidate = db.users.find(u => u.username.toLowerCase() === queryName.toLowerCase() || u.username.toLowerCase() === `@${queryName.replace(/^@/, '').toLowerCase()}`);
         if (!candidate) {
-          return `❌ ERROR: Account "${arg1}" is not registered in registries.`;
+          return ` ERROR: Account "${arg1}" is not registered in registries.`;
         }
 
         const argsList = parts.slice(2);
         const newPassword = argsList[0];
         if (!newPassword) {
-          return `❌ ERROR: Password is required. Syntax: override-user <username> <new_password> [new_recovery_key] [new_safe_word]`;
+          return ` ERROR: Password is required. Syntax: override-user <username> <new_password> [new_recovery_key] [new_safe_word]`;
         }
 
         const newRecoveryKey = argsList[1] || crypto.randomBytes(16).toString('hex').toUpperCase();
@@ -1499,7 +1499,7 @@ case 'restore-user':
           `• Safe Word set to: "${newSafeWord}"\n` +
           `• Account state set to ACTIVE. No active locks remaining.`;
       } catch (err: any) {
-        return `💥 ERROR during override user credentials sequence: ${err.message || err}`;
+        return ` ERROR during override user credentials sequence: ${err.message || err}`;
       }
     }
     case 'users-list': {
@@ -1513,13 +1513,13 @@ case 'restore-user':
         });
         return out;
       } catch (err: any) {
-        return `❌ ERROR: ${err.message}`;
+        return ` ERROR: ${err.message}`;
       }
     }
     case 'users-cat': {
-      if (!arg1) return '❌ ERROR: Command requires <username> or <id>.';
+      if (!arg1) return ' ERROR: Command requires <username> or <id>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       const profile = ((db.profiles || []).find((p: any) => p.user_id === user.user_id) || {}) as any;
       const wallet = (db.user_wallets || []).find((w: any) => w.user_id === user.user_id);
       const balanceText = wallet ? `${(wallet.balance_cents / 100).toFixed(2)} VLM` : '0.00 VLM';
@@ -1535,40 +1535,40 @@ case 'restore-user':
       return out;
     }
     case 'users-jail': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       user.status = 'quarantined';
       user.updated_at = new Date().toISOString();
       executeSaveDb();
-      return `✅ SUCCESS: Quarantined user @${user.username} to sandboxed channels.`;
+      return ` SUCCESS: Quarantined user @${user.username} to sandboxed channels.`;
     }
     case 'users-unjail': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       user.status = 'active';
       user.updated_at = new Date().toISOString();
       executeSaveDb();
-      return `✅ SUCCESS: Lifted quarantined status for @${user.username}.`;
+      return ` SUCCESS: Lifted quarantined status for @${user.username}.`;
     }
     case 'users-set-role': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       const role = parts[2]?.toUpperCase();
       if (!['USER', 'SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(role)) {
-        return `❌ ERROR: Invalid role. Must be USER, SUPPORT_ADMIN, LOGIN_ADMIN, or CLI_ADMIN.`;
+        return ` ERROR: Invalid role. Must be USER, SUPPORT_ADMIN, LOGIN_ADMIN, or CLI_ADMIN.`;
       }
       user.role = role;
       user.updated_at = new Date().toISOString();
       executeSaveDb();
-      return `✅ SUCCESS: Promoted role for @${user.username} to ${role}.`;
+      return ` SUCCESS: Promoted role for @${user.username} to ${role}.`;
     }
     case 'users-deactivate': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       user.status = 'deactivated';
       user.updated_at = new Date().toISOString();
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
@@ -1583,24 +1583,24 @@ case 'restore-user':
         status: 'pending_verification'
       });
       executeSaveDb();
-      return `✅ SUCCESS: Initiated 14-day deactivation grace period for @${user.username}.`;
+      return ` SUCCESS: Initiated 14-day deactivation grace period for @${user.username}.`;
     }
     case 'users-cancel-deactivation': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       (db as any).account_deletion_requests = ((db as any).account_deletion_requests || []).filter((r: any) => r.user_id !== user.user_id);
       user.status = 'active';
       user.updated_at = new Date().toISOString();
       executeSaveDb();
-      return `✅ SUCCESS: Cancelled pending deletion and reactivated @${user.username}.`;
+      return ` SUCCESS: Cancelled pending deletion and reactivated @${user.username}.`;
     }
     case 'users-release-assets': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       const req = ((db as any).account_deletion_requests || []).find((r: any) => r.user_id === user.user_id && r.status === 'pending_verification');
-      if (!req) return `❌ ERROR: No pending deletion request found for @${user.username}.`;
+      if (!req) return ` ERROR: No pending deletion request found for @${user.username}.`;
       
       const elapsed = Date.now() - req.requested_at;
       const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
@@ -1608,7 +1608,7 @@ case 'restore-user':
         const remaining = TWO_DAYS - elapsed;
         const hours = Math.floor(remaining / (1000 * 60 * 60));
         const mins = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-        return `❌ ERROR: Mandatory 2-day verification window has not elapsed. Time remaining: ${hours}h ${mins}m.`;
+        return ` ERROR: Mandatory 2-day verification window has not elapsed. Time remaining: ${hours}h ${mins}m.`;
       }
 
       // Aggregate user ledger transactions
@@ -1635,15 +1635,15 @@ case 'restore-user':
       });
 
       executeSaveDb();
-      return `✅ SUCCESS: Security buffer verified. Assets released for @${user.username}. Balance: ${totalBalance.toFixed(2)} VLM.`;
+      return ` SUCCESS: Security buffer verified. Assets released for @${user.username}. Balance: ${totalBalance.toFixed(2)} VLM.`;
     }
     case 'users-confirm-purge': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       const req = ((db as any).account_deletion_requests || []).find((r: any) => r.user_id === user.user_id);
       if (!req || req.status !== 'assets_released') {
-        return `❌ ERROR: User @${user.username} has not passed the 2-day asset release verification. Run '/users/release-assets' first.`;
+        return ` ERROR: User @${user.username} has not passed the 2-day asset release verification. Run '/users/release-assets' first.`;
       }
 
       user.username = `Deleted User [${user.uid || user.user_id}]`;
@@ -1664,12 +1664,12 @@ case 'restore-user':
       req.status = 'purged';
 
       executeSaveDb();
-      return `✅ SUCCESS: User permanently purged. Personal markers scrubbed. Wallet history archived for financial audit compliance.`;
+      return ` SUCCESS: User permanently purged. Personal markers scrubbed. Wallet history archived for financial audit compliance.`;
     }
     case 'users-purge-fraudster': {
-      if (!arg1) return '❌ ERROR: Command requires <username>.';
+      if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
 
       const wallets = (db.user_wallets || []).filter((w: any) => w.user_id === user.user_id);
       let totalSeizedCents = 0;
@@ -1750,17 +1750,17 @@ case 'restore-user':
       return `[SOVEREIGN TREASURY TAKEOVER COMPLETE]\n• Seized Assets: ${totalSeized.toFixed(2)} VLM\n• Account state updated to Purged. Active sessions terminated.`;
     }
     case 'users-blacklist': {
-      if (!arg1) return `❌ ERROR: Specify target ID to blacklist.`;
+      if (!arg1) return ` ERROR: Specify target ID to blacklist.`;
       (db as any).blacklist = (db as any).blacklist || [];
       (db as any).blacklist.push({ id: arg1, type: 'IP', reason: 'Manual entry via Web CLI', created_at: Date.now() });
       executeSaveDb();
-      return `✅ SUCCESS: Added "${arg1}" to blacklists.`;
+      return ` SUCCESS: Added "${arg1}" to blacklists.`;
     }
     case 'users-unblacklist': {
-      if (!arg1) return `❌ ERROR: Specify target ID to unblacklist.`;
+      if (!arg1) return ` ERROR: Specify target ID to unblacklist.`;
       (db as any).blacklist = ((db as any).blacklist || []).filter((b: any) => b.id !== arg1);
       executeSaveDb();
-      return `✅ SUCCESS: Removed "${arg1}" from blacklists.`;
+      return ` SUCCESS: Removed "${arg1}" from blacklists.`;
     }
     case 'users-pending-deletions': {
       const list = (db as any).account_deletion_requests || [];
@@ -1776,7 +1776,7 @@ case 'restore-user':
     case 'lounges-cat': {
       const id = arg1;
       const lounge = (db.lounges || []).find((l: any) => l.lounge_id === id || l.id === id);
-      if (!lounge) return `❌ ERROR: Lounge "${id}" not found.`;
+      if (!lounge) return ` ERROR: Lounge "${id}" not found.`;
       let out = `\n=== LOUNGE METADATA: ${lounge.name} ===\n`;
       out += `  • ID:          ${lounge.lounge_id || lounge.id}\n`;
       out += `  • Description: ${lounge.description || 'None'}\n`;
@@ -1789,56 +1789,56 @@ case 'restore-user':
       const uName = parts[2];
       const lounge = (db.lounges || []).find((l: any) => l.lounge_id === id || l.id === id);
       const user = findUserInDb(uName);
-      if (!lounge || !user) return `❌ ERROR: Verify lounge and user existence.`;
+      if (!lounge || !user) return ` ERROR: Verify lounge and user existence.`;
       lounge.owner_id = user.user_id;
       executeSaveDb();
-      return `✅ SUCCESS: Transferred lounge ownership to @${user.username}.`;
+      return ` SUCCESS: Transferred lounge ownership to @${user.username}.`;
     }
     case 'lounges-lock': {
       const lounge = (db.lounges || []).find((l: any) => l.lounge_id === arg1 || l.id === arg1);
-      if (!lounge) return `❌ ERROR: Lounge not found.`;
+      if (!lounge) return ` ERROR: Lounge not found.`;
       lounge.is_locked = 1;
       executeSaveDb();
-      return `✅ SUCCESS: Lounge locked (read-only mode active).`;
+      return ` SUCCESS: Lounge locked (read-only mode active).`;
     }
     case 'lounges-unlock': {
       const lounge = (db.lounges || []).find((l: any) => l.lounge_id === arg1 || l.id === arg1);
-      if (!lounge) return `❌ ERROR: Lounge not found.`;
+      if (!lounge) return ` ERROR: Lounge not found.`;
       lounge.is_locked = 0;
       executeSaveDb();
-      return `✅ SUCCESS: Lounge unlocked.`;
+      return ` SUCCESS: Lounge unlocked.`;
     }
     case 'lounges-restore-messages': {
       const rpId = arg1;
       const rp = ((db as any).restore_points || []).find((r: any) => r.id === rpId);
-      if (!rp) return `❌ ERROR: Restore point "${rpId}" not found or expired.`;
+      if (!rp) return ` ERROR: Restore point "${rpId}" not found or expired.`;
       db.messages.push(...rp.data);
       executeSaveDb();
-      return `✅ SUCCESS: Restored ${rp.data.length} messages from restore point.`;
+      return ` SUCCESS: Restored ${rp.data.length} messages from restore point.`;
     }
     case 'support-token': {
       const ticket = db.tickets.find((t: any) => t.ticket_id === arg1);
-      if (!ticket) return `❌ ERROR: Ticket not found.`;
+      if (!ticket) return ` ERROR: Ticket not found.`;
       return `  • Support Recovery Token: VEL-REC-**** (Masked for physical channel compliance)`;
     }
     case 'sys-top': {
       return `\nActive processes running: CWD process.pid: ${process.pid} CPU: 0.2% MEM: 31MB`;
     }
     case 'sys-kill': {
-      if (!arg1) return '❌ ERROR: Specify session ID to terminate.';
+      if (!arg1) return ' ERROR: Specify session ID to terminate.';
       db.sessions = db.sessions.filter(s => s.session_id !== arg1);
       executeSaveDb();
-      return `✅ SUCCESS: Session ${arg1} has been terminated.`;
+      return ` SUCCESS: Session ${arg1} has been terminated.`;
     }
     case 'sys-maintenance-enable': {
-      return `✅ SUCCESS: Maintenance mode enabled globally.`;
+      return ` SUCCESS: Maintenance mode enabled globally.`;
     }
     case 'sys-maintenance-disable': {
-      return `✅ SUCCESS: Maintenance mode disabled.`;
+      return ` SUCCESS: Maintenance mode disabled.`;
     }
     case 'audit-user': {
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User not found.`;
+      if (!user) return ` ERROR: User not found.`;
       const logs = (db.audit_logs || []).filter((l: any) => l.target_id === String(user.user_id) || l.target_id === user.username);
       let out = `\n=== METRIC LOGS FOR USER: @${user.username} ===\n`;
       logs.forEach((l: any) => {
@@ -1848,7 +1848,7 @@ case 'restore-user':
     }
     case 'audit-grep': {
       const pattern = arg1;
-      if (!pattern) return `❌ ERROR: Pattern is required.`;
+      if (!pattern) return ` ERROR: Pattern is required.`;
       try {
         const LOG_FILE = path.join(process.cwd(), 'data', 'server.log');
         if (fs.existsSync(LOG_FILE)) {
@@ -1905,16 +1905,16 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
         const actualBalance = (w.balance_cents || 0) / 100;
         if (Math.abs(sum - actualBalance) > 0.01 || !chainValid) {
           mismatched++;
-          out += `  ⚠️ ERROR: @${user?.username || w.user_id} wallet calculation discrepancy.\n`;
+          out += `   ERROR: @${user?.username || w.user_id} wallet calculation discrepancy.\n`;
           out += `     Cached balance: ${actualBalance.toFixed(2)} | Replayed Balance: ${sum.toFixed(2)} | Cryptographic Chain: ${chainValid ? 'OK' : 'CORRUPTED'}\n`;
         }
       });
 
       if (mismatched === 0) {
-        out += `  ✅ SUCCESS: Mathematical integrity replayed successfully for ${totalWallets} wallets.\n`;
-        out += `  ✅ SUCCESS: Rolling hash transaction chain validated successfully.`;
+        out += `   SUCCESS: Mathematical integrity replayed successfully for ${totalWallets} wallets.\n`;
+        out += `   SUCCESS: Rolling hash transaction chain validated successfully.`;
       } else {
-        out += `  ⚠️ WARNING: Found ${mismatched} financial balance/chain deviations.`;
+        out += `   WARNING: Found ${mismatched} financial balance/chain deviations.`;
       }
       return out;
     }
@@ -1927,12 +1927,12 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
         
         if (s.activity_metrics && s.activity_metrics.messagesSent > 500) {
           flagged++;
-          out += `  🚨 FLAGGED SESSION: user @${user?.username} (ID: ${s.session_id})\n`;
+          out += `   FLAGGED SESSION: user @${user?.username} (ID: ${s.session_id})\n`;
           out += `     Discrepancy: User-Agent geographic velocity mutation detected.\n`;
         }
       });
       if (flagged === 0) {
-        out += `  ✅ SEC_OK: 0 active sessions flagged with hijacking footprints.`;
+        out += `   SEC_OK: 0 active sessions flagged with hijacking footprints.`;
       }
       return out;
     }
@@ -1953,10 +1953,10 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
       for (const [ip, users] of Object.entries(groups)) {
         if (users.length > 1) {
           multiple = true;
-          out += `  🔗 Correlated Subnet [${ip}] shared by: ${users.map(u => `@${u}`).join(', ')}\n`;
+          out += `   Correlated Subnet [${ip}] shared by: ${users.map(u => `@${u}`).join(', ')}\n`;
         }
       }
-      if (!multiple) out += `  ✅ SEC_OK: No multi-user correlation subnets detected.`;
+      if (!multiple) out += `   SEC_OK: No multi-user correlation subnets detected.`;
       return out;
     }
     case 'audit-nodes-scan': {
@@ -1967,12 +1967,12 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
           const parent = (db.lounges || []).find((p: any) => p.lounge_id === l.parent_lounge_id);
           if (parent && parent.is_private === 1 && l.is_private === 0) {
             leakCount++;
-            out += `  🚨 LEAK DETECTED: Child Lounge "${l.name}" is public but Parent Lounge "${parent.name}" is private.\n`;
+            out += `   LEAK DETECTED: Child Lounge "${l.name}" is public but Parent Lounge "${parent.name}" is private.\n`;
           }
         }
       });
       if (leakCount === 0) {
-        out += `  ✅ SEC_OK: 0 structural visibility inheritance leaks detected.`;
+        out += `   SEC_OK: 0 structural visibility inheritance leaks detected.`;
       }
       return out;
     }
@@ -1992,31 +1992,31 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
             status: r.status,
             created_at: Date.now()
           });
-          out += `  🔧 Found unbidirectional mapping: @${r.user_id_1} -> @${r.user_id_2}. Reconstituting opposite vector.\n`;
+          out += `   Found unbidirectional mapping: @${r.user_id_1} -> @${r.user_id_2}. Reconstituting opposite vector.\n`;
         }
       });
 
-      out += `  ✅ SUCCESS: Mutual relationship reconstruction verified. Repaired ${fixedCount} mappings.`;
+      out += `   SUCCESS: Mutual relationship reconstruction verified. Repaired ${fixedCount} mappings.`;
       executeSaveDb();
       return out;
     }
     case '/audit/escrows': {
     let out = '\n=== DIAGNOSTICS: ESCROW LOCKS ===\n';
-    out += '  ⏳ Checking active locks...\n  ✅ SUCCESS: No timeout anomalies or balance mismatches found.\n';
+    out += '   Checking active locks...\n   SUCCESS: No timeout anomalies or balance mismatches found.\n';
     return out;
     }
 
     case '/audit/repair': {
       if (!arg1) {
-        return '\n❌ ERROR: Usage: repair <user_id>\n';
+        return '\n ERROR: Usage: repair <user_id>\n';
       }
     
       const user = findUserInDb(arg1);
-      if (!user) return `\n❌ ERROR: User "${arg1}" not found.\n`;
+      if (!user) return `\n ERROR: User "${arg1}" not found.\n`;
     
       const targetUid = user.user_id;
       const wallet = (db as any).user_wallets?.find((w: any) => w.user_id === targetUid);
-      if (!wallet) return `\n❌ ERROR: Wallet not found for user.\n`;
+      if (!wallet) return `\n ERROR: Wallet not found for user.\n`;
     
       // 1. Permanently purge the rogue entry and any previous manual repair deltas
       (db as any).wallet_ledger_entries = (db as any).wallet_ledger_entries.filter(
@@ -2051,23 +2051,23 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
       }
     
       executeSaveDb();
-      return `\n✅ SUCCESS: Automatically recalculated and restored balance to ${calculatedSumCents / 100} VLM for ${arg1}.\n`;
+      return `\n SUCCESS: Automatically recalculated and restored balance to ${calculatedSumCents / 100} VLM for ${arg1}.\n`;
    
   }
 
   case 'fraud-freeze': {
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       user.status = 'frozen';
       executeSaveDb();
-      return `✅ SUCCESS: Frozen all transaction access and active escrow operations for @${user.username}.`;
+      return ` SUCCESS: Frozen all transaction access and active escrow operations for @${user.username}.`;
     }
     case 'fraud-unfreeze': {
       const user = findUserInDb(arg1);
-      if (!user) return `❌ ERROR: User "${arg1}" not found.`;
+      if (!user) return ` ERROR: User "${arg1}" not found.`;
       user.status = 'active';
       executeSaveDb();
-      return `✅ SUCCESS: Unfrozen transactions for @${user.username}.`;
+      return ` SUCCESS: Unfrozen transactions for @${user.username}.`;
     }
     case 'db-orphans-scan': {
       let orphans = 0;
@@ -2079,7 +2079,7 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
           out += `  • Orphaned profile: ID ${p.profile_id} for user_id ${p.user_id}\n`;
         }
       });
-      if (orphans === 0) return `  ✅ SEC_OK: No orphaned databases or tables registered.`;
+      if (orphans === 0) return `   SEC_OK: No orphaned databases or tables registered.`;
       return out;
     }
     case 'db-orphans-clean': {
@@ -2087,7 +2087,7 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
       db.profiles = (db.profiles || []).filter((p: any) => userIds.has(p.user_id));
       db.sessions = (db.sessions || []).filter((s: any) => userIds.has(s.user_id));
       executeSaveDb();
-      return `✅ SUCCESS: Relational databases sanitized. Purged orphaned profiles.`;
+      return ` SUCCESS: Relational databases sanitized. Purged orphaned profiles.`;
     }
     case 'db-backup': {
       const backup = {
@@ -2098,11 +2098,11 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
       };
       const pathBackup = path.join(process.cwd(), 'data', `structural_backup_${Date.now()}.json`);
       fs.writeFileSync(pathBackup, JSON.stringify(backup, null, 2), 'utf8');
-      return `✅ SUCCESS: Non-PII structural and configuration backup exported to: ${pathBackup}`;
+      return ` SUCCESS: Non-PII structural and configuration backup exported to: ${pathBackup}`;
     }
     case 'db-export': {
       const tbl = arg1;
-      if (!tbl || !(db as any)[tbl]) return `❌ ERROR: Specify a valid database table.`;
+      if (!tbl || !(db as any)[tbl]) return ` ERROR: Specify a valid database table.`;
       const masked = (db as any)[tbl].map((row: any) => {
         const cloned = { ...row };
         if (cloned.password_hash) cloned.password_hash = '[MASKED]';
@@ -2113,7 +2113,7 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
       return JSON.stringify(masked, null, 2);
     }
     default: {
-      return `❌ COMMAND NOT RECOGNIZED: "${action}"\nType "help" to list valid virtual console commands.`;
+      return ` COMMAND NOT RECOGNIZED: "${action}"\nType "help" to list valid virtual console commands.`;
     }
   }
 }

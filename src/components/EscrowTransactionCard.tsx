@@ -33,7 +33,7 @@ export default function EscrowTransactionCard({
             </span>
             {escrow.coupon_applied && (
               <span className="text-[9px] font-mono bg-amber-950/50 text-status-away border border-amber-900/20 px-2 py-0.5 rounded-lg">
-                🎟️ {escrow.coupon_applied} Applied
+                 {escrow.coupon_applied} Applied
               </span>
             )}
           </div>
@@ -86,7 +86,7 @@ export default function EscrowTransactionCard({
 
           <div className="bg-black-60 border border-emerald-950 rounded-xl p-3 h-28 overflow-y-auto font-mono text-[8.5px] leading-relaxed text-text-secondary space-y-1">
             {escrow.sandbox_logs.map((logLine, idx) => (
-              <div key={idx} className={logLine.includes('✅') || logLine.includes('SIGNAL') ? 'text-emerald-400' : 'text-text-secondary'}>
+              <div key={idx} className={logLine.includes('') || logLine.includes('SIGNAL') ? 'text-emerald-400' : 'text-text-secondary'}>
                 {logLine}
               </div>
             ))}

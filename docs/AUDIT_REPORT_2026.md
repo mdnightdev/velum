@@ -10,14 +10,14 @@
 
 | Feature / Requirement | Status | Implementation Note |
 | :--- | :--- | :--- |
-| **Integer Cents Math** | ✅ ACHIEVED | `calculateOrderSettlement` follows exact-cents logic. |
-| **25% Intended Harm Penalty** | ✅ ACHIEVED | Implemented in `resolveSupportChatDispute` with double-entry. |
-| **Multi-Currency Wallets** | ✅ ACHIEVED | `wallet_balances` and 1.5% exchange spread implemented. |
-| **KYC Withdrawal Gates** | ✅ ACHIEVED | Hard-gated behind `VERIFIED` status and tiered limits. |
-| **5-Minute Clearing Guarantee**| ❌ MISSING | No background job or timer; requires manual trigger. |
-| **TRC Standardized Codes** | ❌ MISSING | Using `rec_`/`esc_` instead of `DEP-VLM-`/`ESC-HLD-`. |
-| **Permission Priority Algorithm**| ⚠️ PARTIAL | RBAC exists but priority sorting for overlaps is missing. |
-| **Sandbox Execution Logs** | ✅ ACHIEVED | Realistic log simulation in Escrow Card and Controller. |
+| **Integer Cents Math** |  ACHIEVED | `calculateOrderSettlement` follows exact-cents logic. |
+| **25% Intended Harm Penalty** |  ACHIEVED | Implemented in `resolveSupportChatDispute` with double-entry. |
+| **Multi-Currency Wallets** |  ACHIEVED | `wallet_balances` and 1.5% exchange spread implemented. |
+| **KYC Withdrawal Gates** |  ACHIEVED | Hard-gated behind `VERIFIED` status and tiered limits. |
+| **5-Minute Clearing Guarantee**|  MISSING | No background job or timer; requires manual trigger. |
+| **TRC Standardized Codes** |  MISSING | Using `rec_`/`esc_` instead of `DEP-VLM-`/`ESC-HLD-`. |
+| **Permission Priority Algorithm**|  PARTIAL | RBAC exists but priority sorting for overlaps is missing. |
+| **Sandbox Execution Logs** |  ACHIEVED | Realistic log simulation in Escrow Card and Controller. |
 
 ---
 

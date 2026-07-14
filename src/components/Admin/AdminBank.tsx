@@ -419,7 +419,7 @@ export default function AdminBank({
           </div>
 
           <div className="p-3.5 bg-velum-750 rounded-xl border border-white-5 text-[10px] font-mono text-text-secondary text-center uppercase tracking-wide leading-relaxed">
-            ⚖️ <strong>Mathematical Alignment verified</strong>: Velum system capital seed of{' '}
+             <strong>Mathematical Alignment verified</strong>: Velum system capital seed of{' '}
             <span className="text-white">£ 500M</span> converts precisely to{' '}
             <span className="text-white">NT$ 18.40B</span> based on official clearing node ratio coordinates.
           </div>
@@ -743,7 +743,7 @@ export default function AdminBank({
                       />
                     </div>
                     <span className="text-[9px] text-text-secondary font-mono mt-1.5 block uppercase leading-relaxed">
-                      ⚠️ Input negative values (e.g. -100000) to withdraw, positive values (e.g. 250000) to
+                       Input negative values (e.g. -100000) to withdraw, positive values (e.g. 250000) to
                       credit.
                     </span>
                   </div>

@@ -507,16 +507,16 @@ export default function WalletMainDashboard({ currentUserId, isDark = true }: Wa
               <span className="text-[8px] font-bold font-mono text-text-secondary uppercase tracking-wider">Stripe-style Quick Fill Credentials</span>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => fillTestCredentials('VISA')} className="px-2 py-1.5 bg-white-5 hover:bg-white-10 text-[9px] font-mono text-white rounded transition border border-white-5 text-left">
-                  💳 Visa (4222)
+                   Visa (4222)
                 </button>
                 <button type="button" onClick={() => fillTestCredentials('MC')} className="px-2 py-1.5 bg-white-5 hover:bg-white-10 text-[9px] font-mono text-white rounded transition border border-white-5 text-left">
-                  💳 Mastercard (5105)
+                   Mastercard (5105)
                 </button>
                 <button type="button" onClick={() => fillTestCredentials('AMEX')} className="px-2 py-1.5 bg-white-5 hover:bg-white-10 text-[9px] font-mono text-white rounded transition border border-white-5 text-left">
-                  💳 Amex (3782)
+                   Amex (3782)
                 </button>
                 <button type="button" onClick={() => fillTestCredentials('BANK')} className="px-2 py-1.5 bg-white-5 hover:bg-white-10 text-[9px] font-mono text-white rounded transition border border-white-5 text-left">
-                  🏛️ TCB Bank (7000)
+                   TCB Bank (7000)
                 </button>
               </div>
             </div>

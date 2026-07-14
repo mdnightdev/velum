@@ -1322,7 +1322,7 @@ export default function SettingsDrawer({
                   </div>
                   <div className="pt-4 border-t border-white-5 w-full">
                     <div className="text-[10px] text-text-secondary font-mono">Version 2.1.5</div>
-                    <div className="text-[10px] text-text-secondary font-mono mt-1">© 2026 Velum Network. All rights reserved.</div>
+                    <div className="text-[10px] text-text-secondary font-mono mt-1"> 2026 Velum Network. All rights reserved.</div>
                   </div>
                 </div>
               </div>

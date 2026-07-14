@@ -638,11 +638,11 @@ export default function AdminBroadcasts({
                 placeholder={
                   selectedChannel === 'secops'
                     ? broadcastAlert
-                      ? '/📢 Write system broadcast bulletin to dispatch...'
-                      : '/🔒 Send secure executive coordination log entry...'
+                      ? '/ Write system broadcast bulletin to dispatch...'
+                      : '/ Send secure executive coordination log entry...'
                     : selectedChannel === 'velum_lounge'
-                    ? '/✍️ Compose global lounge message...'
-                    : `/🔐 Respond to #${currentRoom?.name || selectedChannel} as administrator...`
+                    ? '/ Compose global lounge message...'
+                    : `/ Respond to #${currentRoom?.name || selectedChannel} as administrator...`
                 }
                 disabled={isPostingMsg}
                 className="w-full text-xs font-mono rounded-xl pl-4 pr-10 py-3.5 outline-none transition bg-velum-800 border border-white-5 text-text-primary focus:border-accent-40 focus:ring-1 focus:ring-accent-20 placeholder:text-text-disabled"

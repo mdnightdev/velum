@@ -483,7 +483,7 @@ export default function AdminTickets({
                               isAdminSender ? 'text-accent' : 'text-text-secondary'
                             }`}
                           >
-                            {isAdminSender ? '📢 CENTRAL OVERSIGHT' : '👤 END-USER SENDER'} &bull;{' '}
+                            {isAdminSender ? ' CENTRAL OVERSIGHT' : ' END-USER SENDER'} &bull;{' '}
                             {m.sender_name}
                           </span>
                           <span className="opacity-45 text-text-secondary">

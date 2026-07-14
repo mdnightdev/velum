@@ -29,8 +29,8 @@ function enrichEscrow(esc: any) {
   if (!sandboxLogs) {
     sandboxLogs = [
       `[SYS-SECURE] INITIALIZING ISO-WORKER DOCK STATE...`,
-      `⚙️ ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
-      `✅ ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
+      ` ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
+      ` ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
     ];
   } else if (typeof sandboxLogs === 'string') {
     try {
@@ -732,11 +732,11 @@ export const createEscrow = async (req: Request, res: Response) => {
 
     const sandbox_logs = [
       `[SYS-SECURE] INITIALIZING ISO-WORKER DOCK STATE...`,
-      `⚙️ ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
-      `📦 INGESTING EXECUTABLE BUNDLE: ${listing.title.replace(/\s+/g, '_').toLowerCase()}.zip`,
-      `🔍 ANALYZING RAW BUFFER FOR METADATA LEAKS... CLEAN`,
-      `⚡ RUNNING SYNTAX VERIFICATION THROUGHOUT MODULE POOL...`,
-      `✅ ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
+      ` ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
+      ` INGESTING EXECUTABLE BUNDLE: ${listing.title.replace(/\s+/g, '_').toLowerCase()}.zip`,
+      ` ANALYZING RAW BUFFER FOR METADATA LEAKS... CLEAN`,
+      ` RUNNING SYNTAX VERIFICATION THROUGHOUT MODULE POOL...`,
+      ` ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
     ];
 
     const newEscrow: EscrowTransaction = {
@@ -786,9 +786,9 @@ export const testSandboxEscrow = async (req: Request, res: Response) => {
     const logsArray = Array.isArray(currentLogs) ? [...currentLogs] : [String(currentLogs)];
     logsArray.push(
       `[SANDBOX] BOOTED V8 ISOLATE INSTANCE WITH ID: ${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-      `🛰️ EMITTING TEST PAYLOAD HANDSHAKE... RECEIVED`,
-      `⚡ MEASURED TIMEOUT IN FLIGHT: 22ms / 50ms ALLOWED LIMIT`,
-      `❇️ SANITY SUITE COMPILATION GREEN. APP DEPLOYED SAFELY.`
+      ` EMITTING TEST PAYLOAD HANDSHAKE... RECEIVED`,
+      ` MEASURED TIMEOUT IN FLIGHT: 22ms / 50ms ALLOWED LIMIT`,
+      ` SANITY SUITE COMPILATION GREEN. APP DEPLOYED SAFELY.`
     );
 
     const updatedEsc = marketRepository.updateEscrow(transactionId, {
@@ -1391,8 +1391,8 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
 
     let logs = [
       `[SYS-DISPUTE] ADMIN '${user.username}' INITIATED DISPUTE RESOLUTION PROTOCOL...`,
-      `⚙️ RESOLUTION: ${resolution}`,
-      `⚙️ PENALTY SYSTEM: ${penalty_applied_to}`
+      ` RESOLUTION: ${resolution}`,
+      ` PENALTY SYSTEM: ${penalty_applied_to}`
     ];
 
     if (resolution === 'REFUND_BUYER') {
@@ -1417,7 +1417,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
         updated_at: Date.now()
       });
 
-      logs.push(`✅ FUNDS RETURNED TO BUYER WALLET: +$${(escrowAmountCents / 100).toFixed(2)}`);
+      logs.push(` FUNDS RETURNED TO BUYER WALLET: +$${(escrowAmountCents / 100).toFixed(2)}`);
 
       // Apply the 25% Seller Penalty if Seller is malicious (Seller Fraud)
       if (penalty_applied_to === 'SELLER') {
@@ -1453,8 +1453,8 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
           created_at: Date.now()
         });
 
-        logs.push(`⚠️ SELLER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
-        logs.push(`🎁 COMPENSATED BUYER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
+        logs.push(` SELLER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
+        logs.push(` COMPENSATED BUYER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
       }
     } else if (resolution === 'RELEASE_SELLER') {
       // Release escrow to the seller
@@ -1491,7 +1491,7 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
         updated_at: Date.now()
       });
 
-      logs.push(`✅ FUNDS RELEASED TO SELLER: +$${(payoutCents / 100).toFixed(2)}`);
+      logs.push(` FUNDS RELEASED TO SELLER: +$${(payoutCents / 100).toFixed(2)}`);
 
       // Apply the 25% Buyer Penalty if Buyer is malicious (Buyer Fraud)
       if (penalty_applied_to === 'BUYER') {
@@ -1527,8 +1527,8 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
           created_at: Date.now()
         });
 
-        logs.push(`⚠️ BUYER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
-        logs.push(`🎁 COMPENSATED SELLER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
+        logs.push(` BUYER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
+        logs.push(` COMPENSATED SELLER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
       }
     }
 

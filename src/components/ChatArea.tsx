@@ -346,13 +346,13 @@ export default function ChatArea({
           
           if (uploadRes.ok) {
             const data = await uploadRes.json();
-            onSendMessage(`[Voice Note 🔊 duration:${durationSeconds}s url:${data.url}]`, null, false);
+            onSendMessage(`[Voice Note  duration:${durationSeconds}s url:${data.url}]`, null, false);
           } else {
-            onSendMessage(`[Voice Note 🔊 duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
+            onSendMessage(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
           }
         } catch (err) {
           console.error('Audio upload failed:', err);
-          onSendMessage(`[Voice Note 🔊 duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
+          onSendMessage(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
         }
       });
     }
@@ -1173,7 +1173,7 @@ export default function ChatArea({
 
         {isPrivateSublounge && (
           <div className="mb-2 px-2 text-[10px] font-mono text-text-disabled uppercase tracking-wider select-none">
-            🛡️ Sanctions in the parent lounge apply here automatically
+             Sanctions in the parent lounge apply here automatically
           </div>
         )}
 
