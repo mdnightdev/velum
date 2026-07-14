@@ -217,6 +217,48 @@ export async function performUserRegistration(params: {
     first_seen: new Date().toISOString(),
     last_seen: new Date().toISOString()
   });
+  // Seed the 4 official frontend simulated financial methods for the new user
+  if (!db.external_financial_accounts) db.external_financial_accounts = [];
+  if (!db.payment_methods) db.payment_methods = [];
+
+  const defaultMethods = [
+    { kind: 'CARD', institution: 'Visa', number: '4222 2222 2222 4242', label: 'Visa Card ****4242', balance: 500000 },
+    { kind: 'CARD', institution: 'Mastercard', number: '5105 1051 0510 5105', label: 'Mastercard ****5105', balance: 500000 },
+    { kind: 'CARD', institution: 'American Express', number: '3782 8224 6310 005', label: 'American Express ****0005', balance: 500000 },
+    { kind: 'BANK_ACCOUNT', institution: 'Taiwan Cooperative Bank', number: '7000 0012 3456 7890', label: 'Taiwan Cooperative Bank ****7890', balance: 1500000 }
+  ];
+
+  db.external_financial_accounts = db.external_financial_accounts || [];
+  db.payment_methods = db.payment_methods || [];
+
+  defaultMethods.forEach((method, index) => {
+    const accountToken = generatePrefixedId('tok');
+    
+    db.external_financial_accounts!.push({
+      account_token: accountToken,
+      user_id: userId,
+      account_kind: method.kind,
+      institution: method.institution,
+      masked_number: method.number,
+      available_cents: method.balance,
+      expires_at_sim: method.kind === 'CARD' ? Date.now() + 31536000000 * 3 : null,
+      is_active: true,
+      created_at: Date.now()
+    });
+
+    db.payment_methods!.push({
+      payment_method_id: generatePrefixedId('pm'),
+      user_id: userId,
+      method_type: method.kind,
+      external_account_token: accountToken,
+      display_label: method.label,
+      is_default: index === 0, // Sets Visa as default initially
+      status: 'ACTIVE',
+      added_at: Date.now()
+    });
+  });
+
+
 
   saveDb();
 

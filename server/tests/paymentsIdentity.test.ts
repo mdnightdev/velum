@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { 
   submitKyc, 
-  simulateKycReview,
+  processKycReview,
   addPaymentMethod,
   rechargeWallet,
   requestWithdrawal,
-  simulateWithdrawalReview
+  processWithdrawalReview
 } from '../controllers/payments';
 import { db } from '../db.js';
 
@@ -29,7 +29,7 @@ vi.mock('../db.js', () => {
     ],
     user_wallets: [{ user_id: 102, balance_cents: 50000 }],
     external_financial_accounts: [
-      { account_token: 'ext_1', is_active: true, simulated_available_cents: 5000000, simulated_institution: 'Test Bank', account_kind: 'BANK_ACCOUNT', masked_number: '1234', created_at: Date.now() }
+      { account_token: 'ext_1', is_active: true, available_cents: 5000000, institution: 'Test Bank', account_kind: 'BANK_ACCOUNT', masked_number: '1234', created_at: Date.now() }
     ],
     external_processor_events: []
   };
@@ -55,7 +55,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
     // fixed duplicate user_wallets mock
     // fixed duplicate user_wallets mock
     db.external_financial_accounts = [
-      { account_token: 'ext_1', user_id: 102, simulated_institution: 'Test Bank', account_kind: 'BANK_ACCOUNT', masked_number: '1234', is_active: true, simulated_available_cents: 1000000, created_at: Date.now() }
+      { account_token: 'ext_1', user_id: 102, institution: 'Test Bank', account_kind: 'BANK_ACCOUNT', masked_number: '1234', is_active: true, available_cents: 1000000, created_at: Date.now() }
     ];
   });
 
@@ -85,7 +85,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
       json: vi.fn().mockImplementation((data) => { resReviewData = data; return resReview; })
     } as any;
 
-    await simulateKycReview(reqReview, resReview);
+    await processKycReview(reqReview, resReview);
     expect(db.kyc_verifications![0].status).toBe('VERIFIED');
     expect(db.kyc_verifications![0].verification_level).toBe('FULL');
   });
@@ -231,7 +231,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
       json: vi.fn().mockImplementation((data) => { resReviewData = data; return resReview; })
     } as any;
 
-    await simulateWithdrawalReview(reqReview, resReview);
+    await processWithdrawalReview(reqReview, resReview);
     if (!resReviewData.success) console.error(resReviewData);
     expect(resReviewData.success).toBe(true);
     expect(resReviewData.status).toBe('COMPLETED');

@@ -553,9 +553,9 @@ export interface ExternalFinancialAccount {
   account_token: string;
   user_id: number;
   account_kind: 'CARD' | 'BANK_ACCOUNT' | string;
-  simulated_institution: string;
+  institution: string;
   masked_number: string;
-  simulated_available_cents: number;
+  available_cents: number;
   expires_at_sim?: number | string | null;
   is_active: boolean | number;
   created_at: number | string;

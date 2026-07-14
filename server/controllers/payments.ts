@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { db, loadDb, saveDb } from '../db.js';
 import { generateUlid } from '../utils/ulid.js';
 import { walletRepository } from '../db/walletRepository.js';
+import { bankStore } from '../services/bankStore.js';
 import { 
   UserWallet, 
   WalletLedgerEntry, 
@@ -92,7 +93,7 @@ export function simulateProcessorCharge(
   if (account.expires_at_sim && Date.now() > Number(account.expires_at_sim)) {
     return { result: 'DECLINED_EXPIRED', latency };
   }
-  if (amountCents > account.simulated_available_cents) {
+  if (amountCents > account.available_cents) {
     return { result: 'DECLINED_INSUFFICIENT_FUNDS', latency };
   }
   if (Math.random() < randomDeclineRate) {
@@ -102,7 +103,7 @@ export function simulateProcessorCharge(
   return {
     result: 'APPROVED',
     latency,
-    new_available_cents: account.simulated_available_cents - amountCents
+    new_available_cents: account.available_cents - amountCents
   };
 }
 
@@ -117,7 +118,7 @@ export function simulateProcessorPayout(
   return {
     result: 'APPROVED',
     latency,
-    new_available_cents: account.simulated_available_cents + amountCents
+    new_available_cents: account.available_cents + amountCents
   };
 }
 
@@ -184,7 +185,7 @@ export const submitKyc = async (req: Request, res: Response) => {
 };
 
 // Simulate KYC review by admin or automatic trigger
-export const simulateKycReview = async (req: Request, res: Response) => {
+export const processKycReview = async (req: Request, res: Response) => {
   try {
     const { kycId, outcome, level } = req.body; // outcome: 'VERIFIED' | 'REJECTED', level: 'BASIC' | 'FULL'
     if (!kycId || !outcome) {
@@ -228,9 +229,9 @@ export const getPaymentMethods = async (req: Request, res: Response) => {
     return {
       ...m,
       method_id: m.payment_method_id,
-      simulated_institution: ext?.simulated_institution || 'Unknown Institution',
+      institution: ext?.institution || 'Unknown Institution',
       masked_number: ext?.masked_number || '••••',
-      simulated_external_balance_cents: ext?.simulated_available_cents ?? 0
+      external_balance_cents: ext?.available_cents ?? 0
     };
   });
 
@@ -282,9 +283,9 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
       account_token: accountToken,
       user_id: Number(user.user_id),
       account_kind: methodType,
-      simulated_institution: simulatedInstitution,
+      institution: simulatedInstitution,
       masked_number: formattedMaskedNumber,
-      simulated_available_cents: startingBalance,
+      available_cents: startingBalance,
       expires_at_sim: methodType === 'CARD' ? Date.now() + 31536000000 * 3 : null, // 3 years expiry
       is_active: true,
       created_at: Date.now()
@@ -315,9 +316,9 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
     res.json({
       ...newMethod,
       method_id: newMethod.payment_method_id,
-      simulated_institution: simulatedInstitution,
+      institution: simulatedInstitution,
       masked_number: formattedMaskedNumber,
-      simulated_external_balance_cents: startingBalance
+      external_balance_cents: startingBalance
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to record payment method.' });
@@ -372,6 +373,7 @@ export const updateSimulatedAccountBalance = async (req: Request, res: Response)
 
     res.json({ success: true, account: updated });
   } catch (err) {
+    console.error("[DEPOSIT-ERROR]", err);
     res.status(500).json({ error: 'Failed to update simulated balance.' });
   }
 };
@@ -437,7 +439,7 @@ export const rechargeWallet = async (req: Request, res: Response) => {
     db.external_processor_events.push(processorEvent);
 
     if (chargeSim.result === 'APPROVED' && chargeSim.new_available_cents !== undefined) {
-      extAccount.simulated_available_cents = chargeSim.new_available_cents;
+      extAccount.available_cents = chargeSim.new_available_cents;
       newRequest.status = 'SIMULATED_COMPLETE';
 
      // Ledger update (Legacy)
@@ -450,6 +452,18 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       const usdWallet = getOrCreateWalletBalance(user.user_id, 'USD');
       usdWallet.balance_cents += amount;
       usdWallet.updated_at = Date.now();
+
+        // Deposit corresponding TWD to central bank reserve
+        const twdAmountCents = Math.round(amount / 0.031);
+        await bankStore.updateAccountBalance('bank_central_reserve', twdAmountCents);
+        await bankStore.logTransaction({
+            account_id: 'bank_central_reserve',
+            type: 'deposit',
+            amount_cents: twdAmountCents,
+            currency_code: 'TWD',
+            description: `Central liquidity backup for user ${user.user_id} recharge`,
+            status: 'completed'
+        });
 
       const ledgerEntry: WalletLedgerEntry = {
         entry_id: `led_${generateUlid()}`,
@@ -464,7 +478,7 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       };
       db.wallet_ledger_entries.push(ledgerEntry);
 
-      savedDb(true);
+      saveDb(true);
       return res.json({
         success: true,
         status: 'SIMULATED_COMPLETE',
@@ -482,6 +496,7 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       });
     }
   } catch (err) {
+    console.error("[RECHARGE-CATCH-ERROR]", err);
     res.status(500).json({ error: 'Recharge process failed.' });
   }
 };
@@ -572,7 +587,7 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
 };
 
 // Simulate Admin Payout Review
-export const simulateWithdrawalReview = async (req: Request, res: Response) => {
+export const processWithdrawalReview = async (req: Request, res: Response) => {
   try {
     const { requestId, action } = req.body; // action: 'APPROVE' | 'REJECT'
     if (!requestId || !action) {
@@ -623,7 +638,7 @@ export const simulateWithdrawalReview = async (req: Request, res: Response) => {
       db.external_processor_events.push(processorEvent);
 
       if (payoutSim.result === 'APPROVED' && payoutSim.new_available_cents !== undefined) {
-        extAccount.simulated_available_cents = payoutSim.new_available_cents;
+        extAccount.available_cents = payoutSim.new_available_cents;
         request.status = 'COMPLETED';
         request.reviewed_at = Date.now();
         request.reviewed_by_admin_id = 'SYSTEM_AUTO_ADMIN';

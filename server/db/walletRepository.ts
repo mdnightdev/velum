@@ -162,7 +162,7 @@ export const walletRepository = {
   updateExternalAccountBalance(token: string, userId: number, newBalanceCents: number): ExternalFinancialAccount | undefined {
     const account = this.findExternalAccountByToken(token, userId);
     if (account) {
-      account.simulated_available_cents = newBalanceCents;
+      account.available_cents = newBalanceCents;
       saveDb(true);
     }
     return account;

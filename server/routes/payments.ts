@@ -3,13 +3,13 @@ import { authenticateUser } from '../middleware.js';
 import {
   getWalletAndIdentity,
   submitKyc,
-  simulateKycReview,
+  processKycReview,
   getPaymentMethods,
   addPaymentMethod,
   removePaymentMethod,
   rechargeWallet,
   requestWithdrawal,
-  simulateWithdrawalReview,
+  processWithdrawalReview,
   getLedgerHistory,
   getExternalProcessorEvents,
   getWithdrawalsHistory,
@@ -29,7 +29,7 @@ paymentsRouter.post('/payments/exchange', authenticateUser, exchangeCurrencyActi
 
 paymentsRouter.get('/payments/wallet', authenticateUser, getWalletAndIdentity);
 paymentsRouter.post('/payments/kyc', authenticateUser, submitKyc);
-paymentsRouter.post('/payments/kyc/review', authenticateUser, simulateKycReview);
+paymentsRouter.post('/payments/kyc/review', authenticateUser, processKycReview);
 
 paymentsRouter.get('/payments/methods', authenticateUser, getPaymentMethods);
 paymentsRouter.post('/payments/methods', authenticateUser, addPaymentMethod);
@@ -39,7 +39,7 @@ paymentsRouter.put('/payments/methods/balance', authenticateUser, updateSimulate
 
 paymentsRouter.post('/payments/recharge', authenticateUser, rechargeWallet);
 paymentsRouter.post('/payments/withdraw', authenticateUser, requestWithdrawal);
-paymentsRouter.post('/payments/withdraw/review', authenticateUser, simulateWithdrawalReview);
+paymentsRouter.post('/payments/withdraw/review', authenticateUser, processWithdrawalReview);
 
 paymentsRouter.get('/payments/ledger', authenticateUser, getLedgerHistory);
 paymentsRouter.get('/payments/processor-events', authenticateUser, getExternalProcessorEvents);

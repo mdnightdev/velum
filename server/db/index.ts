@@ -1342,8 +1342,9 @@ export function executeSaveDb() {
               t.sku_variant_id || null,
               t.platform_fee !== undefined && t.platform_fee !== null ? Number(t.platform_fee) : null,
               t.payout_amount !== undefined && t.payout_amount !== null ? Number(t.payout_amount) : null,
-              t.sandbox_logs || null,
-              t.sandbox_state || null
+            t.sandbox_logs ? JSON.stringify(t.sandbox_logs) : null,
+  	        t.sandbox_state ? JSON.stringify(t.sandbox_state) : null
+              
             );
           }
         } catch (err) {

@@ -469,7 +469,7 @@ export default function AdminPanel({
 
       {/* Main Workspace Frame */}
       <main className="flex-1 min-w-0 min-h-0 bg-velum-900 flex flex-col overflow-hidden p-6 relative">
-        <div className="flex-1 overflow-y-auto scrollbar-none pr-1">
+        <div className="flex-1 w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
           {activeTab === 'overview' && (
             <AdminOverview
               metrics={metrics}
