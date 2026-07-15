@@ -15,7 +15,13 @@ try {
   process.stdout.write = originalStdoutWrite;
 }
 
-const MIDNIGHT_PASSWORD = process.env.MIDNIGHT_PASSWORD ||'' ;
+const MIDNIGHT_PASSWORD = process.env.MIDNIGHT_PASSWORD || '';
+
+if (!MIDNIGHT_PASSWORD) {
+  console.error('[SECURITY ERROR] MIDNIGHT_PASSWORD environment variable is not defined or empty.');
+  console.error('Please configure your administrative credentials in your .env file.');
+  process.exit(1);
+}
 
 // Create a mutable output stream that can mask password inputs
 const mutableStdout = new Writable({

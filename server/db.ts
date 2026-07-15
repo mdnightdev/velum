@@ -4,6 +4,7 @@ import { createServer as createHttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
+import { bankStore } from './services/bankStore.js';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { hashArgon2id as cryptoHashArgon2id, safeCompare } from './crypto.js';
@@ -49,18 +50,15 @@ export const originalConsoleError = console.error;
 
 export let activeAdminToken: string | null = crypto.randomBytes(32).toString('hex');
 
-import { 
-  encryptData, 
+import { encryptData, 
   decryptData, 
   hashArgon2id, 
   verifyArgon2id, 
   checkCredential, 
-  getStepOTP, 
-  checkStepOTP,
   legacyDecryptionSucceeded,
   DB_CRYPTO_KEY,
-  DB_CRYPTO_KEY_LEGACY
-} from './utils/crypto.js';
+  DB_CRYPTO_KEY_LEGACY } from './services/cryptoService.js';
+import { checkStepOTP, getStepOTP } from './services/otpService.js';
 import { generateUlid, BASE32_CHARS, generatePrefixedId } from './utils/ulid.js';
 
 export { 
@@ -290,6 +288,13 @@ export async function hardResetAndSeedDatabase(force = false) {
   const lexie_panic = process.env.LEXIE_PANIC_PHRASE || '';
   const lexie_rec = process.env.LEXIE_RECOVERY_KEY || '';
 
+  if (!midnight_pass || !midnight_safe || !midnight_panic || !midnight_rec ||
+      !lexie_pass || !lexie_safe || !lexie_panic || !lexie_rec) {
+    console.warn('[SYS-SECURE] WARNING: Administrative environment variables (MIDNIGHT_PASSWORD, LEXIE_PASSWORD, etc.) are unconfigured or empty in .env.');
+    console.warn('[SYS-SECURE] Database administrative accounts cannot be seeded/reset to prevent insecure empty credentials.');
+    return;
+  }
+
   // Verify compatibility with the client-side pre-hashing flow
   const midnight = db.users && db.users.find(u => u.role === 'CLI_ADMIN');
   const lexie = db.users && db.users.find(u => u.role === 'LOGIN_ADMIN');
@@ -300,6 +305,57 @@ export async function hardResetAndSeedDatabase(force = false) {
   } else if (!midnight.password_hash?.startsWith('argon2id:') || !lexie.password_hash?.startsWith('argon2id:')) {
     console.log('[SYS-SECURE] Administrative password hashes are legacy or missing argon2id. Triggering upgrade re-seed.');
     mustReSeed = true;
+  } else {
+    // Check if the current environmental parameters match the stored database hashes.
+    // If not, we MUST re-seed to apply the new environmental values.
+    try {
+      // 1. Midnight credentials check
+      const mid_pass_pre = crypto.createHash('sha256').update(midnight.salt + midnight_pass).digest('hex');
+      const mid_safe_pre = crypto.createHash('sha256').update(midnight.salt + midnight_safe).digest('hex');
+      const mid_panic_pre = crypto.createHash('sha256').update(midnight.salt + midnight_panic).digest('hex');
+      
+      const mid_pass_ok = await verifyArgon2id(mid_pass_pre, midnight.salt, midnight.password_hash);
+      const mid_safe_ok = await verifyArgon2id(mid_safe_pre, midnight.salt, midnight.safe_word_hash);
+      const mid_panic_ok = await verifyArgon2id(mid_panic_pre, midnight.salt, midnight.panic_phrase_hash);
+      
+      let mid_rec_ok = false;
+      if (midnight.recovery_key_hash && midnight.recovery_key_hash.startsWith('argon2id:')) {
+        const parts = midnight.recovery_key_hash.split(':');
+        if (parts.length === 3) {
+          const mid_rec_salt = parts[1];
+          const mid_rec_pre = crypto.createHash('sha256').update(mid_rec_salt + midnight_rec).digest('hex');
+          mid_rec_ok = await verifyArgon2id(mid_rec_pre, undefined, midnight.recovery_key_hash);
+        }
+      }
+
+      // 2. Lexie credentials check
+      const lex_pass_pre = crypto.createHash('sha256').update(lexie.salt + lexie_pass).digest('hex');
+      const lex_safe_pre = crypto.createHash('sha256').update(lexie.salt + lexie_safe).digest('hex');
+      const lex_panic_pre = crypto.createHash('sha256').update(lexie.salt + lexie_panic).digest('hex');
+      
+      const lex_pass_ok = await verifyArgon2id(lex_pass_pre, lexie.salt, lexie.password_hash);
+      const lex_safe_ok = await verifyArgon2id(lex_safe_pre, lexie.salt, lexie.safe_word_hash);
+      const lex_panic_ok = await verifyArgon2id(lex_panic_pre, lexie.salt, lexie.panic_phrase_hash);
+      
+      let lex_rec_ok = false;
+      if (lexie.recovery_key_hash && lexie.recovery_key_hash.startsWith('argon2id:')) {
+        const parts = lexie.recovery_key_hash.split(':');
+        if (parts.length === 3) {
+          const lex_rec_salt = parts[1];
+          const lex_rec_pre = crypto.createHash('sha256').update(lex_rec_salt + lexie_rec).digest('hex');
+          lex_rec_ok = await verifyArgon2id(lex_rec_pre, undefined, lexie.recovery_key_hash);
+        }
+      }
+
+      if (!mid_pass_ok || !mid_safe_ok || !mid_panic_ok || !mid_rec_ok ||
+          !lex_pass_ok || !lex_safe_ok || !lex_panic_ok || !lex_rec_ok) {
+        console.log('[SYS-SECURE] Environmental parameters differ from database hashes. Forcing administrative re-seed.');
+        mustReSeed = true;
+      }
+    } catch (err) {
+      console.error('[SYS-SECURE] Error validating active admin credentials. Forcing re-seed for safety:', err);
+      mustReSeed = true;
+    }
   }
 
   if (!force && !mustReSeed && db.users && db.users.length > 0) {
@@ -542,6 +598,7 @@ export async function executeCliCommand(command: string): Promise<string> {
     else if (action === '/sys/top') action = 'sys-top';
     else if (action === '/sys/risk') action = 'risk';
     else if (action === '/sys/token') action = 'token';
+    else if (action === '/sys/fund') action = 'fund';
     else if (action === '/sys/kill') action = 'sys-kill';
     else if (action === '/sys/clear-sessions') action = 'clear-sessions';
     else if (action === '/sys/maint-on') action = 'sys-maintenance-enable';
@@ -565,6 +622,48 @@ export async function executeCliCommand(command: string): Promise<string> {
   }
 
   switch (action) {
+            case 'fund': {
+      if (!arg1 || !arg2Plus) return ' ERROR: Usage: fund <amount_cents> <description>';
+      let amountCents = parseInt(arg1);
+      if (isNaN(amountCents)) return ' ERROR: Amount must be an integer (in cents).';
+      
+      const accounts = await bankStore.getAccounts();
+      const memberTrust = accounts.find((a: any) => a.account_id === 'bank_member_trust');
+      const centralReserve = accounts.find((a: any) => a.account_id === 'bank_central_reserve');
+      
+      if (!memberTrust) return ' ERROR: bank_member_trust account not found.';
+      if (!centralReserve) return ' ERROR: bank_central_reserve account not found.';
+      
+      memberTrust.balance_cents += amountCents;
+      centralReserve.balance_cents -= amountCents;
+      
+      await bankStore.saveAccounts(accounts);
+      
+      const transactions = await bankStore.getTransactions();
+      transactions.push({
+        transaction_id: `bank_tx_${Date.now()}`,
+        account_id: 'bank_member_trust',
+        type: 'deposit',
+        amount_cents: Math.abs(amountCents),
+        currency_code: 'TWD',
+        description: `Transfer from Central Reserve: ${arg2Plus}`,
+        timestamp: Date.now(),
+        status: 'completed'
+      });
+      transactions.push({
+        transaction_id: `bank_tx_${Date.now()+1}`,
+        account_id: 'bank_central_reserve',
+        type: 'withdrawal',
+        amount_cents: Math.abs(amountCents),
+        currency_code: 'TWD',
+        description: `Transfer to Member Trust: ${arg2Plus}`,
+        timestamp: Date.now(),
+        status: 'completed'
+      });
+      await bankStore.saveTransactions(transactions);
+      
+      return ` SUCCESS: Transferred ${amountCents/100} TWD from Central Reserve to Member Trust.`;
+    }
     case 'help': {
       return `VELUM EXECUTIVE ADMIN COMMAND CONTROL PANEL\n` +
         `========================================================\n` +
@@ -2018,37 +2117,25 @@ const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) 
       const wallet = (db as any).user_wallets?.find((w: any) => w.user_id === targetUid);
       if (!wallet) return `\n ERROR: Wallet not found for user.\n`;
     
-      // 1. Permanently purge the rogue entry and any previous manual repair deltas
-      (db as any).wallet_ledger_entries = (db as any).wallet_ledger_entries.filter(
-        (e: any) => e.entry_id !== 'led_rogue123' && !(e.user_id === targetUid && e.entry_type === 'SYSTEM_REPAIR')
-      );
-    
-      // 2. Automatically calculate what the correct sum should be from pristine records
-      const cleanEntries = (db as any).wallet_ledger_entries.filter(
-        (e: any) => e.user_id === targetUid && e.entry_type !== 'RECHARGE' && e.currency_code !== 'USD'
-      );
+      // Find the rogue entry to reverse it (Append-only approach)
+      const rogueEntry = (db as any).wallet_ledger_entries.find((e: any) => e.entry_id === 'led_rogue123' && e.user_id === targetUid);
+      if (rogueEntry) {
+         // Issue a correcting entry instead of deleting
+         const correctingEntry = {
+            entry_id: `led_repair_${Date.now()}`,
+            user_id: targetUid,
+            amount_cents: -Number(rogueEntry.amount_cents || 0),
+            balance_after_cents: wallet.balance_cents - Number(rogueEntry.amount_cents || 0),
+            entry_type: 'SYSTEM_REPAIR',
+            actor_type: 'SYSTEM',
+            created_at: Date.now()
+         };
+         (db as any).wallet_ledger_entries.push(correctingEntry);
+         wallet.balance_cents = correctingEntry.balance_after_cents;
+      }
       
-      let calculatedSumCents = 0;
-      for (const e of cleanEntries) {
-        calculatedSumCents += Number(e.amount_cents || 0);
-      }
-    
-      // 3. Sync the profile's cached balance to match the ledger sum perfectly
-      wallet.balance_cents = calculatedSumCents;
-    
-      // 4. Re-bake the rolling hash chain for the clean ledger entries
-      let precedingHash = 'GENESIS_HASH';
-      const sorted = [...(db as any).wallet_ledger_entries]
-        .filter((e: any) => e.user_id === targetUid && e.entry_type !== 'RECHARGE' && e.currency_code !== 'USD')
-        .sort((a, b) => Number(a.created_at || 0) - Number(b.created_at || 0));
-    
-      for (const entry of sorted) {
-        const calculatedHash = crypto.createHash('sha256')
-          .update(`${entry.entry_id}:${entry.user_id}:${entry.amount_cents}:${entry.entry_type}:${precedingHash}`)
-          .digest('hex');
-        entry.rolling_hash = calculatedHash;
-        precedingHash = calculatedHash;
-      }
+      const calculatedSumCents = wallet.balance_cents;
+
     
       executeSaveDb();
       return `\n SUCCESS: Automatically recalculated and restored balance to ${calculatedSumCents / 100} VLM for ${arg1}.\n`;

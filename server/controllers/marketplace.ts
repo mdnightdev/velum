@@ -12,8 +12,10 @@ import { db, saveDb, loadDb } from '../db.js';
 import { userRepository } from '../db/userRepository.js';
 import { marketRepository } from '../db/marketRepository.js';
 import { walletRepository } from '../db/walletRepository.js';
+import { processCreateEscrow, processReleaseEscrow, processRevertEscrow, processResolveDispute } from '../services/marketplaceService.js';
 import { calculateOrderSettlement } from '../utils/marketEngine.js';
 import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
+import { generateTrcCode } from '../utils/trc.js';
 
 // Helper to enrich escrow with dynamic calculated values or defaults for SQLite loaded records
 function enrichEscrow(esc: any) {
@@ -618,148 +620,18 @@ export const createEscrow = async (req: Request, res: Response) => {
   try {
     const { listingId, couponCode, skuVariantId } = req.body;
     const user = (req as any).user;
-
     if (!listingId) {
       return res.status(400).json({ error: 'Listing identity is required.' });
     }
-
     loadDb();
-    const listing = marketRepository.findListingById(listingId);
-    if (!listing) {
-      return res.status(404).json({ error: 'Listing not found.' });
+    
+    const result = await processCreateEscrow(listingId, user.user_id, user.username, couponCode, skuVariantId);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-
-    if (listing.status !== 'ACTIVE') {
-      return res.status(400).json({ error: 'Listing is no longer active.' });
-    }
-
-    if (listing.verification_status && listing.verification_status !== 'APPROVED') {
-      return res.status(400).json({ error: 'Listing is pending verification.' });
-    }
-
-    if (listing.inventory_count !== undefined) {
-      if (listing.inventory_count <= 0) {
-        return res.status(400).json({ error: 'Listing is out of stock.' });
-      }
-    }
-
-    if (Number(listing.seller_id) === Number(user.user_id)) {
-      return res.status(400).json({ error: 'You are forbidden from acquiring your own listings.' });
-    }
-
-    const basePrice = (listing.discount_price !== undefined && listing.discount_price !== null) ? listing.discount_price : listing.price;
-    const basePriceCents = Math.round(basePrice * 100);
-
-    let additionalCostCents = 0;
-    let selectedSku: any = undefined;
-    if (skuVariantId) {
-      db.market_sku_variants = db.market_sku_variants || [];
-      selectedSku = db.market_sku_variants.find(s => s && s.sku_id === skuVariantId);
-      if (selectedSku) {
-        additionalCostCents = selectedSku.additional_cost_cents || 0;
-      }
-    }
-
-    const itemPriceCents = basePriceCents + additionalCostCents;
-    let validatedCouponApplied: string | undefined = undefined;
-    let couponObj: any = undefined;
-
-    if (couponCode) {
-      const targetCode = couponCode.toUpperCase().trim();
-      const coupon = marketRepository.findCouponByCode(targetCode);
-      if (coupon) {
-        couponObj = coupon;
-      }
-    }
-
-    const settlement = calculateOrderSettlement(
-      itemPriceCents,
-      0, // 0% tax by default
-      0.05, // 5% platform fee
-      couponObj
-    );
-
-    if (settlement.error) {
-      return res.status(400).json({ error: settlement.error });
-    }
-
-    if (couponObj) {
-      marketRepository.updateCoupon(couponObj.coupon_id, {
-        usage_count: (couponObj.usage_count || 0) + 1
-      });
-      validatedCouponApplied = couponObj.code;
-    }
-
-    if (listing.inventory_count !== undefined) {
-      const updatedInventory = listing.inventory_count - 1;
-      marketRepository.updateListing(listing.listing_id, {
-        inventory_count: updatedInventory,
-        status: updatedInventory <= 0 ? 'OUT_OF_STOCK' : 'ACTIVE'
-      });
-    } else {
-      marketRepository.updateListing(listing.listing_id, {
-        status: 'PENDING_ESCROW'
-      });
-    }
-
-    // Buyer Capital Deduction = orderTotalCents + taxCents
-    const priceCents = settlement.gross_amount_cents - settlement.discount_deduction_cents + settlement.net_tax_amount_cents;
-    const buyerWallet = walletRepository.getOrCreateWallet(user.user_id);
-
-    if (buyerWallet.balance_cents < priceCents) {
-      return res.status(400).json({ error: 'Insufficient wallet ledger balance.' });
-    }
-
-    const platformFee = parseFloat((settlement.platform_fee_deduction_cents / 100).toFixed(2));
-    const finalPayout = parseFloat((settlement.payout_net_amount_cents / 100).toFixed(2));
-
-    const transactionId = generatePrefixedId('esc');
-
-    walletRepository.updateWalletBalance(user.user_id, buyerWallet.balance_cents - priceCents);
-
-    walletRepository.createLedgerEntry({
-      entry_id: generatePrefixedId('led'),
-      user_id: Number(user.user_id),
-      entry_type: 'ESCROW_HOLD',
-      amount_cents: -priceCents,
-      balance_after_cents: buyerWallet.balance_cents,
-      related_transaction_id: transactionId,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    });
-
-    const sandbox_logs = [
-      `[SYS-SECURE] INITIALIZING ISO-WORKER DOCK STATE...`,
-      ` ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
-      ` INGESTING EXECUTABLE BUNDLE: ${listing.title.replace(/\s+/g, '_').toLowerCase()}.zip`,
-      ` ANALYZING RAW BUFFER FOR METADATA LEAKS... CLEAN`,
-      ` RUNNING SYNTAX VERIFICATION THROUGHOUT MODULE POOL...`,
-      ` ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
-    ];
-
-    const newEscrow: EscrowTransaction = {
-      transaction_id: transactionId,
-      listing_id: listingId,
-      buyer_id: user.user_id,
-      buyer_username: user.username,
-      seller_id: listing.seller_id,
-      amount: parseFloat((priceCents / 100).toFixed(2)),
-      coupon_applied: validatedCouponApplied,
-      sku_variant_id: skuVariantId || null,
-      platform_fee: platformFee,
-      payout_amount: finalPayout,
-      status: 'HELD_IN_ESCROW',
-      sandbox_state: 'DEPLOYED_SANDBOX',
-      sandbox_logs,
-      created_at: Date.now(),
-      updated_at: Date.now()
-    };
-
-    marketRepository.createEscrow(newEscrow);
-
-    res.json(enrichEscrow(newEscrow));
+    
+    saveDb();
+    res.json(enrichEscrow(result.escrow!));
   } catch (err: any) {
     console.error('Error initiating escrow hold:', err);
     res.status(500).json({ error: 'Failed to open escrow hold.' });
@@ -808,78 +680,18 @@ export const releaseEscrow = async (req: Request, res: Response) => {
   try {
     const { transactionId } = req.params;
     const user = (req as any).user;
-
     loadDb();
-    const escrow = marketRepository.findEscrowById(transactionId);
-    if (!escrow) {
-      return res.status(404).json({ error: 'Escrow transaction not located.' });
+    
+    const result = await processReleaseEscrow(transactionId, user.user_id, false);
+    if (!result.success) {
+      // For some of these, we were returning 404 or 403. We can just use 400 for generic error or parse it.
+      if (result.error?.includes('not located')) return res.status(404).json({ error: result.error });
+      if (result.error?.includes('Forbidden')) return res.status(403).json({ error: result.error });
+      return res.status(400).json({ error: result.error });
     }
-
-    if (Number(escrow.buyer_id) !== Number(user.user_id)) {
-      return res.status(403).json({ error: 'Forbidden: Only the buyer is authorized to release funds.' });
-    }
-
-    if (escrow.status !== 'HELD_IN_ESCROW') {
-      return res.status(400).json({ error: 'Escrow is not in editable HELD_IN_ESCROW status.' });
-    }
-
-    const openDisputes = (db.market_support_chats || []).filter(
-      chat => chat && chat.order_id === transactionId && chat.is_disputed && !chat.resolved_at
-    );
-    if (openDisputes.length > 0) {
-      return res.status(400).json({ error: 'Cannot release escrow: There is an active open dispute/support chat for this transaction.' });
-    }
-
-    marketRepository.updateEscrow(transactionId, {
-      status: 'RELEASED',
-      updated_at: Date.now()
-    });
-
-    const listing = marketRepository.findListingById(escrow.listing_id);
-    if (listing) {
-      if (listing.inventory_count === undefined) {
-        marketRepository.updateListing(listing.listing_id, {
-          status: 'COMPLETED'
-        });
-      }
-    }
-
-    // Credit the seller's wallet
-    const sellerWallet = walletRepository.getOrCreateWallet(escrow.seller_id);
-    const releaseCents = Math.round(escrow.amount * 100);
-    const feeCents = Math.round((escrow.platform_fee || 0) * 100);
-    const payoutCents = releaseCents - feeCents;
-
-    walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents + payoutCents);
-
-    walletRepository.createLedgerEntry({
-      entry_id: `${generatePrefixedId('led')}_1`,
-      user_id: Number(escrow.seller_id),
-      entry_type: 'ESCROW_RELEASE',
-      amount_cents: releaseCents,
-      balance_after_cents: sellerWallet.balance_cents + feeCents,
-      related_transaction_id: escrow.transaction_id,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    });
-
-    walletRepository.createLedgerEntry({
-      entry_id: `${generatePrefixedId('led')}_2`,
-      user_id: Number(escrow.seller_id),
-      entry_type: 'PLATFORM_FEE',
-      amount_cents: -feeCents,
-      balance_after_cents: sellerWallet.balance_cents,
-      related_transaction_id: escrow.transaction_id,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    });
-
-    const finalEscrow = marketRepository.findEscrowById(transactionId);
-    res.json(enrichEscrow(finalEscrow));
+    
+    saveDb();
+    res.json(enrichEscrow(result.escrow!));
   } catch (err: any) {
     console.error('Error releasing escrow capital:', err);
     res.status(500).json({ error: 'Failed to release capital hold.' });
@@ -891,58 +703,19 @@ export const revertEscrow = async (req: Request, res: Response) => {
   try {
     const { transactionId } = req.params;
     const user = (req as any).user;
-
     loadDb();
-    const esc = marketRepository.findEscrowById(transactionId);
-    if (!esc) {
-      return res.status(404).json({ error: 'Transaction index not found.' });
+    
+    const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
+    const result = await processRevertEscrow(transactionId, user.user_id, isAdmin);
+    
+    if (!result.success) {
+      if (result.error?.includes('not found')) return res.status(404).json({ error: result.error });
+      if (result.error?.includes('Unauthorized')) return res.status(403).json({ error: result.error });
+      return res.status(400).json({ error: result.error });
     }
     
-    const isBuyer = Number(esc.buyer_id) === Number(user.user_id);
-    const isSeller = Number(esc.seller_id) === Number(user.user_id);
-    const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
-
-    if (!isBuyer && !isSeller && !isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized and forbidden from reverting escrow ledger.' });
-    }
-
-    if (esc.status !== 'HELD_IN_ESCROW') {
-      return res.status(400).json({ error: 'Escrow is not in active HELD_IN_ESCROW hold to revert.' });
-    }
-
-    marketRepository.updateEscrow(transactionId, {
-      status: 'REVERTED',
-      updated_at: Date.now()
-    });
-
-    const listing = marketRepository.findListingById(esc.listing_id);
-    if (listing) {
-      marketRepository.updateListing(listing.listing_id, {
-        status: 'ACTIVE',
-        inventory_count: listing.inventory_count !== undefined ? listing.inventory_count + 1 : undefined
-      });
-    }
-
-    // Credit buyer's wallet
-    const buyerWallet = walletRepository.getOrCreateWallet(esc.buyer_id);
-    const refundCents = Math.round(esc.amount * 100);
-    walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
-
-    walletRepository.createLedgerEntry({
-      entry_id: `${generatePrefixedId('led')}_rf`,
-      user_id: Number(esc.buyer_id),
-      entry_type: 'ESCROW_REFUND',
-      amount_cents: refundCents,
-      balance_after_cents: buyerWallet.balance_cents,
-      related_transaction_id: esc.transaction_id,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    });
-
-    const finalEsc = marketRepository.findEscrowById(transactionId);
-    res.json(enrichEscrow(finalEsc));
+    saveDb();
+    res.json(enrichEscrow(result.escrow!));
   } catch (err) {
     res.status(500).json({ error: 'Escrow reversion state exception.' });
   }
@@ -986,7 +759,7 @@ export const createRefundRequest = async (req: Request, res: Response) => {
       });
     }
 
-    const refundId = generatePrefixedId('ref');
+    const refundId = generateTrcCode('refund', 'AST48');
     const newRefundRequest = {
       request_id: refundId,
       escrow_transaction_id: escrowTransactionId,
@@ -999,16 +772,16 @@ export const createRefundRequest = async (req: Request, res: Response) => {
     marketRepository.createRefundRequest(newRefundRequest);
 
     // Credit buyer's wallet
-    const buyerWallet = walletRepository.getOrCreateWallet(esc.buyer_id);
-    const refundCents = Math.round(esc.amount * 100);
-    walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
+    const buyerWallet2 = walletRepository.getOrCreateWallet(esc.buyer_id);
+    const refundCents2 = Math.round(esc.amount * 100);
+    walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet2.balance_cents + refundCents2);
 
     walletRepository.createLedgerEntry({
-      entry_id: `${generatePrefixedId('led')}_rf`,
+      entry_id: generateTrcCode('refund', 'AST48'),
       user_id: Number(esc.buyer_id),
       entry_type: 'ESCROW_REFUND',
-      amount_cents: refundCents,
-      balance_after_cents: buyerWallet.balance_cents,
+      amount_cents: refundCents2,
+      balance_after_cents: buyerWallet2.balance_cents,
       related_transaction_id: esc.transaction_id,
       actor_type: 'USER',
       actor_id: String(user.user_id),
@@ -1058,7 +831,7 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
       walletRepository.updateWalletBalance(esc.seller_id, sellerWallet.balance_cents + payoutCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_mr`,
+        entry_id: generateTrcCode('release', 'AST48'),
         user_id: Number(esc.seller_id),
         entry_type: 'ESCROW_RELEASE',
         amount_cents: releaseCents,
@@ -1071,7 +844,7 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
       });
 
       walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_mf`,
+        entry_id: generateTrcCode('release', 'FEE'),
         user_id: Number(esc.seller_id),
         entry_type: 'PLATFORM_FEE',
         amount_cents: -feeCents,
@@ -1102,7 +875,7 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
       walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_mrf`,
+        entry_id: generateTrcCode('refund', 'AST48'),
         user_id: Number(esc.buyer_id),
         entry_type: 'ESCROW_REFUND',
         amount_cents: refundCents,
@@ -1168,7 +941,7 @@ export const triggerAutoSettlement = async (req: Request, res: Response) => {
       walletRepository.updateWalletBalance(esc.seller_id, sellerWallet.balance_cents + payoutCents);
 
       walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_ar`,
+        entry_id: generateTrcCode('release', 'AST48'),
         user_id: Number(esc.seller_id),
         entry_type: 'ESCROW_RELEASE',
         amount_cents: releaseCents,
@@ -1181,7 +954,7 @@ export const triggerAutoSettlement = async (req: Request, res: Response) => {
       });
 
       walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_af`,
+        entry_id: generateTrcCode('release', 'FEE'),
         user_id: Number(esc.seller_id),
         entry_type: 'PLATFORM_FEE',
         amount_cents: -feeCents,
@@ -1362,197 +1135,24 @@ export const addSupportChatMessage = async (req: Request, res: Response) => {
 export const resolveSupportChatDispute = async (req: Request, res: Response) => {
   try {
     const { chatId } = req.params;
-    const { resolution, penalty_applied_to } = req.body; // resolution: 'REFUND_BUYER' | 'RELEASE_SELLER', penalty_applied_to: 'BUYER' | 'SELLER' | 'NONE'
+    const { resolution, penalty_applied_to } = req.body;
     const user = (req as any).user;
-
+    
     const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
     if (!isAdmin) {
       return res.status(403).json({ error: 'Restricted: Only Velum administrators can resolve active disputes.' });
     }
-
-    loadDb();
-    db.market_support_chats = db.market_support_chats || [];
-    const chat = db.market_support_chats.find(c => c && c.chat_id === chatId);
-    if (!chat) {
-      return res.status(404).json({ error: 'Dispute/support chat not found.' });
-    }
-
-    const escrow = marketRepository.findEscrowById(chat.order_id);
-    if (!escrow) {
-      return res.status(404).json({ error: 'Escrow transaction not found.' });
-    }
-
-    const escrowAmountCents = Math.round(escrow.amount * 100);
-    const platformFeeCents = Math.round((escrow.platform_fee || 0) * 100);
-    const payoutCents = escrowAmountCents - platformFeeCents;
-
-    const buyerWallet = walletRepository.getOrCreateWallet(escrow.buyer_id);
-    const sellerWallet = walletRepository.getOrCreateWallet(escrow.seller_id);
-
-    let logs = [
-      `[SYS-DISPUTE] ADMIN '${user.username}' INITIATED DISPUTE RESOLUTION PROTOCOL...`,
-      ` RESOLUTION: ${resolution}`,
-      ` PENALTY SYSTEM: ${penalty_applied_to}`
-    ];
-
-    if (resolution === 'REFUND_BUYER') {
-      // Revert the escrow back to the buyer
-      walletRepository.updateWalletBalance(escrow.buyer_id, buyerWallet.balance_cents + escrowAmountCents);
-
-      walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_bref`,
-        user_id: Number(escrow.buyer_id),
-        entry_type: 'ESCROW_REFUND',
-        amount_cents: escrowAmountCents,
-        balance_after_cents: buyerWallet.balance_cents + escrowAmountCents,
-        related_transaction_id: escrow.transaction_id,
-        actor_type: 'ADMIN',
-        actor_id: String(user.user_id),
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      marketRepository.updateEscrow(escrow.transaction_id, {
-        status: 'REFUNDED',
-        updated_at: Date.now()
-      });
-
-      logs.push(` FUNDS RETURNED TO BUYER WALLET: +$${(escrowAmountCents / 100).toFixed(2)}`);
-
-      // Apply the 25% Seller Penalty if Seller is malicious (Seller Fraud)
-      if (penalty_applied_to === 'SELLER') {
-        const penaltyCents = Math.round(escrowAmountCents * 0.25);
-        walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents - penaltyCents);
-        walletRepository.updateWalletBalance(escrow.buyer_id, buyerWallet.balance_cents + escrowAmountCents + penaltyCents);
-
-        // Record Seller Penalty
-        walletRepository.createLedgerEntry({
-          entry_id: `${generatePrefixedId('led')}_spen`,
-          user_id: Number(escrow.seller_id),
-          entry_type: 'AUTOMATED_ADJUSTMENT',
-          amount_cents: -penaltyCents,
-          balance_after_cents: sellerWallet.balance_cents - penaltyCents,
-          related_transaction_id: escrow.transaction_id,
-          actor_type: 'ADMIN',
-          actor_id: String(user.user_id),
-          is_simulated: true,
-          created_at: Date.now()
-        });
-
-        // Record Buyer Reward
-        walletRepository.createLedgerEntry({
-          entry_id: `${generatePrefixedId('led')}_brewd`,
-          user_id: Number(escrow.buyer_id),
-          entry_type: 'AUTOMATED_ADJUSTMENT',
-          amount_cents: penaltyCents,
-          balance_after_cents: buyerWallet.balance_cents + escrowAmountCents + penaltyCents,
-          related_transaction_id: escrow.transaction_id,
-          actor_type: 'ADMIN',
-          actor_id: String(user.user_id),
-          is_simulated: true,
-          created_at: Date.now()
-        });
-
-        logs.push(` SELLER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
-        logs.push(` COMPENSATED BUYER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
-      }
-    } else if (resolution === 'RELEASE_SELLER') {
-      // Release escrow to the seller
-      walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents + payoutCents);
-
-      walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_srel`,
-        user_id: Number(escrow.seller_id),
-        entry_type: 'ESCROW_RELEASE',
-        amount_cents: escrowAmountCents,
-        balance_after_cents: sellerWallet.balance_cents + platformFeeCents + payoutCents,
-        related_transaction_id: escrow.transaction_id,
-        actor_type: 'ADMIN',
-        actor_id: String(user.user_id),
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      walletRepository.createLedgerEntry({
-        entry_id: `${generatePrefixedId('led')}_sfee`,
-        user_id: Number(escrow.seller_id),
-        entry_type: 'PLATFORM_FEE',
-        amount_cents: -platformFeeCents,
-        balance_after_cents: sellerWallet.balance_cents + payoutCents,
-        related_transaction_id: escrow.transaction_id,
-        actor_type: 'ADMIN',
-        actor_id: String(user.user_id),
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      marketRepository.updateEscrow(escrow.transaction_id, {
-        status: 'RELEASED',
-        updated_at: Date.now()
-      });
-
-      logs.push(` FUNDS RELEASED TO SELLER: +$${(payoutCents / 100).toFixed(2)}`);
-
-      // Apply the 25% Buyer Penalty if Buyer is malicious (Buyer Fraud)
-      if (penalty_applied_to === 'BUYER') {
-        const penaltyCents = Math.round(escrowAmountCents * 0.25);
-        walletRepository.updateWalletBalance(buyerWallet.user_id, buyerWallet.balance_cents - penaltyCents);
-        walletRepository.updateWalletBalance(sellerWallet.user_id, sellerWallet.balance_cents + payoutCents + penaltyCents);
-
-        // Record Buyer Penalty
-        walletRepository.createLedgerEntry({
-          entry_id: `${generatePrefixedId('led')}_bpen`,
-          user_id: Number(escrow.buyer_id),
-          entry_type: 'AUTOMATED_ADJUSTMENT',
-          amount_cents: -penaltyCents,
-          balance_after_cents: buyerWallet.balance_cents - penaltyCents,
-          related_transaction_id: escrow.transaction_id,
-          actor_type: 'ADMIN',
-          actor_id: String(user.user_id),
-          is_simulated: true,
-          created_at: Date.now()
-        });
-
-        // Record Seller Reward
-        walletRepository.createLedgerEntry({
-          entry_id: `${generatePrefixedId('led')}_srewd`,
-          user_id: Number(escrow.seller_id),
-          entry_type: 'AUTOMATED_ADJUSTMENT',
-          amount_cents: penaltyCents,
-          balance_after_cents: sellerWallet.balance_cents + payoutCents + penaltyCents,
-          related_transaction_id: escrow.transaction_id,
-          actor_type: 'ADMIN',
-          actor_id: String(user.user_id),
-          is_simulated: true,
-          created_at: Date.now()
-        });
-
-        logs.push(` BUYER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
-        logs.push(` COMPENSATED SELLER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
-      }
-    }
-
-    // Mark support chat as resolved
-    chat.resolved_at = Date.now();
     
-    // Add resolving message to chat
-    chat.messages.push({
-      message_id: `${generatePrefixedId('msg')}_res`,
-      sender_id: user.user_id,
-      sender_username: 'SYSTEM',
-      content: `Dispute officially resolved by Administrator '${user.username}'. Verdict: ${resolution}. Penalty: ${penalty_applied_to}.`,
-      created_at: Date.now()
-    });
-
-    // Write to escrow logs
-    const existingLogs = escrow.sandbox_logs || [];
-    marketRepository.updateEscrow(escrow.transaction_id, {
-      sandbox_logs: [...existingLogs, ...logs]
-    });
-
-    saveDb();
-
-    res.json({ success: true, chat, escrow: marketRepository.findEscrowById(escrow.transaction_id) });
+    loadDb();
+    const result = await processResolveDispute(chatId, resolution, penalty_applied_to, user.user_id, user.username);
+    
+    if (!result.success) {
+      if (result.error?.includes('not found')) return res.status(404).json({ error: result.error });
+      return res.status(400).json({ error: result.error });
+    }
+    
+    // processResolveDispute already called saveDb() but we can call it again or not
+    res.json({ success: true, chat: result.chat, escrow: result.escrow });
   } catch (err) {
     console.error('Error in resolveSupportChatDispute:', err);
     res.status(500).json({ error: 'Failed to resolve dispute.' });

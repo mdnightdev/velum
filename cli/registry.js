@@ -295,7 +295,12 @@ exports.COMMAND_REGISTRY = {
             desc: 'Generate dynamic 2FA operator token and OTP',
             risk: 'MEDIUM'
         },
-        kill: {
+        fund: {
+        desc: 'Fund member trust from central reserve',
+        risk: 'CRITICAL',
+        args: ['<amount_cents>', '"<description>"']
+      },
+      kill: {
             desc: 'Force terminate a specific session',
             risk: 'MEDIUM',
             args: ['<session_id>']

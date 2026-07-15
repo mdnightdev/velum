@@ -6,6 +6,9 @@ import {
   Sparkles, Globe, Clock, Shield, Zap, Play, LogOut, Info, Ticket, ChevronRight
 } from 'lucide-react';
 import PasswordInput from '../../components/PasswordInput';
+import { SettingsPrivacyTab } from './SettingsTabs/SettingsPrivacyTab';
+import { SettingsAccountTab } from './SettingsTabs/SettingsAccountTab';
+
 import TicketsMainDashboard from '../../components/SidebarTabs/TicketsMainDashboard';
 import { useResponsive } from '../../hooks/useResponsive';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -744,310 +747,42 @@ export default function SettingsDrawer({
             )}
             
             {(activeView === 'account' || (!isMobile && activeView === 'menu')) && (
-              <form onSubmit={handleSaveProfile} className="w-full max-w-4xl space-y-8">
-                
-                {profileMsg && (
-                  <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{profileMsg}</span>
-                  </div>
-                )}
-
-                {profileError && (
-                  <div className="p-3.5 bg-red-500/5 border border-red-500/10 text-red-500 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>{profileError}</span>
-                  </div>
-                )}
-
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Account</h3>
-
-                <div className="flex flex-col lg:flex-row gap-8 items-start">
-                  {/* Left Side: Live Glassmorphic Profile Preview Card */}
-                  <div className="w-full lg:w-72 shrink-0 bg-velum-800/80 backdrop-blur-md border border-white-10 rounded-2xl overflow-hidden shadow-2xl p-5 relative font-sans text-white">
-                    <div className="absolute top-3 right-3 flex gap-1">
-                      <span className="px-1.5 py-0.5 bg-accent/20 text-accent text-[8px] font-mono font-bold uppercase rounded-md">Live Preview</span>
-                    </div>
-                    
-                    <div className="flex flex-col items-center text-center mt-3">
-                      <div className="relative group mb-4">
-                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-accent/40 bg-white-5 flex items-center justify-center font-bold text-white text-lg">
-                          {avatarPreview || (avatarColor === 'custom' && avatarUrl) ? (
-                            <img 
-                              src={avatarPreview || avatarUrl} 
-                              alt="Avatar" 
-                              className="w-full h-full object-cover" 
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className={`w-full h-full flex items-center justify-center text-xl font-mono font-bold uppercase ${getAvatarClass(avatarColor)}`}>
-                              {displayName.slice(0, 1) || 'P'}
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer rounded-full"
-                          title="Change Photo"
-                        >
-                          <Camera className="w-5 h-5 text-white" />
-                        </button>
-                      </div>
-
-                      <h4 className="text-sm font-bold text-white truncate max-w-full">{displayName || 'Username'}</h4>
-                      <p className="text-[10px] font-mono text-accent truncate max-w-full">@{currentUsername.replace('@', '')}</p>
-                      
-                      {bio && (
-                        <p className="text-[11px] text-text-secondary mt-3 italic line-clamp-2 px-3">&quot;{bio}&quot;</p>
-                      )}
-
-                      <div className="w-full border-t border-white-5 my-4" />
-                      
-                      <div className="flex items-center justify-center gap-4 text-[9px] font-mono text-text-secondary uppercase tracking-wider">
-                        <div className="flex items-center gap-1">
-                          <Globe className="w-3 h-3 text-text-secondary" />
-                          <span>Warsaw, PL</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-text-secondary" />
-                          <span>Active now</span>
-                        </div>
-                      </div>
-
-                      {/* Display live stats */}
-                      <div className="grid grid-cols-2 gap-2 w-full mt-4 bg-black/35 p-2.5 rounded-xl border border-white-5 text-center">
-                        <div>
-                          <div className="text-sm font-bold text-white">{loungesCount}</div>
-                          <div className="text-[8px] text-text-secondary uppercase tracking-wider font-mono">Lounges</div>
-                        </div>
-                        <div className="border-l border-white-5">
-                          <div className="text-sm font-bold text-white">{connectionsCount}</div>
-                          <div className="text-[8px] text-text-secondary uppercase tracking-wider font-mono">Connections</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Side: Configuration Inputs */}
-                  <div className="flex-1 w-full space-y-4">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      accept="image/*"
-                      className="hidden"
-                    />
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Display Name</label>
-                      <input
-                        type="text"
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        maxLength={25}
-                        className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
-                        required
-                      />
-                      <div className="text-right text-[9px] text-text-secondary font-mono">
-                        {displayName.length}/25
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Username</label>
-                      <input
-                        type="text"
-                        value={`@${currentUsername.replace('@', '')}`}
-                        readOnly
-                        className="w-full bg-black/30 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-secondary outline-none cursor-not-allowed"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Bio / About</label>
-                      <textarea
-                        value={bio}
-                        onChange={(e) => setBio(e.target.value)}
-                        rows={3}
-                        maxLength={150}
-                        className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent resize-none"
-                      />
-                      <div className="text-right text-[9px] text-text-secondary font-mono">
-                        {bio.length}/150
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-white-5">
-                      <div className="space-y-3">
-                        <label className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Avatar Color</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {['blue', 'emerald', 'amber', 'purple'].map((c) => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => {
-                                setAvatarColor(c);
-                                setAvatarUrl('');
-                              }}
-                              className={`h-12 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${
-                                c === 'blue' ? 'bg-accent-secondary border-accent-secondary' :
-                                c === 'emerald' ? 'bg-status-online border-status-online' :
-                                c === 'amber' ? 'bg-status-away border-status-away' :
-                                'bg-accent border-accent'
-                              } ${avatarColor === c ? 'ring-2 ring-accent ring-offset-2 ring-offset-velum-900' : 'opacity-80 hover:opacity-100'}`}
-                            >
-                              {avatarColor === c && <Check className="w-4 h-4 text-black" />}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <label className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Banner Color</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { name: 'charcoal', class: 'bg-velum-800' },
-                            { name: 'emerald', class: 'bg-emerald-900' },
-                            { name: 'bronze', class: 'bg-yellow-950' },
-                            { name: 'violet', class: 'bg-purple-950' }
-                          ].map((b) => (
-                            <button
-                              key={b.name}
-                              type="button"
-                              onClick={() => setBannerColor(b.name)}
-                              className={`px-3 py-3 rounded-xl text-[9px] font-bold font-mono uppercase transition-all cursor-pointer ${b.class} ${
-                                bannerColor === b.name 
-                                  ? 'ring-2 ring-accent text-text-primary' 
-                                  : 'opacity-70 hover:opacity-100 text-text-secondary'
-                              }`}
-                            >
-                              {b.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4">
-                      <button
-                        type="submit"
-                        disabled={isUploading}
-                        className="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-velum-900 text-[11px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer select-none flex items-center justify-center gap-2"
-                      >
-                        {isUploading ? (
-                          <>
-                            <svg className="animate-spin h-4 w-4 text-velum-900" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Saving...
-                          </>
-                        ) : (
-                          'Save Changes'
-                        )}
-                      </button>
-                    </div>
-
-                  </div>
-                </div>
-
-              </form>
+              <SettingsAccountTab
+                profileMsg={profileMsg}
+                profileError={profileError}
+                handleSaveProfile={handleSaveProfile}
+                avatarPreview={avatarPreview}
+                avatarUrl={avatarUrl}
+                avatarColor={avatarColor}
+                getAvatarClass={getAvatarClass}
+                displayName={displayName}
+                bio={bio}
+                loungesCount={loungesCount}
+                connectionsCount={connectionsCount}
+                currentUsername={currentUsername}
+                currentUserRole={currentUserRole}
+                email={email}
+                setEmail={setEmail}
+                phone={phone}
+                setPhone={setPhone}
+                setDisplayName={setDisplayName}
+                setBio={setBio}
+                handleFileChange={handleFileChange}
+              />
             )}
 
             {activeView === 'privacy' && (
-              <div className="w-full max-w-4xl space-y-8">
-                {accountMsg && (
-                  <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{accountMsg}</span>
-                  </div>
-                )}
-
-                {accountError && (
-                  <div className="p-3.5 bg-red-500/5 border border-red-500/10 text-red-500 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>{accountError}</span>
-                  </div>
-                )}
-
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Privacy & Safety</h3>
-
-                <form onSubmit={handlePasswordReset} className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-text-secondary font-mono">Password</h3>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Current Password</label>
-                    <PasswordInput
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">New Password</label>
-                    <PasswordInput
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Confirm Password</label>
-                    <PasswordInput
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
-                    />
-                  </div>
-
-                  <div>
-                    <button
-                      type="submit"
-                      className="px-5 py-3 bg-velum-800 hover:bg-velum-700 border border-white-5 text-accent text-[11px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer select-none"
-                    >
-                      Update Password
-                    </button>
-                  </div>
-                </form>
-
-                <form onSubmit={handleRegisterOtpSubmit} className="pt-6 border-t border-white-5 space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Secondary Passcode</h3>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Passcode</label>
-                    <PasswordInput
-                      value={permanentOtp}
-                      onChange={(e) => setPermanentOtp(e.target.value)}
-                      className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
-                    />
-                  </div>
-
-                  <div>
-                    <button
-                      type="submit"
-                      className="px-5 py-3 bg-velum-800 hover:bg-velum-700 border border-white-5 text-accent text-[11px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer select-none"
-                    >
-                      Set Passcode
-                    </button>
-                  </div>
-                </form>
-
-                <div className="pt-6 border-t border-white-5 space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-red-500 font-mono">Danger Zone</h3>
-                  <button
-                    type="button"
-                    onClick={handleSelfDeleteAccount}
-                    className="w-full px-4 py-3.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 text-red-400 text-[11px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-2 select-none"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Delete Account</span>
-                  </button>
-                </div>
-
-              </div>
+              <SettingsPrivacyTab
+                accountMsg={accountMsg}
+                accountError={accountError}
+                handlePasswordReset={handlePasswordReset}
+                currentPassword={currentPassword}
+                setCurrentPassword={setCurrentPassword}
+                newPassword={newPassword}
+                setNewPassword={setNewPassword}
+                confirmPassword={confirmPassword}
+                setConfirmPassword={setConfirmPassword}
+              />
             )}
 
             {activeView === 'appearance' && (

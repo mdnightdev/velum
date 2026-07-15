@@ -1,0 +1,2 @@
+sed -i 's/interface WalletMainDashboardProps {/interface WalletMainDashboardProps {\n  isDark?: boolean;/g' src/components/SidebarTabs/WalletMainDashboard.tsx
+sed -i 's/export default function WalletMainDashboard({ currentUserId }: WalletMainDashboardProps) {/export default function WalletMainDashboard({ currentUserId, isDark }: WalletMainDashboardProps) {/g' src/components/SidebarTabs/WalletMainDashboard.tsx

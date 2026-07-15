@@ -299,6 +299,11 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       desc: 'Generate dynamic 2FA operator token and OTP',
       risk: 'MEDIUM'
     },
+    fund: {
+      desc: 'Fund member trust from central reserve',
+      risk: 'CRITICAL',
+      args: ['<amount_cents>', '"<description>"']
+    },
     kill: {
       desc: 'Force terminate a specific session',
       risk: 'MEDIUM',

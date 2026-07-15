@@ -8,14 +8,11 @@ import {
   generateLoginNonce, 
   verifyAndConsumeNonce 
 } from '../db.js';
-import { validateCredentials, executePanicWipe, createNewSession, performUserRegistration } from '../services/authService.js';
+import { validateCredentials, executePanicWipe, createNewSession, performUserRegistration, performUserLogin } from '../services/authService.js';
 import { userRepository } from '../db/userRepository.js';
-import { 
-  hashArgon2id, 
-  verifyArgon2id, 
-  checkStepOTP, 
-  getStepOTP 
-} from '../utils/crypto.js';
+import { hashArgon2id, 
+  verifyArgon2id } from '../services/cryptoService.js';
+import { checkStepOTP, getStepOTP } from '../services/otpService.js';
 import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
 import { generateSessionToken, rateLimiterCache } from '../middleware.js';
 import { cleanIp, getIpGeoLocation } from '../utils.js';
@@ -95,7 +92,7 @@ export const registerUser = async (req: Request, res: Response) => {
 
 export const loginUser = async (req: Request, res: Response) => {
   try {
-    const { username, password, fingerprint, token, nonce } = req.body;
+    const { username, password, fingerprint, nonce } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Missing username or password.' });
@@ -112,192 +109,59 @@ export const loginUser = async (req: Request, res: Response) => {
     const ip = req.ip || req.headers['x-forwarded-for'] || 'local-client';
     const ipStr = Array.isArray(ip) ? ip[0] : String(ip);
 
-    const ipRlKey = `ip:${ipStr}`;
-    const ipRecord = rateLimiterCache.get(ipRlKey);
-    if (ipRecord && ipRecord.blockUntil && Date.now() < ipRecord.blockUntil) {
-      const waitSeconds = Math.ceil((ipRecord.blockUntil - Date.now()) / 1000);
-      return res.status(429).json({ error: `Too many login failures. Please wait ${waitSeconds} seconds.` });
-    }
-
-    const userRlKey = `user:${username.trim().toLowerCase()}`;
-    const userRecord = rateLimiterCache.get(userRlKey);
-    if (userRecord && userRecord.blockUntil && Date.now() < userRecord.blockUntil) {
-      const waitSeconds = Math.ceil((userRecord.blockUntil - Date.now()) / 1000);
-      return res.status(429).json({ error: `Too many login failures. Please wait ${waitSeconds} seconds.` });
-    }
+    const resolvedFingerprint = (fingerprint || req.headers['user-agent'] || 'Generic Web User Agent') as string;
 
     loadDb();
 
-    const queryName = username.trim();
-    const user = userRepository.findByUsername(queryName);
+    const result = await performUserLogin({
+      username,
+      passwordHex: password,
+      ipAddress: ipStr,
+      fingerprint: resolvedFingerprint,
+      generateSessionToken,
+      rateLimiterCache,
+      calculateBackoffMs
+    });
 
-    if (user && user.role === 'SUPPORT_ADMIN') {
-      const baseCleanName = user.username.replace(/^SA-/, '');
-      const baseUser = userRepository.findByUsername(baseCleanName);
-      if (!baseUser || baseUser.promotion_status !== 'APPROVED_SUPPORT') {
-        return res.status(403).json({ error: 'FAIL: Security credentials revoked. Companion support operator nomination status is invalid.' });
-      }
+    if (result.status === 'RATE_LIMITED') {
+      return res.status(429).json({ error: `Too many login failures. Please wait ${result.waitSeconds} seconds.` });
     }
 
-    if (user && user.activation_status === 'AWAITING_ACTIVATION') {
+    if (result.status === 'REVOKED_SUPPORT') {
+      return res.status(403).json({ error: 'FAIL: Security credentials revoked. Companion support operator nomination status is invalid.' });
+    }
+
+    if (result.status === 'NEEDS_ACTIVATION') {
       return res.json({
         needsActivation: true,
-        userId: user.user_id,
-        username: user.username,
-        role: user.role
+        userId: result.user.user_id,
+        username: result.user.username,
+        role: result.user.role
       });
     }
-    
-    if (user) {
-      const isPanicPhrase = await verifyArgon2id(password, user.salt, user.panic_phrase_hash);
-      if (isPanicPhrase) {
-        executePanicWipe();
 
-        const deviceId = generatePrefixedId('dev');
-        const ipId = generatePrefixedId('ip');
-        const ipClean = cleanIp(req);
-        const geoBase = await getIpGeoLocation(ipClean);
-        const { sessionId } = createNewSession(user.user_id, deviceId, ipId);
-
-        const signedToken = generateSessionToken(user.user_id, user.username, 'USER', deviceId, sessionId);
-        return res.json({
-          success: true,
-          user: {
-            userId: user.user_id,
-            username: user.username,
-            role: 'USER',
-            status: 'active'
-          },
-          profile: {
-            profile_id: `p_${user.user_id}`,
-            user_id: user.user_id,
-            bio: 'Proud Velum user.',
-            avatar: 'user',
-            location: geoBase,
-            updated_at: new Date().toISOString()
-          },
-          sessionId: signedToken,
-          deviceId
-        });
-      }
-    }
-
-    let isPasswordValid = false;
-    if (user) {
-      const authResult = await validateCredentials(user, password);
-      isPasswordValid = authResult.isValid;
-    } else {
-      const dummySalt = crypto.createHash('sha256').update(queryName.toLowerCase() + '_salt_velum_dummy').digest('hex');
-      const dummyHash = `argon2id:${dummySalt}:${crypto.createHash('sha256').update('dummy_hash_placeholder').digest('hex')}`;
-      await verifyArgon2id(password, dummySalt, dummyHash);
-    }
-
-    if (!user || !isPasswordValid) {
-      const ip = req.ip || req.headers['x-forwarded-for'] || 'local-client';
-      const ipStr = Array.isArray(ip) ? ip[0] : String(ip);
-
-      if (username) {
-        const userRlKey = `user:${username.trim().toLowerCase()}`;
-        const uRecord = rateLimiterCache.get(userRlKey) || { attempts: 0, blockUntil: 0 };
-        uRecord.attempts += 1;
-        const backoff = calculateBackoffMs(uRecord.attempts);
-        if (backoff > 0) {
-          uRecord.blockUntil = Date.now() + backoff;
-        }
-        rateLimiterCache.set(userRlKey, uRecord);
-      }
-
-      const ipRlKey = `ip:${ipStr}`;
-      const ipRecord = rateLimiterCache.get(ipRlKey) || { attempts: 0, blockUntil: 0 };
-      ipRecord.attempts += 1;
-      const backoff = calculateBackoffMs(ipRecord.attempts);
-      if (backoff > 0) {
-        ipRecord.blockUntil = Date.now() + backoff;
-      }
-      rateLimiterCache.set(ipRlKey, ipRecord);
-
-      db.suspicious_events.push({
-        event_id: generatePrefixedId('se'),
-        entity_type: 'user',
-        entity_id: username,
-        risk_level: 'intermediate',
-        description: `Failed login attempt for account ${username}`,
-        created_at: new Date().toISOString()
-      });
-      saveDb();
+    if (result.status === 'INVALID_CREDENTIALS') {
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
-    const successIp = req.ip || req.headers['x-forwarded-for'] || 'local-client';
-    const successIpStr = Array.isArray(successIp) ? successIp[0] : String(successIp);
-    if (username) {
-      rateLimiterCache.delete(`user:${username.trim().toLowerCase()}`);
-    }
-    rateLimiterCache.delete(`ip:${successIpStr}`);
-
-    if (user.needs_reset || !user.salt) {
-      return res.json({ needsMigration: true, userId: user.user_id, username: user.username });
+    if (result.status === 'NEEDS_MIGRATION') {
+      return res.json({ needsMigration: true, userId: result.user.user_id, username: result.user.username });
     }
 
-    if (user.status === 'compromised') {
-      db.tickets = db.tickets || [];
-      let ticket = db.tickets.find(t => t.user_id === user.user_id && t.issue_type === 'recovery_request' && t.status !== 'resolved');
-      if (!ticket) {
-        const ticketId = generatePrefixedId('t');
-        const tracking_uuid = `ticket_t_${crypto.randomUUID()}`;
-        ticket = {
-          ticket_id: ticketId,
-          user_id: user.user_id,
-          username: user.username,
-          issue_type: 'recovery_request',
-          status: 'open',
-          assigned_admin: null,
-          created_at: new Date().toISOString(),
-          resolved_at: null,
-          credibility_score: 95,
-          tracking_id: tracking_uuid,
-          messages: [
-            {
-              sender_id: 0,
-              sender_name: 'SYSTEM',
-              content: 'SECURITY EVENT INITIATED. Account quarantined from emergency panic phrase trigger. High-credibility restore process started.',
-              timestamp: new Date().toISOString()
-            },
-            {
-              sender_id: 0,
-              sender_name: 'SYSTEM',
-              content: 'To coordinate with central control administrators and obtain your restore code, please formulate details in the chat below.',
-              timestamp: new Date().toISOString()
-            }
-          ]
-        };
-        db.tickets.push(ticket);
-        db.audit_logs.push({
-          log_id: generatePrefixedId('al'),
-          admin_id: 0,
-          admin_name: 'SYSTEM',
-          action: 'panic_lock',
-          target_type: 'user',
-          target_id: user.user_id.toString(),
-          reason: 'Auto-recovery ticket instantiated securely on authenticated login attempt.',
-          timestamp: new Date().toISOString()
-        });
-        saveDb();
-      }
-
+    if (result.status === 'COMPROMISED') {
       return res.status(403).json({ 
         error: 'SECURITY LOCK: This account is flagged as COMPROMISED. A priority support escalation ticket is online.',
         compromisedPortalActive: true,
         ticket: {
-          ticket_id: ticket.ticket_id,
-          status: ticket.status,
-          issue_type: ticket.issue_type,
-          created_at: ticket.created_at,
-          resolved_at: ticket.resolved_at,
-          credibility_score: ticket.credibility_score,
-          tracking_id: ticket.tracking_id,
-          provided_recovery_key: ticket.provided_recovery_key || null,
-          messages: (ticket.messages || []).map(m => ({
+          ticket_id: result.ticket.ticket_id,
+          status: result.ticket.status,
+          issue_type: result.ticket.issue_type,
+          created_at: result.ticket.created_at,
+          resolved_at: result.ticket.resolved_at,
+          credibility_score: result.ticket.credibility_score,
+          tracking_id: result.ticket.tracking_id,
+          provided_recovery_key: result.ticket.provided_recovery_key || null,
+          messages: (result.ticket.messages || []).map((m: any) => ({
             sender_name: m.sender_id === 0 ? 'System' : (m.sender_name.startsWith('SA-') || m.sender_name === 'Admin' || m.sender_name === 'cli_admin' || m.sender_name === 'Midnight' || m.sender_name === 'Lexie' || m.sender_name === 'lexie' || m.sender_name === '午夜兔子' || m.sender_name === 'LEXIE' ? 'Support operator' : 'Client'),
             content: m.content,
             timestamp: m.timestamp
@@ -306,88 +170,22 @@ export const loginUser = async (req: Request, res: Response) => {
       });
     }
 
-    if (user.status === 'suspended') {
+    if (result.status === 'SUSPENDED') {
       return res.status(403).json({ error: 'Your account has been suspended by system administrators.' });
     }
 
-    const ipClean = cleanIp(req);
-    const resolvedFingerprint = (fingerprint || req.headers['user-agent'] || 'Generic Web User Agent') as string;
-    const geoBase = await getIpGeoLocation(ipClean);
-
-    const profile = db.profiles.find(p => p.user_id === user.user_id);
-    if (profile) {
-      (profile as any).ip_address = ipClean;
-      (profile as any).device_fingerprint = resolvedFingerprint;
-      if (!profile.location || profile.location === 'Poland') {
-        profile.location = geoBase;
-      }
-      profile.updated_at = new Date().toISOString();
-    }
-
-    const isNewIp = !db.ip_addresses.some(ip => ip && ip.user_id === user.user_id && ip.ip_address === ipClean);
-    const isNewDevice = !db.devices.some(dev => dev && dev.user_id === user.user_id && dev.fingerprint === resolvedFingerprint);
-
-    if (isNewIp || isNewDevice) {
-      console.warn(`[SYS-SECURE] Suspicious login detected for user ${user.username}: New IP or device fingerprint.`);
-      db.suspicious_events = db.suspicious_events || [];
-      db.suspicious_events.push({
-        event_id: generatePrefixedId('se'),
-        user_id: user.user_id,
-        ip_address: ipClean,
-        device_fingerprint: resolvedFingerprint,
-        event_type: 'suspicious_login',
-        details: `Login from new IP (${ipClean}) or new device fingerprint.`,
-        timestamp: new Date().toISOString()
-      } as any);
-    }
-
-    const ipId = generatePrefixedId('ip');
-    db.ip_addresses.push({
-      ip_id: ipId,
-      user_id: user.user_id,
-      ip_address: ipClean,
-      risk_score: 5,
-      accounts_linked: 1,
-      first_seen: new Date().toISOString(),
-      last_seen: new Date().toISOString()
-    });
-
-    const deviceId = generatePrefixedId('dev');
-    db.devices.push({
-      device_id: deviceId,
-      user_id: user.user_id,
-      fingerprint: resolvedFingerprint,
-      risk_score: 5,
-      accounts_linked: 1,
-      first_seen: new Date().toISOString(),
-      last_seen: new Date().toISOString(),
-      status: 'trusted'
-    });
-
-    const { sessionId } = createNewSession(user.user_id, deviceId, ipId);
-
-    ensureVelumSystemDM(user.user_id, user.username, '');
-
-    const signedToken = generateSessionToken(user.user_id, user.username, user.role, deviceId, sessionId);
-
     res.json({
       success: true,
-      user: {
-        userId: user.user_id,
-        username: user.username,
-        role: user.role,
-        status: user.status
-      },
-      profile,
-      sessionId: signedToken,
-      deviceId
+      user: result.user,
+      profile: result.profile,
+      sessionId: result.signedToken,
+      deviceId: result.deviceId
     });
   } catch (err: any) {
-    console.error('[AUTH LOGIN DETAILED RUNTIME ERROR]:', err);
-    res.status(500).json({ error: `Handshake internal runtime exception: ${err.message}` });
+    console.error('Login error:', err);
+    res.status(400).json({ error: err.message || 'Login sequence failed.' });
   }
 };
-
 export const registerPermanentOtp = async (req: Request, res: Response) => {
   try {
     const { username, password, permanentOtp } = req.body;
@@ -534,7 +332,7 @@ export const migrateUser = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'That username handle is already taken.' });
     }
 
-    const salt = crypto.randomBytes(32).toString('hex');
+    const salt = user.salt || crypto.randomBytes(32).toString('hex');
     const saltBuf = Buffer.from(salt, 'hex');
 
     const password_hash_raw = await hashArgon2id(password, saltBuf);

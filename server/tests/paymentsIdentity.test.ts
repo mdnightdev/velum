@@ -1,3 +1,4 @@
+process.env.NODE_ENV = "test";
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { 
   submitKyc, 
@@ -92,7 +93,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
 
   it('should allow user to add a payment method', async () => {
     const reqAdd = {
-      body: { methodType: 'CARD', simulatedInstitution: 'Test Bank', maskedNumber: '4242' },
+      body: { methodType: 'CARD', institution: 'Test Bank', maskedNumber: '4242' },
       user: { user_id: 102, username: 'seller' }
     } as any;
 

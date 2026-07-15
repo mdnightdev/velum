@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createHttpServer } from 'http';
 import { createServer as createViteServer } from 'vite';
@@ -5,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { loadDb, hardResetAndSeedDatabase } from './db.js';
 import { restoreDbFromCloud } from './services/sync.js';
+import { startClearingWorker } from './services/clearingWorker.js';
 import { wss, setupCloudMessageSync } from './services/websocket.js';
 import { securityHeaders, fileProtection } from './middlewares/security.js';
 import { apiRouter } from './routes/index.js';
@@ -64,10 +66,20 @@ export async function startServer() {
     console.error('[SYS-SECURE] Error during administrative startup seeding:', err);
   }
 
+  // Start the background automated clearing worker & run reconciliation audits
+  try {
+    startClearingWorker();
+  } catch (err) {
+    console.error('[SYS-SECURE] Error starting clearing worker:', err);
+  }
+
   if (!isProduction) {
     console.log('[SYS-SECURE] Mounting Vite Dev Server middleware for dynamic asset compiling...');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: { server }
+      },
       appType: 'spa'
     });
     app.use(vite.middlewares);

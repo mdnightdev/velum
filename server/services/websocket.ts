@@ -9,7 +9,7 @@ import {
   SuspiciousEvent, AuditLog, WsPayload, FriendRequest, PeerRelationship
 } from '../../src/types.js';
 import { db, loadDb, saveDb, isUserBlocked, registerBroadcastToRoomCallback } from '../db.js';
-import { checkCredential } from '../utils/crypto.js';
+import { checkCredential } from '../services/cryptoService.js';
 import { verifySessionToken } from '../middlewares/auth.js';
 import { isCloudBackupDisabled } from './sync.js';
 import { updateUserPresence } from './presence.js';
@@ -101,6 +101,21 @@ wss.on('connection', (ws, req) => {
   // Handle messages
   ws.on('message', async (rawData) => {
     try {
+      // Fast-path parsing: if this is a lightweight ping/heartbeat packet, respond immediately and avoid expensive database loading/authorization
+      let parsedPayload: any = null;
+      try {
+        parsedPayload = JSON.parse(rawData.toString());
+      } catch {
+        // Suppress parsing error noise
+      }
+
+      if (parsedPayload && parsedPayload.type === 'ping') {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'pong', sentAt: parsedPayload.sentAt }));
+        }
+        return;
+      }
+
       // Synchronize transient database state from SQLite to prevent packet handling or authorization on stale data
       loadDb();
 
@@ -135,14 +150,7 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
-      const payload = JSON.parse(rawData.toString()) as WsPayload;
-
-      if (payload && (payload as any).type === 'ping') {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'pong', sentAt: (payload as any).sentAt }));
-        }
-        return;
-      }
+      const payload = parsedPayload as WsPayload;
       
       // Enforce Sanction Checks BEFORE processing socket commands
       const currentBan = db.admin_sanctions.find(s => 

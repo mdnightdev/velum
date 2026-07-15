@@ -8,7 +8,7 @@ import {
   loginUser
 } from '../controllers/auth';
 import { authenticateUser, authenticateAdmin } from '../middlewares/auth';
-import { checkStepOTP, getStepOTP } from '../utils/crypto';
+import { checkStepOTP, getStepOTP } from '../services/otpService.js';
 import { db } from '../db.js';
 
 // Setup Mock for database module
@@ -49,10 +49,25 @@ vi.mock('../db.js', () => {
 });
 
 // Setup mock for authService module
-vi.mock('../services/authService.js', () => {
+vi.mock('../services/authService.js', async (importOriginal) => {
+  const actual = await importOriginal<any>();
   return {
+    ...actual,
     validateCredentials: vi.fn(async (user, password) => {
       return { isValid: password === 'a'.repeat(64) };
+    }),
+    performUserLogin: vi.fn(async (params) => {
+      if (params.passwordHex === 'a'.repeat(64)) {
+        return {
+          status: 'SUCCESS',
+          user: { user_id: 1, username: 'existinguser' },
+          profile: {},
+          sessionId: 'mock-session-123',
+          deviceId: 'dev_123',
+          signedToken: 'mock-session-token-999'
+        };
+      }
+      return { status: 'INVALID_CREDENTIALS' };
     }),
     executePanicWipe: vi.fn(),
     createNewSession: vi.fn(() => ({ sessionId: 'mock-session-123' })),

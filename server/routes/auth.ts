@@ -32,6 +32,7 @@ authRouter.post('/auth/register', authRateLimiter, registerUser);
 authRouter.post('/auth/login', authRateLimiter, loginUser);
 authRouter.post('/auth/register-permanent-otp', registerPermanentOtp);
 authRouter.post('/auth/migrate', migrateUser);
+authRouter.post('/auth/migrate-legacy', migrateUser);
 
 authRouter.get('/auth/otp-status', getOtpStatus);
 authRouter.post('/auth/activate-admin', authRateLimiter, activateAdmin);

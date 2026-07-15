@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { db, loadDb, saveDb } from '../db.js';
 import { generateUlid } from '../utils/ulid.js';
+import { generateTrcCode } from '../utils/trc.js';
 import { walletRepository } from '../db/walletRepository.js';
 import { bankStore } from '../services/bankStore.js';
 import { 
@@ -260,9 +261,9 @@ function formatSimulatedCredentials(numberStr: string, methodType: string): stri
 export const addPaymentMethod = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const { methodType, simulatedInstitution, maskedNumber, initialBalanceCents } = req.body;
+    const { methodType, institution, maskedNumber, initialBalanceCents } = req.body;
 
-    if (!methodType || !simulatedInstitution || !maskedNumber) {
+    if (!methodType || !institution || !maskedNumber) {
       return res.status(400).json({ error: 'Missing payment method details.' });
     }
 
@@ -277,16 +278,31 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
     db.payment_methods = db.payment_methods || [];
 
     const accountToken = `tok_${generateUlid()}`;
-    const startingBalance = initialBalanceCents ? Number(initialBalanceCents) : 500000; // $5000 default
+    let startingBalance = initialBalanceCents ? Number(initialBalanceCents) : Math.floor(Math.random() * (10000 - 5000 + 1) + 5000) * 100;
+
+    if (institution.includes("Velum")) {
+      const userAccounts = db.external_financial_accounts.filter(a => Number(a.user_id) === Number(user.user_id));
+      let maxBalance = 0;
+      userAccounts.forEach(a => {
+        if (a.available_cents > maxBalance) maxBalance = a.available_cents;
+      });
+      const maxBalanceUSD = maxBalance / 100;
+      let creditLimit = 500;
+      if (maxBalanceUSD >= 9000) creditLimit = 1500;
+      else if (maxBalanceUSD >= 7000) creditLimit = 1000;
+      else if (maxBalanceUSD >= 5000) creditLimit = 500;
+      startingBalance = creditLimit * 100;
+    }
+
 
     const extAccount: ExternalFinancialAccount = {
       account_token: accountToken,
       user_id: Number(user.user_id),
       account_kind: methodType,
-      institution: simulatedInstitution,
+      institution: institution,
       masked_number: formattedMaskedNumber,
       available_cents: startingBalance,
-      expires_at_sim: methodType === 'CARD' ? Date.now() + 31536000000 * 3 : null, // 3 years expiry
+      expires_at_sim: methodType === 'CARD' ? (institution.includes("Velum") ? Date.now() + 31536000000 * 5 : Date.now() + 31536000000 * 3) : null, // 3 years expiry
       is_active: true,
       created_at: Date.now()
     };
@@ -305,7 +321,7 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
       user_id: user.user_id,
       method_type: methodType,
       external_account_token: accountToken,
-      display_label: `${simulatedInstitution} ${formattedMaskedNumber}`,
+      display_label: `${institution} ${formattedMaskedNumber}`,
       is_default: true,
       status: 'ACTIVE',
       added_at: Date.now()
@@ -316,7 +332,7 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
     res.json({
       ...newMethod,
       method_id: newMethod.payment_method_id,
-      institution: simulatedInstitution,
+      institution: institution,
       masked_number: formattedMaskedNumber,
       external_balance_cents: startingBalance
     });
@@ -410,7 +426,8 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'External account linking error.' });
     }
 
-    const requestId = `rec_${generateUlid()}`;
+    const surchargeType = method.method_type === 'CARD' ? 'INST' : 'ACH';
+    const requestId = generateTrcCode('recharge', surchargeType);
     const newRequest: RechargeRequest = {
       request_id: requestId,
       user_id: user.user_id,
@@ -443,18 +460,9 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       newRequest.status = 'SIMULATED_COMPLETE';
 
      // Ledger update (Legacy)
-      const wallet = getOrCreateWallet(user.user_id);
-      const balanceAfter = wallet.balance_cents + amount;
-      wallet.balance_cents = balanceAfter;
-      wallet.updated_at = Date.now();
-
-      // Multi-currency balance update (USD) - This fixes the UI!
-      const usdWallet = getOrCreateWalletBalance(user.user_id, 'USD');
-      usdWallet.balance_cents += amount;
-      usdWallet.updated_at = Date.now();
-
         // Deposit corresponding TWD to central bank reserve
         const twdAmountCents = Math.round(amount / 0.031);
+        // Atomicity: Do async calls before local DB mutation
         await bankStore.updateAccountBalance('bank_central_reserve', twdAmountCents);
         await bankStore.logTransaction({
             account_id: 'bank_central_reserve',
@@ -465,8 +473,18 @@ export const rechargeWallet = async (req: Request, res: Response) => {
             status: 'completed'
         });
 
+      const wallet = getOrCreateWallet(user.user_id);
+      const balanceAfter = wallet.balance_cents + amount;
+      wallet.balance_cents = balanceAfter;
+      wallet.updated_at = Date.now();
+
+      // Multi-currency balance update (USD) - This fixes the UI!
+      const usdWallet = getOrCreateWalletBalance(user.user_id, 'USD');
+      usdWallet.balance_cents += amount;
+      usdWallet.updated_at = Date.now();
+
       const ledgerEntry: WalletLedgerEntry = {
-        entry_id: `led_${generateUlid()}`,
+        entry_id: generateTrcCode('recharge', surchargeType),
         user_id: user.user_id,
         entry_type: 'RECHARGE',
         amount_cents: amount,
@@ -549,8 +567,9 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
     wallet.balance_cents = balanceAfter;
     wallet.updated_at = Date.now();
 
+    const trcCode = generateTrcCode('withdrawal', kyc.verification_level);
     const ledgerEntry: WalletLedgerEntry = {
-      entry_id: `led_${generateUlid()}`,
+      entry_id: trcCode,
       user_id: user.user_id,
       entry_type: 'WITHDRAWAL',
       amount_cents: -amount, // Debit is negative
@@ -562,7 +581,7 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
     };
     db.wallet_ledger_entries.push(ledgerEntry);
 
-    const requestId = `wth_${generateUlid()}`;
+    const requestId = trcCode;
     const newRequest: WithdrawalRequest = {
       request_id: requestId,
       user_id: user.user_id,
@@ -658,7 +677,7 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
         wallet.updated_at = Date.now();
 
         const refundEntry: WalletLedgerEntry = {
-          entry_id: `led_${generateUlid()}`,
+          entry_id: generateTrcCode('refund', 'WTH'),
           user_id: request.user_id,
           entry_type: 'AUTOMATED_ADJUSTMENT',
           amount_cents: request.amount_cents,
@@ -685,7 +704,7 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
       wallet.updated_at = Date.now();
 
       const refundEntry: WalletLedgerEntry = {
-        entry_id: `led_${generateUlid()}`,
+        entry_id: generateTrcCode('refund', 'WTH'),
         user_id: request.user_id,
         entry_type: 'AUTOMATED_ADJUSTMENT',
         amount_cents: request.amount_cents,

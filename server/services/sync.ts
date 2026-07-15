@@ -2,9 +2,9 @@ import fs from 'fs';
 import zlib from 'zlib';
 import { getPgPool } from '../config/database.js';
 import { db, DB_FILE, SQLITE_FILE } from '../db/index.js';
-import { encryptData } from '../utils/crypto.js';
+import { encryptData } from '../services/cryptoService.js';
 
-export let isCloudBackupDisabled = true;
+export let isCloudBackupDisabled = !process.env.DATABASE_URL || process.env.DISABLE_CLOUD_BACKUP === '1';
 export let lastBackupAttemptTime = 0;
 export let backupTimer: any = null;
 export const BACKUP_COOLDOWN_MS = 60 * 1000;
