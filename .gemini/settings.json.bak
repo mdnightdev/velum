@@ -1,0 +1,15 @@
+{
+  "ui": {
+    "inlineThinkingMode": "full",
+    "errorVerbosity": "full",
+    "accessibility": {
+      "screenReader": true
+    }
+  },
+  "ide": {
+    "enabled": true
+  },
+  "billing": {
+    "overageStrategy": "ask"
+  }
+}

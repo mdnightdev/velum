@@ -1,0 +1,1 @@
+{"watch": ["cli", "server"], "ext": "ts", "ignore": ["node_modules", "dump.rdb", "*.db", "*.sqlite", "*.json", "*.log"], "exec": "npx tsx cli/index.ts"}
