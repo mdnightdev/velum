@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { db, loadDb, saveDb } from '../db.js';
+import { runInTransaction } from '../db/index.js';
 import { generateUlid } from '../utils/ulid.js';
 import { generateTrcCode } from '../utils/trc.js';
 import { walletRepository } from '../db/walletRepository.js';
@@ -287,7 +288,7 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
         if (a.available_cents > maxBalance) maxBalance = a.available_cents;
       });
       const maxBalanceUSD = maxBalance / 100;
-      let creditLimit = 500;
+      let creditLimit = 0;
       if (maxBalanceUSD >= 9000) creditLimit = 1500;
       else if (maxBalanceUSD >= 7000) creditLimit = 1000;
       else if (maxBalanceUSD >= 5000) creditLimit = 500;
@@ -457,51 +458,58 @@ export const rechargeWallet = async (req: Request, res: Response) => {
 
     if (chargeSim.result === 'APPROVED' && chargeSim.new_available_cents !== undefined) {
       extAccount.available_cents = chargeSim.new_available_cents;
-      newRequest.status = 'SIMULATED_COMPLETE';
+      newRequest.status = 'COMPLETE';
 
-     // Ledger update (Legacy)
-        // Deposit corresponding TWD to central bank reserve
-        const twdAmountCents = Math.round(amount / 0.031);
-        // Atomicity: Do async calls before local DB mutation
-        await bankStore.updateAccountBalance('bank_central_reserve', twdAmountCents);
-        await bankStore.logTransaction({
-            account_id: 'bank_central_reserve',
-            type: 'deposit',
-            amount_cents: twdAmountCents,
-            currency_code: 'TWD',
-            description: `Central liquidity backup for user ${user.user_id} recharge`,
-            status: 'completed'
-        });
+      // Ledger update (Legacy)
+      // Deposit corresponding TWD to central bank reserve
+      const twdAmountCents = Math.round(amount / 0.031);
+      // Atomicity: Do async calls before local DB mutation
+      await bankStore.updateAccountBalance('bank_central_reserve', twdAmountCents);
+      await bankStore.logTransaction({
+          account_id: 'bank_central_reserve',
+          type: 'deposit',
+          amount_cents: twdAmountCents,
+          currency_code: 'TWD',
+          description: `Central liquidity backup for user ${user.user_id} recharge`,
+          status: 'completed'
+      });
 
-      const wallet = getOrCreateWallet(user.user_id);
-      const balanceAfter = wallet.balance_cents + amount;
-      wallet.balance_cents = balanceAfter;
-      wallet.updated_at = Date.now();
+      let updatedUsdWallet: WalletBalance | undefined;
 
-      // Multi-currency balance update (USD) - This fixes the UI!
-      const usdWallet = getOrCreateWalletBalance(user.user_id, 'USD');
-      usdWallet.balance_cents += amount;
-      usdWallet.updated_at = Date.now();
+      await runInTransaction((uow) => {
+        const preferredCurrency = user.preferred_currency || 'USD';
+        
+        // Target balance update based on preferred currency
+        const targetBalance = uow.getBalance(user.user_id, preferredCurrency);
+        const newTargetBalance = targetBalance + amount;
+        uow.stageBalanceUpdate(user.user_id, preferredCurrency, newTargetBalance);
 
-      const ledgerEntry: WalletLedgerEntry = {
-        entry_id: generateTrcCode('recharge', surchargeType),
-        user_id: user.user_id,
-        entry_type: 'RECHARGE',
-        amount_cents: amount,
-        balance_after_cents: usdWallet.balance_cents, // Log the updated USD balance
-        actor_type: 'USER',
-        actor_id: String(user.user_id),
-        is_simulated: true,
-        created_at: Date.now()
-      };
-      db.wallet_ledger_entries.push(ledgerEntry);
+        // Also update legacy VLM wallet if needed (to match original behavior)
+        const vlmBalance = uow.getBalance(user.user_id, 'VLM');
+        const newVlmBalance = vlmBalance + amount;
+        uow.stageBalanceUpdate(user.user_id, 'VLM', newVlmBalance);
 
-      saveDb(true);
+        const ledgerEntry: WalletLedgerEntry = {
+          entry_id: generateTrcCode('recharge', surchargeType),
+          user_id: user.user_id,
+          entry_type: 'RECHARGE',
+          amount_cents: amount,
+          balance_after_cents: newTargetBalance,
+          actor_type: 'USER',
+          actor_id: String(user.user_id),
+          is_simulated: true,
+          created_at: Date.now()
+        };
+        uow.stageLedgerEntry(ledgerEntry);
+      });
+
+      const updatedWallet = walletRepository.findWalletBalance(user.user_id, user.preferred_currency || 'USD');
+
       return res.json({
         success: true,
         status: 'SIMULATED_COMPLETE',
         amount_cents: amount,
-        wallet: usdWallet, // Return the updated USD wallet state to the frontend
+        wallet: updatedWallet,
       });
 
     } else {
@@ -838,72 +846,55 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Exchange rate not found for the requested currency pair.' });
     }
 
-    const fromBalanceObj = getOrCreateWalletBalance(user.user_id, fromCurrency);
-    if (fromBalanceObj.balance_cents < amountCents) {
-      return res.status(400).json({ error: 'Insufficient balance in the source currency.' });
-    }
-
     const rate = rateObj.rate;
     const spreadPct = 0.015; // 1.5% platform spread
     const grossConverted = Math.floor(amountCents * rate);
     const platformSpread = Math.floor(grossConverted * spreadPct);
     const netCredited = grossConverted - platformSpread;
 
-    // Execute double-entry in memory
-    fromBalanceObj.balance_cents -= amountCents;
-    fromBalanceObj.updated_at = Date.now();
-
-    const toBalanceObj = getOrCreateWalletBalance(user.user_id, toCurrency);
-    toBalanceObj.balance_cents += netCredited;
-    toBalanceObj.updated_at = Date.now();
-
-    // If VLM is involved, update the legacy user_wallets balance as well to keep in sync!
-    if (fromCurrency === 'VLM') {
-      const legacyWallet = getOrCreateWallet(user.user_id);
-      legacyWallet.balance_cents = fromBalanceObj.balance_cents;
-      legacyWallet.updated_at = Date.now();
-    }
-    if (toCurrency === 'VLM') {
-      const legacyWallet = getOrCreateWallet(user.user_id);
-      legacyWallet.balance_cents = toBalanceObj.balance_cents;
-      legacyWallet.updated_at = Date.now();
-    }
-
     const relatedTxId = `exc_${generateUlid()}`;
 
-    // Append two ledger entries
-    db.wallet_ledger_entries = db.wallet_ledger_entries || [];
-    
-    const debitLedger: WalletLedgerEntry = {
-      entry_id: `led_${generateUlid()}`,
-      user_id: user.user_id,
-      currency_code: fromCurrency,
-      entry_type: 'CURRENCY_EXCHANGE',
-      amount_cents: -amountCents,
-      balance_after_cents: fromBalanceObj.balance_cents,
-      related_transaction_id: relatedTxId,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    };
-    
-    const creditLedger: WalletLedgerEntry = {
-      entry_id: `led_${generateUlid()}`,
-      user_id: user.user_id,
-      currency_code: toCurrency,
-      entry_type: 'CURRENCY_EXCHANGE',
-      amount_cents: netCredited,
-      balance_after_cents: toBalanceObj.balance_cents,
-      related_transaction_id: relatedTxId,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    };
+    await runInTransaction((uow) => {
+      const fromBalance = uow.getBalance(user.user_id, fromCurrency);
+      if (fromBalance < amountCents) {
+        throw new Error('Insufficient balance in the source currency.');
+      }
 
-    db.wallet_ledger_entries.push(debitLedger, creditLedger);
-    saveDb(true);
+      const newFromBalance = fromBalance - amountCents;
+      const toBalance = uow.getBalance(user.user_id, toCurrency);
+      const newToBalance = toBalance + netCredited;
+
+      uow.stageBalanceUpdate(user.user_id, fromCurrency, newFromBalance);
+      uow.stageBalanceUpdate(user.user_id, toCurrency, newToBalance);
+
+      uow.stageLedgerEntry({
+        entry_id: `led_${generateUlid()}`,
+        user_id: user.user_id,
+        currency_code: fromCurrency,
+        entry_type: 'CURRENCY_EXCHANGE',
+        amount_cents: -amountCents,
+        balance_after_cents: newFromBalance,
+        related_transaction_id: relatedTxId,
+        actor_type: 'USER',
+        actor_id: String(user.user_id),
+        is_simulated: true,
+        created_at: Date.now()
+      });
+
+      uow.stageLedgerEntry({
+        entry_id: `led_${generateUlid()}`,
+        user_id: user.user_id,
+        currency_code: toCurrency,
+        entry_type: 'CURRENCY_EXCHANGE',
+        amount_cents: netCredited,
+        balance_after_cents: newToBalance,
+        related_transaction_id: relatedTxId,
+        actor_type: 'USER',
+        actor_id: String(user.user_id),
+        is_simulated: true,
+        created_at: Date.now()
+      });
+    });
 
     res.json({
       success: true,
@@ -912,9 +903,15 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
       credited_cents: netCredited,
       rate_used: rate,
       platform_spread_cents: platformSpread,
-      balances: [fromBalanceObj, toBalanceObj]
+      balances: [
+        walletRepository.findWalletBalance(user.user_id, fromCurrency),
+        walletRepository.findWalletBalance(user.user_id, toCurrency)
+      ]
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err.message === 'Insufficient balance in the source currency.') {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to execute currency conversion.' });
   }
 };

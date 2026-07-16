@@ -3,6 +3,7 @@ import { marketRepository } from '../db/marketRepository.js';
 import { walletRepository } from '../db/walletRepository.js';
 import { generateTrcCode } from '../utils/trc.js';
 import { generatePrefixedId } from '../utils/ulid.js';
+import { getLockForUser } from '../utils/lockManager.js';
 import { EscrowTransaction } from '../../src/types.js';
 import { calculateOrderSettlement } from '../utils/marketEngine.js';
 

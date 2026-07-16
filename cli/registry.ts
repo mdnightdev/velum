@@ -243,6 +243,10 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       desc: 'Audit foreign keys and database coherence',
       risk: 'LOW'
     },
+    'reset-nonces': {
+      desc: 'Wipe all login nonces',
+      risk: 'HIGH'
+    },
     'orphans': {
       desc: 'Scan for orphaned relational records',
       risk: 'LOW'
@@ -299,11 +303,6 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       desc: 'Generate dynamic 2FA operator token and OTP',
       risk: 'MEDIUM'
     },
-    fund: {
-      desc: 'Fund member trust from central reserve',
-      risk: 'CRITICAL',
-      args: ['<amount_cents>', '"<description>"']
-    },
     kill: {
       desc: 'Force terminate a specific session',
       risk: 'MEDIUM',
@@ -323,6 +322,41 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
     'maint-off': {
       desc: 'Lift maintenance mode restrictions',
       risk: 'MEDIUM'
+    }
+  },
+  '/bank': {
+    fundc: {
+      desc: 'Fund central reserve',
+      risk: 'CRITICAL',
+      args: ['<amount_cents>', '"<description>"']
+    },
+    fundt: {
+      desc: 'Fund member trust from central reserve',
+      risk: 'CRITICAL',
+      args: ['<amount_cents>', '"<description>"']
+    },
+    funde: {
+      desc: 'Fund escrow reserve from central reserve',
+      risk: 'CRITICAL',
+      args: ['<amount_cents>', '"<description>"']
+    },
+    bankau: {
+      desc: 'Audit banking liquidity and transaction integrity',
+      risk: 'LOW'
+    },
+    banks: {
+      desc: 'Report real-time banking account statuses',
+      risk: 'LOW'
+    },
+    bankf: {
+      desc: 'Freeze banking services for a user',
+      risk: 'CRITICAL',
+      args: ['<uid/username>']
+    },
+    bankad: {
+      desc: 'Adjust balance for audit correction',
+      risk: 'CRITICAL',
+      args: ['<account_id>', '<amount_cents>', '"<reason>"']
     }
   },
   '/audit': {

@@ -127,7 +127,7 @@ export function seedBankSystemIfEmpty(localDb: any) {
       routing_number: '021000021',
       account_name: 'VELUM ESCROW TRUSTEE HOLDINGS',
       institution: 'Taiwan Cooperative Bank',
-      balance_cents: 8500000000, // $85,000,000.00
+      balance_cents: 0, 
       currency_code: 'TWD',
       owner_name: 'VELUM SECURE ESCROW AGENT',
       status: 'active',

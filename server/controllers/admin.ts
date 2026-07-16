@@ -840,16 +840,26 @@ export const renameExecutive = async (req: Request, res: Response) => {
   }
 };
 
+// Whitelist of basic, safe Web CLI commands
+const WEB_CLI_WHITELIST = [
+  'ls', 'status', 'info', 'diagnostics', 'lounges', 'risk', 'pending'
+];
+
 export const executeCli = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).adminUser;
     const { command } = req.body;
+    if (!command) return res.status(400).json({ error: 'Command missing' });
+    
+    // Parse the command to check the verb (first part)
+    const verb = command.trim().split(/\s+/)[0].toLowerCase();
 
-    if (user.role !== 'CLI_ADMIN') {
-      return res.status(403).json({ error: 'FAIL: CLI channel access requires complete cryptographic administrative parameters.' });
+    // Enforce Web CLI Whitelist
+    if (!WEB_CLI_WHITELIST.includes(verb)) {
+      return res.status(403).json({ error: 'FAIL: This command is restricted to the Terminal CLI.' });
     }
 
-    const output = await executeCliCommand(command);
+    // Execute with isTerminal=false
+    const output = await executeCliCommand(command, false);
     res.json({ output });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to execute CLI command.' });

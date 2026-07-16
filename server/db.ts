@@ -5,6 +5,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import { bankStore } from './services/bankStore.js';
+import { bankingCommands } from './services/banking/commands.js';
+import { dbCommands } from './services/db/commands.js';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { hashArgon2id as cryptoHashArgon2id, safeCompare } from './crypto.js';
@@ -45,6 +47,7 @@ import {
 import { DbSchema, defaultDb } from './db/schema.js';
 
 export const originalConsoleLog = console.log;
+export const activeUserBlocksSet = new Set<string>();
 
 export const originalConsoleError = console.error;
 
@@ -100,12 +103,13 @@ export const TABLE_CONFIGS: Record<string, TableConfig> = {
   }
 };
 
-export const activeUserBlocksSet = new Set<string>();
-
 export function rebuildBlocksCache() {
+  if (typeof activeUserBlocksSet === 'undefined' || !activeUserBlocksSet) {
+    activeUserBlocksSet = new Set<string>();
+  }
   activeUserBlocksSet.clear();
   for (const b of db.user_blocks || []) {
-    activeUserBlocksSet.add(`${b.blocker_id}_${b.blocked_id}`);
+    activeUserBlocksSet.add(`${b.block_id}_${b.blocked_id}`);
   }
 }
 
@@ -486,7 +490,7 @@ export async function hardResetAndSeedDatabase(force = false) {
   console.log('[SYS-SECURE] Security standards initialized. Verified administrative accounts seeded.');
 }
 
-export async function executeCliCommand(command: string): Promise<string> {
+export async function executeCliCommand(command: string, isSystem?: boolean): Promise<string> {
   if (!command) {
     return ' ERROR: Command cannot be empty.';
   }
@@ -583,6 +587,7 @@ export async function executeCliCommand(command: string): Promise<string> {
     else if (action === '/support') action = 'help';
 
     else if (action === '/db/integrity') action = 'integrity';
+    else if (action === '/db/reset-nonces') action = 'db-reset-nonces';
     else if (action === '/db/orphans-scan') action = 'db-orphans-scan';
     else if (action === '/db/orphans-clean') action = 'db-orphans-clean';
     else if (action === '/db/backup') action = 'db-backup';
@@ -1246,6 +1251,10 @@ export async function executeCliCommand(command: string): Promise<string> {
       } catch (err: any) {
         return ` ERROR during SQL compact vacuum: ${err.message || err}`;
       }
+    }
+    case 'reset-nonces':
+    case 'db-reset-nonces': {
+      return await dbCommands.resetNonces();
     }
     case 'clear-sessions':
     case 'clear': {

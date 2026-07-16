@@ -76,8 +76,10 @@ export const createBankAccount = async (req: Request, res: Response) => {
     if (cleanNumber.length >= 12) {
       formattedNumber = `${cleanNumber.substring(0, 4)} ${cleanNumber.substring(4, 8)} ${cleanNumber.substring(8, 12)} ${cleanNumber.substring(12)}`;
     }
-
-    const startingBalance = balance_cents !== undefined ? Number(balance_cents) : 5000000; // default NT$50,000
+// Auto-generate a realistic starting balance between 5,000 and 10,000 units (500,000 to 1,000,000 cents)
+	const minCents = 5000 * 100;
+	const maxCents = 10000 * 100;
+	const startingBalance = Math.floor(Math.random() * (maxCents - minCents + 1)) + minCents;
 
     const newAcc = await bankStore.createAccount({
       user_id: user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' ? null : user.user_id,

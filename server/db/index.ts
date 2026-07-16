@@ -20,6 +20,7 @@ import {
   setCloudBackupDisabled
 } from '../services/sync.js';
 import { loadDb, saveDb, executeSaveDb } from './persistence.js';
+export { UnitOfWork, runInTransaction } from './unitOfWork.js';
 
 export {
   initPgBackupTable,

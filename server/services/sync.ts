@@ -25,7 +25,7 @@ export async function initPgBackupTable(): Promise<void> {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log('[SYS-SECURE] Neon PostgreSQL backups table verified/created.');
+    // console.log('[SYS-SECURE] Neon PostgreSQL backups table verified/created.');
   } catch (err: any) {
     const errStr = String(err?.message || err);
     console.warn(`[SYS-SECURE] Neon PostgreSQL connection/setup failed: ${errStr}. Disabling cloud backups for this session.`);
@@ -140,7 +140,7 @@ export async function executeCloudBackup(): Promise<void> {
         'INSERT INTO velum_backups (id, sqlite_base64, gzip, updated_at) VALUES ($1, $2, $3, NOW())',
         [id, base64, true]
       );
-      console.log(`[SYS-SECURE] Neon PostgreSQL backup created. Original: ${Math.round(binary.length / 1024)} KB, Compressed: ${Math.round(compressedBinary.length / 1024)} KB`);
+      // console.log(`[SYS-SECURE] Neon PostgreSQL backup created. Original: ${Math.round(binary.length / 1024)} KB, Compressed: ${Math.round(compressedBinary.length / 1024)} KB`);
     } catch (pgErr: any) {
       const errStr = String(pgErr?.message || pgErr);
       console.warn(`[SYS-SECURE] Neon PostgreSQL backup failed: ${errStr}. Disabling cloud backups.`);

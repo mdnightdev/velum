@@ -159,7 +159,7 @@ export class VelumShell {
       const isLong = flags['l'] === true;
 
       if (this.currentPath === '/') {
-        const namespaces = ['users', 'lounges', 'support', 'db', 'sys', 'audit', 'fraud'];
+        const namespaces = ['users', 'lounges', 'support', 'db', 'sys', 'audit', 'fraud', 'bank'];
         const descriptions: Record<string, string> = {
           users: 'User Lifecycle & Moderation',
           lounges: 'Lounge & Sublounge Management',
@@ -167,7 +167,8 @@ export class VelumShell {
           db: 'Database Maintenance',
           sys: 'System Operations',
           audit: 'Audit & Investigation',
-          fraud: 'Fraud & Asset Seizure'
+          fraud: 'Fraud & Asset Seizure',
+          bank: 'Banking & Financial Operations'
         };
 
         if (isLong) {
@@ -485,7 +486,7 @@ export class VelumShell {
    */
   private async runDbCommand(command: string): Promise<void> {
     try {
-      const result = await executeCliCommand(command);
+      const result = await executeCliCommand(command, true);
       console.log(result);
     } catch (err: any) {
       console.log(`DATABASE ERROR: ${err.message || err}`);
