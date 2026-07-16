@@ -9,3 +9,10 @@ data/velum_state_v3.bin
 server/services/ws.log
 docs/
 scripts/
+
+# Ignore local databases, keys, and logs
+data/
+*.sqlite
+*.sqlite-journal
+*.log
+bank-log.txt
