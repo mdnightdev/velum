@@ -1,4 +1,4 @@
-import { db, saveDb } from '../db.js';
+import { db } from '../db.js';
 import { 
   MarketListing, EscrowTransaction, MarketCoupon, 
   MarketDiscussion, MarketReview, MarketSkuVariant
@@ -20,7 +20,6 @@ export const marketRepository = {
   createListing(listing: MarketListing): void {
     db.market_listings = db.market_listings || [];
     db.market_listings.push(listing);
-    saveDb();
   },
 
   updateListing(id: string, updates: Partial<MarketListing>): MarketListing | undefined {
@@ -28,13 +27,11 @@ export const marketRepository = {
     if (!listing) return undefined;
 
     Object.assign(listing, updates);
-    saveDb();
     return listing;
   },
 
   deleteListing(id: string): void {
     db.market_listings = (db.market_listings || []).filter(l => l && l.listing_id !== id);
-    saveDb();
   },
 
   // ==========================================
@@ -52,7 +49,6 @@ export const marketRepository = {
   createEscrow(escrow: EscrowTransaction): void {
     db.escrow_transactions = db.escrow_transactions || [];
     db.escrow_transactions.push(escrow);
-    saveDb();
   },
 
   updateEscrow(id: string, updates: Partial<EscrowTransaction>): EscrowTransaction | undefined {
@@ -60,13 +56,11 @@ export const marketRepository = {
     if (!escrow) return undefined;
 
     Object.assign(escrow, updates);
-    saveDb();
     return escrow;
   },
 
   deleteEscrow(id: string): void {
     db.escrow_transactions = (db.escrow_transactions || []).filter(t => t && t.transaction_id !== id);
-    saveDb();
   },
 
   // ==========================================
@@ -90,7 +84,6 @@ export const marketRepository = {
   createCoupon(coupon: MarketCoupon): void {
     db.market_coupons = db.market_coupons || [];
     db.market_coupons.push(coupon);
-    saveDb();
   },
 
   updateCoupon(id: string, updates: Partial<MarketCoupon>): MarketCoupon | undefined {
@@ -98,7 +91,6 @@ export const marketRepository = {
     if (!coupon) return undefined;
 
     Object.assign(coupon, updates);
-    saveDb();
     return coupon;
   },
 
@@ -121,12 +113,10 @@ export const marketRepository = {
   createSkuVariant(variant: MarketSkuVariant): void {
     db.market_sku_variants = db.market_sku_variants || [];
     db.market_sku_variants.push(variant);
-    saveDb();
   },
 
   deleteSkuVariant(id: string): void {
     db.market_sku_variants = (db.market_sku_variants || []).filter(v => v && v.sku_id !== id);
-    saveDb();
   },
 
   // ==========================================
@@ -144,7 +134,6 @@ export const marketRepository = {
   createDiscussion(discussion: MarketDiscussion): void {
     db.market_discussions = db.market_discussions || [];
     db.market_discussions.push(discussion);
-    saveDb();
   },
 
   // ==========================================
@@ -162,7 +151,6 @@ export const marketRepository = {
   createReview(review: MarketReview): void {
     db.market_reviews = db.market_reviews || [];
     db.market_reviews.push(review);
-    saveDb();
   },
 
   // ==========================================
@@ -172,18 +160,15 @@ export const marketRepository = {
   createPlatformFinancialAuditLog(log: any): void {
     db.platform_financial_audit_logs = db.platform_financial_audit_logs || [];
     db.platform_financial_audit_logs.push(log);
-    saveDb();
   },
 
   createAutomationAction(action: any): void {
     db.automation_actions = db.automation_actions || [];
     db.automation_actions.push(action);
-    saveDb();
   },
 
   createRefundRequest(request: any): void {
     db.refund_requests = db.refund_requests || [];
     db.refund_requests.push(request);
-    saveDb();
   }
 };

@@ -1,4 +1,4 @@
-import { db, saveDb } from '../db.js';
+import { db } from '../db.js';
 import { generateUlid } from '../utils/ulid.js';
 import { 
   UserWallet, WalletBalance, KycVerification, 
@@ -24,7 +24,6 @@ export const walletRepository = {
         updated_at: Date.now()
       };
       db.user_wallets.push(wallet);
-      saveDb(true);
     }
     return wallet;
   },
@@ -33,7 +32,6 @@ export const walletRepository = {
     const wallet = this.getOrCreateWallet(userId);
     wallet.balance_cents = balanceCents;
     wallet.updated_at = Date.now();
-    saveDb(true);
     return wallet;
   },
 
@@ -63,7 +61,6 @@ export const walletRepository = {
         updated_at: Date.now()
       };
       db.wallet_balances.push(bal);
-      saveDb(true);
     }
     return bal;
   },
@@ -72,7 +69,6 @@ export const walletRepository = {
     const bal = this.getOrCreateWalletBalance(userId, currencyCode);
     bal.balance_cents = amountCents;
     bal.updated_at = Date.now();
-    saveDb(true);
 
     // If it is VLM, keep the old legacy wallet row in sync
     if (currencyCode === 'VLM') {
@@ -102,7 +98,6 @@ export const walletRepository = {
         updated_at: Date.now()
       };
       db.kyc_verifications.push(kyc);
-      saveDb(true);
     }
     return kyc;
   },
@@ -111,7 +106,6 @@ export const walletRepository = {
     const kyc = this.getOrCreateKyc(userId);
     Object.assign(kyc, updates);
     kyc.updated_at = Date.now();
-    saveDb(true);
     return kyc;
   },
 
@@ -132,7 +126,6 @@ export const walletRepository = {
   addPaymentMethod(method: PaymentMethod): void {
     db.payment_methods = db.payment_methods || [];
     db.payment_methods.push(method);
-    saveDb(true);
   },
 
   updatePaymentMethodsForUser(userId: number, updates: Partial<PaymentMethod>): void {
@@ -142,7 +135,6 @@ export const walletRepository = {
         Object.assign(pm, updates);
       }
     });
-    saveDb(true);
   },
 
   // ==========================================
@@ -157,13 +149,11 @@ export const walletRepository = {
   createExternalAccount(account: ExternalFinancialAccount): void {
     db.external_financial_accounts = db.external_financial_accounts || [];
     db.external_financial_accounts.push(account);
-    saveDb(true);
   },
   updateExternalAccountBalance(token: string, userId: number, newBalanceCents: number): ExternalFinancialAccount | undefined {
     const account = this.findExternalAccountByToken(token, userId);
     if (account) {
       account.available_cents = newBalanceCents;
-      saveDb(true);
     }
     return account;
   },
@@ -181,7 +171,6 @@ export const walletRepository = {
   createLedgerEntry(entry: WalletLedgerEntry): void {
     db.wallet_ledger_entries = db.wallet_ledger_entries || [];
     db.wallet_ledger_entries.push(entry);
-    saveDb(true);
   },
 
   findLedgerEntriesByUserId(userId: number): WalletLedgerEntry[] {

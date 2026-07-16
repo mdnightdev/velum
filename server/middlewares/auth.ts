@@ -102,7 +102,7 @@ export const authenticateUser = (req: Request, res: Response, next: NextFunction
 };
 
 // Secondary administrator authentication constraint gates
-export const authenticateAdmin = (req: Request, res: Response, next: NextFunction) => { req.user = { role: 'LOGIN_ADMIN' }; next(); };
+export const authenticateAdmin = (req: Request, res: Response, next: NextFunction) => { (req as any).user = { role: 'LOGIN_ADMIN' }; next(); };
 
 // Create a secure cryptographic random session token
 export const generateSessionToken = (userId?: any, username?: string, role?: string, deviceId?: string, sessionId?: string): string => {

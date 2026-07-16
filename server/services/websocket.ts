@@ -16,12 +16,12 @@ import { updateUserPresence } from './presence.js';
 import { generatePrefixedId } from '../utils/ulid.js';
 
 import { fileURLToPath } from 'url';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+//const __filename = fileURLToPath(import.meta.url);
+//const __dirname = path.dirname(__filename);
 
 export const wss = new WebSocketServer({ noServer: true });
 
-const wsLogStream = fs.createWriteStream(path.join(__dirname, 'ws.log'), { flags: 'a' });
+const wsLogStream = fs.createWriteStream(path.join(process.cwd(), 'ws.log'), { flags: 'a' })
 const logWS = (msg: string) => wsLogStream.write(`[${new Date().toLocaleTimeString()}] ${msg}\n`);
 
 

@@ -285,7 +285,11 @@ export function initSqlite() {
         description TEXT,
         price REAL NOT NULL,
         status TEXT DEFAULT 'ACTIVE',
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        seller_username TEXT,
+        discount_price REAL,
+        verification_status TEXT,
+        inventory_count INTEGER
     )`);
 
     // Escrow transactions table schema
@@ -298,6 +302,13 @@ export function initSqlite() {
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
+        coupon_applied TEXT,
+        sku_variant_id TEXT,
+        platform_fee REAL,
+        payout_amount REAL,
+        sandbox_logs TEXT,
+        sandbox_state TEXT,
+
         FOREIGN KEY(listing_id) REFERENCES market_listings(listing_id) ON DELETE CASCADE
     )`);
 
