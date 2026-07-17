@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowRightLeft, CreditCard, Upload, Trash2, Building, 
-  Plus, ArrowDownToLine, ChevronDown, Check, X, Landmark, ArrowUpRight
+  Plus, ArrowDownToLine, ChevronDown, Check, X, Landmark, ArrowUpRight,
+  Activity
 } from 'lucide-react';
 
 interface WalletMainDashboardProps {
@@ -75,9 +76,9 @@ const CustomDropdown = ({
   );
 };
 
-const DEBIT_ISSUERS = ['Visa', 'Mastercard', 'UnionPay'];
-const CREDIT_ISSUERS = ['Velum Black', 'Velum Platinum', 'Velum Titanium'];
-const BANK_ISSUERS = ['HSBC', 'Chase Bank', 'Barclays', 'Citibank', 'Standard Chartered'];
+const DEBIT_ISSUERS = ['Visa', 'Mastercard', 'UnionPay', 'Discover', 'JCB', 'Maestro'];
+const CREDIT_ISSUERS = ['Velum Black', 'Velum Platinum', 'Velum Titanium', 'American Express', 'Capital One', 'Chase Sapphire'];
+const BANK_ISSUERS = ['HSBC', 'Chase Bank', 'Barclays', 'Citibank', 'Standard Chartered', 'Bank of America', 'Wells Fargo', 'Santander', 'UBS'];
 
 export default function WalletMainDashboard({ currentUserId, isDark }: WalletMainDashboardProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'methods'>('overview');
@@ -98,12 +99,12 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
   // Exchange Form State
   const [exchangeFrom, setExchangeFrom] = useState('USD');
   const [exchangeTo, setExchangeTo] = useState('VLM');
-  const [exchangeAmount, setExchangeAmount] = useState('');
+  const [exchangeAmount, setExchangeAmount] = useState('0.00');
   const [exchangeError, setExchangeError] = useState('');
   const [exchangeSuccess, setExchangeSuccess] = useState('');
 
   // Funding Form State
-  const [fundingAmount, setFundingAmount] = useState('');
+  const [fundingAmount, setFundingAmount] = useState('0.00');
   const [fundingMethod, setFundingMethod] = useState('');
   const [fundingMsg, setFundingMsg] = useState('');
 
@@ -111,7 +112,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
   const [isMethodModalOpen, setIsMethodModalOpen] = useState(false);
   const [newMethodCategory, setNewMethodCategory] = useState<'DEBIT'|'CREDIT'|'BANK'>('DEBIT');
   const [newMethodIssuer, setNewMethodIssuer] = useState('Visa');
-  const [newMethodNumber, setNewMethodNumber] = useState('');
+  const [addMethodError, setAddMethodError] = useState('');
 
   const loadData = async () => {
     try {
@@ -136,6 +137,18 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
     }
   };
 
+  const handleAmountMaskChange = (value: string, setter: (val: string) => void) => {
+    let cleaned = value.replace(/[^0-9.]/g, '');
+    const parts = cleaned.split('.');
+    if (parts.length > 2) {
+      cleaned = parts[0] + '.' + parts.slice(1).join('');
+    }
+    if (parts.length === 2 && parts[1].length > 2) {
+      cleaned = parts[0] + '.' + parts[1].slice(0, 2);
+    }
+    setter(cleaned);
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -154,6 +167,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
   };
 
   const totalInPrimary = balances.reduce((sum, b) => {
+    if (b.currency_code === 'VLM') return sum;
     return sum + convertAmount(b.balance_cents / 100, b.currency_code, preferredFiat);
   }, 0);
 
@@ -181,7 +195,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
         body: JSON.stringify({
           fromCurrency: exchangeFrom,
           toCurrency: exchangeTo,
-          amountCents: Math.floor(parseFloat(exchangeAmount) * 100)
+          amountCents: Math.floor(parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')) * 100)
         })
       });
       const data = await res.json();
@@ -189,7 +203,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
       else {
         setExchangeSuccess(`Exchanged successfully.`);
         loadData(); 
-        setExchangeAmount('');
+        setExchangeAmount('0.00');
         setTimeout(() => setIsExchangeModalOpen(false), 1500);
       }
     } catch (e) { setExchangeError('Network error'); }
@@ -201,7 +215,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
     try {
       const sId = sessionStorage.getItem('velum-sessionId');
       const endpoint = fundingType === 'RECHARGE' ? '/api/payments/recharge' : '/api/payments/withdraw';
-      const bodyPayload: any = { amount_cents: Math.floor(parseFloat(fundingAmount) * 100) };
+      const bodyPayload: any = { amount_cents: Math.floor(parseFloat(fundingAmount.replace(/[^0-9.]/g, '')) * 100) };
       if (fundingType === 'RECHARGE') bodyPayload.payment_method_id = fundingMethod;
       else bodyPayload.payout_method_id = fundingMethod;
       
@@ -215,7 +229,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
       else { 
         setFundingMsg(`Success.`); 
         loadData(); 
-        setFundingAmount(''); 
+        setFundingAmount('0.00'); 
         setTimeout(() => setIsFundingModalOpen(false), 1500);
       }
     } catch (e) { setFundingMsg('Network error'); }
@@ -223,20 +237,23 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
 
   const handleAddMethod = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAddMethodError('');
     try {
       const sId = sessionStorage.getItem('velum-sessionId');
       const methodTypeMap = newMethodCategory === 'BANK' ? 'BANK_ACCOUNT' : 'CARD';
       const res = await fetch('/api/payments/methods', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ methodType: methodTypeMap, institution: newMethodIssuer, maskedNumber: newMethodNumber })
+        body: JSON.stringify({ methodType: methodTypeMap, institution: newMethodIssuer, methodCategory: newMethodCategory })
       });
       if (res.ok) { 
         loadData(); 
-        setNewMethodNumber(''); 
         setIsMethodModalOpen(false);
+      } else {
+        const d = await res.json();
+        setAddMethodError(d.error || 'Failed to add method');
       }
-    } catch (e) { console.error(e); }
+    } catch (e: any) { setAddMethodError(e.message || 'Unknown error'); }
   };
 
   const handleRemoveMethod = async (methodId: string) => {
@@ -267,6 +284,16 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
     label: `${m.display_label} (•••• ${m.display_label.slice(-4) || '1234'})`,
     icon: m.method_type === 'CARD' ? <CreditCard className="w-4 h-4 opacity-70" /> : <Landmark className="w-4 h-4 opacity-70" />
   }));
+
+  const vlmBalanceObj = balances.find(b => b.currency_code === 'VLM');
+  const vlmBalanceCents = vlmBalanceObj ? vlmBalanceObj.balance_cents : 0;
+
+  const mainFiatBalanceObj = balances.find(b => b.currency_code === preferredFiat);
+  const mainFiatBalanceCents = mainFiatBalanceObj ? mainFiatBalanceObj.balance_cents : 0;
+
+  const secondaryBalanceObj = balances.find(b => b.currency_code !== 'VLM' && b.currency_code !== preferredFiat && b.balance_cents > 0);
+  const secondaryCurrency = secondaryBalanceObj ? secondaryBalanceObj.currency_code : (preferredFiat === 'EUR' ? 'USD' : 'EUR');
+  const secondaryBalanceCents = secondaryBalanceObj ? secondaryBalanceObj.balance_cents : 0;
 
   return (
     <div className="flex-1 bg-transparent p-6 md:p-10 select-none font-sans overflow-y-auto max-w-5xl mx-auto w-full min-h-[100dvh] text-text-primary">
@@ -309,7 +336,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
             </h2>
             <div className="flex items-center gap-2 text-text-secondary bg-white-5 px-4 py-1.5 rounded-full border border-white-5">
               <span className="w-2 h-2 rounded-full bg-accent/80"></span>
-              <span className="text-sm font-medium tracking-wide">≈ {totalInVLM.toLocaleString(undefined, { maximumFractionDigits: 2 })} VLM</span>
+              <span className="text-sm font-medium tracking-wide">{totalInVLM.toLocaleString(undefined, { maximumFractionDigits: 2 })} VLM</span>
             </div>
           </div>
 
@@ -344,33 +371,77 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
             </button>
           </div>
 
-          {/* Accounts List */}
-          <div className="pt-4">
-            <h3 className="text-lg font-medium mb-6 text-white px-2">Your Accounts</h3>
-            <div className="space-y-3">
-              {activeBalances.map(b => (
-                <div key={b.currency_code} className="flex items-center justify-between p-5 glass-card hover:bg-white-5 transition-colors">
-                  <div className="flex items-center gap-5">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-sm text-lg font-medium ${b.currency_code === 'VLM' ? 'bg-accent text-velum-900' : 'bg-white-10 text-white'}`}>
-                      {b.currency_code === 'VLM' ? 'V' : b.currency_code.substring(0,2)}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-white text-base">{b.currency_code.replace('_SIM', '')} Account</h4>
-                      <p className="text-sm text-text-secondary mt-0.5">Available Balance</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-medium text-xl text-white">{b.currency_code === 'VLM' ? (b.balance_cents/100).toLocaleString() : formatCurrency(b.balance_cents / 100, b.currency_code)}</div>
-                    {b.currency_code !== preferredFiat && b.currency_code !== 'VLM' && (
-                       <div className="text-sm text-text-secondary mt-0.5">
-                         ≈ {formatCurrency(convertAmount(b.balance_cents/100, b.currency_code, preferredFiat), preferredFiat)}
-                       </div>
-                    )}
+          {/* Your Accounts Section */}
+          <div className="space-y-5 max-w-xl mx-auto mt-12 select-none animate-in fade-in duration-500">
+            <div className="flex justify-between items-center px-1">
+              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-text-secondary font-mono">
+                Asset Wallets
+              </h3>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-4">
+              {/* Box 1: VLM */}
+              <div className="p-5 rounded-2xl border border-white-5 glass-card flex flex-col justify-between h-28 transition-all duration-300 hover:scale-[1.02] hover:border-accent/30 relative overflow-hidden group">
+                <div className="flex justify-between items-start">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary font-mono">
+                    Velum
+                  </span>
+                  <div className="p-1.5 bg-accent/10 rounded-lg text-accent group-hover:bg-accent group-hover:text-black transition-all duration-300">
+                    <Activity className="w-3.5 h-3.5" />
                   </div>
                 </div>
-              ))}
+                <div className="flex flex-col">
+                  <span className="text-xl font-bold text-white truncate font-mono tracking-tight">
+                    {(vlmBalanceCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[9px] font-black tracking-widest text-text-secondary uppercase mt-0.5">
+                    VLM Token
+                  </span>
+                </div>
+              </div>
+
+              {/* Box 2: Main Fiat */}
+              <div className="p-5 rounded-2xl border border-white-5 glass-card flex flex-col justify-between h-28 transition-all duration-300 hover:scale-[1.02] hover:border-white-15 relative overflow-hidden group">
+                <div className="flex justify-between items-start">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary font-mono">
+                    Primary
+                  </span>
+                  <div className="p-1.5 bg-white-5 rounded-lg text-text-primary group-hover:bg-white group-hover:text-black transition-all duration-300">
+                    <Landmark className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xl font-bold text-white truncate font-mono tracking-tight">
+                    {formatCurrency(mainFiatBalanceCents / 100, preferredFiat)}
+                  </span>
+                  <span className="text-[9px] font-black tracking-widest text-text-secondary uppercase mt-0.5">
+                    {preferredFiat.replace('_SIM', '')} Wallet
+                  </span>
+                </div>
+              </div>
+
+              {/* Box 3: Secondary Fiat */}
+              <div className="p-5 rounded-2xl border border-white-5 glass-card flex flex-col justify-between h-28 transition-all duration-300 hover:scale-[1.02] hover:border-white-15 relative overflow-hidden group">
+                <div className="flex justify-between items-start">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary font-mono">
+                    Secondary
+                  </span>
+                  <div className="p-1.5 bg-white-5 rounded-lg text-text-primary group-hover:bg-white group-hover:text-black transition-all duration-300">
+                    <Building className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xl font-bold text-white truncate font-mono tracking-tight">
+                    {formatCurrency(secondaryBalanceCents / 100, secondaryCurrency)}
+                  </span>
+                  <span className="text-[9px] font-black tracking-widest text-text-secondary uppercase mt-0.5">
+                    {secondaryCurrency.replace('_SIM', '')} Wallet
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
+
         </div>
       )}
 
@@ -451,10 +522,9 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
                   </div>
                 </div>
                 <input 
-                  type="number" min="0.01" step="0.01" 
-                  value={exchangeAmount} onChange={e => setExchangeAmount(e.target.value)} 
-                  placeholder="0.00" 
-                  className="w-full bg-transparent text-3xl font-medium outline-none text-white placeholder:text-white/20" 
+                  type="text" 
+                  value={exchangeAmount} onChange={e => handleAmountMaskChange(e.target.value, setExchangeAmount)} 
+                  className="w-full bg-transparent text-3xl font-medium outline-none text-white placeholder:text-white/20 font-mono" 
                 />
               </div>
 
@@ -473,15 +543,15 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
                     <CustomDropdown options={currencyOptions} value={exchangeTo} onChange={setExchangeTo} />
                   </div>
                 </div>
-                <div className="text-3xl font-medium text-white opacity-90 overflow-hidden text-ellipsis">
-                  {exchangeAmount && !isNaN(parseFloat(exchangeAmount)) 
-                    ? convertAmount(parseFloat(exchangeAmount), exchangeFrom, exchangeTo).toFixed(2)
+                <div className="text-3xl font-medium text-white opacity-90 overflow-hidden text-ellipsis font-mono">
+                  {exchangeAmount && !isNaN(parseFloat(exchangeAmount.replace(/[^0-9.]/g, ''))) 
+                    ? convertAmount(parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')), exchangeFrom, exchangeTo).toFixed(2)
                     : '0.00'}
                 </div>
               </div>
 
               <div className="pt-6">
-                <button type="submit" className="w-full py-3.5 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors">Complete Exchange</button>
+                <button type="submit" disabled={parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-3.5 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Complete Exchange</button>
               </div>
             </form>
           </div>
@@ -507,10 +577,9 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
               <div className="p-4 glass-card rounded-xl transition-colors focus-within:border-accent/40">
                 <span className="text-sm font-medium text-text-secondary block mb-3">Amount ({preferredFiat})</span>
                 <input 
-                  type="number" min="0.01" step="0.01" 
-                  value={fundingAmount} onChange={e => setFundingAmount(e.target.value)} 
-                  placeholder="0.00" 
-                  className="w-full bg-transparent text-4xl font-medium outline-none text-white placeholder:text-white/20" 
+                  type="text" 
+                  value={fundingAmount} onChange={e => handleAmountMaskChange(e.target.value, setFundingAmount)} 
+                  className="w-full bg-transparent text-4xl font-medium outline-none text-white placeholder:text-white/20 font-mono" 
                 />
               </div>
 
@@ -527,7 +596,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
               </div>
 
               <div className="pt-4">
-                <button type="submit" disabled={!fundingMethod || !fundingAmount} className="w-full py-3.5 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <button type="submit" disabled={!fundingMethod || parseFloat(fundingAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-3.5 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   Confirm {fundingType === 'RECHARGE' ? 'Deposit' : 'Withdrawal'}
                 </button>
               </div>
@@ -586,19 +655,15 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
                 </div>
               </div>
 
-              <div className="space-y-2 relative z-10">
-                <label className="block text-sm font-medium text-text-secondary px-1">Account Number</label>
-                <input 
-                  type="text" 
-                  placeholder={newMethodCategory === 'BANK' ? 'Bank Account Number' : 'Card Number'} 
-                  required value={newMethodNumber} onChange={e => setNewMethodNumber(e.target.value)} 
-                  className="glass-input w-full px-4 py-3.5 tracking-widest font-mono text-lg"
-                />
-              </div>
+              {addMethodError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-500 text-sm">
+                  {addMethodError}
+                </div>
+              )}
 
               <div className="pt-2">
-                <button type="submit" disabled={!newMethodNumber} className="w-full py-4 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  Link Account
+                <button type="submit" className="w-full py-4 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors">
+                  Generate & Link Account
                 </button>
               </div>
             </form>

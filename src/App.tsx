@@ -6,7 +6,6 @@ import { useWebSocket } from './hooks/useWebSocket';
 import ProfileMigration from './components/ProfileMigration';
 
 const AdminControlDesk = lazy(() => import('./views/AdminControlDesk'));
-const CliConsole = lazy(() => import('./components/CliConsole'));
 
 function AppContent() {
   const { isAuthenticated, user, sessionId, deviceId, handleLoginSuccess, handleLogout, isLoadingSession } = useAuth();
@@ -70,8 +69,7 @@ function AppContent() {
     }
   });
 
-  // Admin Interface Mode (only for CLI_ADMIN)
-  const [adminInterfaceMode, setAdminInterfaceMode] = useState<'CLI' | 'GUI'>('CLI');
+
 
   if (isLoadingSession) {
     return (
@@ -118,44 +116,30 @@ function AppContent() {
 
   // CLI Executive interface
   if (user.role === 'CLI_ADMIN') {
-    if (adminInterfaceMode === 'CLI') {
-     return (
-       <div className="w-full h-dvh overflow-hidden flex flex-col bg-velum-900">
-         <Suspense fallback={null}>
-           <CliConsole 
-             adminId={Number(user.userId)} 
-             onLogout={handleLogout}
-             onSwitchToGui={() => setAdminInterfaceMode('GUI')}
-           />
-         </Suspense>
-       </div>
-     );
-    } else {
-     return (
-       <Suspense fallback={null}>
-         <AdminControlDesk
-           user={user}
-           isDark={isDark}
-           setIsDark={setIsDark}
-           onLogout={handleLogout}
-           onSwitchToCli={() => setAdminInterfaceMode('CLI')}
-         />
-       </Suspense>
-     );
-    }
-
-    }
+    return (
+      <Suspense fallback={null}>
+        <AdminControlDesk
+          user={user}
+          isDark={isDark}
+          setIsDark={setIsDark}
+          onLogout={handleLogout}
+        />
+      </Suspense>
+    );
+  }
   
 
   // System Administration desks
   if (user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN') {
     return (
-      <AdminControlDesk 
-        user={user} 
-        isDark={isDark} 
-        setIsDark={setIsDark} 
-        onLogout={handleLogout} 
-      />
+      <Suspense fallback={null}>
+        <AdminControlDesk 
+          user={user} 
+          isDark={isDark} 
+          setIsDark={setIsDark} 
+          onLogout={handleLogout} 
+        />
+      </Suspense>
     );
   }
 

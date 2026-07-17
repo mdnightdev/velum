@@ -1,3 +1,10 @@
+// Suppress Node.js pg security warnings
+process.removeAllListeners('warning');
+process.on('warning', (warning) => {
+  if (warning.message && warning.message.includes('SSL modes')) return;
+  console.warn(warning.stack || warning.message);
+});
+
 import readline from 'readline';
 import { Writable } from 'stream';
 import dotenv from 'dotenv';

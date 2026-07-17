@@ -8,40 +8,106 @@ export interface CommandMeta {
 export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
   '/users': {
     list: {
-      desc: 'List registered users',
+      desc: 'List registered operatives',
       risk: 'LOW',
       flags: {
-        '--status <status>': 'Filter users by status (e.g. active, suspended, quarantined)'
+        '--status <status>': 'Filter users by status (active, suspended, quarantined, deleted)'
       }
     },
     cat: {
-      desc: 'View profile details of a user',
+      desc: 'View dossier profile details of a user',
       risk: 'LOW',
       args: ['<uid/username>']
     },
+    create: {
+      desc: 'Directly instantiate a new user account profile',
+      risk: 'HIGH',
+      args: ['<username>', '<password>', '[role]']
+    },
+    override: {
+      desc: 'Reset user password and credentials to active state',
+      risk: 'HIGH',
+      args: ['<uid/username>', '<new_password>']
+    },
+    set: {
+      desc: 'Modify global user role configuration',
+      risk: 'HIGH',
+      args: ['<uid/username>', '<role>']
+    },
+    reset: {
+      desc: 'Revert avatar violating platform safety policies',
+      risk: 'MEDIUM',
+      args: ['<uid/username>']
+    },
+    deactivate: {
+      desc: 'Start deactivation grace period for an account',
+      risk: 'HIGH',
+      args: ['<uid/username>']
+    },
+    cancel: {
+      desc: 'Abort a pending soft deactivation request',
+      risk: 'MEDIUM',
+      args: ['<uid/username>']
+    },
+    restore: {
+      desc: 'Restore a soft-deleted user back to active',
+      risk: 'MEDIUM',
+      args: ['<uid/username>']
+    },
+    pending: {
+      desc: 'List accounts scheduled for soft deactivation',
+      risk: 'LOW'
+    },
+    purge: {
+      desc: 'Irreversible database purge of user personal markers (GDPR)',
+      risk: 'CRITICAL',
+      args: ['<uid/username>']
+    },
+    'release-assets': {
+      desc: 'Verify and release financial assets for a deactivating user',
+      risk: 'HIGH',
+      args: ['<uid/username>']
+    }
+  },
+  '/sanctions': {
+    history: {
+      desc: 'Trace active/historical sanctions logged for user',
+      risk: 'LOW',
+      args: ['<uid/username>']
+    },
+    status: {
+      desc: 'Query active containment, mute, or jail status',
+      risk: 'LOW',
+      args: ['<uid/username>']
+    },
+    kick: {
+      desc: 'Forcefully sever websocket session for an active user',
+      risk: 'MEDIUM',
+      args: ['<user_id>']
+    },
     ban: {
-      desc: 'Terminate active sessions and apply a global ban',
+      desc: 'Apply global ban and flush active user sessions',
       risk: 'MEDIUM',
       args: ['<uid/username>'],
       flags: {
-        '--reason <reason>': 'Administrative audit reason'
+        '--reason <reason>': 'Reason for global ban'
       }
     },
     unban: {
-      desc: 'Restore active status to a banned user',
+      desc: 'Lift global ban restriction from a user',
       risk: 'MEDIUM',
       args: ['<uid/username>']
     },
     mute: {
-      desc: 'Silence user globally (prevent channel message posts)',
+      desc: 'Silence user globally (prevent message writes)',
       risk: 'MEDIUM',
       args: ['<uid/username>'],
       flags: {
-        '--reason <reason>': 'Reason for muting'
+        '--reason <reason>': 'Reason for mute'
       }
     },
     unmute: {
-      desc: 'Unsilence user globally (restore write privileges)',
+      desc: 'Unsilence user globally (restore message writes)',
       risk: 'MEDIUM',
       args: ['<uid/username>']
     },
@@ -50,385 +116,293 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       risk: 'MEDIUM',
       args: ['<uid/username>'],
       flags: {
-        '--reason <reason>': 'Reason for quarantine'
+        '--reason <reason>': 'Reason for jail quarantine'
       }
     },
     unjail: {
-      desc: 'Lift quarantined status from a user',
+      desc: 'Lift quarantined jail status from a user',
       risk: 'MEDIUM',
       args: ['<uid/username>']
-    },
-    'reset': {
-      desc: 'Revert user profile avatar',
-      risk: 'MEDIUM',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Reason for resetting avatar'
-      }
-    },
-    override: {
-      desc: 'Reset user password and credentials to active state',
-      risk: 'HIGH',
-      args: ['<uid/username>', '<new_password>', '[new_recovery_key]', '[new_safe_word]'],
-      flags: {
-        '--reason <reason>': 'Override authorization reason'
-      }
-    },
-    'set': {
-      desc: 'Change global user role (USER, SUPPORT_ADMIN, LOGIN_ADMIN, CLI_ADMIN)',
-      risk: 'HIGH',
-      args: ['<uid/username>', '<role>'],
-      flags: {
-        '--reason <reason>': 'Role modification reason'
-      }
-    },
-    deactivate: {
-      desc: 'Start 14-day deactivation grace period',
-      risk: 'HIGH',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Deactivation audit reason'
-      }
-    },
-    'cancel': {
-      desc: 'Reverse pending soft-deletion',
-      risk: 'MEDIUM',
-      args: ['<uid/username>']
-    },
-    'release': {
-      desc: 'Trigger 2-day verification & asset release',
-      risk: 'HIGH',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Verification audit reason'
-      }
-    },
-    'purge': {
-      desc: 'Irreversible final database purge (requires release-assets first)',
-      risk: 'CRITICAL',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Purge verification audit reason'
-      }
-    },
-    'nuke': {
-      desc: 'Instant purge & immediate treasury asset takeover',
-      risk: 'CRITICAL',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Fraud audit reason'
-      }
-    },
-    blacklist: {
-      desc: 'Add target ID to system blacklist',
-      risk: 'HIGH',
-      args: ['<id>'],
-      flags: {
-        '--type <type>': 'Blacklist type (e.g. IP, DEVICE, EMAIL). Defaults to IP',
-        '--reason <reason>': 'Blacklist reason'
-      }
-    },
-    unblacklist: {
-      desc: 'Remove target ID from system blacklist',
-      risk: 'HIGH',
-      args: ['<id>']
-    },
-    'pending': {
-      desc: 'View users in deactivation grace periods',
-      risk: 'LOW'
-    },
-    restore: {
-      desc: 'Restore a soft-purged user to active status',
-      risk: 'MEDIUM',
-      args: ['<uid/username>']
-    }
-  },
-  '/lounges': {
-    list: {
-      desc: 'List active lounges',
-      risk: 'LOW'
-    },
-    cat: {
-      desc: 'View detailed metadata of a lounge',
-      risk: 'LOW',
-      args: ['<lounge_id>']
-    },
-    chown: {
-      desc: 'Transfer ownership of a lounge',
-      risk: 'HIGH',
-      args: ['<lounge_id>', '<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Ownership transfer reason'
-      }
-    },
-    clean: {
-      desc: 'Wipe all message history inside the public velum_lounge channel',
-      risk: 'HIGH',
-      flags: {
-        '--reason <reason>': 'Clean logic audit reason'
-      }
-    },
-    'restore': {
-      desc: 'Restore messages from an encrypted restore point',
-      risk: 'CRITICAL',
-      args: ['<restore_point_id>']
-    },
-    delete: {
-      desc: 'Delete lounge, sublounges, and messages',
-      risk: 'CRITICAL',
-      args: ['<lounge_id>'],
-      flags: {
-        '--reason <reason>': 'Delete logic audit reason'
-      }
-    },
-    lock: {
-      desc: 'Put lounge in read-only lock state',
-      risk: 'MEDIUM',
-      args: ['<lounge_id>'],
-      flags: {
-        '--reason <reason>': 'Lock reason'
-      }
-    },
-    unlock: {
-      desc: 'Unlock a locked lounge',
-      risk: 'MEDIUM',
-      args: ['<lounge_id>']
-    }
-  },
-  '/support': {
-    pending: {
-      desc: 'List open or pending Support Operator promotion nominations',
-      risk: 'LOW'
-    },
-    token: {
-      desc: 'Reveal support recovery token (masked)',
-      risk: 'LOW',
-      args: ['<ticket_id>']
-    },
-    approve: {
-      desc: 'Approve support candidate and generate SA credentials',
-      risk: 'MEDIUM',
-      args: ['<username>'],
-      flags: {
-        '--reason <reason>': 'Approval audit reason'
-      }
-    },
-    reject: {
-      desc: 'Reject Support Operator role nomination for user',
-      risk: 'MEDIUM',
-      args: ['<username>'],
-      flags: {
-        '--reason <reason>': 'Rejection reason'
-      }
-    },
-    demote: {
-      desc: 'Demote Support Admin access and revoke SA account',
-      risk: 'MEDIUM',
-      args: ['<username>'],
-      flags: {
-        '--reason <reason>': 'Demotion reason'
-      }
-    },
-    delete: {
-      desc: 'Purge a support ticket record',
-      risk: 'HIGH',
-      args: ['<ticket_id>'],
-      flags: {
-        '--reason <reason>': 'Delete ticket reason'
-      }
     }
   },
   '/db': {
     integrity: {
-      desc: 'Audit foreign keys and database coherence',
+      desc: 'Audit datastore relational foreign keys and schema health',
       risk: 'LOW'
     },
-    'reset-nonces': {
-      desc: 'Wipe all login nonces',
+    orphans: {
+      desc: 'Scan relational tables for orphaned entities',
+      risk: 'LOW'
+    },
+    clean: {
+      desc: 'Purge orphaned profiles and dead session registries',
       risk: 'HIGH'
     },
-    'orphans': {
-      desc: 'Scan for orphaned relational records',
-      risk: 'LOW'
+    fsync: {
+      desc: 'Force flush in-memory database to SQLite disk storage',
+      risk: 'HIGH'
     },
-    'clean': {
-	      desc: 'Clean orphaned relational profiles and sessions',
+    vacuum: {
+      desc: 'Compact database and reclaim unused disk space',
+      risk: 'HIGH'
+    },
+    resetn: {
+      desc: 'Clear login nonces to invalidate replaying attempts',
       risk: 'HIGH'
     },
     backup: {
-      desc: 'Export structural and configuration backup (no PII)',
-      risk: 'HIGH'
-    },
-    export: {
-      desc: 'Export raw records of a table (masked PII)',
-      risk: 'LOW',
-      args: ['<table>']
-    },
-    vacuum: {
-      desc: 'Optimize, compact, and reclaim SQLite disk space',
+      desc: 'Export structural schema configurations JSON backup',
       risk: 'HIGH'
     },
     restore: {
-      desc: 'Restore database structural settings',
+      desc: 'Restore database structural settings from backup',
       risk: 'CRITICAL',
       args: ['<backup_file>']
     },
     seed: {
-      desc: 'Seed platform non-destructively (retains existing records)',
+      desc: 'Non-destructively seed platform configuration tables',
       risk: 'CRITICAL'
-    },
-    prune: {
-      desc: 'Deep database purge and hard structural reset (deletes PII)',
-      risk: 'HIGH'
     },
     wipe: {
-      desc: 'Irreversible deep full-database reset',
+      desc: 'Irreversible database reset (retains admin configs only)',
       risk: 'CRITICAL'
+    }
+  },
+  '/market': {
+    list: {
+      desc: 'List active marketplace product listings',
+      risk: 'LOW'
+    },
+    cat: {
+      desc: 'View detailed inventory, SKU, pricing, and seller details',
+      risk: 'LOW',
+      args: ['<listing_id>']
+    },
+    suspend: {
+      desc: 'Deactivate a listing from public search indexes',
+      risk: 'MEDIUM',
+      args: ['<listing_id>']
+    },
+    unsuspend: {
+      desc: 'Re-enable a suspended marketplace listing',
+      risk: 'MEDIUM',
+      args: ['<listing_id>']
+    },
+    adjust: {
+      desc: 'Manually override inventory stock count for audit correction',
+      risk: 'HIGH',
+      args: ['<listing_id>', '<stock_count>']
+    }
+  },
+  '/escrow': {
+    cat: {
+      desc: 'View structural contract details of an escrow transaction',
+      risk: 'LOW',
+      args: ['<transaction_id>']
+    },
+    list: {
+      desc: 'Audit active escrow locks and check anomaly logs',
+      risk: 'MEDIUM'
+    },
+    release: {
+      desc: 'Force-complete escrow and credit VLM funds to seller',
+      risk: 'HIGH',
+      args: ['<transaction_id>']
+    },
+    refund: {
+      desc: 'Force-cancel escrow and return VLM funds to buyer',
+      risk: 'HIGH',
+      args: ['<transaction_id>']
+    },
+    seize: {
+      desc: 'Seize escrowed funds directly to sovereign treasury 999',
+      risk: 'CRITICAL',
+      args: ['<transaction_id>']
+    }
+  },
+  '/devops': {
+    config: {
+      desc: 'View active limits, fees, tax, and exchange configurations',
+      risk: 'LOW'
+    },
+    token: {
+      desc: 'Generate a support admin temporary access code',
+      risk: 'HIGH'
+    },
+    'maint-off': {
+      desc: 'Disable platform maintenance mode restrictions',
+      risk: 'MEDIUM'
+    },
+    fee: {
+      desc: 'Set platform transaction fee percentage',
+      risk: 'HIGH',
+      args: ['<percent>']
+    },
+    tax: {
+      desc: 'Set platform transaction tax percentage',
+      risk: 'HIGH',
+      args: ['<percent>']
+    },
+    rate: {
+      desc: 'Manually update/add currency exchange rate settings',
+      risk: 'HIGH',
+      args: ['<base_currency>', '<quote_currency>', '<rate_value>']
+    },
+    'escrow-fee': {
+      desc: 'Set the platform escrow fee percentage',
+      risk: 'HIGH',
+      args: ['<percent>']
+    },
+    limit: {
+      desc: 'Set credit limit configuration parameters per user tier',
+      risk: 'HIGH',
+      args: ['<tier_name>', '<limit_cents>']
+    },
+    'main-on': {
+      desc: 'Enable global maintenance mode (blocks non-admin actions)',
+      risk: 'HIGH',
+      flags: {
+        '--reason <reason>': 'Reason for maintenance mode'
+      }
     }
   },
   '/sys': {
     status: {
-      desc: 'Check system daemon and network health',
+      desc: 'Output running port, SQLite path, tables size, and stats',
       risk: 'LOW'
     },
     top: {
-      desc: 'View active resources and execution metrics',
+      desc: 'View active execution resources and memory usage metrics',
       risk: 'LOW'
     },
-    risk: {
-      desc: 'Scan active logs for security threats',
+    activest: {
+      desc: 'Count online socket endpoints and WebSocket metrics',
       risk: 'LOW'
     },
-    token: {
-      desc: 'Generate dynamic 2FA operator token and OTP',
+    ccache: {
+      desc: 'Flush volatile database caches and memory registries',
       risk: 'MEDIUM'
     },
     kill: {
-      desc: 'Force terminate a specific session',
+      desc: 'Forcefully sever a specific user session',
       risk: 'MEDIUM',
       args: ['<session_id>']
     },
-    'flush': {
-      desc: 'Flush all active sessions, forcing global re-auth',
+    flush: {
+      desc: 'Flush all global sessions forcing system-wide re-auth',
       risk: 'HIGH'
-    },
-    'main-on': {
-      desc: 'Put server in maintenance mode',
-      risk: 'HIGH',
-      flags: {
-        '--reason <reason>': 'Maintenance reason'
-      }
-    },
-    'maint-off': {
-      desc: 'Lift maintenance mode restrictions',
-      risk: 'MEDIUM'
     }
   },
-  '/bank': {
-    fundc: {
-      desc: 'Fund central reserve',
-      risk: 'CRITICAL',
-      args: ['<amount_cents>', '"<description>"']
-    },
-    fundt: {
-      desc: 'Fund member trust from central reserve',
-      risk: 'CRITICAL',
-      args: ['<amount_cents>', '"<description>"']
-    },
-    funde: {
-      desc: 'Fund escrow reserve from central reserve',
-      risk: 'CRITICAL',
-      args: ['<amount_cents>', '"<description>"']
-    },
+  '/banks': {
     bankau: {
-      desc: 'Audit banking liquidity and transaction integrity',
+      desc: 'Audit centralized liquidity, deposits, and withdrawal delta',
       risk: 'LOW'
     },
     banks: {
-      desc: 'Report real-time banking account statuses',
+      desc: 'Report real-time central account balances',
       risk: 'LOW'
     },
+    txlog: {
+      desc: 'Output list of recent central bank ledger transactions',
+      risk: 'LOW'
+    },
+    staff: {
+      desc: 'List all operatives carrying bank admin roles',
+      risk: 'LOW'
+    },
+    wire: {
+      desc: 'Execute ledger transaction transfer between two accounts',
+      risk: 'HIGH',
+      args: ['<from_account>', '<to_account>', '<cents>']
+    },
+    fundc: {
+      desc: 'Fund central bank reserve account from sovereign assets',
+      risk: 'CRITICAL',
+      args: ['<cents>', '<description>']
+    },
+    fundt: {
+      desc: 'Fund member trust account from central reserve',
+      risk: 'CRITICAL',
+      args: ['<cents>', '<description>']
+    },
+    funde: {
+      desc: 'Fund escrow reserve account from central reserve',
+      risk: 'CRITICAL',
+      args: ['<cents>', '<description>']
+    },
     bankf: {
-      desc: 'Freeze banking services for a user',
+      desc: 'Freeze banking services (freeze user wallet account)',
       risk: 'CRITICAL',
       args: ['<uid/username>']
     },
     bankad: {
-      desc: 'Adjust balance for audit correction',
+      desc: 'Manually adjust account balance with compensating ledger entry',
       risk: 'CRITICAL',
-      args: ['<account_id>', '<amount_cents>', '"<reason>"']
+      args: ['<account_id>', '<amount_cents>', '<reason>']
     }
   },
-  '/audit': {
-    user: {
-      desc: 'Trace administrative audit logs for user',
-      risk: 'LOW',
-      args: ['<uid/username>']
-    },
+  '/audits': {
     grep: {
-      desc: 'Search logs for a text pattern',
+      desc: 'Scan active administrative logs for text pattern',
       risk: 'LOW',
       args: ['<pattern>']
     },
-    history: {
-      desc: 'Display recent administrative audit logs sequence',
+    session: {
+      desc: 'Inspect user device fingerprints and geographic velocity metrics',
+      risk: 'LOW',
+      args: ['<session_id>']
+    },
+    ledger: {
+      desc: 'Execute rolling HMAC transaction verification checks',
       risk: 'LOW'
     },
-    'ledger': {
-      desc: 'Execute HMAC rolling hash & mathematical verification (Power 2)',
+    hijacks: {
+      desc: 'Audit active sessions for browser fingerprint hijack anomalies',
       risk: 'LOW'
     },
-    'hijacks': {
-      desc: 'Evaluate active sessions for hijacked footprints (Power 1)',
+    ip: {
+      desc: 'Cross-correlate accounts sharing identical subnets',
       risk: 'LOW'
     },
-    'ip': {
-      desc: 'Cross-correlate accounts sharing identical subnets/profiles (Power 3)',
+    nodes: {
+      desc: 'Scan recursive channel visibility permissions inheritance',
       risk: 'LOW'
     },
-    'nodes': {
-      desc: 'Scan fractal categories for RBAC inheritance leaks (Power 4)',
-      risk: 'LOW'
-    },
-    'reconstruct': {
-      desc: 'Rebuild broken mutual friend relationships (Power 5)',
+    reconstruct: {
+      desc: 'Audit and repair unbidirectional friendship discrepancies',
       risk: 'HIGH'
     },
-    'scan': {
-        desc: 'Evaluate active sessions for hijacked footprints (Power 1)',
-        risk: 'LOW'
-    },
-    'escrows': {
-        desc: 'Audit active escrow locks for timeout anomalies and balance mismatches',
-        risk: 'MEDIUM'
-    },
-   repair: {
-      desc: 'Inject ledger repair delta and re-bake hash chain',
+    repair: {
+      desc: 'Inject ledger repair correction delta and re-bake hash chain',
       risk: 'HIGH',
-      args: ['<user_id>', '<amount_cents>']
-    },
-    },
+      args: ['<uid/username>', '<amount_cents>']
+    }
+  },
   '/fraud': {
-    seize: {
-      desc: 'Seize all user ledger assets & escrows to treasury',
-      risk: 'CRITICAL',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Seizure reason'
-      }
+    risklog: {
+      desc: 'Show recent security and fraud heuristic log alerts',
+      risk: 'LOW'
     },
     freeze: {
-      desc: 'Lock user wallets and escrows',
+      desc: 'Lock user wallet transactions and hold active escrows',
       risk: 'MEDIUM',
       args: ['<uid/username>'],
       flags: {
-        '--reason <reason>': 'Freeze reason'
+        '--reason <reason>': 'Reason for wallet freeze'
       }
     },
     unfreeze: {
-      desc: 'Restore financial transactions access',
+      desc: 'Restore user financial wallet transactions access',
       risk: 'MEDIUM',
       args: ['<uid/username>']
+    },
+    seize: {
+      desc: 'Transfer all user assets to treasury 999 and purge account',
+      risk: 'CRITICAL',
+      args: ['<uid/username>'],
+      flags: {
+        '--reason <reason>': 'Reason for seizure'
+      }
     }
   }
 };

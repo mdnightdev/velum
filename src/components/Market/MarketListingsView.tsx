@@ -50,9 +50,21 @@ export function MarketListingsView({
                 <div className="space-y-3">
                   <div className="flex justify-between items-start gap-3">
                     <div className="space-y-1">
-                      <span className="text-[8px] font-mono tracking-widest uppercase bg-text-primary/[0.02] text-accent/80 border border-accent/5 px-2 py-0.5 rounded-md leading-none">
-                        Available
-                      </span>
+                      {listing.verification_status === 'PENDING_REVIEW' && (
+                        <span className="text-[8px] font-mono tracking-widest uppercase bg-amber-400/10 text-amber-400 border border-amber-400/20 px-2 py-0.5 rounded-md leading-none">
+                          Pending Review
+                        </span>
+                      )}
+                      {listing.verification_status === 'REJECTED' && (
+                        <span className="text-[8px] font-mono tracking-widest uppercase bg-rose-400/10 text-rose-400 border border-rose-400/20 px-2 py-0.5 rounded-md leading-none">
+                          Rejected
+                        </span>
+                      )}
+                      {(!listing.verification_status || listing.verification_status === 'APPROVED') && (
+                        <span className="text-[8px] font-mono tracking-widest uppercase bg-text-primary/[0.02] text-accent/80 border border-accent/5 px-2 py-0.5 rounded-md leading-none">
+                          Available
+                        </span>
+                      )}
                       <h4 className="text-xs font-sans font-extrabold text-text-primary group-hover:text-white transition line-clamp-1 mt-1">
                         {listing.title}
                       </h4>
@@ -98,16 +110,30 @@ export function MarketListingsView({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onBuyListing(listing);
+                      if (listing.verification_status === 'APPROVED' || !listing.verification_status) {
+                        onBuyListing(listing);
+                      }
                     }}
-                    disabled={isOwner}
+                    disabled={isOwner || listing.verification_status === 'PENDING_REVIEW' || listing.verification_status === 'REJECTED'}
                     className={`w-full py-2 rounded-xl text-[9px] uppercase font-sans font-black tracking-widest transition-all duration-150 flex items-center justify-center gap-1 cursor-pointer ${
                       isOwner
                         ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
+                        : listing.verification_status === 'PENDING_REVIEW'
+                        ? 'bg-amber-400/5 text-amber-400 border border-amber-400/20 cursor-not-allowed'
+                        : listing.verification_status === 'REJECTED'
+                        ? 'bg-rose-400/5 text-rose-400 border border-rose-400/20 cursor-not-allowed'
                         : 'bg-text-primary/[0.03] hover:bg-accent hover:text-velum-900 border border-white-5 hover:border-accent text-white'
                     }`}
                   >
-                    <span>{isOwner ? 'Owned' : 'Purchase'}</span>
+                    <span>
+                      {isOwner 
+                        ? 'Owned' 
+                        : listing.verification_status === 'PENDING_REVIEW' 
+                        ? 'Pending Review' 
+                        : listing.verification_status === 'REJECTED' 
+                        ? 'Rejected' 
+                        : 'Purchase'}
+                    </span>
                   </button>
                 ) : (
                   <div className="w-full text-center py-2 text-[9px] font-mono font-black text-text-disabled border border-white-5 bg-velum-900 rounded-xl uppercase tracking-widest">

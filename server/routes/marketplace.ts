@@ -21,7 +21,8 @@ import {
   getSupportChats,
   createSupportChat,
   addSupportChatMessage,
-  resolveSupportChatDispute
+  resolveSupportChatDispute,
+  updateListingPrice
 } from '../controllers/marketplace.js';
 
 export const marketplaceRouter = express.Router();
@@ -29,6 +30,7 @@ export const marketplaceRouter = express.Router();
 // PILLAR A: Storefront Listings & Media API
 marketplaceRouter.get('/marketplace/listings', authenticateUser, getListings);
 marketplaceRouter.post('/marketplace/listings', authenticateUser, createListing);
+marketplaceRouter.put('/marketplace/listings/:listingId', authenticateUser, updateListingPrice);
 marketplaceRouter.post('/marketplace/listings/:listingId/media', authenticateUser, addListingMedia);
 marketplaceRouter.get('/marketplace/listings/:listingId/media', authenticateUser, getListingMedia);
 

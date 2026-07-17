@@ -111,7 +111,6 @@ export function CouponCreator({ onSuccess, onCancel, fetchSessionId }: CouponCre
             required
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="VELUMSUMMER"
             className="w-full bg-black/40 border border-white-5 rounded-xl px-3.5 py-2 text-xs text-white focus:border-accent focus:outline-none font-mono"
           />
         </div>
@@ -154,7 +153,6 @@ export function CouponCreator({ onSuccess, onCancel, fetchSessionId }: CouponCre
               required
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={type === 'PERCENTAGE' ? '15' : '10.00'}
               className="w-full bg-black/40 border border-white-5 rounded-xl px-3.5 py-2 text-xs text-white focus:border-accent focus:outline-none"
             />
           </div>

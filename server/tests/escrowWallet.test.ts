@@ -191,11 +191,9 @@ describe('Escrow & Wallet Ledger Integration Tests', () => {
     const sellerWallet = (db.user_wallets || []).find(w => w.user_id === 102);
     expect(sellerWallet?.balance_cents).toBe(9500);
 
-    expect(db.wallet_ledger_entries).toHaveLength(2);
+    expect(db.wallet_ledger_entries).toHaveLength(1);
     expect((db.wallet_ledger_entries || [])[0].entry_type).toBe('ESCROW_RELEASE');
-    expect((db.wallet_ledger_entries || [])[0].amount_cents).toBe(10000);
-    expect((db.wallet_ledger_entries || [])[1].entry_type).toBe('PLATFORM_FEE');
-    expect((db.wallet_ledger_entries || [])[1].amount_cents).toBe(-500);
+    expect((db.wallet_ledger_entries || [])[0].amount_cents).toBe(9500);
   });
 
   it('should successfully revert/refund escrow back to buyer', async () => {

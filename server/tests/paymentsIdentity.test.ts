@@ -93,7 +93,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
 
   it('should allow user to add a payment method', async () => {
     const reqAdd = {
-      body: { methodType: 'CARD', institution: 'Test Bank', maskedNumber: '4242' },
+      body: { methodType: 'CARD', institution: 'Test Bank', methodCategory: 'DEBIT' },
       user: { user_id: 102, username: 'seller' }
     } as any;
 
@@ -151,7 +151,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
 
     const reqWithdraw = {
       body: { amount_cents: 1000, payout_method_id: 'pm_123' },
-      user: { user_id: 102, username: 'seller' }
+      user: { user_id: 102, username: 'seller', preferred_currency: 'USD_SIM' }
     } as any;
 
     let resWithdrawData: any;
@@ -182,7 +182,7 @@ describe('Phase 4: Users, Identity & Simulated Payments Layer Tests', () => {
 
     const reqRecharge = {
       body: { amount_cents: 5000, payment_method_id: 'pm_123' },
-      user: { user_id: 102, username: 'seller' }
+      user: { user_id: 102, username: 'seller', preferred_currency: 'USD_SIM' }
     } as any;
 
     let resRechargeData: any;

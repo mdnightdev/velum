@@ -198,3 +198,74 @@ export const freezeBankAccount = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message || 'Failed to update account freeze status.' });
   }
 };
+
+// Get all withdrawal requests (Payment Queue)
+export const getWithdrawalQueue = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (user && user.role === 'SUPPORT_ADMIN') {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+    db.withdrawal_requests = db.withdrawal_requests || [];
+    res.json(db.withdrawal_requests.sort((a, b) => Number(b.created_at) - Number(a.created_at)));
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch withdrawal queue.' });
+  }
+};
+
+// Get limits monitoring data
+export const getLimitsMonitoring = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (user && user.role === 'SUPPORT_ADMIN') {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+    db.users = db.users || [];
+    db.kyc_verifications = db.kyc_verifications || [];
+    db.withdrawal_requests = db.withdrawal_requests || [];
+    
+    const limitsData = db.users.map(u => {
+      const kyc = db.kyc_verifications!.find(k => Number(k.user_id) === Number(u.user_id));
+      const level = kyc?.verification_level || 'NONE';
+      let maxLimitCents = 0;
+      if (level === 'BASIC') maxLimitCents = 50000; // $500
+      if (level === 'FULL') maxLimitCents = 10000000; // $100,000
+      
+      const oneDayAgo = Date.now() - 86400000;
+      const recentWithdrawals = db.withdrawal_requests!.filter(
+        w => Number(w.user_id) === Number(u.user_id) && 
+             (w.status === 'COMPLETED' || w.status === 'PENDING_REVIEW') && 
+             Number(w.created_at) > oneDayAgo
+      );
+      const usageCents = recentWithdrawals.reduce((sum, w) => sum + w.amount_cents, 0);
+      
+      return {
+        user_id: u.user_id,
+        username: u.username,
+        kyc_level: level,
+        max_limit_cents: maxLimitCents,
+        used_24h_cents: usageCents,
+        status: usageCents >= maxLimitCents && maxLimitCents > 0 ? 'LIMIT_REACHED' : (usageCents > maxLimitCents * 0.8 && maxLimitCents > 0 ? 'WARNING' : 'NORMAL')
+      };
+    });
+    
+    res.json(limitsData);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch limits.' });
+  }
+};
+
+export const getIssuedCards = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (user && user.role === 'SUPPORT_ADMIN') {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+    const extAccounts = db.external_financial_accounts || [];
+    // Only return ones where it is Velum or they are a CARD
+    const issuedCards = extAccounts.filter(a => a.account_kind === 'CREDIT_CARD' || a.account_kind === 'DEBIT_CARD' || a.institution.includes('Velum'));
+    res.json(issuedCards);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch issued cards.' });
+  }
+};

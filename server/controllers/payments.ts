@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import { db, loadDb, saveDb } from '../db.js';
 import { runInTransaction } from '../db/index.js';
+import { getLockForUser } from '../utils/lockManager.js';
 import { generateUlid } from '../utils/ulid.js';
 import { generateTrcCode } from '../utils/trc.js';
 import { walletRepository } from '../db/walletRepository.js';
-import { bankStore } from '../services/bankStore.js';
+import { bankStore, getSystemAccount } from '../services/bankStore.js';
 import { 
   UserWallet, 
   WalletLedgerEntry, 
@@ -134,8 +135,8 @@ export const getWalletAndIdentity = async (req: Request, res: Response) => {
     const wallet = getOrCreateWallet(user.user_id);
     const kyc = getOrCreateKyc(user.user_id);
     res.json({ wallet, kyc });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to retrieve wallet information.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Wallet info unavailable' });
   }
 };
 
@@ -181,8 +182,8 @@ export const submitKyc = async (req: Request, res: Response) => {
 
     saveDb(true);
     res.json(kyc);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to submit identity data.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Submission failed' });
   }
 };
 
@@ -208,7 +209,7 @@ export const processKycReview = async (req: Request, res: Response) => {
 
     saveDb(true);
     res.json(kyc);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: 'KYC review simulation failed.' });
   }
 };
@@ -238,8 +239,8 @@ export const getPaymentMethods = async (req: Request, res: Response) => {
   });
 
     res.json(enrichedMethods);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch payment methods.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Methods unavailable' });
   }
 };
 
@@ -262,9 +263,9 @@ function formatSimulatedCredentials(numberStr: string, methodType: string): stri
 export const addPaymentMethod = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const { methodType, institution, maskedNumber, initialBalanceCents } = req.body;
+    const { methodType, institution, methodCategory, initialBalanceCents } = req.body;
 
-    if (!methodType || !institution || !maskedNumber) {
+    if (!methodType || !institution || !methodCategory) {
       return res.status(400).json({ error: 'Missing payment method details.' });
     }
 
@@ -272,44 +273,70 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid financial account class.' });
     }
 
-    const formattedMaskedNumber = formatSimulatedCredentials(maskedNumber, methodType);
-
     loadDb();
     db.external_financial_accounts = db.external_financial_accounts || [];
     db.payment_methods = db.payment_methods || [];
+
+    const accountKind = methodCategory === 'BANK' ? 'BANK_ACCOUNT' : (methodCategory === 'DEBIT' ? 'DEBIT_CARD' : 'CREDIT_CARD');
+
+    // Check limits (max 1 of each category)
+    const existingAccounts = db.external_financial_accounts.filter(a => Number(a.user_id) === Number(user.user_id) && a.is_active);
+    const existingOfKind = existingAccounts.find(a => a.account_kind === accountKind);
+    if (existingOfKind) {
+      return res.status(400).json({ error: `You already have a ${methodCategory.toLowerCase()} linked. Maximum 1 allowed per user.` });
+    }
+
+    // Generate realistic number
+    let formattedMaskedNumber = '';
+    if (methodCategory === 'BANK') {
+      const accNum = Math.floor(Math.random() * 9000000000 + 1000000000).toString();
+      formattedMaskedNumber = `**** ${accNum.slice(-4)}`;
+    } else if (methodCategory === 'DEBIT') {
+      let bin = '4242';
+      if (institution === 'Mastercard') bin = '5100';
+      else if (institution === 'UnionPay') bin = '6200';
+      else if (institution === 'Discover') bin = '6011';
+      else if (institution === 'JCB') bin = '3528';
+      else if (institution === 'Maestro') bin = '5018';
+      const lastFour = Math.floor(Math.random() * 9000 + 1000).toString();
+      formattedMaskedNumber = `${bin} **** **** ${lastFour}`;
+    } else {
+      let bin = '4829'; // Velum
+      if (institution === 'American Express') bin = '3782';
+      else if (institution === 'Capital One') bin = '4417';
+      else if (institution === 'Chase Sapphire') bin = '4147';
+      const lastFour = Math.floor(Math.random() * 9000 + 1000).toString();
+      if (institution === 'American Express') {
+         formattedMaskedNumber = `${bin} ****** *${lastFour.slice(-3)}`;
+      } else {
+         formattedMaskedNumber = `${bin} **** **** ${lastFour}`;
+      }
+    }
 
     const accountToken = `tok_${generateUlid()}`;
     let startingBalance = initialBalanceCents ? Number(initialBalanceCents) : Math.floor(Math.random() * (10000 - 5000 + 1) + 5000) * 100;
 
     if (institution.includes("Velum")) {
-      const userAccounts = db.external_financial_accounts.filter(a => Number(a.user_id) === Number(user.user_id));
-      let maxBalance = 0;
-      userAccounts.forEach(a => {
-        if (a.available_cents > maxBalance) maxBalance = a.available_cents;
-      });
-      const maxBalanceUSD = maxBalance / 100;
-      let creditLimit = 0;
-      if (maxBalanceUSD >= 9000) creditLimit = 1500;
-      else if (maxBalanceUSD >= 7000) creditLimit = 1000;
-      else if (maxBalanceUSD >= 5000) creditLimit = 500;
+      let creditLimit = db.system_settings?.limit_default || 500;
+      if (institution.includes("Titanium")) creditLimit = db.system_settings?.limit_titanium || 50000;
+      else if (institution.includes("Black")) creditLimit = db.system_settings?.limit_black || 15000;
+      else if (institution.includes("Platinum")) creditLimit = db.system_settings?.limit_platinum || 5000;
       startingBalance = creditLimit * 100;
     }
-
 
     const extAccount: ExternalFinancialAccount = {
       account_token: accountToken,
       user_id: Number(user.user_id),
-      account_kind: methodType,
+      account_kind: accountKind,
       institution: institution,
       masked_number: formattedMaskedNumber,
       available_cents: startingBalance,
-      expires_at_sim: methodType === 'CARD' ? (institution.includes("Velum") ? Date.now() + 31536000000 * 5 : Date.now() + 31536000000 * 3) : null, // 3 years expiry
+      expires_at_sim: methodType === 'CARD' ? (institution.includes("Velum") ? Date.now() + 31536000000 * 5 : Date.now() + 31536000000 * 3) : null,
       is_active: true,
       created_at: Date.now()
     };
     db.external_financial_accounts.push(extAccount);
 
-    // Set other active ones for this user to default = false if is_default is true
     const methodId = `pm_${generateUlid()}`;
     db.payment_methods.forEach(pm => {
       if (Number(pm.user_id) === Number(user.user_id)) {
@@ -337,8 +364,8 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
       masked_number: formattedMaskedNumber,
       external_balance_cents: startingBalance
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to record payment method.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to save method' });
   }
 };
 
@@ -362,8 +389,8 @@ export const removePaymentMethod = async (req: Request, res: Response) => {
 
     saveDb(true);
     res.json({ success: true, payment_method_id: methodId });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to remove saved payment credentials.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to remove method' });
   }
 };
 
@@ -389,9 +416,9 @@ export const updateSimulatedAccountBalance = async (req: Request, res: Response)
     }
 
     res.json({ success: true, account: updated });
-  } catch (err) {
+  } catch (err: any) {
     console.error("[DEPOSIT-ERROR]", err);
-    res.status(500).json({ error: 'Failed to update simulated balance.' });
+    res.status(500).json({ error: 'Update failed' });
   }
 };
 
@@ -407,6 +434,14 @@ export const rechargeWallet = async (req: Request, res: Response) => {
     }
 
     loadDb();
+    const idempotencyKey = req.headers['x-idempotency-key'];
+    if (idempotencyKey) {
+      db.idempotency_records = db.idempotency_records || [];
+      const existing = db.idempotency_records.find((r: any) => r.key === idempotencyKey);
+      if (existing) {
+        return res.status(200).json(existing.response);
+      }
+    }
     db.payment_methods = db.payment_methods || [];
     db.external_financial_accounts = db.external_financial_accounts || [];
     db.recharge_requests = db.recharge_requests || [];
@@ -460,70 +495,114 @@ export const rechargeWallet = async (req: Request, res: Response) => {
       extAccount.available_cents = chargeSim.new_available_cents;
       newRequest.status = 'COMPLETE';
 
-      // Ledger update (Legacy)
-      // Deposit corresponding TWD to central bank reserve
-      const twdAmountCents = Math.round(amount / 0.031);
-      // Atomicity: Do async calls before local DB mutation
-      await bankStore.updateAccountBalance('bank_central_reserve', twdAmountCents);
-      await bankStore.logTransaction({
-          account_id: 'bank_central_reserve',
-          type: 'deposit',
-          amount_cents: twdAmountCents,
-          currency_code: 'TWD',
-          description: `Central liquidity backup for user ${user.user_id} recharge`,
-          status: 'completed'
-      });
+      const twdRate = db.system_settings?.twd_usd_rate || 0.031;
+      const twdAmountCents = Math.round(amount / twdRate);
+      let bankUpdateCompleted = false;
 
-      let updatedUsdWallet: WalletBalance | undefined;
+      try {
+        await runInTransaction(async (uow) => {
+          // Perform corporate bank reserve update inside the transaction block
+          const bankType = extAccount.account_kind === 'CREDIT_CARD' ? 'CENTRAL' : 'MEMBER';
+          const clr = await getSystemAccount(bankType); 
+          if(!clr) throw new Error(`${bankType} bank account not found`);
+          await bankStore.updateAccountBalance(clr.account_id, twdAmountCents);
+          bankUpdateCompleted = true;
 
-      await runInTransaction((uow) => {
-        const preferredCurrency = user.preferred_currency || 'USD';
-        
-        // Target balance update based on preferred currency
-        const targetBalance = uow.getBalance(user.user_id, preferredCurrency);
-        const newTargetBalance = targetBalance + amount;
-        uow.stageBalanceUpdate(user.user_id, preferredCurrency, newTargetBalance);
+          await bankStore.logTransaction({
+            account_id: clr.account_id,
+            type: 'deposit',
+            amount_cents: twdAmountCents,
+            currency_code: 'TWD',
+            description: `${bankType} liquidity backup for user ${user.user_id} recharge`,
+            status: 'completed'
+          });
 
-        // Also update legacy VLM wallet if needed (to match original behavior)
-        const vlmBalance = uow.getBalance(user.user_id, 'VLM');
-        const newVlmBalance = vlmBalance + amount;
-        uow.stageBalanceUpdate(user.user_id, 'VLM', newVlmBalance);
+          const preferredCurrency = user.preferred_currency || 'USD';
+          
+          // Target balance update based on preferred currency
+          const targetBalance = uow.getBalance(user.user_id, preferredCurrency);
+          const newTargetBalance = targetBalance + amount;
+          uow.stageBalanceUpdate(user.user_id, preferredCurrency, newTargetBalance);
 
-        const ledgerEntry: WalletLedgerEntry = {
-          entry_id: generateTrcCode('recharge', surchargeType),
-          user_id: user.user_id,
-          entry_type: 'RECHARGE',
-          amount_cents: amount,
-          balance_after_cents: newTargetBalance,
-          actor_type: 'USER',
-          actor_id: String(user.user_id),
-          is_simulated: true,
-          created_at: Date.now()
-        };
-        uow.stageLedgerEntry(ledgerEntry);
-      });
+          // Fixed double recharge exploit
+
+          const ledgerEntry: WalletLedgerEntry = {
+            entry_id: generateTrcCode('recharge', surchargeType),
+            user_id: user.user_id,
+            entry_type: 'RECHARGE',
+            amount_cents: amount,
+            balance_after_cents: newTargetBalance,
+            actor_type: 'USER',
+            actor_id: String(user.user_id),
+            is_simulated: true,
+            created_at: Date.now()
+          };
+          uow.stageLedgerEntry(ledgerEntry);
+        });
+      } catch (err: any) {
+        // Compensating transaction if bank balance was modified but transaction rolled back/failed
+        if (bankUpdateCompleted) {
+          try {
+            const bankType = extAccount.account_kind === 'CREDIT_CARD' ? 'CENTRAL' : 'MEMBER';
+            const clr = await getSystemAccount(bankType); 
+            if(!clr) throw new Error(`${bankType} bank account not found`);
+            await bankStore.updateAccountBalance(clr.account_id, -twdAmountCents);
+            await bankStore.logTransaction({
+              account_id: clr.account_id,
+              type: 'withdrawal',
+              amount_cents: twdAmountCents,
+              currency_code: 'TWD',
+              description: `ROLLBACK: Reverting ${bankType} liquidity backup for user ${user.user_id} recharge due to database error`,
+              status: 'completed'
+            });
+          } catch (rollbackErr: any) {
+            console.error('[CRITICAL] Failed to rollback corporate bank reserve update:', rollbackErr);
+          }
+        }
+        throw err;
+      }
 
       const updatedWallet = walletRepository.findWalletBalance(user.user_id, user.preferred_currency || 'USD');
-
-      return res.json({
+      const responsePayload = {
         success: true,
         status: 'SIMULATED_COMPLETE',
         amount_cents: amount,
         wallet: updatedWallet,
-      });
+      };
+
+      if (idempotencyKey) {
+        db.idempotency_records = db.idempotency_records || [];
+        db.idempotency_records.push({
+          key: idempotencyKey,
+          response: responsePayload,
+          created_at: Date.now()
+        });
+      }
+      saveDb(true);
+      return res.json(responsePayload);
 
     } else {
       newRequest.status = 'FAILED';
-      saveDb(true);
-      return res.status(400).json({
+      const responsePayload = {
         error: `Transaction declined by card issuer: ${chargeSim.result}`,
         status: 'FAILED',
         event: processorEvent
-      });
+      };
+
+      if (idempotencyKey) {
+        db.idempotency_records = db.idempotency_records || [];
+        db.idempotency_records.push({
+          key: idempotencyKey,
+          response: responsePayload,
+          created_at: Date.now()
+        });
+      }
+      saveDb(true);
+      return res.status(400).json(responsePayload);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error("[RECHARGE-CATCH-ERROR]", err);
-    res.status(500).json({ error: 'Recharge process failed.' });
+    res.status(500).json({ error: 'Recharge process failed: ' + (err.message || String(err)) });
   }
 };
 
@@ -539,6 +618,14 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
     }
 
     loadDb();
+    const idempotencyKey = req.headers['x-idempotency-key'];
+    if (idempotencyKey) {
+      db.idempotency_records = db.idempotency_records || [];
+      const existing = db.idempotency_records.find((r: any) => r.key === idempotencyKey);
+      if (existing) {
+        return res.status(200).json(existing.response);
+      }
+    }
     db.payment_methods = db.payment_methods || [];
     db.kyc_verifications = db.kyc_verifications || [];
     db.withdrawal_requests = db.withdrawal_requests || [];
@@ -565,50 +652,77 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Payout destination method not found.' });
     }
 
+    const lock = getLockForUser(user.user_id);
+    const result = await lock.run(async () => {
+      return await runInTransaction((uow) => {
+        const preferredCurrency = user.preferred_currency || 'USD';
+        const currentBalance = uow.getBalance(user.user_id, preferredCurrency);
+
+        if (currentBalance < amount) {
+          throw new Error('Insufficient balance');
+        }
+
+        const balanceAfter = currentBalance - amount;
+        uow.stageBalanceUpdate(user.user_id, preferredCurrency, balanceAfter);
+
+        // Also update legacy VLM wallet if needed (to match original behavior)
+        const vlmBalance = uow.getBalance(user.user_id, 'VLM');
+        const newVlmBalance = vlmBalance - amount;
+        uow.stageBalanceUpdate(user.user_id, 'VLM', newVlmBalance);
+
+        const trcCode = generateTrcCode('withdrawal', kyc.verification_level);
+        const ledgerEntry: WalletLedgerEntry = {
+          entry_id: trcCode,
+          user_id: user.user_id,
+          entry_type: 'WITHDRAWAL',
+          amount_cents: -amount, // Debit is negative
+          balance_after_cents: balanceAfter,
+          actor_type: 'USER',
+          actor_id: String(user.user_id),
+          is_simulated: true,
+          created_at: Date.now()
+        };
+        uow.stageLedgerEntry(ledgerEntry);
+
+        const requestId = trcCode;
+        const newRequest: WithdrawalRequest = {
+          request_id: requestId,
+          user_id: user.user_id,
+          amount_cents: amount,
+          status: 'PENDING_REVIEW',
+          payout_method_id,
+          kyc_verification_id: kyc.kyc_id,
+          created_at: Date.now()
+        };
+        db.withdrawal_requests!.push(newRequest);
+
+        return { balanceAfter, newRequest };
+      });
+    });
+
     const wallet = getOrCreateWallet(user.user_id);
-    if (wallet.balance_cents < amount) {
-      return res.status(400).json({ error: 'Insufficient wallet ledger balance.' });
-    }
-
-    // Debit wallet instantly & hold in pending review
-    const balanceAfter = wallet.balance_cents - amount;
-    wallet.balance_cents = balanceAfter;
-    wallet.updated_at = Date.now();
-
-    const trcCode = generateTrcCode('withdrawal', kyc.verification_level);
-    const ledgerEntry: WalletLedgerEntry = {
-      entry_id: trcCode,
-      user_id: user.user_id,
-      entry_type: 'WITHDRAWAL',
-      amount_cents: -amount, // Debit is negative
-      balance_after_cents: balanceAfter,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    };
-    db.wallet_ledger_entries.push(ledgerEntry);
-
-    const requestId = trcCode;
-    const newRequest: WithdrawalRequest = {
-      request_id: requestId,
-      user_id: user.user_id,
-      amount_cents: amount,
-      status: 'PENDING_REVIEW',
-      payout_method_id,
-      kyc_verification_id: kyc.kyc_id,
-      created_at: Date.now()
-    };
-    db.withdrawal_requests.push(newRequest);
-
-    saveDb(true);
-    res.json({
+    const responsePayload = {
       success: true,
       status: 'PENDING_REVIEW',
-      request: newRequest,
+      request: result.newRequest,
       wallet
-    });
-  } catch (err) {
+    };
+
+    if (idempotencyKey) {
+      db.idempotency_records = db.idempotency_records || [];
+      db.idempotency_records.push({
+        key: idempotencyKey,
+        response: responsePayload,
+        created_at: Date.now()
+      });
+      saveDb(true);
+    }
+    res.json(responsePayload);
+  } catch (err: any) {
+    if (err.message === 'Insufficient balance') {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[WITHDRAWAL-ERROR]', err);
     res.status(500).json({ error: 'Failed to process withdrawal request.' });
   }
 };
@@ -670,6 +784,41 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
         request.reviewed_at = Date.now();
         request.reviewed_by_admin_id = 'SYSTEM_AUTO_ADMIN';
 
+        // Deduct from corporate liquid bank assets (bank_central_reserve)
+        const user = db.users?.find(u => Number(u.user_id) === Number(request.user_id));
+        const preferredCurrency = (user && user.preferred_currency) || 'USD';
+        const twdRate = db.system_settings?.twd_usd_rate || 0.031;
+        let twdAmountCents = Math.round(request.amount_cents / twdRate);
+        if (preferredCurrency !== 'USD' && preferredCurrency !== 'VLM') {
+          const rateObj = db.exchange_rates?.find(
+            r => r.base_currency === preferredCurrency && r.quote_currency === 'TWD'
+          );
+          if (rateObj) {
+            twdAmountCents = Math.round(request.amount_cents * rateObj.rate);
+          } else {
+            const usdRateObj = db.exchange_rates?.find(
+              r => r.base_currency === preferredCurrency && r.quote_currency === 'USD'
+            );
+            if (usdRateObj) {
+              const usdAmountCents = request.amount_cents * usdRateObj.rate;
+              twdAmountCents = Math.round(usdAmountCents / twdRate);
+            }
+          }
+        }
+
+        const bankType = extAccount.account_kind === 'CREDIT_CARD' ? 'CENTRAL' : 'MEMBER';
+        const clr = await getSystemAccount(bankType); 
+        if(!clr) throw new Error(`${bankType} bank account not found`);
+        await bankStore.updateAccountBalance(clr.account_id, -twdAmountCents);
+        await bankStore.logTransaction({
+          account_id: clr.account_id,
+          type: 'withdrawal',
+          amount_cents: twdAmountCents,
+          currency_code: 'TWD',
+          description: `${bankType} liquidity deduction for user ${request.user_id} withdrawal approval`,
+          status: 'completed'
+        });
+
         saveDb(true);
         res.json({ success: true, status: 'COMPLETED', request, event: processorEvent });
       } else {
@@ -678,24 +827,35 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
         request.reviewed_at = Date.now();
         request.reviewed_by_admin_id = 'SYSTEM_AUTO_ADMIN';
 
-        // Refund ledger
-        const wallet = getOrCreateWallet(request.user_id);
-        const balanceAfter = wallet.balance_cents + request.amount_cents;
-        wallet.balance_cents = balanceAfter;
-        wallet.updated_at = Date.now();
+        // Refund ledger (Atomic + Locked)
+        const lock = getLockForUser(request.user_id);
+        await lock.run(async () => {
+          await runInTransaction((uow) => {
+            const user = db.users?.find(u => Number(u.user_id) === Number(request.user_id));
+            const preferredCurrency = (user && user.preferred_currency) || 'USD';
+            
+            const currentBalance = uow.getBalance(request.user_id, preferredCurrency);
+            const balanceAfter = currentBalance + request.amount_cents;
+            uow.stageBalanceUpdate(request.user_id, preferredCurrency, balanceAfter);
 
-        const refundEntry: WalletLedgerEntry = {
-          entry_id: generateTrcCode('refund', 'WTH'),
-          user_id: request.user_id,
-          entry_type: 'AUTOMATED_ADJUSTMENT',
-          amount_cents: request.amount_cents,
-          balance_after_cents: balanceAfter,
-          actor_type: 'SYSTEM_AUTOMATION',
-          actor_id: 'REFUND_SETTLEMENT',
-          is_simulated: true,
-          created_at: Date.now()
-        };
-        db.wallet_ledger_entries.push(refundEntry);
+            const vlmBalance = uow.getBalance(request.user_id, 'VLM');
+            const newVlmBalance = vlmBalance + request.amount_cents;
+            uow.stageBalanceUpdate(request.user_id, 'VLM', newVlmBalance);
+
+            const refundEntry: WalletLedgerEntry = {
+              entry_id: generateTrcCode('refund', 'WTH'),
+              user_id: request.user_id,
+              entry_type: 'AUTOMATED_ADJUSTMENT',
+              amount_cents: request.amount_cents,
+              balance_after_cents: balanceAfter,
+              actor_type: 'SYSTEM_AUTOMATION',
+              actor_id: 'REFUND_SETTLEMENT',
+              is_simulated: true,
+              created_at: Date.now()
+            };
+            uow.stageLedgerEntry(refundEntry);
+          });
+        });
 
         saveDb(true);
         res.json({ success: true, status: 'REJECTED_REFUNDED', request, event: processorEvent });
@@ -705,30 +865,42 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
       request.reviewed_at = Date.now();
       request.reviewed_by_admin_id = 'SYSTEM_AUTO_ADMIN';
 
-      // Refund ledger
-      const wallet = getOrCreateWallet(request.user_id);
-      const balanceAfter = wallet.balance_cents + request.amount_cents;
-      wallet.balance_cents = balanceAfter;
-      wallet.updated_at = Date.now();
+      // Refund ledger (Atomic + Locked)
+      const lock = getLockForUser(request.user_id);
+      await lock.run(async () => {
+        await runInTransaction((uow) => {
+          const user = db.users?.find(u => Number(u.user_id) === Number(request.user_id));
+          const preferredCurrency = (user && user.preferred_currency) || 'USD';
+          
+          const currentBalance = uow.getBalance(request.user_id, preferredCurrency);
+          const balanceAfter = currentBalance + request.amount_cents;
+          uow.stageBalanceUpdate(request.user_id, preferredCurrency, balanceAfter);
 
-      const refundEntry: WalletLedgerEntry = {
-        entry_id: generateTrcCode('refund', 'WTH'),
-        user_id: request.user_id,
-        entry_type: 'AUTOMATED_ADJUSTMENT',
-        amount_cents: request.amount_cents,
-        balance_after_cents: balanceAfter,
-        actor_type: 'SYSTEM_AUTOMATION',
-        actor_id: 'REFUND_REJECTION',
-        is_simulated: true,
-        created_at: Date.now()
-      };
-      db.wallet_ledger_entries.push(refundEntry);
+          const vlmBalance = uow.getBalance(request.user_id, 'VLM');
+          const newVlmBalance = vlmBalance + request.amount_cents;
+          uow.stageBalanceUpdate(request.user_id, 'VLM', newVlmBalance);
+
+          const refundEntry: WalletLedgerEntry = {
+            entry_id: generateTrcCode('refund', 'WTH'),
+            user_id: request.user_id,
+            entry_type: 'AUTOMATED_ADJUSTMENT',
+            amount_cents: request.amount_cents,
+            balance_after_cents: balanceAfter,
+            actor_type: 'SYSTEM_AUTOMATION',
+            actor_id: 'REFUND_REJECTION',
+            is_simulated: true,
+            created_at: Date.now()
+          };
+          uow.stageLedgerEntry(refundEntry);
+        });
+      });
 
       saveDb(true);
       res.json({ success: true, status: 'REJECTED_REFUNDED', request });
     }
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to process payout review.' });
+  } catch (err: any) {
+    console.error('[PAYOUT-REVIEW-ERROR]', err);
+    res.status(500).json({ error: 'Failed to process payout review: ' + (err.message || String(err)) });
   }
 };
 
@@ -742,7 +914,7 @@ export const getLedgerHistory = async (req: Request, res: Response) => {
       l => Number(l.user_id) === Number(user.user_id)
     ).sort((a, b) => Number(b.created_at) - Number(a.created_at));
     res.json(entries);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: 'Failed to access audit ledger.' });
   }
 };
@@ -763,7 +935,7 @@ export const getExternalProcessorEvents = async (req: Request, res: Response) =>
     ).sort((a, b) => Number(b.created_at) - Number(a.created_at));
 
     res.json(relevantEvents);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: 'Failed to read outside transaction feed.' });
   }
 };
@@ -777,7 +949,7 @@ export const getWithdrawalsHistory = async (req: Request, res: Response) => {
       w => Number(w.user_id) === Number(user.user_id)
     ).sort((a, b) => Number(b.created_at) - Number(a.created_at));
     res.json(requests);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: 'Failed to retrieve payout feed.' });
   }
 };
@@ -788,7 +960,7 @@ export const getCurrencies = async (req: Request, res: Response) => {
     loadDb();
     db.currencies = db.currencies || [];
     res.json(db.currencies.filter(c => c.active));
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: 'Failed to retrieve currencies.' });
   }
 };
@@ -798,15 +970,33 @@ export const getWalletBalances = async (req: Request, res: Response) => {
     const user = (req as any).user;
     loadDb();
     db.currencies = db.currencies || [];
+    db.user_wallets = db.user_wallets || [];
     
     // Ensure VLM, USD_SIM, EUR_SIM are initialized for this user
     for (const c of db.currencies) {
       getOrCreateWalletBalance(user.user_id, c.currency_code);
     }
     
+    // Sync VLM balance in wallet_balances with legacy user_wallets balance
+    const vlmBal = db.wallet_balances!.find(b => Number(b.user_id) === Number(user.user_id) && b.currency_code === 'VLM');
+    const oldWallet = db.user_wallets.find(w => Number(w.user_id) === Number(user.user_id));
+    if (oldWallet) {
+      if (vlmBal) {
+        vlmBal.balance_cents = oldWallet.balance_cents;
+      } else {
+        db.wallet_balances!.push({
+          user_id: user.user_id,
+          currency_code: 'VLM',
+          balance_cents: oldWallet.balance_cents,
+          updated_at: Date.now()
+        });
+      }
+      saveDb(true);
+    }
+    
     const balances = db.wallet_balances!.filter(b => Number(b.user_id) === Number(user.user_id));
     res.json(balances);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: 'Failed to retrieve wallet balances.' });
   }
 };
@@ -816,7 +1006,7 @@ export const getExchangeRates = async (req: Request, res: Response) => {
     loadDb();
     db.exchange_rates = db.exchange_rates || [];
     res.json(db.exchange_rates);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: 'Failed to retrieve exchange rates.' });
   }
 };
@@ -831,6 +1021,14 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
     }
 
     loadDb();
+    const idempotencyKey = req.headers['x-idempotency-key'];
+    if (idempotencyKey) {
+      db.idempotency_records = db.idempotency_records || [];
+      const existing = db.idempotency_records.find((r: any) => r.key === idempotencyKey);
+      if (existing) {
+        return res.status(200).json(existing.response);
+      }
+    }
     db.currencies = db.currencies || [];
     db.exchange_rates = db.exchange_rates || [];
     
@@ -857,7 +1055,7 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
     await runInTransaction((uow) => {
       const fromBalance = uow.getBalance(user.user_id, fromCurrency);
       if (fromBalance < amountCents) {
-        throw new Error('Insufficient balance in the source currency.');
+        throw new Error('Insufficient balance');
       }
 
       const newFromBalance = fromBalance - amountCents;
@@ -896,7 +1094,7 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
       });
     });
 
-    res.json({
+    const responsePayload = {
       success: true,
       conversion_id: relatedTxId,
       debited_cents: amountCents,
@@ -907,9 +1105,20 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
         walletRepository.findWalletBalance(user.user_id, fromCurrency),
         walletRepository.findWalletBalance(user.user_id, toCurrency)
       ]
-    });
+    };
+
+    if (idempotencyKey) {
+      db.idempotency_records = db.idempotency_records || [];
+      db.idempotency_records.push({
+        key: idempotencyKey,
+        response: responsePayload,
+        created_at: Date.now()
+      });
+      saveDb(true);
+    }
+    res.json(responsePayload);
   } catch (err: any) {
-    if (err.message === 'Insufficient balance in the source currency.') {
+    if (err.message === 'Insufficient balance') {
       return res.status(400).json({ error: err.message });
     }
     res.status(500).json({ error: 'Failed to execute currency conversion.' });

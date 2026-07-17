@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { db, loadDb, saveDb, ensureVelumSystemDM, executeCliCommand, hashArgon2id } from '../db.js';
 import { broadcastToRoom, connectedClients } from '../websocket.js';
 import { generatePrefixedId } from '../utils/ulid.js';
+import { isSensitiveAccount } from '../utils.js';
 import { User, Ticket, Session, AdminSanction, Invite } from '../../src/types.js';
 
 
@@ -18,17 +19,7 @@ export const broadcastMessage = async (req: Request, res: Response) => {
     loadDb();
 
     // Find standard registered users to receive the transmission
-    const registeredUsers = db.users.filter(u => {
-      const isSensitive = u.role === 'CLI_ADMIN' || 
-                          u.role === 'LOGIN_ADMIN' || 
-                          u.role === 'SUPPORT_ADMIN' || 
-                          (u.role as string) === 'SYSTEM' ||
-                          u.username.toLowerCase() === 'velum' ||
-                          u.username.toLowerCase() === '@velum' ||
-                          u.username.toLowerCase() === 'cli' ||
-                          u.username.toLowerCase().startsWith('sa-');
-      return !isSensitive;
-    });
+    const registeredUsers = db.users.filter(u => !isSensitiveAccount(u));
 
     registeredUsers.forEach(u => {
       const roomId = `dm_velum_${u.user_id}`;
@@ -92,7 +83,7 @@ export const getTickets = async (req: Request, res: Response) => {
   try {
     const admin = (req as any).adminUser;
     
-    loadDb();
+    loadDb(true);
     
     if (admin.role !== 'SUPPORT_ADMIN' && admin.role !== 'LOGIN_ADMIN' && admin.role !== 'CLI_ADMIN') {
       return res.status(403).json({ error: 'Forbidden.' });
@@ -398,14 +389,7 @@ export const sanctionUser = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Target user not found.' });
     }
 
-    const isTargetSensitive = target.role === 'CLI_ADMIN' || 
-                              target.role === 'LOGIN_ADMIN' || 
-                              target.role === 'SUPPORT_ADMIN' || 
-                              (target.role as string) === 'SYSTEM' ||
-                              target.username.toLowerCase() === 'velum' ||
-                              target.username.toLowerCase() === '@velum' ||
-                              target.username.toLowerCase() === 'cli' ||
-                              target.username.toLowerCase().startsWith('sa-');
+    const isTargetSensitive = isSensitiveAccount(target);
 
     if (isTargetSensitive && admin.role === 'SUPPORT_ADMIN') {
       return res.status(403).json({ error: 'Restricted: SUPPORT_ADMIN role is strictly forbidden from targeting administrative or system accounts.' });
@@ -494,14 +478,7 @@ export const revokeSanction = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Target user peer not found.' });
     }
 
-    const isTargetSensitive = target.role === 'CLI_ADMIN' || 
-                              target.role === 'LOGIN_ADMIN' || 
-                              target.role === 'SUPPORT_ADMIN' || 
-                              (target.role as string) === 'SYSTEM' ||
-                              target.username.toLowerCase() === 'velum' ||
-                              target.username.toLowerCase() === '@velum' ||
-                              target.username.toLowerCase() === 'cli' ||
-                              target.username.toLowerCase().startsWith('sa-');
+    const isTargetSensitive = isSensitiveAccount(target);
 
     if (isTargetSensitive && admin.role === 'SUPPORT_ADMIN') {
       return res.status(403).json({ error: 'Restricted: SUPPORT_ADMIN role is strictly forbidden from targeting administrative or system accounts.' });
@@ -553,14 +530,7 @@ export const lockUser = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Target user not found.' });
     }
 
-    const isTargetSensitive = target.role === 'CLI_ADMIN' || 
-                              target.role === 'LOGIN_ADMIN' || 
-                              target.role === 'SUPPORT_ADMIN' || 
-                              (target.role as string) === 'SYSTEM' ||
-                              target.username.toLowerCase() === 'velum' ||
-                              target.username.toLowerCase() === '@velum' ||
-                              target.username.toLowerCase() === 'cli' ||
-                              target.username.toLowerCase().startsWith('sa-');
+    const isTargetSensitive = isSensitiveAccount(target);
 
     if (isTargetSensitive && admin.role === 'SUPPORT_ADMIN') {
       return res.status(403).json({ error: 'Restricted: SUPPORT_ADMIN role is strictly forbidden from targeting administrative or system accounts.' });
@@ -622,7 +592,7 @@ export const getDiagnostics = async (req: Request, res: Response) => {
   try {
     const user = (req as any).adminUser;
 
-    loadDb();
+    loadDb(true);
 
     if (user.role !== 'LOGIN_ADMIN' && user.role !== 'SUPPORT_ADMIN' && user.role !== 'CLI_ADMIN') {
       return res.status(403).json({ error: 'Unprivileged diagnostic access.' });
@@ -630,15 +600,7 @@ export const getDiagnostics = async (req: Request, res: Response) => {
 
     const filteredUsers = db.users.filter(u => {
       if (user.role === 'SUPPORT_ADMIN') {
-        const isSensitive = u.role === 'CLI_ADMIN' || 
-                            u.role === 'LOGIN_ADMIN' || 
-                            u.role === 'SUPPORT_ADMIN' || 
-                            (u.role as string) === 'SYSTEM' ||
-                            u.username.toLowerCase() === 'velum' ||
-                            u.username.toLowerCase() === '@velum' ||
-                            u.username.toLowerCase() === 'cli' ||
-                            u.username.toLowerCase().startsWith('sa-');
-        return !isSensitive;
+        return !isSensitiveAccount(u);
       }
       return true;
     });
@@ -840,21 +802,84 @@ export const renameExecutive = async (req: Request, res: Response) => {
   }
 };
 
-// Whitelist of basic, safe Web CLI commands
-const WEB_CLI_WHITELIST = [
-  'ls', 'status', 'info', 'diagnostics', 'lounges', 'risk', 'pending'
+// Whitelist of allowed low-risk paths for Web CLI
+const ALLOWED_WEB_CLI_PATHS = [
+  '/users/list', '/identities/list',
+  '/users/cat', '/identities/cat',
+  '/users/pending-deletions', '/identities/pending-deletions',
+  '/lounges/list', '/comms/list',
+  '/lounges/cat', '/comms/cat',
+  '/lounges/kick', '/comms/kick',
+  '/lounges/bcast', '/comms/bcast',
+  '/support/pending', '/dispatch/pending',
+  '/support/token', '/dispatch/token',
+  '/db/integrity', '/datastore/integrity',
+  '/db/orphans-scan', '/datastore/orphans-scan',
+  '/db/export', '/datastore/export',
+  '/db/fsync', '/datastore/fsync',
+  '/sys/status', '/daemon/status',
+  '/sys/top', '/daemon/top',
+  '/sys/risk', '/daemon/risk',
+  '/sys/activest', '/daemon/activest',
+  '/sys/config', '/daemon/config',
+  '/sys/fee', '/daemon/fee',
+  '/sys/limit', '/daemon/limit',
+  '/sys/tax', '/daemon/tax',
+  '/sys/twd-rate', '/daemon/twd-rate',
+  '/sys/ccache', '/daemon/ccache',
+  '/audit/user', '/forensics/user',
+  '/audit/grep', '/forensics/grep',
+  '/audit/history', '/forensics/history',
+  '/audit/ledger-verify', '/forensics/ledger',
+  '/audit/hijacks', '/forensics/hijacks',
+  '/audit/ip', '/forensics/ip',
+  '/audit/nodes', '/forensics/nodes',
+  '/bank/txlog', '/treasury/txlog',
+  '/bank/staff', '/treasury/staff',
+  '/users/sanctions', '/enforcement/sanctions',
+  '/fraud/risklog', '/threat_intel/risklog'
 ];
+
+const ALLOWED_WEB_CLI_ALIASES = [
+  'status', 'info', 'diagnostics', 'pending', 'lounges', 'risk', 'help', 'ls', 'pwd'
+];
+
+export const isCommandAllowedInWebCli = (command: string): boolean => {
+  const cleanCmd = command.trim();
+  if (!cleanCmd) return false;
+
+  const parts = cleanCmd.split(/\s+/);
+  const verb = parts[0].toLowerCase();
+
+  if (ALLOWED_WEB_CLI_ALIASES.includes(verb)) {
+    return true;
+  }
+
+  // Handle namespace-style commands: e.g., /users list
+  const namespacesList = [
+    '/users', '/lounges', '/support', '/db', '/sys', '/audit', '/bank', 
+    '/identities', '/comms', '/dispatch', '/datastore', '/daemon', '/forensics', '/threat_intel', '/treasury', '/enforcement'
+  ];
+  if (namespacesList.includes(verb)) {
+    const sub = parts[1] ? parts[1].toLowerCase() : '';
+    if (sub) {
+      const fullPath = `${verb}/${sub}`;
+      return ALLOWED_WEB_CLI_PATHS.includes(fullPath);
+    }
+    // E.g. /users -> help, which is allowed
+    return true;
+  }
+
+  return false;
+};
 
 export const executeCli = async (req: Request, res: Response) => {
   try {
     const { command } = req.body;
     if (!command) return res.status(400).json({ error: 'Command missing' });
     
-    // Parse the command to check the verb (first part)
-    const verb = command.trim().split(/\s+/)[0].toLowerCase();
-
-    // Enforce Web CLI Whitelist
-    if (!WEB_CLI_WHITELIST.includes(verb)) {
+    // Enforce Web CLI Whitelist of low-risk commands
+    if (!isCommandAllowedInWebCli(command)) {
       return res.status(403).json({ error: 'FAIL: This command is restricted to the Terminal CLI.' });
     }
 
@@ -905,6 +930,8 @@ export const reviewVerification = async (req: Request, res: Response) => {
       reviewed_by_admin_id: admin.admin_id || admin.username,
       created_at: new Date().toISOString()
     });
+
+    saveDb();
     
     res.json({ success: true, listing });
   } catch (err) {
@@ -949,7 +976,7 @@ export const updateSettings = async (req: Request, res: Response) => {
 
 export const getReports = async (req: Request, res: Response) => {
   try {
-    loadDb();
+    loadDb(true);
     res.json(db.reports || []);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch reports database registry.' });
@@ -1055,5 +1082,29 @@ export const restoreUser = async (req: Request, res: Response) => {
     res.json({ success: true, message: `User @${targetUser.username} successfully restored.` });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to restore user.' });
+  }
+};
+
+export const updateSystemConfig = async (req: Request, res: Response) => {
+  try {
+    loadDb();
+    if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
+    const { platform_fee_percent } = req.body;
+    if (platform_fee_percent !== undefined) {
+      db.system_settings.platform_fee_percent = Number(platform_fee_percent);
+    }
+    saveDb();
+    res.json(db.system_settings);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update system config.' });
+  }
+};
+export const getSystemConfig = async (req: Request, res: Response) => {
+  try {
+    loadDb();
+    if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
+    res.json(db.system_settings);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to get system config.' });
   }
 };

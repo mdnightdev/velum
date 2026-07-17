@@ -217,49 +217,6 @@ export async function performUserRegistration(params: {
     first_seen: new Date().toISOString(),
     last_seen: new Date().toISOString()
   });
-  // Seed the 4 official frontend simulated financial methods for the new user
-  if (!db.external_financial_accounts) db.external_financial_accounts = [];
-  if (!db.payment_methods) db.payment_methods = [];
-
-  const defaultMethods = [
-    { kind: 'CARD', institution: 'Visa', number: '4222 2222 2222 4242', label: 'Visa Card ****4242', balance: 500000 },
-    { kind: 'CARD', institution: 'Mastercard', number: '5105 1051 0510 5105', label: 'Mastercard ****5105', balance: 500000 },
-    { kind: 'CARD', institution: 'American Express', number: '3782 8224 6310 005', label: 'American Express ****0005', balance: 500000 },
-    { kind: 'BANK_ACCOUNT', institution: 'Taiwan Cooperative Bank', number: '7000 0012 3456 7890', label: 'Taiwan Cooperative Bank ****7890', balance: 1500000 }
-  ];
-
-  db.external_financial_accounts = db.external_financial_accounts || [];
-  db.payment_methods = db.payment_methods || [];
-
-  defaultMethods.forEach((method, index) => {
-    const accountToken = generatePrefixedId('tok');
-    
-    db.external_financial_accounts!.push({
-      account_token: accountToken,
-      user_id: userId,
-      account_kind: method.kind,
-      institution: method.institution,
-      masked_number: method.number,
-      available_cents: method.balance,
-      expires_at_sim: method.kind === 'CARD' ? Date.now() + 31536000000 * 3 : null,
-      is_active: true,
-      created_at: Date.now()
-    });
-
-    db.payment_methods!.push({
-      payment_method_id: generatePrefixedId('pm'),
-      user_id: userId,
-      method_type: method.kind,
-      external_account_token: accountToken,
-      display_label: method.label,
-      is_default: index === 0, // Sets Visa as default initially
-      status: 'ACTIVE',
-      added_at: Date.now()
-    });
-  });
-
-
-
   saveDb();
 
   return { userId, deviceId };
@@ -498,5 +455,590 @@ export async function performUserLogin(params: {
     deviceId,
     signedToken
   };
+}
+
+export async function performPermanentOtpRegistration(params: {
+  username: string;
+  passwordHex: string;
+  permanentOtp: string;
+  ipAddress: string;
+  fingerprint: string;
+}): Promise<{
+  user: any;
+  profile: any;
+  sessionId: string;
+  deviceId: string;
+  destination: string;
+}> {
+  const { username, passwordHex, permanentOtp, ipAddress, fingerprint } = params;
+
+  const queryName = username.trim();
+  const user = userRepository.findByUsername(queryName);
+
+  if (!user) {
+    throw new Error('User context not found.');
+  }
+
+  const isPasswordValid = await verifyArgon2id(passwordHex, user.salt, user.password_hash);
+  if (!isPasswordValid) {
+    throw new Error('Invalid credentials.');
+  }
+
+  if (user.role !== 'LOGIN_ADMIN' && user.role !== 'SUPPORT_ADMIN') {
+    throw new Error('FAIL: Only web administrators can set permanent OTP keys.');
+  }
+
+  const otpClean = permanentOtp.trim();
+  if (otpClean.length < 4) {
+    throw new Error('Permanent security OTP must contain at least 4 alphanumeric characters.');
+  }
+
+  user.permanent_otp = otpClean;
+  saveDb();
+
+  const geoBase = await getIpGeoLocation(ipAddress);
+
+  const profile = db.profiles.find(p => p.user_id === user.user_id);
+  if (profile) {
+    (profile as any).ip_address = ipAddress;
+    (profile as any).device_fingerprint = fingerprint;
+    if (!profile.location) {
+      profile.location = geoBase;
+    }
+    profile.updated_at = new Date().toISOString();
+  }
+
+  const ipId = generatePrefixedId('ip');
+  db.ip_addresses.push({
+    ip_id: ipId,
+    user_id: user.user_id,
+    ip_address: ipAddress,
+    risk_score: 5,
+    accounts_linked: 1,
+    first_seen: new Date().toISOString(),
+    last_seen: new Date().toISOString()
+  });
+
+  const deviceId = generatePrefixedId('dev');
+  db.devices.push({
+    device_id: deviceId,
+    user_id: user.user_id,
+    fingerprint,
+    risk_score: 5,
+    accounts_linked: 1,
+    first_seen: new Date().toISOString(),
+    last_seen: new Date().toISOString(),
+    status: 'trusted'
+  });
+
+  const sessionId = generateUlid();
+  const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
+
+  const newSession: Session = {
+    session_id: hashedSessionId,
+    user_id: user.user_id,
+    device_id: deviceId,
+    ip_id: ipId,
+    status: 'active',
+    start_time: new Date().toISOString(),
+    end_time: null,
+    activity_metrics: { messagesSent: 0, lastPing: new Date().toISOString() }
+  };
+
+  db.sessions.push(newSession);
+  saveDb();
+
+  ensureVelumSystemDM(user.user_id, user.username, '');
+
+  const signedToken = generateSessionToken(user.user_id, user.username, user.role, deviceId, sessionId);
+
+  let destination = 'chat';
+  if ((user.role as string) === 'CLI_ADMIN') destination = 'cli';
+  else if ((user.role as string) === 'LOGIN_ADMIN') destination = 'admin';
+
+  return {
+    user: {
+      userId: user.user_id,
+      username: user.username,
+      role: user.role,
+      status: user.status
+    },
+    profile,
+    sessionId: signedToken,
+    deviceId,
+    destination
+  };
+}
+
+export async function performUserMigration(params: {
+  userId: string;
+  username: string;
+  passwordHex: string;
+  safeWordHex: string;
+  panicPhraseHex: string;
+}): Promise<{ success: boolean; username: string }> {
+  const { userId, username, passwordHex, safeWordHex, panicPhraseHex } = params;
+
+  const user = userRepository.findById(parseInt(userId, 10));
+  if (!user) {
+    throw new Error('User context not found.');
+  }
+
+  let formattedUsername = username.trim();
+  if (user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN') {
+    formattedUsername = user.username;
+  } else {
+    if (formattedUsername.includes(' ')) {
+      throw new Error('Username must not contain any spaces.');
+    }
+    if (!formattedUsername.startsWith('@')) {
+      formattedUsername = `@${formattedUsername}`;
+    }
+  }
+
+  const duplicate = userRepository.findByUsername(formattedUsername);
+  if (duplicate && duplicate.user_id !== user.user_id) {
+    throw new Error('That username handle is already taken.');
+  }
+
+  const salt = user.salt || crypto.randomBytes(32).toString('hex');
+  const saltBuf = Buffer.from(salt, 'hex');
+
+  const password_hash_raw = await hashArgon2id(passwordHex, saltBuf);
+  const password_hash = `argon2id:${password_hash_raw}`;
+
+  const safe_word_hash_raw = await hashArgon2id(safeWordHex, saltBuf);
+  const safe_word_hash = `argon2id:${safe_word_hash_raw}`;
+
+  const panic_phrase_hash_raw = await hashArgon2id(panicPhraseHex, saltBuf);
+  const panic_phrase_hash = `argon2id:${panic_phrase_hash_raw}`;
+
+  user.username = formattedUsername;
+  user.salt = salt;
+  user.password_hash = password_hash;
+  user.safe_word_hash = safe_word_hash;
+  user.panic_phrase_hash = panic_phrase_hash;
+  user.needs_reset = false;
+  user.updated_at = new Date().toISOString();
+
+  saveDb();
+
+  return { success: true, username: user.username };
+}
+
+export async function performAdminActivation(params: {
+  userId: string;
+  newPasswordHex: string;
+  newSafeWordHex: string;
+  newPanicPhraseHex: string;
+}): Promise<{
+  user: any;
+  profile: any;
+  sessionId: string;
+  deviceId: string;
+}> {
+  const { userId, newPasswordHex, newSafeWordHex, newPanicPhraseHex } = params;
+
+  const user = userRepository.findById(parseInt(userId, 10));
+  if (!user || user.role !== 'SUPPORT_ADMIN') {
+    throw new Error('Administrative user profile not found.');
+  }
+
+  const salt = crypto.randomBytes(32).toString('hex');
+  const saltBuf = Buffer.from(salt, 'hex');
+
+  const password_hash_raw = await hashArgon2id(newPasswordHex, saltBuf);
+  const password_hash = `argon2id:${password_hash_raw}`;
+
+  const safe_word_hash_raw = await hashArgon2id(newSafeWordHex, saltBuf);
+  const safe_word_hash = `argon2id:${safe_word_hash_raw}`;
+
+  const panic_phrase_hash_raw = await hashArgon2id(newPanicPhraseHex, saltBuf);
+  const panic_phrase_hash = `argon2id:${panic_phrase_hash_raw}`;
+
+  user.salt = salt;
+  user.password_hash = password_hash;
+  user.safe_word_hash = safe_word_hash;
+  user.panic_phrase_hash = panic_phrase_hash;
+  user.activation_status = 'ACTIVATED';
+  user.updated_at = new Date().toISOString();
+
+  saveDb();
+
+  const deviceId = `dev_admin_${Math.random().toString(36).substring(2, 8)}`;
+  const sessionId = generateUlid();
+  const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
+
+  const newSession: Session = {
+    session_id: hashedSessionId,
+    user_id: user.user_id,
+    device_id: deviceId,
+    ip_id: 'ip_mock',
+    status: 'active',
+    start_time: new Date().toISOString(),
+    end_time: null,
+    activity_metrics: { messagesSent: 0, lastPing: new Date().toISOString() }
+  };
+
+  db.sessions.push(newSession);
+  saveDb();
+
+  const profile = db.profiles.find(p => p.user_id === user.user_id);
+  const signedToken = generateSessionToken(user.user_id, user.username, user.role, deviceId, sessionId);
+
+  return {
+    user: {
+      userId: user.user_id,
+      username: user.username,
+      role: user.role,
+      status: user.status
+    },
+    profile,
+    sessionId: signedToken,
+    deviceId
+  };
+}
+
+export function performUserLogout(sessionId: string): void {
+  const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
+  db.sessions = db.sessions.map(s => {
+    if (s.session_id === sessionId || s.session_id === hashedSessionId) {
+      return { ...s, status: 'revoked', end_time: new Date().toISOString() };
+    }
+    return s;
+  });
+  saveDb();
+}
+
+export async function performUserPanic(params: {
+  userId?: string;
+  username?: string;
+  panicPhrase: string;
+}): Promise<{ success: boolean; message: string; ticket: any }> {
+  const { userId, username, panicPhrase } = params;
+
+  let user;
+  if (userId) {
+    user = userRepository.findById(parseInt(userId, 10));
+  } else if (username) {
+    user = userRepository.findByUsername(username.trim());
+  } else {
+    throw new Error('User context and target account parameter are required.');
+  }
+
+  if (!user) {
+    throw new Error('Target user context not found in cryptographic database.');
+  }
+
+  let isPanicMatch = false;
+  if (user.panic_phrase_hash && user.panic_phrase_hash.startsWith('argon2id:')) {
+    isPanicMatch = await verifyArgon2id(panicPhrase, user.salt, user.panic_phrase_hash);
+  } else if (user.salt) {
+    const candidateHash = crypto.createHash('sha256').update(user.salt + panicPhrase).digest('hex');
+    isPanicMatch = candidateHash === user.panic_phrase_hash;
+  } else {
+    isPanicMatch = user.panic_phrase_hash.toLowerCase() === panicPhrase.toLowerCase();
+  }
+
+  if (!isPanicMatch) {
+    throw new Error('Verification failed: Emergency panic phrase match invalid.');
+  }
+
+  user.status = 'compromised';
+  user.updated_at = new Date().toISOString();
+
+  db.sessions = db.sessions.map(s => {
+    if (s.user_id === user.user_id) {
+      return { ...s, status: 'revoked', end_time: new Date().toISOString() };
+    }
+    return s;
+  });
+
+  db.tickets = db.tickets || [];
+  let ticket: any = db.tickets.find(t => t.user_id === user.user_id && t.issue_type === 'recovery_request' && t.status !== 'resolved');
+  if (!ticket) {
+    const ticketId = generatePrefixedId('t');
+    const tracking_uuid = `ticket_t_${crypto.randomUUID()}`;
+    ticket = {
+      ticket_id: ticketId,
+      user_id: user.user_id,
+      username: user.username,
+      issue_type: 'recovery_request',
+      status: 'open',
+      assigned_admin: null,
+      created_at: new Date().toISOString(),
+      resolved_at: null,
+      credibility_score: 95,
+      tracking_id: tracking_uuid,
+      messages: [
+        {
+          sender_id: 0,
+          sender_name: 'SYSTEM',
+          content: 'SECURITY EVENT INITIATED. Account quarantined from emergency panic phrase trigger. High-credibility restore process started.',
+          timestamp: new Date().toISOString()
+        },
+        {
+          sender_id: 0,
+          sender_name: 'SYSTEM',
+          content: 'To coordinate with central control administrators and obtain your restore code, please formulate details in the chat below.',
+          timestamp: new Date().toISOString()
+        }
+      ]
+    } as any;
+    db.tickets.push(ticket);
+  }
+
+  db.suspicious_events.push({
+    event_id: generatePrefixedId('se'),
+    entity_type: 'user',
+    entity_id: user.user_id.toString(),
+    risk_level: 'critical',
+    description: `PANIC PHRASE ACTIVATED for user ID ${user.user_id}. Session containment triggered immediately.`,
+    created_at: new Date().toISOString()
+  } as any);
+
+  db.audit_logs = db.audit_logs || [];
+  db.audit_logs.push({
+    log_id: generatePrefixedId('al'),
+    admin_id: 0,
+    admin_name: 'SYSTEM',
+    action: 'panic_lock',
+    target_type: 'user',
+    target_id: user.user_id.toString(),
+    reason: `CRITICAL SEC_ALERT: Account "${user.username}" quarantined via emergency panic phrase trigger. Sessions Terminated. Auto-recovery ticket #${ticket.ticket_id} instantiated.`,
+    timestamp: new Date().toISOString()
+  } as any);
+
+  saveDb();
+
+  return {
+    success: true,
+    message: 'CRITICAL SHIELD ACTIVATED. Account enters quarantine immediately. All connected sessions destroyed. Access ticket created.',
+    ticket
+  };
+}
+
+export async function performAccountRestoration(params: {
+  username: string;
+  safeWord: string;
+  recoveryKey: string;
+  newPasswordHex: string;
+  clientSalt?: string;
+}): Promise<{ success: boolean; message: string }> {
+  const { username, safeWord, recoveryKey, newPasswordHex, clientSalt } = params;
+
+  const queryName = username.trim();
+  const user = userRepository.findByUsername(queryName);
+
+  if (!user) {
+    throw new Error('User handle not found in databases.');
+  }
+
+  if (user.status === 'compromised') {
+    throw new Error('CRITICAL QUARANTINE: Account recovery is deactivated for compromised locks. Contact Support portal for Login Admin review.');
+  }
+
+  const isSafeWordMatch = await verifyArgon2id(safeWord, user.salt, user.safe_word_hash);
+
+  if (!isSafeWordMatch) {
+    throw new Error('Invalid Safe Word entered.');
+  }
+
+  let matchesRecoveryKey = false;
+  if (user.recovery_key_hash && user.recovery_key_hash.startsWith('argon2id:')) {
+    const parts = user.recovery_key_hash.split(':');
+    if (parts.length === 3) {
+      const computedHash = await hashArgon2id(recoveryKey, Buffer.from(parts[1], 'hex'));
+      if (computedHash === parts[2]) {
+        matchesRecoveryKey = true;
+      }
+    }
+  }
+
+  if (!matchesRecoveryKey) {
+    throw new Error('Invalid Recovery Key entered.');
+  }
+
+  const newSalt = clientSalt || crypto.randomBytes(32).toString('hex');
+  const newSaltBuf = Buffer.from(newSalt, 'hex');
+  const passHashHex = await hashArgon2id(newPasswordHex, newSaltBuf);
+  const swHashHex = await hashArgon2id(safeWord, newSaltBuf);
+
+  user.salt = newSalt;
+  user.password_hash = `argon2id:${passHashHex}`;
+  user.safe_word_hash = `argon2id:${swHashHex}`;
+  user.needs_reset = false;
+  user.status = 'active';
+  user.updated_at = new Date().toISOString();
+
+  db.sessions = db.sessions.map(s => {
+    if (s.user_id === user.user_id) {
+      return { ...s, status: 'revoked', end_time: new Date().toISOString() };
+    }
+    return s;
+  });
+
+  if (db.tickets) {
+    const ticket = db.tickets.find(t => t.user_id === user.user_id && t.provided_recovery_key === recoveryKey);
+    if (ticket) {
+      ticket.status = 'resolved';
+      ticket.resolved_at = new Date().toISOString();
+      if (!ticket.messages) ticket.messages = [];
+      ticket.messages.push({
+        sender_id: 0,
+        sender_name: 'SYSTEM',
+        content: 'Account restored successfully via automated recovery verification sequence.',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  if (!db.recovery_events) db.recovery_events = [];
+  db.recovery_events.push({
+    event_id: generatePrefixedId('rec_auto'),
+    user_id: user.user_id,
+    method: 'automatic_recovery',
+    approved_by: null,
+    timestamp: new Date().toISOString(),
+    notes: 'Account access and password reset successfully authenticated via Recovery Key and Safe Word parameters.'
+  });
+
+  if (!db.audit_logs) db.audit_logs = [];
+  db.audit_logs.push({
+    log_id: generatePrefixedId('al'),
+    admin_id: 0,
+    admin_name: 'SYSTEM',
+    action: 'restore',
+    target_type: 'user',
+    target_id: user.user_id.toString(),
+    reason: `Account access restored for "${user.username}" via automated Recovery Key & Safe Word validation.`,
+    timestamp: new Date().toISOString()
+  });
+
+  saveDb();
+
+  return { success: true, message: 'Account successfully restored. You can now log in with your new password.' };
+}
+
+export async function performRestoreCodeRedemption(params: {
+  username: string;
+  restoreCode: string;
+  newPasswordHex: string;
+}): Promise<{ success: boolean; message: string }> {
+  const { username, restoreCode, newPasswordHex } = params;
+
+  const queryName = username.trim();
+  const user = userRepository.findByUsername(queryName);
+
+  if (!user) {
+    throw new Error('User handle not found in databases.');
+  }
+
+  const cleanCode = restoreCode.trim();
+  const matchesCode = (user as any).temp_restore_code && (user as any).temp_restore_code === cleanCode;
+
+  if (!matchesCode) {
+    throw new Error('Invalid or incorrect restoration code.');
+  }
+
+  const newSalt = crypto.randomBytes(32).toString('hex');
+  const newSaltBuf = Buffer.from(newSalt, 'hex');
+  const passHashHex = await hashArgon2id(newPasswordHex, newSaltBuf);
+
+  user.salt = newSalt;
+  user.password_hash = `argon2id:${passHashHex}`;
+  user.status = 'active';
+  delete (user as any).temp_restore_code;
+  user.updated_at = new Date().toISOString();
+
+  const ticket = db.tickets.find(t => t.user_id === user.user_id && t.provided_recovery_key === cleanCode);
+  if (ticket) {
+    ticket.status = 'resolved';
+    ticket.resolved_at = new Date().toISOString();
+    if (!ticket.messages) ticket.messages = [];
+    ticket.messages.push({
+      sender_id: 0,
+      sender_name: 'SYSTEM',
+      content: 'Account restored successfully via Secure Restoration Code redemption channel.',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  if (!db.recovery_events) db.recovery_events = [];
+  db.recovery_events.push({
+    event_id: generatePrefixedId('rec_code'),
+    user_id: user.user_id,
+    method: 'restoration_code_redemption' as any,
+    approved_by: null,
+    timestamp: new Date().toISOString(),
+    notes: 'Account unlocked and new credentials established via verified restoration code.'
+  });
+
+  if (!db.audit_logs) db.audit_logs = [];
+  db.audit_logs.push({
+    log_id: generatePrefixedId('al'),
+    admin_id: 0,
+    admin_name: 'SYSTEM',
+    action: 'restore',
+    target_type: 'user',
+    target_id: user.user_id.toString(),
+    reason: `Account access restored for "${user.username}" via administrative code validation.`,
+    timestamp: new Date().toISOString()
+  });
+
+  saveDb();
+
+  return { success: true, message: 'Account successfully restored. You can now log in with your new password.' };
+}
+
+export async function performSafewordRecovery(params: {
+  username: string;
+  safeWord: string;
+  newPasswordHex: string;
+}): Promise<{ success: boolean; message: string }> {
+  const { username, safeWord, newPasswordHex } = params;
+
+  const queryName = username.trim();
+  const user = userRepository.findByUsername(queryName);
+
+  if (!user) {
+    throw new Error('User not found.');
+  }
+
+  if (user.status === 'compromised') {
+    throw new Error('CRITICAL QUARANTINE: Account recovery is deactivated for compromised locks. Contact Support portal for Login Admin review.');
+  }
+
+  const isSafeWordMatch = await verifyArgon2id(safeWord, user.salt, user.safe_word_hash);
+
+  if (!isSafeWordMatch) {
+    throw new Error('Invalid Safe Word entered.');
+  }
+
+  const newSalt = crypto.randomBytes(32).toString('hex');
+  const newSaltBuf = Buffer.from(newSalt, 'hex');
+
+  const passHashHex = await hashArgon2id(newPasswordHex, newSaltBuf);
+  const swHashHex = await hashArgon2id(safeWord, newSaltBuf);
+
+  user.salt = newSalt;
+  user.password_hash = `argon2id:${passHashHex}`;
+  user.safe_word_hash = `argon2id:${swHashHex}`;
+  user.needs_reset = false;
+  user.status = 'active';
+  user.updated_at = new Date().toISOString();
+
+  if (!db.recovery_events) db.recovery_events = [];
+  db.recovery_events.push({
+    event_id: generatePrefixedId('rec_sw'),
+    user_id: user.user_id,
+    method: 'automatic_recovery',
+    approved_by: null,
+    timestamp: new Date().toISOString(),
+    notes: 'Safe Word reset successful. Password updated to high-security format.'
+  });
+
+  saveDb();
+  return { success: true, message: 'Password reset successful. Try logging in now.' };
 }
 

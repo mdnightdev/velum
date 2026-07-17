@@ -4,11 +4,12 @@ import {
   Send, Ban, Plus, FileText, CheckCircle, ShieldCheck, RefreshCw, Key, 
   UserPlus, Lock, Unlock, Shield, Users, Search, 
   Sliders, ChevronRight, ChevronLeft, Activity, Trash2, Megaphone, Info, Globe, AlertTriangle,
-  BadgeCheck, LogOut, Menu, X, Landmark, User, Terminal
+  BadgeCheck, LogOut, Menu, X, Landmark, User
 } from 'lucide-react';
 import AdminDiagnosticsView from './AdminDiagnosticsView';
 import AdminUsersView from './AdminUsersView';
 import AdminVerificationView from './AdminVerificationView';
+import PullToRefresh from './PullToRefresh';
 
 // Modular Subcomponents
 import AdminOverview from './Admin/AdminOverview';
@@ -31,7 +32,6 @@ interface AdminPanelProps {
   isDark?: boolean;
   onLogout?: () => void;
   user?: any;
-  onSwitchToCli?: () => void;
 }
 
 export default function AdminPanel({ 
@@ -41,8 +41,7 @@ export default function AdminPanel({
   onTabChange, 
   isDark = true,
   onLogout,
-  user,
-  onSwitchToCli
+  user
 }: AdminPanelProps) {
   // Design theme variables
   const c = {
@@ -265,7 +264,7 @@ export default function AdminPanel({
 
   const coreCommands = [
     { id: 'overview', label: 'Overview', icon: <Activity className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
-    { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'CLI_ADMIN'] },
+    { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'SUPPORT_ADMIN'] },
     { id: 'tickets', label: 'Tickets', icon: <HelpCircle className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'reports', label: 'Reports', icon: <FileText className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'announcements', label: 'Broadcasts', icon: <Megaphone className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
@@ -441,18 +440,8 @@ export default function AdminPanel({
 
         {/* Footer Area */}
         <div className="space-y-3.5">
-          {onSwitchToCli && (
-            <button
-              onClick={onSwitchToCli}
-              className={`flex items-center text-status-away hover:text-white transition duration-150 cursor-pointer ${
-                isSidebarOpen ? 'w-full gap-3 px-3.5 py-2' : 'w-11 h-11 mx-auto justify-center rounded-xl hover:bg-white-5'
-              }`}
-              title={!isSidebarOpen ? 'Terminal Console' : undefined}
-            >
-              <Terminal className="w-4.5 h-4.5" />
-              {isSidebarOpen && <span className="text-xs font-bold uppercase tracking-wider font-mono">Terminal Console</span>}
-            </button>
-          )}
+
+
 
           <button
             onClick={onLogout}
@@ -469,133 +458,135 @@ export default function AdminPanel({
 
       {/* Main Workspace Frame */}
       <main className="flex-1 min-w-0 min-h-0 bg-velum-900 flex flex-col overflow-hidden p-6 relative">
-        <div className="flex-1 w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
-          {activeTab === 'overview' && (
-            <AdminOverview
-              metrics={metrics}
-              tickets={tickets}
-              onTabChange={selectTab}
-              c={c}
-            />
-          )}
+        <PullToRefresh>
+          <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
+            {activeTab === 'overview' && (
+              <AdminOverview
+                metrics={metrics}
+                tickets={tickets}
+                onTabChange={selectTab}
+                c={c}
+              />
+            )}
 
-          {activeTab === 'users' && (
-            <AdminUsers
-              userSearch={userSearch}
-              setUserSearch={setUserSearch}
-              userRoleFilter={userRoleFilter}
-              setUserRoleFilter={setUserRoleFilter}
-              users={users}
-              sessions={sessions}
-              adminRole={adminRole}
-              adminFetch={adminFetch}
-              fetchData={fetchData}
-              c={c}
-            />
-          )}
+            {activeTab === 'users' && (
+              <AdminUsers
+                userSearch={userSearch}
+                setUserSearch={setUserSearch}
+                userRoleFilter={userRoleFilter}
+                setUserRoleFilter={setUserRoleFilter}
+                users={users}
+                sessions={sessions}
+                adminRole={adminRole}
+                adminFetch={adminFetch}
+                fetchData={fetchData}
+                c={c}
+              />
+            )}
 
-          {activeTab === 'tickets' && (
-            <AdminTickets
-              tickets={tickets}
-              activeTicket={activeTicket}
-              setActiveTicket={setActiveTicket}
-              replyText={replyText}
-              setReplyText={setReplyText}
-              ticketSearch={ticketSearch}
-              setTicketSearch={setTicketSearch}
-              ticketFilter={ticketFilter}
-              setTicketFilter={setTicketFilter}
-              adminId={adminId}
-              adminRole={adminRole}
-              adminFetch={adminFetch}
-              fetchData={fetchData}
-              approveQuarantineAccess={approveQuarantineAccess}
-              handleTicketReply={handleTicketReply}
-              restoreCode={restoreCode}
-              user={user}
-              c={c}
-            />
-          )}
+            {activeTab === 'tickets' && (
+              <AdminTickets
+                tickets={tickets}
+                activeTicket={activeTicket}
+                setActiveTicket={setActiveTicket}
+                replyText={replyText}
+                setReplyText={setReplyText}
+                ticketSearch={ticketSearch}
+                setTicketSearch={setTicketSearch}
+                ticketFilter={ticketFilter}
+                setTicketFilter={setTicketFilter}
+                adminId={adminId}
+                adminRole={adminRole}
+                adminFetch={adminFetch}
+                fetchData={fetchData}
+                approveQuarantineAccess={approveQuarantineAccess}
+                handleTicketReply={handleTicketReply}
+                restoreCode={restoreCode}
+                user={user}
+                c={c}
+              />
+            )}
 
-          {activeTab === 'reports' && (
-            <AdminReports
-              reports={reports}
-              reportFilter={reportFilter}
-              setReportFilter={setReportFilter}
-              adminRole={adminRole}
-              user={user}
-              adminFetch={adminFetch}
-              fetchData={fetchData}
-            />
-          )}
+            {activeTab === 'reports' && (
+              <AdminReports
+                reports={reports}
+                reportFilter={reportFilter}
+                setReportFilter={setReportFilter}
+                adminRole={adminRole}
+                user={user}
+                adminFetch={adminFetch}
+                fetchData={fetchData}
+              />
+            )}
 
-          {activeTab === 'announcements' && (
-            <AdminBroadcasts
-              adminRole={adminRole}
-              user={user}
-              onLogout={onLogout}
-              adminFetch={adminFetch}
-            />
-          )}
+            {activeTab === 'announcements' && (
+              <AdminBroadcasts
+                adminRole={adminRole}
+                user={user}
+                onLogout={onLogout}
+                adminFetch={adminFetch}
+              />
+            )}
 
-          {activeTab === 'moderation' && (
-            <AdminUsersView
-              adminRole={adminRole}
-              activeSanctions={activeSanctions}
-              users={users}
-              applyQuickSanction={applyQuickSanction}
-              adminFetch={adminFetch}
-              fetchData={fetchData}
-              c={c}
-            />
-          )}
+            {activeTab === 'moderation' && (
+              <AdminUsersView
+                adminRole={adminRole}
+                activeSanctions={activeSanctions}
+                users={users}
+                applyQuickSanction={applyQuickSanction}
+                adminFetch={adminFetch}
+                fetchData={fetchData}
+                c={c}
+              />
+            )}
 
-          {activeTab === 'verifications' && (
-            <AdminVerificationView
-              adminRole={adminRole as any}
-              c={c}
-            />
-          )}
+            {activeTab === 'verifications' && (
+              <AdminVerificationView
+                adminRole={adminRole as any}
+                c={c}
+              />
+            )}
 
-          {activeTab === 'system' && (
-            <AdminSystem
-              adminId={adminId}
-              adminRole={adminRole}
-              adminFetch={adminFetch}
-              fetchData={fetchData}
-              approveQuarantineAccess={approveQuarantineAccess}
-              c={c}
-            />
-          )}
+            {activeTab === 'system' && (
+              <AdminSystem
+                adminId={adminId}
+                adminRole={adminRole}
+                adminFetch={adminFetch}
+                fetchData={fetchData}
+                approveQuarantineAccess={approveQuarantineAccess}
+                c={c}
+              />
+            )}
 
-          {activeTab === 'logs' && (
-            <AdminDiagnosticsView
-              suspicious={suspicious}
-              logs={logs}
-              c={c}
-            />
-          )}
+            {activeTab === 'logs' && (
+              <AdminDiagnosticsView
+                suspicious={suspicious}
+                logs={logs}
+                c={c}
+              />
+            )}
 
-          {activeTab === 'bank' && adminRole !== 'SUPPORT_ADMIN' && (
-            <AdminBank
-              adminRole={adminRole}
-              user={user}
-              adminFetch={adminFetch}
-            />
-          )}
+            {activeTab === 'bank' && adminRole !== 'SUPPORT_ADMIN' && (
+              <AdminBank
+                adminRole={adminRole}
+                user={user}
+                adminFetch={adminFetch}
+              />
+            )}
 
-          {activeTab === 'profile' && (
-            <AdminProfile
-              adminId={adminId}
-              adminRole={adminRole}
-              user={user}
-              adminProfile={adminProfile}
-              adminFetch={adminFetch}
-              fetchData={fetchData}
-              c={c}
-            />
-          )}
-        </div>
+            {activeTab === 'profile' && (
+              <AdminProfile
+                adminId={adminId}
+                adminRole={adminRole}
+                user={user}
+                adminProfile={adminProfile}
+                adminFetch={adminFetch}
+                fetchData={fetchData}
+                c={c}
+              />
+            )}
+          </div>
+        </PullToRefresh>
       </main>
     </div>
   );

@@ -6,7 +6,6 @@ import sqliteModule from 'node:sqlite';
 import { DbSchema, defaultDb } from './schema.js';
 import { encryptData, decryptData, setLegacyDecryptionSucceeded, legacyDecryptionSucceeded } from '../services/cryptoService.js';
 import { generateUlid } from '../utils/ulid.js';
-import { rebuildBlocksCache } from '../db.js';
 import { backupDbToCloud } from '../services/sync.js';
 import {
   db,
@@ -26,11 +25,13 @@ import {
   SQLITE_FILE,
   ensureSeededIntegrity,
   setupAuditLogProxy,
+  rebuildBlocksCache,
 } from './index.js';
 
 const DatabaseSync = (sqliteModule as any)?.DatabaseSync;
 
 let saveTimeout: NodeJS.Timeout | null = null;
+const lastSavedTableJson: Record<string, string> = {};
 
 export function loadDb(force = false) {
   if (dbLoaded && !force) return;
@@ -93,6 +94,8 @@ export function loadDb(force = false) {
         db.node_overwrites = loadPayloadTable('node_overwrites', 'overwrite_id');
 
         // Banking & Payment Tables
+        db.bank_accounts = loadPayloadTable('bank_accounts', 'account_id');
+        db.bank_transactions = loadPayloadTable('bank_transactions', 'transaction_id');
         db.user_wallets = loadPayloadTable('user_wallets', 'user_id');
         db.wallet_ledger_entries = loadPayloadTable('wallet_ledger_entries', 'entry_id');
         db.recharge_requests = loadPayloadTable('recharge_requests', 'request_id');
@@ -493,6 +496,9 @@ export function loadDb(force = false) {
       });
     }
 
+    Object.keys(db).forEach((key) => {
+      lastSavedTableJson[key] = JSON.stringify((db as any)[key] || []);
+    });
     setDbLoaded(true);
     setLastSavedDbJson(JSON.stringify(db));
     try {
@@ -506,6 +512,9 @@ export function loadDb(force = false) {
     try {
       executeSaveDb();
     } catch (_) {}
+    Object.keys(db).forEach((key) => {
+      lastSavedTableJson[key] = JSON.stringify((db as any)[key] || []);
+    });
     setDbLoaded(true);
     setLastSavedDbJson(JSON.stringify(db));
     try {
@@ -521,13 +530,13 @@ export function saveDb(force = false) {
       saveTimeout = null;
     }
     executeSaveDb();
-  } else {
-    if (saveTimeout) return;
-    saveTimeout = setTimeout(() => {
-      saveTimeout = null;
-      executeSaveDb();
-    }, 1000);
+    return;
   }
+  if (saveTimeout) return;
+  saveTimeout = setTimeout(() => {
+    saveTimeout = null;
+    executeSaveDb();
+  }, 2000);
 }
 
 export function executeSaveDb() {
@@ -538,7 +547,7 @@ export function executeSaveDb() {
   }
   
   const plainJson = JSON.stringify(db);
-  if (plainJson === lastSavedDbJson && !legacyDecryptionSucceeded) {
+  if (plainJson === lastSavedDbJson && !legacyDecryptionSucceeded && fs.existsSync(SQLITE_FILE)) {
     return;
   }
   
@@ -546,23 +555,32 @@ export function executeSaveDb() {
   try {
     const conn = initSqlite();
     if (conn) {
-      conn.exec('BEGIN');
       const saveTable = (tableName: string, rows: any[], idField: string) => {
         try {
-          conn.exec(`DELETE FROM ${tableName}`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO ${tableName} (id, payload) VALUES (?, ?)`);
-          for (const row of rows || []) {
-            const rawId = row[idField];
-            const id = (rawId !== undefined && rawId !== null && rawId !== '') ? String(rawId) : generateUlid();
-            
-            if (row[idField] === undefined || row[idField] === null || row[idField] === '') {
-              row[idField] = id;
-            }
-
-            const encryptedPayload = encryptData(JSON.stringify(row));
-            stmt.run(id, encryptedPayload);
+          const currentJson = JSON.stringify(rows || []);
+          if (lastSavedTableJson[tableName] === currentJson) {
+            return;
           }
+          conn.exec('BEGIN TRANSACTION');
+          conn.exec(`DELETE FROM ${tableName}`);
+          if (rows && rows.length > 0) {
+            const stmt = conn.prepare(`INSERT INTO ${tableName} (id, payload) VALUES (?, ?)`);
+            for (const row of rows) {
+              const rawId = row[idField];
+              const id = (rawId !== undefined && rawId !== null && rawId !== '') ? String(rawId) : generateUlid();
+              
+              if (row[idField] === undefined || row[idField] === null || row[idField] === '') {
+                row[idField] = id;
+              }
+
+              const encryptedPayload = encryptData(JSON.stringify(row));
+              stmt.run(id, encryptedPayload);
+            }
+          }
+          conn.exec('COMMIT');
+          lastSavedTableJson[tableName] = currentJson;
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error(`[SYS-SECURE] Save Table ${tableName} SQLite failed:`, err);
         }
       };
@@ -593,6 +611,8 @@ export function executeSaveDb() {
       saveTable('recharge_requests', db.recharge_requests || [], 'request_id');
       saveTable('withdrawal_requests', db.withdrawal_requests || [], 'request_id');
       saveTable('kyc_verifications', db.kyc_verifications || [], 'kyc_id');
+      saveTable('bank_accounts', (db as any).bank_accounts || [], 'account_id');
+      saveTable('bank_transactions', (db as any).bank_transactions || [], 'transaction_id');
       saveTable('payment_methods', db.payment_methods || [], 'payment_method_id');
       saveTable('external_financial_accounts', db.external_financial_accounts || [], 'account_token');
       saveTable('external_processor_events', db.external_processor_events || [], 'event_id');
@@ -615,11 +635,13 @@ export function executeSaveDb() {
       saveTable('platform_financial_audit_logs', db.platform_financial_audit_logs || [], 'log_id');
       saveTable('automation_actions', db.automation_actions || [], 'action_id');
       saveTable('refund_requests', db.refund_requests || [], 'request_id');
+      saveTable('idempotency_records', db.idempotency_records || [], 'key');
 
       const saveLoungesDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM lounges`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounges (lounge_id, name, description, owner_id, created_at, is_private, is_official, last_message_at, icon_url, invite_code, id, slug, creator_id, parent_lounge_id, updated_at, is_system, visibility, status, type, owner_user_id, hide_member_list, is_locked, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO lounges (lounge_id, name, description, owner_id, created_at, is_private, is_official, last_message_at, icon_url, invite_code, id, slug, creator_id, parent_lounge_id, updated_at, is_system, visibility, status, type, owner_user_id, hide_member_list, is_locked, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const c of db.lounges || []) {
             const idVal = c.id || c.lounge_id;
             const slugVal = c.slug || c.lounge_id;
@@ -661,27 +683,33 @@ export function executeSaveDb() {
               lastActiveAtVal
             );
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save lounges SQLite failed:', err);
         }
       };
 
       const saveLoungeRoomsDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM lounge_rooms`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_rooms (id, lounge_id, name, is_locked, invite_code, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO lounge_rooms (id, lounge_id, name, is_locked, invite_code, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
           for (const lr of db.lounge_rooms || []) {
             stmt.run(lr.id, lr.lounge_id, lr.name, Number(lr.is_locked || 0), lr.invite_code || null, String(lr.created_by), Number(lr.created_at || Date.now()));
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save lounge_rooms SQLite failed:', err);
         }
       };
 
       const saveMarketListingsDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM market_listings`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO market_listings (listing_id, seller_id, title, description, price, status, created_at, seller_username, discount_price, verification_status, inventory_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO market_listings (listing_id, seller_id, title, description, price, status, created_at, seller_username, discount_price, verification_status, inventory_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const l of db.market_listings || []) {
             stmt.run(
               l.listing_id,
@@ -697,15 +725,33 @@ export function executeSaveDb() {
               l.inventory_count !== undefined && l.inventory_count !== null ? Number(l.inventory_count) : null
             );
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save market_listings SQLite failed:', err);
+        }
+      };
+
+      const saveLoungeSanctionsDb = () => {
+        try {
+          conn.exec('BEGIN TRANSACTION');
+          conn.exec('DELETE FROM lounge_sanctions');
+          const stmt = conn.prepare(`INSERT INTO lounge_sanctions (id, lounge_id, user_id, type, applied_by, applied_by_type, applied_at, lifted_at, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          for (const s of db.lounge_sanctions || []) {
+            stmt.run(s.id, s.lounge_id, Number(s.user_id), s.type, Number(s.applied_by), s.applied_by_type, Number(s.applied_at), s.lifted_at, s.reason);
+          }
+          conn.exec('COMMIT');
+        } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
+          console.error('[SYS-SECURE] Save lounge_sanctions SQLite failed:', err);
         }
       };
 
       const saveEscrowTransactionsDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM escrow_transactions`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO escrow_transactions (transaction_id, listing_id, buyer_id, seller_id, amount, status, created_at, updated_at, coupon_applied, sku_variant_id, platform_fee, payout_amount, sandbox_logs, sandbox_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO escrow_transactions (transaction_id, listing_id, buyer_id, seller_id, amount, status, created_at, updated_at, coupon_applied, sku_variant_id, platform_fee, payout_amount, sandbox_logs, sandbox_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const t of db.escrow_transactions || []) {
             stmt.run(
               t.transaction_id,
@@ -718,121 +764,150 @@ export function executeSaveDb() {
               Number(t.updated_at || Date.now()),
               t.coupon_applied || null,
               t.sku_variant_id || null,
-              t.platform_fee !== undefined && t.platform_fee !== null ? Number(t.platform_fee) : null,
-              t.payout_amount !== undefined && t.payout_amount !== null ? Number(t.payout_amount) : null,
-              t.sandbox_logs ? JSON.stringify(t.sandbox_logs) : null,
-              t.sandbox_state ? JSON.stringify(t.sandbox_state) : null
+              t.platform_fee === undefined || t.platform_fee === null ? null : Number(t.platform_fee),
+              t.payout_amount === undefined || t.payout_amount === null ? null : Number(t.payout_amount),
+              t.sandbox_logs ? (typeof t.sandbox_logs === 'string' ? t.sandbox_logs : JSON.stringify(t.sandbox_logs)) : null,
+              t.sandbox_state ? (typeof t.sandbox_state === 'string' ? t.sandbox_state : JSON.stringify(t.sandbox_state)) : null
             );
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save escrow_transactions SQLite failed:', err);
         }
       };
 
       const saveLoungeMembersDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM lounge_members`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_members (lounge_id, user_id, role, status, joined_via, joined_at) VALUES (?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO lounge_members (lounge_id, user_id, role, status, joined_via, joined_at) VALUES (?, ?, ?, ?, ?, ?)`);
           for (const m of db.lounge_members || []) {
-            stmt.run(m.lounge_id, Number(m.user_id), m.role, m.status, m.joined_via, Number(m.joined_at));
+            stmt.run(
+              m.lounge_id,
+              Number(m.user_id),
+              m.role,
+              m.status,
+              m.joined_via,
+              Number(m.joined_at || Date.now())
+            );
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save lounge_members SQLite failed:', err);
-        }
-      };
-
-      const saveLoungeInvitesDb = () => {
-        try {
-          conn.exec(`DELETE FROM lounge_invites`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_invites (id, lounge_id, code, created_by, max_uses, uses_count, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-          for (const i of db.lounge_invites || []) {
-            stmt.run(i.id, i.lounge_id, i.code, Number(i.created_by), Number(i.max_uses), Number(i.uses_count), i.expires_at, i.revoked_at);
-          }
-        } catch (err) {
-          console.error('[SYS-SECURE] Save lounge_invites SQLite failed:', err);
-        }
-      };
-
-      const saveLoungeSanctionsDb = () => {
-        try {
-          conn.exec(`DELETE FROM lounge_sanctions`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_sanctions (id, lounge_id, user_id, type, applied_by, applied_by_type, applied_at, lifted_at, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-          for (const s of db.lounge_sanctions || []) {
-            stmt.run(s.id, s.lounge_id, Number(s.user_id), s.type, Number(s.applied_by), s.applied_by_type, Number(s.applied_at), s.lifted_at, s.reason);
-          }
-        } catch (err) {
-          console.error('[SYS-SECURE] Save lounge_sanctions SQLite failed:', err);
         }
       };
 
       const saveLoungeJoinRequestsDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM lounge_join_requests`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_join_requests (id, lounge_id, user_id, message, status, reviewed_by, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO lounge_join_requests (id, lounge_id, user_id, message, status, reviewed_by, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
           for (const r of db.lounge_join_requests || []) {
-            stmt.run(r.id, r.lounge_id, Number(r.user_id), r.message || '', r.status, r.reviewed_by, r.reviewed_at);
+            stmt.run(
+              r.id,
+              r.lounge_id,
+              Number(r.user_id),
+              r.message || '',
+              r.status,
+              r.reviewed_by ? Number(r.reviewed_by) : null,
+              r.reviewed_at ? Number(r.reviewed_at) : null
+            );
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save lounge_join_requests SQLite failed:', err);
+        }
+      };
+
+      const saveLoungeInvitesDb = () => {
+        try {
+          conn.exec('BEGIN TRANSACTION');
+          conn.exec(`DELETE FROM lounge_invites`);
+          const stmt = conn.prepare(`INSERT INTO lounge_invites (id, lounge_id, code, created_by, max_uses, uses_count, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+          for (const i of db.lounge_invites || []) {
+            stmt.run(i.id, i.lounge_id, i.code, Number(i.created_by), Number(i.max_uses), Number(i.uses_count), i.expires_at, i.revoked_at);
+          }
+          conn.exec('COMMIT');
+        } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
+          console.error('[SYS-SECURE] Save lounge_invites SQLite failed:', err);
         }
       };
 
       const saveLoungeOwnershipTransfersDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM lounge_ownership_transfers`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_ownership_transfers (id, lounge_id, from_user_id, to_user_id, status, initiated_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO lounge_ownership_transfers (id, lounge_id, from_user_id, to_user_id, status, initiated_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
           for (const t of db.lounge_ownership_transfers || []) {
             stmt.run(t.id, t.lounge_id, Number(t.from_user_id), Number(t.to_user_id), t.status, Number(t.initiated_at), t.resolved_at);
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save lounge_ownership_transfers SQLite failed:', err);
         }
       };
 
       const saveAccountDeletionRequestsDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM account_deletion_requests`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO account_deletion_requests (id, user_id, requested_at, scheduled_purge_at, status) VALUES (?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO account_deletion_requests (id, user_id, requested_at, scheduled_purge_at, status) VALUES (?, ?, ?, ?, ?)`);
           for (const d of db.account_deletion_requests || []) {
             stmt.run(d.id, Number(d.user_id), Number(d.requested_at), Number(d.scheduled_purge_at), d.status);
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save account_deletion_requests SQLite failed:', err);
         }
       };
 
       const saveUserLoungePreferencesDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM user_lounge_preferences`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO user_lounge_preferences (user_id, lounge_id, notifications_muted, pinned, pin_order) VALUES (?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO user_lounge_preferences (user_id, lounge_id, notifications_muted, pinned, pin_order) VALUES (?, ?, ?, ?, ?)`);
           for (const p of db.user_lounge_preferences || []) {
             stmt.run(Number(p.user_id), p.lounge_id, p.notifications_muted ? 1 : 0, p.pinned ? 1 : 0, p.pin_order);
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save user_lounge_preferences SQLite failed:', err);
         }
       };
 
       const saveLoungeAuditLogsDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM lounge_audit_logs`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_audit_logs (id, lounge_id, actor_id, actor_type, action, target_type, target_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO lounge_audit_logs (id, lounge_id, actor_id, actor_type, action, target_type, target_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const l of db.lounge_audit_logs || []) {
             stmt.run(l.id, l.lounge_id, Number(l.actor_id), l.actor_type, l.action, l.target_type, l.target_id, typeof l.metadata === 'string' ? l.metadata : JSON.stringify(l.metadata), Number(l.created_at));
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save lounge_audit_logs SQLite failed:', err);
         }
       };
 
       const saveSystemAuditLogsDb = () => {
         try {
+          conn.exec('BEGIN TRANSACTION');
           conn.exec(`DELETE FROM system_audit_logs`);
-          const stmt = conn.prepare(`INSERT OR REPLACE INTO system_audit_logs (id, actor_id, actor_type, action, target_type, target_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO system_audit_logs (id, actor_id, actor_type, action, target_type, target_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const l of db.system_audit_logs || []) {
             stmt.run(l.id, Number(l.actor_id), l.actor_type, l.action, l.target_type, l.target_id, typeof l.metadata === 'string' ? l.metadata : JSON.stringify(l.metadata), Number(l.created_at));
           }
+          conn.exec('COMMIT');
         } catch (err) {
+          try { conn.exec('ROLLBACK'); } catch (_) {}
           console.error('[SYS-SECURE] Save system_audit_logs SQLite failed:', err);
         }
       };
@@ -851,8 +926,6 @@ export function executeSaveDb() {
       saveMarketListingsDb();
       saveEscrowTransactionsDb();
 
-      conn.exec('COMMIT');
-
       try {
         conn.close?.();
       } catch (_) {}
@@ -860,10 +933,16 @@ export function executeSaveDb() {
       const plainJson = JSON.stringify(db);
       const encryptedData = encryptData(plainJson);
       fs.writeFileSync(DB_FILE, encryptedData, 'utf8');
+      try {
+        fs.chmodSync(DB_FILE, 0o777);
+      } catch (_) {}
     } else {
       const plainJson = JSON.stringify(db);
       const encryptedData = encryptData(plainJson);
       fs.writeFileSync(DB_FILE, encryptedData, 'utf8');
+      try {
+        fs.chmodSync(DB_FILE, 0o777);
+      } catch (_) {}
     }
     
     setLastSavedDbJson(plainJson);

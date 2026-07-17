@@ -53,7 +53,9 @@ export async function processCreateEscrow(
       if (coupon) couponObj = coupon;
     }
 
-    const settlement = calculateOrderSettlement(itemPriceCents, 0, 0.05, couponObj);
+    const feePercent = (db.system_settings?.platform_fee_percent || 5) / 100;
+    const taxPercent = (db.system_settings?.tax_rate_percent || 0) / 100;
+    const settlement = calculateOrderSettlement(itemPriceCents, taxPercent, feePercent, couponObj);
     if (settlement.error) return { success: false, error: settlement.error };
 
     if (couponObj) {
@@ -76,7 +78,7 @@ export async function processCreateEscrow(
     }
 
     const priceCents = settlement.gross_amount_cents - settlement.discount_deduction_cents + settlement.net_tax_amount_cents;
-    const buyerWallet = walletRepository.getOrCreateWallet(buyerId);
+    const buyerWallet = walletRepository.getOrCreateWalletBalance(buyerId, 'VLM');
     if (buyerWallet.balance_cents < priceCents) {
       return { success: false, error: 'Insufficient wallet ledger balance.' };
     }
@@ -85,13 +87,13 @@ export async function processCreateEscrow(
     const finalPayout = parseFloat((settlement.payout_net_amount_cents / 100).toFixed(2));
     const transactionId = generateTrcCode('hold', 'AST48');
 
-    walletRepository.updateWalletBalance(buyerId, buyerWallet.balance_cents - priceCents);
+    walletRepository.updateWalletBalanceCents(buyerId, 'VLM', buyerWallet.balance_cents - priceCents);
     walletRepository.createLedgerEntry({
       entry_id: generateTrcCode('hold', 'AST48'),
       user_id: Number(buyerId),
       entry_type: 'ESCROW_HOLD',
       amount_cents: -priceCents,
-      balance_after_cents: buyerWallet.balance_cents - priceCents,
+      balance_after_cents: buyerWallet.balance_cents, // already updated in repository
       related_transaction_id: transactionId,
       actor_type: 'USER',
       actor_id: String(buyerId),
@@ -170,18 +172,19 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
         marketRepository.updateListing(listing.listing_id, { status: 'COMPLETED' });
       }
 
-      const sellerWallet = walletRepository.getOrCreateWallet(sellerId);
+      const sellerWallet = walletRepository.getOrCreateWalletBalance(sellerId, 'VLM');
       const releaseCents = Math.round(escrow.amount * 100);
       const feeCents = Math.round((escrow.platform_fee || 0) * 100);
       const payoutCents = releaseCents - feeCents;
 
-      walletRepository.updateWalletBalance(sellerId, sellerWallet.balance_cents + payoutCents);
+      // Escrow release goes to wallet first
+      walletRepository.updateWalletBalanceCents(sellerId, 'VLM', sellerWallet.balance_cents + payoutCents);
       walletRepository.createLedgerEntry({
         entry_id: generateTrcCode('release', 'AST48'),
         user_id: sellerId,
         entry_type: 'ESCROW_RELEASE',
-        amount_cents: releaseCents,
-        balance_after_cents: sellerWallet.balance_cents + releaseCents,
+        amount_cents: payoutCents, // Only adding payout cents here
+        balance_after_cents: sellerWallet.balance_cents, // already updated in repository
         related_transaction_id: escrow.transaction_id,
         actor_type: adminOverride ? 'ADMIN' : 'USER',
         actor_id: String(actorId),
@@ -189,18 +192,81 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
         created_at: Date.now()
       });
 
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('release', 'FEE'),
-        user_id: sellerId,
-        entry_type: 'PLATFORM_FEE',
-        amount_cents: -feeCents,
-        balance_after_cents: sellerWallet.balance_cents + payoutCents,
-        related_transaction_id: escrow.transaction_id,
-        actor_type: adminOverride ? 'ADMIN' : 'USER',
-        actor_id: String(actorId),
-        is_simulated: true,
-        created_at: Date.now()
-      });
+      // Send the fee to Velum Central Bank
+      if (feeCents > 0) {
+        try {
+          const { bankStore, getSystemAccount } = await import('./bankStore.js');
+          const clr = await getSystemAccount('CENTRAL');
+          if (clr) {
+            const twdRate = db.system_settings?.twd_usd_rate || 0.031;
+            let twdFee = Math.round(feeCents / twdRate); // converting USD to TWD for bank
+            const user = db.users?.find(u => Number(u.user_id) === sellerId);
+            const pref = user?.preferred_currency || 'USD';
+            if (pref !== 'USD' && pref !== 'VLM') {
+              const r = db.exchange_rates?.find(x => x.base_currency === pref && x.quote_currency === 'TWD');
+              if (r) twdFee = Math.round(feeCents * r.rate);
+            }
+            await bankStore.updateAccountBalance(clr.account_id, twdFee);
+            await bankStore.logTransaction({
+              account_id: clr.account_id,
+              type: 'deposit',
+              amount_cents: twdFee,
+              currency_code: 'TWD',
+              description: `Escrow platform fee for transaction ${escrow.transaction_id}`,
+              status: 'completed'
+            });
+          }
+        } catch (e) {
+          console.error("Failed to deposit fee to central bank", e);
+        }
+      }
+
+      // Auto-withdraw payout to user's first external account if available
+      try {
+        db.payment_methods = db.payment_methods || [];
+        db.external_financial_accounts = db.external_financial_accounts || [];
+        const defaultMethod = db.payment_methods.find(m => Number(m.user_id) === sellerId && m.status === 'ACTIVE');
+        if (defaultMethod) {
+          const extAccount = db.external_financial_accounts.find(a => a.account_token === defaultMethod.external_account_token);
+          if (extAccount) {
+            // Deduct from wallet
+            walletRepository.updateWalletBalanceCents(sellerId, 'VLM', sellerWallet.balance_cents - payoutCents);
+            walletRepository.createLedgerEntry({
+              entry_id: generateTrcCode('withdrawal', 'WD'),
+              user_id: sellerId,
+              entry_type: 'WITHDRAWAL',
+              amount_cents: -payoutCents,
+              balance_after_cents: sellerWallet.balance_cents, // already updated in repository
+              related_transaction_id: escrow.transaction_id,
+              actor_type: 'SYSTEM',
+              actor_id: 'SYSTEM',
+              is_simulated: true,
+              created_at: Date.now()
+            });
+            // Add to external account
+            extAccount.available_cents += payoutCents;
+            // Deduct from Central/Trust bank based on card type
+            const bankType = extAccount.account_kind === 'CREDIT_CARD' ? 'CENTRAL' : 'MEMBER';
+            const { bankStore, getSystemAccount } = await import('./bankStore.js');
+            const clr = await getSystemAccount(bankType);
+            if (clr) {
+              const twdRate = db.system_settings?.twd_usd_rate || 0.031;
+              let twdPayout = Math.round(payoutCents / twdRate);
+              await bankStore.updateAccountBalance(clr.account_id, -twdPayout);
+              await bankStore.logTransaction({
+                account_id: clr.account_id,
+                type: 'withdrawal',
+                amount_cents: twdPayout,
+                currency_code: 'TWD',
+                description: `Auto-withdrawal of escrow payout to ${bankType} for user ${sellerId}`,
+                status: 'completed'
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed auto-withdrawal", e);
+      }
 
       return { success: true, escrow: marketRepository.findEscrowById(transactionId) };
     });
@@ -244,16 +310,16 @@ export async function processRevertEscrow(transactionId: string, actorId: number
         });
       }
 
-      const buyerWallet = walletRepository.getOrCreateWallet(esc.buyer_id);
+      const buyerWallet = walletRepository.getOrCreateWalletBalance(esc.buyer_id, 'VLM');
       const refundCents = Math.round(esc.amount * 100);
 
-      walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
+      walletRepository.updateWalletBalanceCents(esc.buyer_id, 'VLM', buyerWallet.balance_cents + refundCents);
       walletRepository.createLedgerEntry({
         entry_id: generateTrcCode('refund', 'AST48'),
         user_id: esc.buyer_id,
         entry_type: 'ESCROW_REFUND',
         amount_cents: refundCents,
-        balance_after_cents: buyerWallet.balance_cents + refundCents,
+        balance_after_cents: buyerWallet.balance_cents, // already updated in repository
         related_transaction_id: esc.transaction_id,
         actor_type: isAdmin ? 'ADMIN' : 'USER',
         actor_id: String(actorId),
@@ -293,8 +359,8 @@ export async function processResolveDispute(
       const platformFeeCents = Math.round((escrow.platform_fee || 0) * 100);
       const payoutCents = escrowAmountCents - platformFeeCents;
 
-      const buyerWallet = walletRepository.getOrCreateWallet(escrow.buyer_id);
-      const sellerWallet = walletRepository.getOrCreateWallet(escrow.seller_id);
+      const buyerWallet = walletRepository.getOrCreateWalletBalance(escrow.buyer_id, 'VLM');
+      const sellerWallet = walletRepository.getOrCreateWalletBalance(escrow.seller_id, 'VLM');
 
       let logs = [
         `[SYS-DISPUTE] ADMIN '${adminUsername}' INITIATED DISPUTE RESOLUTION PROTOCOL...`,
@@ -303,13 +369,13 @@ export async function processResolveDispute(
       ];
 
       if (resolution === 'REFUND_BUYER') {
-        walletRepository.updateWalletBalance(escrow.buyer_id, buyerWallet.balance_cents + escrowAmountCents);
+        walletRepository.updateWalletBalanceCents(escrow.buyer_id, 'VLM', buyerWallet.balance_cents + escrowAmountCents);
         walletRepository.createLedgerEntry({
           entry_id: `${generatePrefixedId('led')}_bref`,
           user_id: buyerId,
           entry_type: 'ESCROW_REFUND',
           amount_cents: escrowAmountCents,
-          balance_after_cents: buyerWallet.balance_cents + escrowAmountCents,
+          balance_after_cents: buyerWallet.balance_cents, // already updated in repository
           related_transaction_id: escrow.transaction_id,
           actor_type: 'ADMIN',
           actor_id: String(adminId),
@@ -325,15 +391,15 @@ export async function processResolveDispute(
 
         if (penalty_applied_to === 'SELLER') {
           const penaltyCents = Math.round(escrowAmountCents * 0.25);
-          walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents - penaltyCents);
-          walletRepository.updateWalletBalance(escrow.buyer_id, buyerWallet.balance_cents + escrowAmountCents + penaltyCents);
+          walletRepository.updateWalletBalanceCents(escrow.seller_id, 'VLM', sellerWallet.balance_cents - penaltyCents);
+          walletRepository.updateWalletBalanceCents(escrow.buyer_id, 'VLM', buyerWallet.balance_cents + penaltyCents);
 
           walletRepository.createLedgerEntry({
-            entry_id: `${generatePrefixedId('led')}_spen`,
+            entry_id: generateTrcCode('penalty', 'SELLER'),
             user_id: sellerId,
             entry_type: 'AUTOMATED_ADJUSTMENT',
             amount_cents: -penaltyCents,
-            balance_after_cents: sellerWallet.balance_cents - penaltyCents,
+            balance_after_cents: sellerWallet.balance_cents, // already updated in repository
             related_transaction_id: escrow.transaction_id,
             actor_type: 'ADMIN',
             actor_id: String(adminId),
@@ -342,11 +408,11 @@ export async function processResolveDispute(
           });
 
           walletRepository.createLedgerEntry({
-            entry_id: `${generatePrefixedId('led')}_brewd`,
+            entry_id: generateTrcCode('refund', 'AST48'),
             user_id: buyerId,
             entry_type: 'AUTOMATED_ADJUSTMENT',
             amount_cents: penaltyCents,
-            balance_after_cents: buyerWallet.balance_cents + escrowAmountCents + penaltyCents,
+            balance_after_cents: buyerWallet.balance_cents, // already updated in repository
             related_transaction_id: escrow.transaction_id,
             actor_type: 'ADMIN',
             actor_id: String(adminId),
@@ -358,13 +424,13 @@ export async function processResolveDispute(
           logs.push(` COMPENSATED BUYER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
         }
       } else if (resolution === 'RELEASE_SELLER') {
-        walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents + payoutCents);
+        walletRepository.updateWalletBalanceCents(escrow.seller_id, 'VLM', sellerWallet.balance_cents + payoutCents);
         walletRepository.createLedgerEntry({
-          entry_id: `${generatePrefixedId('led')}_srel`,
+          entry_id: generateTrcCode('release', 'AST48'),
           user_id: sellerId,
           entry_type: 'ESCROW_RELEASE',
           amount_cents: escrowAmountCents,
-          balance_after_cents: sellerWallet.balance_cents + platformFeeCents + payoutCents,
+          balance_after_cents: sellerWallet.balance_cents + platformFeeCents, // matches gross total
           related_transaction_id: escrow.transaction_id,
           actor_type: 'ADMIN',
           actor_id: String(adminId),
@@ -373,11 +439,11 @@ export async function processResolveDispute(
         });
 
         walletRepository.createLedgerEntry({
-          entry_id: `${generatePrefixedId('led')}_sfee`,
+          entry_id: generateTrcCode('release', 'FEE'),
           user_id: sellerId,
           entry_type: 'PLATFORM_FEE',
           amount_cents: -platformFeeCents,
-          balance_after_cents: sellerWallet.balance_cents + payoutCents,
+          balance_after_cents: sellerWallet.balance_cents, // matches net total
           related_transaction_id: escrow.transaction_id,
           actor_type: 'ADMIN',
           actor_id: String(adminId),
@@ -393,15 +459,15 @@ export async function processResolveDispute(
 
         if (penalty_applied_to === 'BUYER') {
           const penaltyCents = Math.round(escrowAmountCents * 0.25);
-          walletRepository.updateWalletBalance(escrow.buyer_id, buyerWallet.balance_cents - penaltyCents);
-          walletRepository.updateWalletBalance(escrow.seller_id, sellerWallet.balance_cents + payoutCents + penaltyCents);
+          walletRepository.updateWalletBalanceCents(escrow.buyer_id, 'VLM', buyerWallet.balance_cents - penaltyCents);
+          walletRepository.updateWalletBalanceCents(escrow.seller_id, 'VLM', sellerWallet.balance_cents + penaltyCents);
 
           walletRepository.createLedgerEntry({
-            entry_id: `${generatePrefixedId('led')}_bpen`,
+            entry_id: generateTrcCode('penalty', 'BUYER'),
             user_id: buyerId,
             entry_type: 'AUTOMATED_ADJUSTMENT',
             amount_cents: -penaltyCents,
-            balance_after_cents: buyerWallet.balance_cents - penaltyCents,
+            balance_after_cents: buyerWallet.balance_cents, // already updated in repository
             related_transaction_id: escrow.transaction_id,
             actor_type: 'ADMIN',
             actor_id: String(adminId),
@@ -410,11 +476,11 @@ export async function processResolveDispute(
           });
 
           walletRepository.createLedgerEntry({
-            entry_id: `${generatePrefixedId('led')}_srewd`,
+            entry_id: generateTrcCode('release', 'AST48'),
             user_id: sellerId,
             entry_type: 'AUTOMATED_ADJUSTMENT',
             amount_cents: penaltyCents,
-            balance_after_cents: sellerWallet.balance_cents + payoutCents + penaltyCents,
+            balance_after_cents: sellerWallet.balance_cents, // already updated in repository
             related_transaction_id: escrow.transaction_id,
             actor_type: 'ADMIN',
             actor_id: String(adminId),

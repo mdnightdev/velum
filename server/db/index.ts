@@ -6,7 +6,6 @@ import sqliteModule from 'node:sqlite';
 import { DbSchema, defaultDb } from './schema.js';
 import { encryptData, decryptData, setLegacyDecryptionSucceeded, legacyDecryptionSucceeded } from '../services/cryptoService.js';
 import { generateUlid } from '../utils/ulid.js';
-import { rebuildBlocksCache } from '../db.js';
 import { 
   initPgBackupTable,
   getSafeDatabaseBackupBinary,
@@ -35,7 +34,8 @@ export {
   setCloudBackupDisabled,
   loadDb,
   saveDb,
-  executeSaveDb
+  executeSaveDb,
+  closeSqliteConnection
 };
 
 const DatabaseSync = (sqliteModule as any)?.DatabaseSync;
@@ -49,6 +49,20 @@ if (!fs.existsSync(DB_DIR)) {
 }
 
 export let db: DbSchema = { ...defaultDb };
+
+export const activeUserBlocksSet = new Set<string>();
+
+export function rebuildBlocksCache() {
+  activeUserBlocksSet.clear();
+  for (const b of db.user_blocks || []) {
+    activeUserBlocksSet.add(`${b.block_id}_${b.blocked_id}`);
+  }
+}
+
+export function isUserBlocked(userA: number, userB: number): boolean {
+  if (!userA || !userB) return false;
+  return activeUserBlocksSet.has(`${userA}_${userB}`) || activeUserBlocksSet.has(`${userB}_${userA}`);
+}
 export let sqliteDb: any = null;
 export let dbLoaded = false;
 export let isSaving = false;
@@ -80,6 +94,9 @@ export function initSqlite() {
   }
   try {
     const conn = new DatabaseSync(SQLITE_FILE);
+    try {
+      fs.chmodSync(SQLITE_FILE, 0o777);
+    } catch (_) {}
     
     // Override close method to prevent closing the persistent global connection
     const originalClose = conn.close;
@@ -116,14 +133,14 @@ export function initSqlite() {
       'invites', 'tickets', 'reports', 'recovery_events', 'suspicious_events', 'audit_logs',
       'friend_requests', 'peer_relationships', 'join_requests', 'node_overwrites',
       // New banking/payments tables
-      'user_wallets', 'wallet_ledger_entries', 'recharge_requests', 'withdrawal_requests',
+      'bank_accounts', 'bank_transactions', 'user_wallets', 'wallet_ledger_entries', 'recharge_requests', 'withdrawal_requests',
       'kyc_verifications', 'payment_methods', 'external_financial_accounts', 'external_processor_events',
       'wallet_balances', 'currencies', 'exchange_rates', 'platform_admins',
       // New marketplace tables
       'market_assets', 'market_sku_variants', 'market_asset_media', 'market_reviews',
       'market_coupons', 'market_discussions', 'market_support_chats', 'listing_verification_checks',
       // Missing tables to avoid data loss
-      'platform_financial_audit_logs', 'automation_actions', 'refund_requests'
+      'platform_financial_audit_logs', 'automation_actions', 'refund_requests', 'idempotency_records'
     ];
     
     for (const table of tables) {
@@ -508,8 +525,18 @@ export function verifySqliteFile(filePath: string): boolean {
   }
 }
 
+function closeSqliteConnection() {
+  if (sqliteDb) {
+    try {
+      (sqliteDb as any).realClose?.();
+    } catch (_) {}
+    sqliteDb = null;
+  }
+}
+
 export function wipeAndRebuildDatabaseFile() {
   try {
+    closeSqliteConnection();
     if (fs.existsSync(SQLITE_FILE)) {
       fs.unlinkSync(SQLITE_FILE);
     }
@@ -638,7 +665,7 @@ export function ensureSeededIntegrity() {
   if (!db.market_support_chats) db.market_support_chats = [];
   if (!db.listing_verification_checks) db.listing_verification_checks = [];
 
-  // Overwrite currencies and exchange rates to ensure we use clean global major currencies
+  // Overwrite currencies and exchange rates to ensure we use clean global major currencies only if not seeded
   const rawCurrencies = [
     { code: 'VLM', name: 'Velum Token', native: true, usdVal: 0.67 },
     { code: 'TWD', name: 'New Taiwan Dollar', native: false, usdVal: 0.031 },
@@ -654,32 +681,36 @@ export function ensureSeededIntegrity() {
     { code: 'HKD', name: 'Hong Kong Dollar', native: false, usdVal: 0.13 }
   ];
 
-  db.currencies = rawCurrencies.map(c => ({
-    currency_code: c.code,
-    display_name: c.name,
-    is_platform_native: c.native,
-    redeemable_for_cash: !c.native,
-    decimal_places: 2,
-    active: true
-  }));
+  if (!db.currencies || db.currencies.length === 0) {
+    db.currencies = rawCurrencies.map(c => ({
+      currency_code: c.code,
+      display_name: c.name,
+      is_platform_native: c.native,
+      redeemable_for_cash: !c.native,
+      decimal_places: 2,
+      active: true
+    }));
+  }
 
-  const generatedRates: any[] = [];
-  for (const base of rawCurrencies) {
-    for (const quote of rawCurrencies) {
-      if (base.code !== quote.code) {
-        const rateVal = base.usdVal / quote.usdVal;
-        generatedRates.push({
-          rate_id: `rate_${base.code.toLowerCase()}_${quote.code.toLowerCase()}`,
-          base_currency: base.code,
-          quote_currency: quote.code,
-          rate: Number(rateVal.toFixed(6)),
-          simulated_source: 'INTERBANK_FEED',
-          effective_at: Date.now()
-        });
+  if (!db.exchange_rates || db.exchange_rates.length === 0) {
+    const generatedRates: any[] = [];
+    for (const base of rawCurrencies) {
+      for (const quote of rawCurrencies) {
+        if (base.code !== quote.code) {
+          const rateVal = base.usdVal / quote.usdVal;
+          generatedRates.push({
+            rate_id: `rate_${base.code.toLowerCase()}_${quote.code.toLowerCase()}`,
+            base_currency: base.code,
+            quote_currency: quote.code,
+            rate: Number(rateVal.toFixed(6)),
+            simulated_source: 'INTERBANK_FEED',
+            effective_at: Date.now()
+          });
+        }
       }
     }
+    db.exchange_rates = generatedRates;
   }
-  db.exchange_rates = generatedRates;
 
   // Ensure system account
   if (db && db.users && !db.users.some((u: any) => u.user_id === 999)) {

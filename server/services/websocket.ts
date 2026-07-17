@@ -14,6 +14,7 @@ import { verifySessionToken } from '../middlewares/auth.js';
 import { isCloudBackupDisabled } from './sync.js';
 import { updateUserPresence } from './presence.js';
 import { generatePrefixedId } from '../utils/ulid.js';
+import { writeServerLog } from '../utils/logger.js';
 
 import { fileURLToPath } from 'url';
 //const __filename = fileURLToPath(import.meta.url);
@@ -551,10 +552,10 @@ export async function handleVelumBotReply(userId: number, roomId: string, userTe
 
 export function setupCloudMessageSync() {
   if (typeof isCloudBackupDisabled !== 'undefined' && isCloudBackupDisabled) {
-    console.log('[SYNC] Cloud sync disabled; skipping cloud message synchronization.');
+    writeServerLog('[SYNC] Cloud sync disabled; skipping cloud message synchronization.');
     return;
   }
 
-  console.log('[SYNC] Cloud backup provider present but realtime message synchronization via Neon PostgreSQL is not configured. Skipping realtime sync.');
+  writeServerLog('[SYNC] Cloud backup provider present but realtime message synchronization via Neon PostgreSQL is not configured. Skipping realtime sync.');
   return;
 }

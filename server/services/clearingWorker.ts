@@ -2,13 +2,14 @@ import { db, saveDb } from '../db.js';
 import { marketRepository } from '../db/marketRepository.js';
 import { walletRepository } from '../db/walletRepository.js';
 import { generateTrcCode, generate8HexChars } from '../utils/trc.js';
+import { writeServerLog } from '../utils/logger.js';
 
 /**
  * 5-Minute Escrow Clearing Guarantee background task.
  * Scans for escrow transactions that have been HELD_IN_ESCROW for >= 5 minutes,
  * verifies there are no active disputes, and automatically releases them.
  */
-export function processEscrowClearingWorker(): void {
+export async function processEscrowClearingWorker(): Promise<void> {
   try {
     const escrows = marketRepository.findAllEscrows();
     const pendingEscrows = escrows.filter(esc => esc && esc.status === 'HELD_IN_ESCROW');
@@ -38,60 +39,23 @@ export function processEscrowClearingWorker(): void {
         continue;
       }
 
-      // Execute automated release
-      marketRepository.updateEscrow(esc.transaction_id, {
-        status: 'RELEASED',
-        updated_at: Date.now()
-      });
+      // Execute automated release by invoking the shared release service
+      const { processReleaseEscrow } = await import('./marketplaceService.js');
+      const res = await processReleaseEscrow(esc.transaction_id, 999, true);
 
-      // Credit seller wallet
-      const sellerWallet = walletRepository.getOrCreateWallet(esc.seller_id);
-      const releaseCents = Math.round(esc.amount * 100);
-      const feeCents = Math.round((esc.platform_fee || 0) * 100);
-      const payoutCents = releaseCents - feeCents;
-
-      walletRepository.updateWalletBalance(esc.seller_id, sellerWallet.balance_cents + payoutCents);
-
-      // Create release ledger entry
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('release', 'AST48'),
-        user_id: Number(esc.seller_id),
-        entry_type: 'ESCROW_RELEASE',
-        amount_cents: releaseCents,
-        balance_after_cents: sellerWallet.balance_cents + feeCents,
-        related_transaction_id: esc.transaction_id,
-        actor_type: 'SYSTEM_AUTOMATION',
-        actor_id: 'AUTO_CLEARING_WORKER',
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      // Create platform fee ledger entry
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('release', 'FEE'),
-        user_id: Number(esc.seller_id),
-        entry_type: 'PLATFORM_FEE',
-        amount_cents: -feeCents,
-        balance_after_cents: sellerWallet.balance_cents,
-        related_transaction_id: esc.transaction_id,
-        actor_type: 'SYSTEM_AUTOMATION',
-        actor_id: 'AUTO_CLEARING_WORKER',
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      // Create automation action log
-      marketRepository.createAutomationAction({
-        action_id: generateTrcCode('release', 'AST48'),
-        escrow_transaction_id: esc.transaction_id,
-        action_type: 'AUTO_RELEASE',
-        acted_on_behalf_of: 'BUYER',
-        trigger_reason: '5-minute automated clearing guarantee met.',
-        executed_at: Date.now(),
-        human_reviewed: false
-      });
-
-      releasedCount++;
+      if (res.success) {
+        // Create automation action log
+        marketRepository.createAutomationAction({
+          action_id: generateTrcCode('release', 'AST48'),
+          escrow_transaction_id: esc.transaction_id,
+          action_type: 'AUTO_RELEASE',
+          acted_on_behalf_of: 'BUYER',
+          trigger_reason: '5-minute automated clearing guarantee met.',
+          executed_at: Date.now(),
+          human_reviewed: false
+        });
+        releasedCount++;
+      }
     }
 
     if (releasedCount > 0) {
@@ -109,7 +73,7 @@ export function processEscrowClearingWorker(): void {
  */
 export function performLedgerReconciliationCheck(): void {
   try {
-    console.log('[SYS-SECURE] Starting ledger reconciliation integrity checks...');
+    writeServerLog('[SYS-SECURE] Starting ledger reconciliation integrity checks...');
     const wallets = db.user_wallets || [];
     let discrepanciesDetected = 0;
 
@@ -125,7 +89,7 @@ export function performLedgerReconciliationCheck(): void {
 
       if (expectedCents !== actualCents) {
         discrepanciesDetected++;
-        console.error(`[SYS-SECURE] INTEGRITY FAULT: Discrepancy found for user ${wallet.user_id}. Wallet: ${actualCents} cents, Ledger: ${expectedCents} cents. Difference: ${actualCents - expectedCents} cents.`);
+        writeServerLog(`[SYS-SECURE] INTEGRITY FAULT: Discrepancy found for user ${wallet.user_id}. Wallet: ${actualCents} cents, Ledger: ${expectedCents} cents. Difference: ${actualCents - expectedCents} cents.`);
         
         // Log to platforms financial audit
         marketRepository.createPlatformFinancialAuditLog({
@@ -140,12 +104,12 @@ export function performLedgerReconciliationCheck(): void {
     }
 
     if (discrepanciesDetected === 0) {
-      console.log('[SYS-SECURE] Ledger reconciliation checks completed: 100% integrity verified.');
+      writeServerLog('[SYS-SECURE] Ledger reconciliation checks completed: 100% integrity verified.');
     } else {
-      console.warn(`[SYS-SECURE] Ledger reconciliation checks completed: ${discrepanciesDetected} discrepancies detected.`);
+      writeServerLog(`[SYS-SECURE] Ledger reconciliation checks completed: ${discrepanciesDetected} discrepancies detected.`);
     }
   } catch (error) {
-    console.error('[SYS-SECURE] Ledger reconciliation check error:', error);
+    writeServerLog(`[SYS-SECURE] Ledger reconciliation check error: ${error}`);
   }
 }
 
@@ -170,7 +134,7 @@ export function startClearingWorker(intervalMs = 30000): void {
     processEscrowClearingWorker();
   }, intervalMs);
 
-  console.log(`[SYS-SECURE] Automated escrow clearing worker started (polling interval: ${intervalMs}ms).`);
+  writeServerLog(`[SYS-SECURE] Automated escrow clearing worker started (polling interval: ${intervalMs}ms).`);
 }
 
 /**
@@ -180,6 +144,6 @@ export function stopClearingWorker(): void {
   if (clearingInterval) {
     clearInterval(clearingInterval);
     clearingInterval = null;
-    console.log('[SYS-SECURE] Automated escrow clearing worker stopped.');
+    writeServerLog('[SYS-SECURE] Automated escrow clearing worker stopped.');
   }
 }

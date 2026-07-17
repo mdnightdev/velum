@@ -97,25 +97,16 @@ export default function MarketMainDashboard({
 
   return (
     <div id="market_dashboard" className="flex-1 bg-transparent p-6 lg:p-8 space-y-7 text-text-primary">
-      <div className="flex justify-end mb-2">
-        <div className="flex gap-2 shrink-0">
-          {(currentUserRole === 'CLI_ADMIN' || currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
-            <button
-              onClick={() => setShowCouponCreator(!showCouponCreator)}
-              className="px-3.5 py-1.5 border border-white-5 hover:border-accent/20 bg-text-primary/[0.01] hover:bg-accent/5 rounded-xl text-[10px] font-bold uppercase text-accent font-sans tracking-wide transition cursor-pointer"
-            >
-              Admin Coupons
-            </button>
-          )}
+      {(currentUserRole === 'CLI_ADMIN' || currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
+        <div className="flex justify-end mb-2">
           <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="flex items-center gap-1.5 bg-accent hover:bg-accent-hover text-velum-900 text-[10px] font-extrabold uppercase py-2 px-4 rounded-xl transition cursor-pointer font-sans tracking-wider"
+            onClick={() => setShowCouponCreator(!showCouponCreator)}
+            className="px-3.5 py-1.5 border border-white-5 hover:border-accent/20 bg-text-primary/[0.01] hover:bg-accent/5 rounded-xl text-[10px] font-bold uppercase text-accent font-sans tracking-wide transition cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{showCreate ? 'Close Form' : 'New Listing'}</span>
+            Admin Coupons
           </button>
         </div>
-      </div>
+      )}
 
       {showCouponCreator && (
         <CouponCreator
@@ -186,6 +177,15 @@ export default function MarketMainDashboard({
           }}
         />
       )}
+
+      {/* Floating Action Button (FAB) for New Listing */}
+      <button
+        onClick={() => setShowCreate(!showCreate)}
+        className="fixed bottom-8 right-8 z-50 flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-velum-900 text-[10px] font-extrabold uppercase py-3.5 px-5 rounded-full shadow-2xl transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer font-sans tracking-widest border border-white-10 hover:shadow-[0_0_20px_rgba(200,155,138,0.4)]"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        <span>{showCreate ? 'Close Form' : 'New Listing'}</span>
+      </button>
     </div>
   );
 }

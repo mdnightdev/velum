@@ -6,15 +6,13 @@ interface AdminControlDeskProps {
   isDark: boolean;
   setIsDark: (dark: boolean) => void;
   onLogout: () => void;
-  onSwitchToCli?: () => void;
 }
 
 export default function AdminControlDesk({
   user,
   isDark,
   setIsDark,
-  onLogout,
-  onSwitchToCli
+  onLogout
 }: AdminControlDeskProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'tickets' | 'reports' | 'announcements' | 'moderation' | 'system' | 'logs' | 'bank' | 'profile'>('overview');
 
@@ -28,7 +26,6 @@ export default function AdminControlDesk({
         isDark={isDark}
         onLogout={onLogout}
         user={user}
-        onSwitchToCli={onSwitchToCli}
       />
     </div>
   );

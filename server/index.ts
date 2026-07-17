@@ -1,16 +1,24 @@
+// Suppress Node.js pg security warnings
+process.removeAllListeners('warning');
+process.on('warning', (warning) => {
+  if (warning.message && warning.message.includes('SSL modes')) return;
+  console.warn(warning.stack || warning.message);
+});
+
 import 'dotenv/config';
 import express from 'express';
 import { createServer as createHttpServer } from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
-import { loadDb, hardResetAndSeedDatabase } from './db.js';
+import { loadDb, hardResetAndSeedDatabase, SQLITE_FILE } from './db.js';
 import { restoreDbFromCloud } from './services/sync.js';
 import { startClearingWorker } from './services/clearingWorker.js';
 import { wss, setupCloudMessageSync } from './services/websocket.js';
 import { securityHeaders, fileProtection } from './middlewares/security.js';
 import { apiRouter } from './routes/index.js';
 import helmet from 'helmet';
+import { writeServerLog } from './utils/logger.js';
 
 export const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -41,40 +49,52 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 export async function startServer() {
-  // 1. Load SQLite tables into memory immediately so the UI populates instantly
+  // 1. Load SQLite tables into memory immediately so the UI populates instantly (sub-10ms)
   loadDb();
-
-  if (process.env.NODE_ENV === 'development' || process.env.DISABLE_CLOUD_BACKUP === '1') {
-    console.log('[SYS-SECURE] Development/cloud-backup-disabled mode: skipping cloud restore and realtime sync.');
-  } else {
-    console.log('[SYS-SECURE] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
-    // 2. Run cloud restore in the background without blocking server startup
-    restoreDbFromCloud().catch(() => {});
-
-    // Initialize distributed cloud message replication observer
-    try {
-      setupCloudMessageSync();
-    } catch (err) {
-      console.error('[SYS-SECURE] Distributed message listener error:', err);
-    }
-  }
 
   // Ensure administrative base seed accounts exist without force resetting existing user data
   try {
     await hardResetAndSeedDatabase(false);
   } catch (err) {
-    console.error('[SYS-SECURE] Error during administrative startup seeding:', err);
+    writeServerLog(`[SYS-SECURE] Error during administrative startup seeding: ${err}`);
   }
 
   // Start the background automated clearing worker & run reconciliation audits
   try {
     startClearingWorker();
   } catch (err) {
-    console.error('[SYS-SECURE] Error starting clearing worker:', err);
+    writeServerLog(`[SYS-SECURE] Error starting clearing worker: ${err}`);
+  }
+
+  // 2. Perform remote cloud restore check asynchronously in the background so it doesn't block server startup
+  if (process.env.NODE_ENV === 'development' || process.env.DISABLE_CLOUD_BACKUP === '1') {
+    writeServerLog('[SYS-SECURE] Development/cloud-backup-disabled mode: skipping cloud restore and realtime sync.');
+  } else {
+    (async () => {
+      writeServerLog('[SYS-SECURE] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
+      try {
+        await restoreDbFromCloud();
+        // Reload memory and SQLite mirrors if cloud restore successfully fetched and unlinked the local DB
+        if (!fs.existsSync(SQLITE_FILE)) {
+          loadDb(true);
+        }
+      } catch (err) {
+        writeServerLog(`[SYS-SECURE] Error during cloud restore: ${err}`);
+      }
+
+      // Initialize distributed cloud message replication observer
+      try {
+        setupCloudMessageSync();
+      } catch (err) {
+        writeServerLog(`[SYS-SECURE] Distributed message listener error: ${err}`);
+      }
+    })().catch(err => {
+      console.error('[SYS-SECURE] Background cloud restore unhandled rejection:', err);
+    });
   }
 
   if (!isProduction) {
-    console.log('[SYS-SECURE] Mounting Vite Dev Server middleware for dynamic asset compiling...');
+    writeServerLog('[SYS-SECURE] Mounting Vite Dev Server middleware for dynamic asset compiling...');
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
@@ -84,7 +104,7 @@ export async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    console.log('[SYS-SECURE] Serving pre-compiled production build from dist/ directory...');
+    writeServerLog('[SYS-SECURE] Serving pre-compiled production build from dist/ directory...');
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath, { 
       index: false,

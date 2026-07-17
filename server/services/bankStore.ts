@@ -79,62 +79,68 @@ export async function ensureInitialized() {
 }
 
 // Helper to seed bank system if empty
+
 export function seedBankSystemIfEmpty(localDb: any) {
   if (!localDb.bank_accounts) localDb.bank_accounts = [];
   if (!localDb.bank_transactions) localDb.bank_transactions = [];
 
-  // Seed primary bank reserve accounts if not exists
-  const memberAccount = localDb.bank_accounts.find((a: any) => a.account_id === 'bank_member_trust');
-  if (!memberAccount) {
-    localDb.bank_accounts.unshift({
-      account_id: 'bank_member_trust',
-      user_id: null,
-      account_number: '4222 2222 3333 4444',
-      routing_number: '021000021',
-      account_name: 'VELUM TRUST BANK',
-      institution: 'Taiwan Cooperative Bank',
-      balance_cents: 0, // 0 balance so CLI can fund it
-      currency_code: 'TWD',
-      owner_name: 'VELUM CORPORATION',
-      status: 'active',
-      created_at: Date.now() - 31536000000
-    });
-  }
+  const performMigration = (oldId: string, newPrefix: string, name: string, fixedId: string) => {
+    let acc = localDb.bank_accounts.find((a: any) => a.account_name === name);
+    if (!acc) {
+      acc = {
+        account_id: fixedId,
+        user_id: null,
+        account_number: oldId === 'bank_member_trust' ? '4222 2222 3333 4444' : oldId === 'bank_central_reserve' ? '4222 2222 8888 9999' : '4222 2222 7777 8888',
+        routing_number: '021000021',
+        account_name: name,
+        institution: 'Taiwan Cooperative Bank',
+        balance_cents: 0,
+        currency_code: 'TWD',
+        owner_name: oldId === 'bank_escrow_reserve' ? 'VELUM SECURE ESCROW AGENT' : 'VELUM CORPORATION',
+        status: 'active',
+        created_at: Date.now() - 31536000000
+      };
+      if (oldId === 'bank_member_trust') localDb.bank_accounts.unshift(acc);
+      else localDb.bank_accounts.push(acc);
+    } else {
+      const oldAccountId = acc.account_id;
+      if (oldAccountId !== fixedId) {
+        localDb.bank_transactions.forEach((t: any) => {
+          if (t.account_id === oldAccountId || t.account_id === oldId) {
+            t.account_id = fixedId;
+          }
+        });
+        acc.account_id = fixedId;
+      }
+    }
+  };
 
-  const centralAccount = localDb.bank_accounts.find((a: any) => a.account_id === 'bank_central_reserve');
-  if (!centralAccount) {
-    localDb.bank_accounts.push({
-      account_id: 'bank_central_reserve',
-      user_id: null,
-      account_number: '4222 2222 8888 9999',
-      routing_number: '021000021',
-      account_name: 'VELUM CENTRAL LIQUIDITY RESERVE',
-      institution: 'Taiwan Cooperative Bank',
-      balance_cents: 0, // 18.4B NT$ / TWD (representing 500M GBP)
-      currency_code: 'TWD',
-      owner_name: 'VELUM CORPORATION',
-      status: 'active',
-      created_at: Date.now() - 31536000000
-    });
-  }
+  performMigration('bank_member_trust', 'vtb', 'VELUM TRUST BANK', 'vtb_01KXPQ7PB53AKY4JFQ7D');
+  performMigration('bank_central_reserve', 'clr', 'VELUM CENTRAL LIQUIDITY RESERVE', 'clr_01KXPQ7PBCKSQKXD60NG');
+  performMigration('bank_escrow_reserve', 'eth', 'VELUM ESCROW TRUSTEE HOLDINGS', 'eth_01KXPQBQ0Y1DXK0Q81XQ');
 
-  const hasEscrow = localDb.bank_accounts.some((a: any) => a.account_id === 'bank_escrow_reserve');
-  if (!hasEscrow) {
-    localDb.bank_accounts.push({
-      account_id: 'bank_escrow_reserve',
-      user_id: null,
-      account_number: '4222 2222 7777 8888',
-      routing_number: '021000021',
-      account_name: 'VELUM ESCROW TRUSTEE HOLDINGS',
-      institution: 'Taiwan Cooperative Bank',
-      balance_cents: 0, 
-      currency_code: 'TWD',
-      owner_name: 'VELUM SECURE ESCROW AGENT',
-      status: 'active',
-      created_at: Date.now() - 31536000000
-    });
-  }
+  // Automatically reconstruct bank balances from transaction history to resolve any discrepancies
+  localDb.bank_accounts.forEach((acc: any) => {
+    if (acc.account_id === 'vtb_01KXPQ7PB53AKY4JFQ7D' || acc.account_id === 'clr_01KXPQ7PBCKSQKXD60NG' || acc.account_id === 'eth_01KXPQBQ0Y1DXK0Q81XQ') {
+      const txs = localDb.bank_transactions.filter((t: any) => t.account_id === acc.account_id && t.status === 'completed');
+      let sum = 0;
+      for (const t of txs) {
+        if (t.type === 'deposit') sum += Number(t.amount_cents || 0);
+        else if (t.type === 'withdrawal') sum -= Number(t.amount_cents || 0);
+      }
+      acc.balance_cents = sum;
+    }
+  });
 }
+
+export const getSystemAccount = async (type: 'MEMBER' | 'CENTRAL' | 'ESCROW') => {
+  const accounts = await bankStore.getAccounts();
+  if (type === 'MEMBER') return accounts.find(a => a.account_name === 'VELUM TRUST BANK');
+  if (type === 'CENTRAL') return accounts.find(a => a.account_name === 'VELUM CENTRAL LIQUIDITY RESERVE');
+  if (type === 'ESCROW') return accounts.find(a => a.account_name === 'VELUM ESCROW TRUSTEE HOLDINGS');
+  return undefined;
+};
+
 
 // CORE STORE FUNCTIONS (Simplified for local-only operation)
 export const bankStore = {

@@ -159,16 +159,18 @@ export class VelumShell {
       const isLong = flags['l'] === true;
 
       if (this.currentPath === '/') {
-        const namespaces = ['users', 'lounges', 'support', 'db', 'sys', 'audit', 'fraud', 'bank'];
+        const namespaces = ['users', 'sanctions', 'db', 'market', 'escrow', 'devops', 'sys', 'banks', 'audits', 'fraud'];
         const descriptions: Record<string, string> = {
-          users: 'User Lifecycle & Moderation',
-          lounges: 'Lounge & Sublounge Management',
-          support: 'Support Ticket Operations',
-          db: 'Database Maintenance',
-          sys: 'System Operations',
-          audit: 'Audit & Investigation',
-          fraud: 'Fraud & Asset Seizure',
-          bank: 'Banking & Financial Operations'
+          users: 'User Account Lifecycle',
+          sanctions: 'Punitive Actions & Containment',
+          db: 'Database Operations & Sanitization',
+          market: 'Marketplace Controls',
+          escrow: 'Escrow Operations',
+          devops: 'System Configurations',
+          sys: 'System Metrics & Daemons',
+          banks: 'Banking & Sovereign Ledger',
+          audits: 'Forensic Investigations',
+          fraud: 'Threat Control & Seizures'
         };
 
         if (isLong) {
@@ -326,13 +328,16 @@ export class VelumShell {
     man <command>     - View the system manual entry for a command
     
   Namespaces:
-    /users            - User Lifecycle & Moderation
-    /lounges          - Lounge & Sublounge Management
-    /support          - Support Ticket Operations
-    /db               - Database Maintenance
-    /sys              - System Operations
-    /audit            - Audit & Investigation
-    /fraud            - Fraud & Asset Seizure
+    /users            - User Account Lifecycle
+    /sanctions        - Punitive Actions & Containment
+    /db               - Database Operations & Sanitization
+    /market           - Marketplace Controls
+    /escrow           - Escrow Operations
+    /devops           - System Configurations
+    /sys              - System Metrics & Daemons
+    /banks            - Banking & Sovereign Ledger
+    /audits           - Forensic Investigations
+    /fraud            - Threat Control & Seizures
     
   Tip:
     - You can run absolute commands from anywhere (e.g. /sys/status).
@@ -439,11 +444,12 @@ export class VelumShell {
     this.isExecuting = true;
 
     if (meta.risk === 'MEDIUM' || meta.risk === 'HIGH') {
-      this.rl!.question(`To confirm, type '\x1b[1myes\x1b[0m': `, async (answer) => {
-        if (answer.trim().toLowerCase() === 'yes') {
+      this.rl!.question(`Do you want to continue? [y/N]: `, async (answer) => {
+        const val = answer.trim().toLowerCase();
+        if (val === 'y' || val === 'yes') {
           await this.runDbCommand(commandToExec);
         } else {
-          console.log(` Operation cancelled.`);
+          console.log(`\x1b[33m Operation cancelled.\x1b[0m`);
         }
         this.isExecuting = false;
         this.promptUser();
@@ -455,7 +461,7 @@ export class VelumShell {
       
       this.rl!.question(`Enter target: `, (ans1) => {
         if (ans1.trim() !== targetToken) {
-          console.log(` Target mismatch. Operation aborted.`);
+          console.log(`\x1b[31m Target mismatch. Operation aborted.\x1b[0m`);
           this.isExecuting = false;
           this.promptUser();
           return;
@@ -464,7 +470,7 @@ export class VelumShell {
         this.rl!.question(`Enter mandatory administrative audit reason: `, async (ans2) => {
           const reason = ans2.trim();
           if (!reason || reason.length < 5) {
-            console.log(` Invalid audit reason. Minimum 5 characters required.`);
+            console.log(`\x1b[31m Invalid audit reason. Minimum 5 characters required.\x1b[0m`);
             this.isExecuting = false;
             this.promptUser();
             return;
@@ -486,11 +492,50 @@ export class VelumShell {
    */
   private async runDbCommand(command: string): Promise<void> {
     try {
-      const result = await executeCliCommand(command, true);
+      let result = await executeCliCommand(command, true);
+      result = this.colorFormatOutput(result);
       console.log(result);
     } catch (err: any) {
-      console.log(`DATABASE ERROR: ${err.message || err}`);
+      console.log(`\x1b[31mDATABASE ERROR: ${err.message || err}\x1b[0m`);
     }
+  }
+
+  /**
+   * Post-processes and formats terminal text with appropriate ANSI color codes
+   */
+  private colorFormatOutput(text: string): string {
+    if (!text) return text;
+    
+    const lines = text.split('\n');
+    const formattedLines = lines.map(line => {
+      let trimmed = line.trim();
+      
+      if (trimmed.startsWith('ERROR:') || trimmed.startsWith('FAIL:') || trimmed.startsWith('ERROR ') || trimmed.startsWith('FAIL ')) {
+        return `\x1b[31m${line}\x1b[0m`;
+      }
+      
+      if (trimmed.startsWith('SUCCESS:') || trimmed.startsWith('SUCCESS ') || trimmed.startsWith('SEC_OK:')) {
+        return `\x1b[32m${line}\x1b[0m`;
+      }
+      
+      if (trimmed.startsWith('WARNING:') || trimmed.startsWith('WARNING ')) {
+        return `\x1b[33m${line}\x1b[0m`;
+      }
+      
+      if (trimmed.startsWith('===') && trimmed.endsWith('===')) {
+        return `\x1b[36m\x1b[1m${line}\x1b[0m`;
+      }
+      
+      let formattedLine = line;
+      formattedLine = formattedLine.replace(/(@[a-zA-Z0-9_\-\.]+)/g, '\x1b[1m$1\x1b[0m');
+      formattedLine = formattedLine.replace(/(SUCCESS)/g, '\x1b[32m$1\x1b[0m');
+      formattedLine = formattedLine.replace(/(ERROR|CORRUPTED|LEAK DETECTED|FAIL)/g, '\x1b[31m$1\x1b[0m');
+      formattedLine = formattedLine.replace(/(WARNING|FLAGGED)/g, '\x1b[33m$1\x1b[0m');
+      
+      return formattedLine;
+    });
+    
+    return formattedLines.join('\n');
   }
 
   /**

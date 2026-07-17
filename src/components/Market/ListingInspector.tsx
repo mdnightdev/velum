@@ -40,6 +40,52 @@ export function ListingInspector({
   // Active tab state inside inspector
   const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'reviews'>('details');
 
+  const [isEditingPrice, setIsEditingPrice] = useState(false);
+  const [editPrice, setEditPrice] = useState(String(listing.price));
+  const [editDiscountAmount, setEditDiscountAmount] = useState(
+    listing.discount_price ? String(listing.price - listing.discount_price) : ''
+  );
+  const [updatingPrice, setUpdatingPrice] = useState(false);
+  const [editPriceError, setEditPriceError] = useState('');
+
+  const handleUpdatePrice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUpdatingPrice(true);
+    setEditPriceError('');
+
+    try {
+      const sId = fetchSessionId();
+      const baseVal = parseFloat(editPrice) || 0;
+      const discountVal = editDiscountAmount ? parseFloat(editDiscountAmount) : 0;
+      const finalDiscountPrice = editDiscountAmount ? (baseVal - discountVal) : null;
+
+      const res = await fetch(`/api/marketplace/listings/${listing.listing_id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${sId}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          price: baseVal,
+          discount_price: finalDiscountPrice
+        })
+      });
+
+      if (res.ok) {
+        setIsEditingPrice(false);
+        listing.price = baseVal;
+        listing.discount_price = finalDiscountPrice || undefined;
+      } else {
+        const data = await res.json();
+        setEditPriceError(data.error || 'Failed to update price.');
+      }
+    } catch (err) {
+      setEditPriceError('Failed to update price.');
+    } finally {
+      setUpdatingPrice(false);
+    }
+  };
+
   const isOwner = Number(listing.seller_id) === currentUserId;
   const hasActiveSale = listing.discount_price !== undefined && listing.discount_price !== null;
   const activeDisplayPrice = hasActiveSale ? listing.discount_price! : listing.price;
@@ -214,9 +260,8 @@ export function ListingInspector({
             />
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-velum-850 to-velum-900 text-center px-4">
-              <Sparkles className="w-8 h-8 text-accent/40 mb-2 animate-pulse" />
-              <div className="text-[10px] font-mono tracking-widest text-text-disabled uppercase">Velum Secure Asset Container</div>
-              <div className="text-[9px] font-mono text-accent/50 mt-1 uppercase">Sandbox Verified Deployment ID: {listing.listing_id.slice(0, 12)}</div>
+              <Sparkles className="w-8 h-8 text-accent/40 mb-2" />
+              <div className="text-[10px] font-sans tracking-widest text-text-secondary uppercase">Product Details</div>
             </div>
           )}
           
@@ -308,19 +353,75 @@ export function ListingInspector({
                 </div>
 
                 <div className="bg-velum-850/50 border border-white-5 p-4 rounded-2xl space-y-1">
-                  <span className="text-[9px] font-mono text-text-disabled uppercase">Asset Specifications</span>
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Isolate Sanity Certified</span>
-                  </div>
-                  <span className="text-[8px] font-mono text-text-secondary">Ver. Status: {listing.verification_status || 'APPROVED'}</span>
+                  <span className="text-[9px] font-mono text-text-disabled uppercase">Verification Status</span>
+                  <div className="text-xs font-bold text-white uppercase">{listing.verification_status || 'APPROVED'}</div>
+                  <span className="text-[8px] font-mono text-text-secondary">Status: {listing.status}</span>
                 </div>
               </div>
 
+              {isOwner && (
+                <div className="bg-velum-850/50 border border-white-5 p-4 rounded-2xl space-y-3 text-left">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider">Update Price</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingPrice(!isEditingPrice)}
+                      className="text-[9px] uppercase font-mono text-text-secondary hover:text-white cursor-pointer"
+                    >
+                      {isEditingPrice ? 'Cancel' : 'Edit'}
+                    </button>
+                  </div>
+                  {isEditingPrice ? (
+                    <form onSubmit={handleUpdatePrice} className="space-y-3 pt-1">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Base Price ($)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            required
+                            value={editPrice}
+                            onChange={(e) => setEditPrice(e.target.value)}
+                            className="w-full bg-black/50 border border-white-5 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Discount ($ off)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editDiscountAmount}
+                            onChange={(e) => setEditDiscountAmount(e.target.value)}
+                            className="w-full bg-black/50 border border-white-5 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      {editPriceError && (
+                        <div className="text-[9px] font-mono text-status-dnd">{editPriceError}</div>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={updatingPrice}
+                        className="w-full py-2 bg-accent hover:bg-accent-hover text-velum-900 text-[9px] font-mono uppercase font-black tracking-widest rounded-lg transition cursor-pointer"
+                      >
+                        {updatingPrice ? 'Updating...' : 'Save Price'}
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="text-xs text-text-secondary">
+                      Current Price: <span className="text-white font-bold">${listing.price.toFixed(2)}</span>
+                      {listing.discount_price !== undefined && listing.discount_price !== null && (
+                        <span> (Discounted: <span className="text-accent font-bold">${listing.discount_price.toFixed(2)}</span>)</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {listing.sku_variants && listing.sku_variants.length > 0 && (
-                <div className="space-y-3 border border-white-5 bg-velum-850/50 p-4 rounded-2xl">
+                <div className="space-y-3 border border-white-5 bg-velum-850/50 p-4 rounded-2xl text-left">
                   <h4 className="text-[10px] font-mono uppercase tracking-widest text-text-disabled font-black">
-                    Choose Product License / Variant Options (Pillar A)
+                    Select Option
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div
@@ -370,22 +471,19 @@ export function ListingInspector({
                 </div>
               )}
 
-              {/* Verified rating summary card */}
-              <div className="bg-velum-850/70 border border-emerald-950/40 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+              {/* Rating summary card */}
+              <div className="bg-velum-850/75 border border-white-5 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="space-y-1.5 text-center sm:text-left">
-                  <span className="text-[9px] font-mono text-emerald-400 uppercase tracking-widest font-bold">Reputation Ledger</span>
-                  <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-mono text-text-secondary uppercase tracking-widest font-bold">Seller Rating</span>
+                  <div className="flex items-center gap-2 justify-center sm:justify-start">
                     <span className="text-xl font-mono font-black text-white">
                       {listing.average_rating && listing.average_rating > 0 ? listing.average_rating.toFixed(1) : '0.0'}
                     </span>
                     {renderStars(listing.average_rating || 0)}
                   </div>
-                  <span className="text-[9px] font-mono text-text-secondary block">
-                    Calculated from {reviews.length} verified escrow releases.
-                  </span>
                 </div>
-                <div className="text-[10px] font-mono text-text-secondary border-t sm:border-t-0 sm:border-l border-white-5 pt-3 sm:pt-0 sm:pl-5 space-y-1 max-w-xs leading-relaxed text-center sm:text-left">
-                  Verified Reviews can <span className="text-emerald-400 font-extrabold">only</span> be posted by buyers who have acquired the asset and completed their escrow transaction. No fake listings or reviews.
+                <div className="text-[10px] font-sans text-text-secondary border-t sm:border-t-0 sm:border-l border-white-5 pt-3 sm:pt-0 sm:pl-5 max-w-xs leading-relaxed text-center sm:text-left">
+                  Reviews are verified and submitted by actual buyers.
                 </div>
               </div>
             </div>
@@ -409,7 +507,6 @@ export function ListingInspector({
                     required
                     value={discussionComment}
                     onChange={(e) => setDiscussionComment(e.target.value)}
-                    placeholder="Ask the creator about variants, specifications, etc..."
                     className="flex-1 bg-black/40 border border-white-5 rounded-xl px-4 py-2 text-xs text-white placeholder-text-disabled focus:border-accent focus:outline-none"
                   />
                   <button
@@ -490,7 +587,6 @@ export function ListingInspector({
                           required
                           value={reviewComment}
                           onChange={(e) => setReviewComment(e.target.value)}
-                          placeholder="Your honest review of the asset specifications..."
                           className="flex-1 bg-black/40 border border-white-5 rounded-xl px-4 py-2 text-xs text-white placeholder-text-disabled focus:border-emerald-500 focus:outline-none"
                         />
                         <button

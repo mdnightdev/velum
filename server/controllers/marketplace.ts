@@ -23,7 +23,8 @@ function enrichEscrow(esc: any) {
   const buyer = userRepository.findById(esc.buyer_id);
   const seller = userRepository.findById(esc.seller_id);
   const amt = Number(esc.amount || 0);
-  const platformFee = esc.platform_fee !== undefined ? Number(esc.platform_fee) : parseFloat((amt * 0.05).toFixed(2));
+  const feePercent = (db.system_settings?.platform_fee_percent || 5) / 100;
+  const platformFee = esc.platform_fee !== undefined ? Number(esc.platform_fee) : parseFloat((amt * feePercent).toFixed(2));
   const payoutAmount = esc.payout_amount !== undefined ? Number(esc.payout_amount) : parseFloat((amt - platformFee).toFixed(2));
   const sandboxState = esc.sandbox_state || 'DEPLOYED_SANDBOX';
   
@@ -56,7 +57,60 @@ function enrichEscrow(esc: any) {
 // Retrieve all listings (with computed ratings, media counts)
 export const getListings = async (req: Request, res: Response) => {
   try {
-    const listings = marketRepository.findAllListings();
+    const user = (req as any).user;
+    const isAdmin = user && (user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN');
+
+    const prohibitedKeywords = [
+      'cheat', 'exploit', 'hack', 'illegal', 'bypass', 'crack', 
+      'malware', 'rootkit', 'backdoor', 'keylogger', 'stealer', 'virus'
+    ];
+    const executableExtensions = ['.sh', '.exe', '.py', '.js', '.bat', '.cmd', '.msi', '.bin', '.vbs', '.ps1', '.zip', '.tar', '.gz', '.rar'];
+
+    let dbUpdated = false;
+    const allListings = marketRepository.findAllListings();
+    
+    for (const listing of allListings) {
+      if (listing.verification_status !== 'PENDING_REVIEW' && listing.verification_status !== 'REJECTED') {
+        const textToScan = `${listing.title} ${listing.description || ''}`.toLowerCase();
+        const hasProhibited = prohibitedKeywords.some(kw => textToScan.includes(kw));
+        
+        let hasExecutable = executableExtensions.some(ext => 
+          listing.title.toLowerCase().includes(ext) || 
+          (listing.description || '').toLowerCase().includes(ext)
+        );
+
+        if (!hasExecutable) {
+          const skuVariants = marketRepository.findSkuVariantsByListingId(listing.listing_id);
+          for (const v of skuVariants) {
+            const pathLower = (v.file_payload_path || '').toLowerCase();
+            if (executableExtensions.some(ext => pathLower.endsWith(ext))) {
+              hasExecutable = true;
+              break;
+            }
+          }
+        }
+
+        if (hasProhibited || hasExecutable) {
+          listing.verification_status = 'PENDING_REVIEW';
+          dbUpdated = true;
+        } else if (listing.verification_status !== 'APPROVED') {
+          listing.verification_status = 'APPROVED';
+          dbUpdated = true;
+        }
+      }
+    }
+
+    if (dbUpdated) {
+      saveDb();
+    }
+
+    const listings = isAdmin 
+      ? allListings 
+      : allListings.filter(l => 
+          (l.verification_status === 'APPROVED' && l.status === 'ACTIVE') || 
+          Number(l.seller_id) === Number(user.user_id)
+        );
+
     const reviews = marketRepository.findAllReviews();
     const media = db.market_asset_media || [];
 
@@ -120,15 +174,45 @@ export const createListing = async (req: Request, res: Response) => {
     db.listing_verification_checks = db.listing_verification_checks || [];
 
     // Verification check rules
-    const prohibitedKeywords = ['cheat', 'exploit', 'hack', 'illegal', 'bypass', 'crack'];
-    const titleLower = title.toLowerCase();
-    const hasProhibited = prohibitedKeywords.some(kw => titleLower.includes(kw));
+    const prohibitedKeywords = [
+      'cheat', 'exploit', 'hack', 'illegal', 'bypass', 'crack', 
+      'malware', 'rootkit', 'backdoor', 'keylogger', 'stealer', 'virus'
+    ];
+    const textToScan = `${title} ${description || ''}`.toLowerCase();
+    const hasProhibited = prohibitedKeywords.some(kw => textToScan.includes(kw));
+
+    // Check if any attached SKU variant contains scripts or executable extensions
+    let hasExecutablePayload = false;
+    const executableExtensions = ['.sh', '.exe', '.py', '.js', '.bat', '.cmd', '.msi', '.bin', '.vbs', '.ps1', '.zip', '.tar', '.gz', '.rar'];
+    if (sku_variants && Array.isArray(sku_variants)) {
+      for (const v of sku_variants) {
+        const pathLower = (v.file_payload_path || '').toLowerCase();
+        if (executableExtensions.some(ext => pathLower.endsWith(ext))) {
+          hasExecutablePayload = true;
+          break;
+        }
+      }
+    }
+
+    let hasExecutableText = executableExtensions.some(ext => 
+      title.toLowerCase().includes(ext) || 
+      (description || '').toLowerCase().includes(ext)
+    );
 
     const isSellerVerified = (db.verified_sellers || []).includes(Number(user.user_id));
 
     let verification_status: 'APPROVED' | 'PENDING_REVIEW' = 'APPROVED';
-    if (hasProhibited || !isSellerVerified) {
+    let checkReason = '';
+    
+    if (hasProhibited) {
       verification_status = 'PENDING_REVIEW';
+      checkReason = 'Content scan matched prohibited keywords.';
+    } else if (hasExecutablePayload || hasExecutableText) {
+      verification_status = 'PENDING_REVIEW';
+      checkReason = 'Listing contains script or executable payload / text references.';
+    } else if (!isSellerVerified) {
+      verification_status = 'PENDING_REVIEW';
+      checkReason = 'Seller is not platform verified.';
     }
 
     const listingId = generatePrefixedId('list');
@@ -182,49 +266,37 @@ export const createListing = async (req: Request, res: Response) => {
         db.market_asset_media = db.market_asset_media || [];
         db.market_asset_media.push(newMedia);
       });
-      saveDb();
     }
 
     // Create verification checks
-    if (hasProhibited) {
-      db.listing_verification_checks.push({
-        check_id: generatePrefixedId('chk'),
-        listing_id: listingId,
-        check_type: 'AUTOMATED_CONTENT_SCAN',
-        result: 'FAIL',
-        details: 'Title contains prohibited keywords.',
-        created_at: Date.now()
-      });
-    } else {
-      db.listing_verification_checks.push({
-        check_id: generatePrefixedId('chk'),
-        listing_id: listingId,
-        check_type: 'AUTOMATED_CONTENT_SCAN',
-        result: 'PASS',
-        details: 'Content scan clean.',
-        created_at: Date.now()
-      });
-    }
+    db.listing_verification_checks.push({
+      check_id: generatePrefixedId('chk'),
+      listing_id: listingId,
+      check_type: 'AUTOMATED_CONTENT_SCAN',
+      result: hasProhibited ? 'FAIL' : 'PASS',
+      details: hasProhibited ? 'Content contains prohibited keywords.' : 'Listing content scan clean.',
+      created_at: Date.now()
+    });
 
-    if (isSellerVerified) {
-      db.listing_verification_checks.push({
-        check_id: generatePrefixedId('chk'),
-        listing_id: listingId,
-        check_type: 'SELLER_KYC_VERIFICATION',
-        result: 'PASS',
-        details: 'Seller has verified identity status.',
-        created_at: Date.now()
-      });
-    } else {
-      db.listing_verification_checks.push({
-        check_id: generatePrefixedId('chk'),
-        listing_id: listingId,
-        check_type: 'SELLER_KYC_VERIFICATION',
-        result: 'FAIL',
-        details: 'Seller lacks verified status.',
-        created_at: Date.now()
-      });
-    }
+    db.listing_verification_checks.push({
+      check_id: generatePrefixedId('chk'),
+      listing_id: listingId,
+      check_type: 'PAYLOAD_VERIFICATION',
+      result: (hasExecutablePayload || hasExecutableText) ? 'FAIL' : 'PASS',
+      details: (hasExecutablePayload || hasExecutableText) ? 'Variants or content contain script or executable payloads.' : 'No executable file variants detected.',
+      created_at: Date.now()
+    });
+
+    db.listing_verification_checks.push({
+      check_id: generatePrefixedId('chk'),
+      listing_id: listingId,
+      check_type: 'SELLER_KYC_VERIFICATION',
+      result: isSellerVerified ? 'PASS' : 'FAIL',
+      details: isSellerVerified ? 'Seller has verified identity status.' : 'Seller lacks verified status.',
+      created_at: Date.now()
+    });
+
+    saveDb();
 
     res.json(newListing);
   } catch (err: any) {
@@ -746,17 +818,9 @@ export const createRefundRequest = async (req: Request, res: Response) => {
     }
 
     // Auto-approve if pre-release / held in escrow
-    marketRepository.updateEscrow(escrowTransactionId, {
-      status: 'REVERTED',
-      updated_at: Date.now()
-    });
-
-    const listing = marketRepository.findListingById(esc.listing_id);
-    if (listing) {
-      marketRepository.updateListing(listing.listing_id, {
-        status: 'ACTIVE',
-        inventory_count: listing.inventory_count !== undefined ? listing.inventory_count + 1 : undefined
-      });
+    const revertResult = await processRevertEscrow(escrowTransactionId, user.user_id, false);
+    if (!revertResult.success) {
+      return res.status(400).json({ error: revertResult.error });
     }
 
     const refundId = generateTrcCode('refund', 'AST48');
@@ -770,26 +834,9 @@ export const createRefundRequest = async (req: Request, res: Response) => {
       resolved_at: Date.now()
     };
     marketRepository.createRefundRequest(newRefundRequest);
+    saveDb();
 
-    // Credit buyer's wallet
-    const buyerWallet2 = walletRepository.getOrCreateWallet(esc.buyer_id);
-    const refundCents2 = Math.round(esc.amount * 100);
-    walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet2.balance_cents + refundCents2);
-
-    walletRepository.createLedgerEntry({
-      entry_id: generateTrcCode('refund', 'AST48'),
-      user_id: Number(esc.buyer_id),
-      entry_type: 'ESCROW_REFUND',
-      amount_cents: refundCents2,
-      balance_after_cents: buyerWallet2.balance_cents,
-      related_transaction_id: esc.transaction_id,
-      actor_type: 'USER',
-      actor_id: String(user.user_id),
-      is_simulated: true,
-      created_at: Date.now()
-    });
-
-    res.json({ success: true, refundRequest: newRefundRequest });
+    res.json({ success: true, refundRequest: newRefundRequest, escrow: enrichEscrow(revertResult.escrow!) });
   } catch (err) {
     console.error('Error creating refund request:', err);
     res.status(500).json({ error: 'Failed to create refund request.' });
@@ -817,75 +864,15 @@ export const manualOverrideEscrow = async (req: Request, res: Response) => {
     }
 
     if (actionType === 'FORCE_RELEASE') {
-      marketRepository.updateEscrow(transactionId, {
-        status: 'RELEASED',
-        updated_at: Date.now()
-      });
-
-      // Credit the seller's wallet
-      const sellerWallet = walletRepository.getOrCreateWallet(esc.seller_id);
-      const releaseCents = Math.round(esc.amount * 100);
-      const feeCents = Math.round((esc.platform_fee || 0) * 100);
-      const payoutCents = releaseCents - feeCents;
-
-      walletRepository.updateWalletBalance(esc.seller_id, sellerWallet.balance_cents + payoutCents);
-
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('release', 'AST48'),
-        user_id: Number(esc.seller_id),
-        entry_type: 'ESCROW_RELEASE',
-        amount_cents: releaseCents,
-        balance_after_cents: sellerWallet.balance_cents + feeCents,
-        related_transaction_id: esc.transaction_id,
-        actor_type: 'ADMIN',
-        actor_id: admin.admin_id,
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('release', 'FEE'),
-        user_id: Number(esc.seller_id),
-        entry_type: 'PLATFORM_FEE',
-        amount_cents: -feeCents,
-        balance_after_cents: sellerWallet.balance_cents,
-        related_transaction_id: esc.transaction_id,
-        actor_type: 'ADMIN',
-        actor_id: admin.admin_id,
-        is_simulated: true,
-        created_at: Date.now()
-      });
-    } else if (actionType === 'FORCE_REVERT') {
-      marketRepository.updateEscrow(transactionId, {
-        status: 'REVERTED',
-        updated_at: Date.now()
-      });
-
-      const listing = marketRepository.findListingById(esc.listing_id);
-      if (listing) {
-        marketRepository.updateListing(listing.listing_id, {
-          status: 'ACTIVE',
-          inventory_count: listing.inventory_count !== undefined ? listing.inventory_count + 1 : undefined
-        });
+      const result = await processReleaseEscrow(transactionId, user.user_id, true);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
       }
-
-      // Credit buyer's wallet
-      const buyerWallet = walletRepository.getOrCreateWallet(esc.buyer_id);
-      const refundCents = Math.round(esc.amount * 100);
-      walletRepository.updateWalletBalance(esc.buyer_id, buyerWallet.balance_cents + refundCents);
-
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('refund', 'AST48'),
-        user_id: Number(esc.buyer_id),
-        entry_type: 'ESCROW_REFUND',
-        amount_cents: refundCents,
-        balance_after_cents: buyerWallet.balance_cents,
-        related_transaction_id: esc.transaction_id,
-        actor_type: 'ADMIN',
-        actor_id: admin.admin_id,
-        is_simulated: true,
-        created_at: Date.now()
-      });
+    } else if (actionType === 'FORCE_REVERT') {
+      const result = await processRevertEscrow(transactionId, user.user_id, true);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
     } else {
       return res.status(400).json({ error: 'Invalid action type.' });
     }
@@ -927,57 +914,20 @@ export const triggerAutoSettlement = async (req: Request, res: Response) => {
     let triggered_count = 0;
 
     for (const esc of pendingTx) {
-      marketRepository.updateEscrow(esc.transaction_id, {
-        status: 'RELEASED',
-        updated_at: Date.now()
-      });
-
-      // Credit seller wallet
-      const sellerWallet = walletRepository.getOrCreateWallet(esc.seller_id);
-      const releaseCents = Math.round(esc.amount * 100);
-      const feeCents = Math.round((esc.platform_fee || 0) * 100);
-      const payoutCents = releaseCents - feeCents;
-
-      walletRepository.updateWalletBalance(esc.seller_id, sellerWallet.balance_cents + payoutCents);
-
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('release', 'AST48'),
-        user_id: Number(esc.seller_id),
-        entry_type: 'ESCROW_RELEASE',
-        amount_cents: releaseCents,
-        balance_after_cents: sellerWallet.balance_cents + feeCents,
-        related_transaction_id: esc.transaction_id,
-        actor_type: 'SYSTEM_AUTOMATION',
-        actor_id: 'AUTO_SETTLEMENT_JOB',
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      walletRepository.createLedgerEntry({
-        entry_id: generateTrcCode('release', 'FEE'),
-        user_id: Number(esc.seller_id),
-        entry_type: 'PLATFORM_FEE',
-        amount_cents: -feeCents,
-        balance_after_cents: sellerWallet.balance_cents,
-        related_transaction_id: esc.transaction_id,
-        actor_type: 'SYSTEM_AUTOMATION',
-        actor_id: 'AUTO_SETTLEMENT_JOB',
-        is_simulated: true,
-        created_at: Date.now()
-      });
-
-      const actionId = generatePrefixedId('aut');
-      marketRepository.createAutomationAction({
-        action_id: actionId,
-        escrow_transaction_id: esc.transaction_id,
-        action_type: 'AUTO_RELEASE',
-        acted_on_behalf_of: 'BUYER',
-        trigger_reason: 'Automated settlement check triggered.',
-        executed_at: Date.now(),
-        human_reviewed: false
-      });
-
-      triggered_count++;
+      const result = await processReleaseEscrow(esc.transaction_id, 999, true);
+      if (result.success) {
+        const actionId = generatePrefixedId('aut');
+        marketRepository.createAutomationAction({
+          action_id: actionId,
+          escrow_transaction_id: esc.transaction_id,
+          action_type: 'AUTO_RELEASE',
+          acted_on_behalf_of: 'BUYER',
+          trigger_reason: 'Automated settlement check triggered.',
+          executed_at: Date.now(),
+          human_reviewed: false
+        });
+        triggered_count++;
+      }
     }
 
     res.json({ success: true, triggered_count });
@@ -1156,5 +1106,52 @@ export const resolveSupportChatDispute = async (req: Request, res: Response) => 
   } catch (err) {
     console.error('Error in resolveSupportChatDispute:', err);
     res.status(500).json({ error: 'Failed to resolve dispute.' });
+  }
+};
+
+export const updateListingPrice = async (req: Request, res: Response) => {
+  try {
+    const { listingId } = req.params;
+    const { price, discount_price } = req.body;
+    const user = (req as any).user;
+
+    if (price === undefined) {
+      return res.status(400).json({ error: 'Base price is required.' });
+    }
+
+    const numericPrice = parseFloat(price);
+    if (isNaN(numericPrice) || numericPrice <= 0) {
+      return res.status(400).json({ error: 'Base price must be a valid positive currency amount.' });
+    }
+
+    let numericDiscountPrice: number | undefined = undefined;
+    if (discount_price !== undefined && discount_price !== null && discount_price !== '') {
+      numericDiscountPrice = parseFloat(discount_price);
+      if (isNaN(numericDiscountPrice) || numericDiscountPrice < 0 || numericDiscountPrice >= numericPrice) {
+        return res.status(400).json({ error: 'Discount price must be less than base price and >= 0.' });
+      }
+    }
+
+    loadDb();
+    const listing = marketRepository.findListingById(listingId);
+    if (!listing) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+
+    const isAdmin = user && (user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN');
+    if (Number(listing.seller_id) !== Number(user.user_id) && !isAdmin) {
+      return res.status(403).json({ error: 'Forbidden: Only the seller or an administrator can edit this listing.' });
+    }
+
+    marketRepository.updateListing(listingId, {
+      price: numericPrice,
+      discount_price: numericDiscountPrice
+    });
+
+    saveDb();
+    res.json({ success: true, listing });
+  } catch (err) {
+    console.error('Error updating listing price:', err);
+    res.status(500).json({ error: 'Failed to update listing.' });
   }
 };

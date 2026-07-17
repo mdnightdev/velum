@@ -139,3 +139,19 @@ export function getCurrencyForCountryCode(code: string): string {
   };
   return mapping[code.toUpperCase()] || 'USD';
 }
+
+export function isSensitiveAccount(user: any): boolean {
+  if (!user) return false;
+  const role = user.role || '';
+  const username = (user.username || '').toLowerCase();
+  return (
+    role === 'CLI_ADMIN' ||
+    role === 'LOGIN_ADMIN' ||
+    role === 'SUPPORT_ADMIN' ||
+    role === 'SYSTEM' ||
+    username === 'velum' ||
+    username === '@velum' ||
+    username === 'cli' ||
+    username.startsWith('sa-')
+  );
+}

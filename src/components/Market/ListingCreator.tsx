@@ -19,7 +19,7 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [discountPrice, setDiscountPrice] = useState('');
+  const [discountAmount, setDiscountAmount] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [aspectRatio, setAspectRatio] = useState('16:9');
   const [displayOrder, setDisplayOrder] = useState('1');
@@ -77,7 +77,7 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
           title,
           description,
           price: parseFloat(price),
-          discount_price: discountPrice ? parseFloat(discountPrice) : undefined,
+          discount_price: discountAmount ? (parseFloat(price) - parseFloat(discountAmount)) : undefined,
           sku_variants: formattedSkus,
           media_list: mediaUrl.trim() ? [{
             url: mediaUrl,
@@ -157,12 +157,12 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
             />
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">Discount Price ($)</label>
+            <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">Discount ($ off)</label>
             <input
               type="number"
               step="0.01"
-              value={discountPrice}
-              onChange={(e) => setDiscountPrice(e.target.value)}
+              value={discountAmount}
+              onChange={(e) => setDiscountAmount(e.target.value)}
               className="w-full bg-black/40 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white focus:border-accent focus:outline-none"
             />
           </div>
@@ -178,7 +178,6 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
               type="url"
               value={mediaUrl}
               onChange={(e) => setMediaUrl(e.target.value)}
-              placeholder="https://images.unsplash.com/photo-..."
               className="w-full bg-black/40 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white focus:border-accent focus:outline-none"
             />
           </div>
@@ -290,7 +289,6 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
                     <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Secure File Payload Path (Optional)</label>
                     <input
                       type="text"
-                      placeholder="/downloads/package_enterprise.zip"
                       value={sku.file_payload_path}
                       onChange={(e) => handleSkuChange(index, 'file_payload_path', e.target.value)}
                       className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"

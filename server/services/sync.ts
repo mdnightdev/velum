@@ -1,8 +1,9 @@
 import fs from 'fs';
 import zlib from 'zlib';
 import { getPgPool } from '../config/database.js';
-import { db, DB_FILE, SQLITE_FILE } from '../db/index.js';
+import { db, DB_FILE, SQLITE_FILE, closeSqliteConnection } from '../db/index.js';
 import { encryptData } from '../services/cryptoService.js';
+import { writeServerLog } from '../utils/logger.js';
 
 export let isCloudBackupDisabled = !process.env.DATABASE_URL || process.env.DISABLE_CLOUD_BACKUP === '1';
 export let lastBackupAttemptTime = 0;
@@ -28,7 +29,7 @@ export async function initPgBackupTable(): Promise<void> {
     // console.log('[SYS-SECURE] Neon PostgreSQL backups table verified/created.');
   } catch (err: any) {
     const errStr = String(err?.message || err);
-    console.warn(`[SYS-SECURE] Neon PostgreSQL connection/setup failed: ${errStr}. Disabling cloud backups for this session.`);
+    writeServerLog(`[SYS-SECURE] Neon PostgreSQL connection/setup failed: ${errStr}. Disabling cloud backups for this session.`);
     isCloudBackupDisabled = true;
   }
 }
@@ -42,17 +43,17 @@ export function getSafeDatabaseBackupBinary(): Buffer | null {
     const encryptedData = encryptData(plainJson);
     return Buffer.from(encryptedData, 'utf8');
   } catch (err) {
-    console.error('[SYS-SECURE] Error reading state database for cloud backup:', err);
+    writeServerLog(`[SYS-SECURE] Error reading state database for cloud backup: ${err}`);
     return null;
   }
 }
 
 export async function restoreDbFromCloud(): Promise<void> {
   if (process.env.DISABLE_CLOUD_BACKUP === '1' || isCloudBackupDisabled) {
-    console.log('[SYS-SECURE] Cloud persistence offline or disabled. Skipping cloud restore.');
+    writeServerLog('[SYS-SECURE] Cloud persistence offline or disabled. Skipping cloud restore.');
     return;
   }
-  console.log('[SYS-SECURE] Querying Neon PostgreSQL for latest persistent database backup...');
+  writeServerLog('[SYS-SECURE] Querying Neon PostgreSQL for latest persistent database backup...');
   try {
     await initPgBackupTable();
     if (isCloudBackupDisabled) return;
@@ -61,7 +62,7 @@ export async function restoreDbFromCloud(): Promise<void> {
     const res = await pool.query('SELECT sqlite_base64, gzip FROM velum_backups ORDER BY updated_at DESC LIMIT 1');
     const row = res.rows[0];
     if (!row) {
-      console.log('[SYS-SECURE] No previous cloud backup found in Neon PostgreSQL. Initializing zero-state system.');
+      writeServerLog('[SYS-SECURE] No previous cloud backup found in Neon PostgreSQL. Initializing zero-state system.');
       return;
     }
 
@@ -71,32 +72,36 @@ export async function restoreDbFromCloud(): Promise<void> {
       if (row.gzip === true) {
         try {
           binData = zlib.gunzipSync(binData);
-          console.log('[SYS-SECURE] Successfully decompressed Neon PostgreSQL database backup using gzip.');
+          writeServerLog('[SYS-SECURE] Successfully decompressed Neon PostgreSQL database backup using gzip.');
         } catch (decompErr: any) {
-          console.error('[SYS-SECURE] Failed to decompress gzip backup:', decompErr.message || decompErr);
+          writeServerLog(`[SYS-SECURE] Failed to decompress gzip backup: ${decompErr.message || decompErr}`);
         }
       }
 
       try {
         fs.writeFileSync(DB_FILE, binData);
+        try {
+          fs.chmodSync(DB_FILE, 0o777);
+        } catch (_) {}
         if (fs.existsSync(SQLITE_FILE)) {
           try {
+            closeSqliteConnection();
             fs.unlinkSync(SQLITE_FILE);
-            console.log('[SYS-SECURE] Stale local SQLite file invalidated to apply fresh cloud backup state.');
+            writeServerLog('[SYS-SECURE] Stale local SQLite file invalidated to apply fresh cloud backup state.');
           } catch (unlinkErr) {
-            console.error('[SYS-SECURE] Failed to unlink stale SQLite file during cloud restoration:', unlinkErr);
+            writeServerLog(`[SYS-SECURE] Failed to unlink stale SQLite file during cloud restoration: ${unlinkErr}`);
           }
         }
-        console.log(`[SYS-SECURE] Database successfully restored from Neon PostgreSQL. Size: ${Math.round(binData.length / 1024)} KB.`);
+        writeServerLog(`[SYS-SECURE] Database successfully restored from Neon PostgreSQL. Size: ${Math.round(binData.length / 1024)} KB.`);
       } catch (fileErr) {
-        console.error('[SYS-SECURE] Failed during database restoration write step:', fileErr);
+        writeServerLog(`[SYS-SECURE] Failed during database restoration write step: ${fileErr}`);
       }
     } else {
-      console.log('[SYS-SECURE] Neon PostgreSQL backup found but empty. Initializing new storage.');
+      writeServerLog('[SYS-SECURE] Neon PostgreSQL backup found but empty. Initializing new storage.');
     }
   } catch (err: any) {
     const errStr = String(err?.message || err);
-    console.warn(`[SYS-SECURE] Neon PostgreSQL restore failed: ${errStr}. Disabling cloud backups.`);
+    writeServerLog(`[SYS-SECURE] Neon PostgreSQL restore failed: ${errStr}. Disabling cloud backups.`);
     isCloudBackupDisabled = true;
   }
 }
@@ -143,12 +148,12 @@ export async function executeCloudBackup(): Promise<void> {
       // console.log(`[SYS-SECURE] Neon PostgreSQL backup created. Original: ${Math.round(binary.length / 1024)} KB, Compressed: ${Math.round(compressedBinary.length / 1024)} KB`);
     } catch (pgErr: any) {
       const errStr = String(pgErr?.message || pgErr);
-      console.warn(`[SYS-SECURE] Neon PostgreSQL backup failed: ${errStr}. Disabling cloud backups.`);
+      writeServerLog(`[SYS-SECURE] Neon PostgreSQL backup failed: ${errStr}. Disabling cloud backups.`);
       isCloudBackupDisabled = true;
     }
   } catch (err: any) {
     const errStr = String(err?.message || err);
-    console.warn(`[SYS-SECURE] CLOUD BACKUP SEQUENCE FAILURE: ${errStr}. Disabling cloud backups.`);
+    writeServerLog(`[SYS-SECURE] CLOUD BACKUP SEQUENCE FAILURE: ${errStr}. Disabling cloud backups.`);
     isCloudBackupDisabled = true;
   }
 }

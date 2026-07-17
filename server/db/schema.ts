@@ -10,6 +10,8 @@ import {
 } from '../../src/types.js';
 
 export interface DbSchema {
+  bank_accounts?: any[];
+  bank_transactions?: any[];
   users: User[];
   profiles: Profile[];
   purged_users?: User[];
@@ -69,6 +71,8 @@ export interface DbSchema {
   refund_requests?: any[];
   listing_verification_checks?: any[];
   verified_sellers?: number[];
+  system_settings?: any;
+  idempotency_records?: any[];
 }
 // Validate admin credentials configuration
 export const adminUsers = (() => {
@@ -168,7 +172,9 @@ export const defaultDb: DbSchema = {
   refund_requests: [],
   listing_verification_checks: [],
   verified_sellers: [],
-  market_assets: []
+  market_assets: [],
+  system_settings: { platform_fee_percent: 5 },
+  idempotency_records: []
 };
 
 export interface TableConfig {
