@@ -7,6 +7,7 @@ interface ListingInspectorProps {
   currentUserId: number;
   onClose: () => void;
   onBuy: (listing: MarketListing, chosenVariant?: MarketSkuVariant) => void;
+  onAddToCart?: (listing: MarketListing, chosenVariant: MarketSkuVariant | null) => void;
   fetchSessionId: () => string;
 }
 
@@ -15,12 +16,14 @@ export function ListingInspector({
   currentUserId,
   onClose,
   onBuy,
+  onAddToCart,
   fetchSessionId
 }: ListingInspectorProps) {
   const [discussions, setDiscussions] = useState<MarketDiscussion[]>([]);
   const [reviews, setReviews] = useState<MarketReview[]>([]);
   const [media, setMedia] = useState<MarketAssetMedia[]>([]);
   const [selectedSku, setSelectedSku] = useState<MarketSkuVariant | undefined>(undefined);
+  const [addedToCartSuccess, setAddedToCartSuccess] = useState(false);
   
   const [loadingDiscussions, setLoadingDiscussions] = useState(false);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -348,8 +351,7 @@ export function ListingInspector({
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-velum-850/50 border border-white-5 p-4 rounded-2xl space-y-1">
                   <span className="text-[9px] font-mono text-text-disabled uppercase">Seller Identity</span>
-                  <div className="text-xs font-bold text-white">@{listing.seller_username}</div>
-                  <span className="text-[8px] font-mono text-text-secondary">UID Reference: {listing.seller_id}</span>
+                  <div className="text-xs font-bold text-white">{listing.seller_username}</div>
                 </div>
 
                 <div className="bg-velum-850/50 border border-white-5 p-4 rounded-2xl space-y-1">
@@ -543,7 +545,7 @@ export function ListingInspector({
                       <div key={disc.discussion_id} className="bg-velum-850/50 border border-white-5 p-4 rounded-2xl space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-[10px] font-sans font-bold text-white">
-                            @{disc.username}
+                            {disc.username}
                           </span>
                           <span className="text-[8px] font-mono text-text-disabled">
                             {new Date(disc.created_at).toLocaleString()}
@@ -638,7 +640,7 @@ export function ListingInspector({
                         <div className="flex justify-between items-start gap-3">
                           <div className="space-y-1">
                             <span className="text-[10px] font-sans font-bold text-white block">
-                              @{rev.buyer_username || 'Verified Buyer'}
+                              {rev.buyer_username || 'Verified Buyer'}
                             </span>
                             {renderStars(rev.rating)}
                           </div>
@@ -660,7 +662,7 @@ export function ListingInspector({
         </div>
 
         {/* Footer actions */}
-        <div className="p-5 border-t border-white-5 bg-velum-850/50 flex gap-3 shrink-0">
+        <div className="p-5 border-t border-white-5 bg-velum-850/50 flex flex-col sm:flex-row gap-3 shrink-0">
           <button
             onClick={onClose}
             className="flex-1 py-3 bg-velum-700 hover:bg-velum-600 border border-white-5 text-white text-[10px] font-mono uppercase font-black tracking-widest rounded-xl transition cursor-pointer"
@@ -668,20 +670,65 @@ export function ListingInspector({
             Close Inspector
           </button>
           
-          {listing.status === 'ACTIVE' && (
-            <button
-              onClick={() => onBuy(listing, selectedSku)}
-              disabled={isOwner}
-              className={`flex-1 py-3 text-[10px] font-sans font-black uppercase tracking-widest rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                isOwner
-                  ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
-                  : 'bg-accent hover:bg-accent-hover text-velum-900 shadow-md'
-              }`}
-            >
-              <ShoppingBag className="w-4 h-4" />
-              <span>{isOwner ? 'Your Own Asset' : 'Purchase with Escrow'}</span>
-            </button>
-          )}
+          {listing.status === 'ACTIVE' && (() => {
+            const isOutOfStock = (selectedSku ? (selectedSku.inventory_count ?? 0) : (listing.inventory_count ?? 999)) <= 0;
+            return (
+              <>
+                {onAddToCart && (
+                  <button
+                    onClick={() => {
+                      if (isOutOfStock) return;
+                      onAddToCart(listing, selectedSku || null);
+                      setAddedToCartSuccess(true);
+                      setTimeout(() => setAddedToCartSuccess(false), 2000);
+                    }}
+                    disabled={isOwner || isOutOfStock}
+                    className={`flex-1 py-3 text-[10px] font-sans font-black uppercase tracking-widest rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      isOwner
+                        ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
+                        : isOutOfStock
+                          ? 'bg-red-950/40 text-red-400 border border-red-900/30 cursor-not-allowed'
+                          : addedToCartSuccess
+                            ? 'bg-emerald-900 border border-emerald-500/40 text-emerald-400'
+                            : 'bg-velum-800 border border-white-10 text-white hover:bg-velum-750'
+                    }`}
+                  >
+                    {isOutOfStock ? (
+                      <span>Out of Stock</span>
+                    ) : addedToCartSuccess ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Added!</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingBag className="w-4 h-4 text-accent" />
+                        <span>Add to Cart</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    if (isOutOfStock) return;
+                    onBuy(listing, selectedSku);
+                  }}
+                  disabled={isOwner || isOutOfStock}
+                  className={`flex-1 py-3 text-[10px] font-sans font-black uppercase tracking-widest rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                    isOwner
+                      ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
+                      : isOutOfStock
+                        ? 'bg-red-950/40 text-red-400 border border-red-900/30 cursor-not-allowed'
+                        : 'bg-accent hover:bg-accent-hover text-velum-900 shadow-md'
+                  }`}
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>{isOwner ? 'Your Own Asset' : isOutOfStock ? 'Sold Out' : 'Buy Now'}</span>
+                </button>
+              </>
+            );
+          })()}
         </div>
 
       </div>

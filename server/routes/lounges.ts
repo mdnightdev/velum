@@ -3,7 +3,6 @@ import { authenticateUser } from '../middleware.js';
 import { 
   getLounges, 
   getLounge, 
-  getSublounges, 
   createLounge, 
   createSublounge, 
   getSystemLounges, 
@@ -37,7 +36,6 @@ loungesRouter.get('/lounges/user', authenticateUser, getUserLounges);
 loungesRouter.get('/lounges/explore', authenticateUser, exploreLounges);
 
 loungesRouter.get('/lounges/:id', authenticateUser, getLounge);
-loungesRouter.get('/lounges/:id/sublounges', authenticateUser, getSublounges);
 loungesRouter.get('/lounges/:loungeId/members', authenticateUser, getLoungeMembers);
 
 loungesRouter.post('/lounges', authenticateUser, (req, res, next) => {

@@ -32,7 +32,7 @@ describe('Clearing Worker & Ledger Reconciliation tests', () => {
     db.automation_actions = [];
   });
 
-  it('should not release escrow that is less than 5 minutes old', () => {
+  it('should not release escrow that is less than 5 minutes old', async () => {
     const escTx = {
       transaction_id: 'esc_1',
       listing_id: 'list_1',
@@ -46,13 +46,13 @@ describe('Clearing Worker & Ledger Reconciliation tests', () => {
     };
     db.escrow_transactions!.push(escTx as any);
 
-    processEscrowClearingWorker();
+    await processEscrowClearingWorker();
 
     expect(escTx.status).toBe('HELD_IN_ESCROW');
     expect(db.automation_actions).toHaveLength(0);
   });
 
-  it('should automatically release escrow that is more than 5 minutes old with no active disputes', () => {
+  it('should automatically release escrow that is more than 5 minutes old with no active disputes', async () => {
     const escTx = {
       transaction_id: 'esc_2',
       listing_id: 'list_1',
@@ -67,7 +67,7 @@ describe('Clearing Worker & Ledger Reconciliation tests', () => {
     db.escrow_transactions!.push(escTx as any);
     db.user_wallets!.push({ user_id: 102, balance_cents: 0, updated_at: Date.now() });
 
-    processEscrowClearingWorker();
+    await processEscrowClearingWorker();
 
     expect(escTx.status).toBe('RELEASED');
     
@@ -87,7 +87,7 @@ describe('Clearing Worker & Ledger Reconciliation tests', () => {
     expect(db.automation_actions![0].action_type).toBe('AUTO_RELEASE');
   });
 
-  it('should skip automatic release if there is an active unresolved dispute', () => {
+  it('should skip automatic release if there is an active unresolved dispute', async () => {
     const escTx = {
       transaction_id: 'esc_3',
       listing_id: 'list_1',
@@ -111,7 +111,7 @@ describe('Clearing Worker & Ledger Reconciliation tests', () => {
       messages: []
     } as any);
 
-    processEscrowClearingWorker();
+    await processEscrowClearingWorker();
 
     expect(escTx.status).toBe('HELD_IN_ESCROW');
     expect(db.automation_actions).toHaveLength(0);

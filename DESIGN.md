@@ -185,6 +185,7 @@ All components must use these exact token classes. Deviations require updating t
 | Empty State | Centered column: custom SVG illustration, `text-text-secondary` descriptive text, single primary button. No lorem ipsum, no emojis. | — |
 | Skeleton Loader | `bg-velum-700 animate-pulse rounded-md` (use the component's own border radius token) | — |
 | Error Inline Text | `text-status-dnd` with a small AlertCircle icon from lucide-react | — |
+| Glass Panel Dropdown | `glass-panel p-1.5 max-h-60 overflow-y-auto rounded-lg shadow-xl` | Transition entry animations (e.g., `animate-in fade-in slide-in-from-top-1 duration-150`) |
 
 ---
 

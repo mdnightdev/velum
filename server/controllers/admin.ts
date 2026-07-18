@@ -191,7 +191,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     }
 
     if (targetUser.role === 'CLI_ADMIN' || targetUser.role === 'LOGIN_ADMIN') {
-      return res.status(403).json({ error: 'CRITICAL BLOCK: System-level initial accounts cannot be deleted.' });
+      return res.status(403).json({ error: 'System-level initial accounts cannot be deleted.' });
     }
 
     const { reason } = req.body;
@@ -415,9 +415,9 @@ export const sanctionUser = async (req: Request, res: Response) => {
 
     if (type === 'ban') {
       if (room_id) {
-        db.lounge_rooms = (db.lounge_rooms || []).filter(r => !(r.lounge_id === room_id && String(r.created_by) === String(target.user_id)));
+        db.lounges = (db.lounges || []).filter(l => !(l.parent_lounge_id === room_id && String(l.creator_id || l.owner_id || l.owner_user_id) === String(target.user_id)));
       } else {
-        db.lounge_rooms = (db.lounge_rooms || []).filter(r => String(r.created_by) !== String(target.user_id));
+        db.lounges = (db.lounges || []).filter(l => String(l.creator_id || l.owner_id || l.owner_user_id) !== String(target.user_id) || l.is_official === 1);
         
         target.status = 'suspended';
         db.sessions = db.sessions.map(s => {

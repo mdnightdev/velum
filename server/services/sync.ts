@@ -81,7 +81,7 @@ export async function restoreDbFromCloud(): Promise<void> {
       try {
         fs.writeFileSync(DB_FILE, binData);
         try {
-          fs.chmodSync(DB_FILE, 0o777);
+          fs.chmodSync(DB_FILE, 0o600);
         } catch (_) {}
         if (fs.existsSync(SQLITE_FILE)) {
           try {

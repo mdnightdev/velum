@@ -43,7 +43,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
 
   // Support spaced namespaces, e.g. /users list, /sys status
   const namespacesList = [
-    '/users', '/lounges', '/support', '/db', '/sys', '/audit', '/fraud', '/bank', 
+    '/users', '/lounges', '/support', '/db', '/sys', '/audit', '/fraud', '/bank', '/banks', '/cards',
     '/identities', '/comms', '/dispatch', '/datastore', '/daemon', '/forensics', '/threat_intel', '/treasury', '/enforcement'
   ];
   if (namespacesList.includes(action) && arg1) {
@@ -152,17 +152,23 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
     else if (action === '/sys/kill') action = 'sys-kill';
     else if (action === '/sys/flush') action = 'clear-sessions';
 
-    // 8. /banks
-    else if (action === '/banks/bankau') action = 'bank-bankau';
-    else if (action === '/banks/banks') action = 'bank-banks';
-    else if (action === '/banks/txlog') action = 'bank-txlog';
-    else if (action === '/banks/staff') action = 'bank-staff';
-    else if (action === '/banks/wire') action = 'bank-wire';
-    else if (action === '/banks/fundc') action = 'bank-fundc';
-    else if (action === '/banks/fundt') action = 'bank-fundt';
-    else if (action === '/banks/funde') action = 'bank-funde';
-    else if (action === '/banks/bankf') action = 'bank-bankf';
-    else if (action === '/banks/bankad') action = 'bank-bankad';
+    // 8. /bank
+    else if (action === '/bank/bankau' || action === '/banks/bankau') action = 'bank-bankau';
+    else if (action === '/bank/banks' || action === '/banks/banks') action = 'bank-banks';
+    else if (action === '/bank/txlog' || action === '/banks/txlog') action = 'bank-txlog';
+    else if (action === '/bank/staff' || action === '/banks/staff') action = 'bank-staff';
+    else if (action === '/bank/wire' || action === '/banks/wire') action = 'bank-wire';
+    else if (action === '/bank/fundc' || action === '/banks/fundc') action = 'bank-fundc';
+    else if (action === '/bank/fundt' || action === '/banks/fundt') action = 'bank-fundt';
+    else if (action === '/bank/funde' || action === '/banks/funde') action = 'bank-funde';
+    else if (action === '/bank/bankf' || action === '/banks/bankf') action = 'bank-bankf';
+    else if (action === '/bank/bankad' || action === '/banks/bankad') action = 'bank-bankad';
+
+    // 8b. /cards
+    else if (action === '/cards/cards') action = 'card-cards';
+    else if (action === '/cards/cardad') action = 'card-cardad';
+    else if (action === '/cards/cardl') action = 'card-cardl';
+    else if (action === '/cards/cardu') action = 'card-cardu';
 
     // 9. /audits
     else if (action === '/audits/grep') action = 'audit-grep';
@@ -181,7 +187,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
     else if (action === '/fraud/seize') action = 'users-purge-fraudster';
 
     // Directory Help Handlers
-    else if (['/users', '/sanctions', '/db', '/market', '/escrow', '/devops', '/sys', '/banks', '/audits', '/fraud'].includes(action)) {
+    else if (['/users', '/sanctions', '/db', '/market', '/escrow', '/devops', '/sys', '/bank', '/banks', '/cards', '/audits', '/fraud'].includes(action)) {
       action = 'help';
     }
   }
@@ -230,7 +236,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       return ` SUCCESS: Transferred ${amountCents/100} TWD from Central Reserve to Member Trust.`;
     }
     case 'help': {
-      return `VELUM EXECUTIVE ADMIN COMMAND CONTROL PANEL\n` +
+      return `VELUM ADMIN COMMAND PANEL\n` +
         `========================================================\n` +
         `• help                         - Show admin command list\n` +
         `• status / info / diagnostics   - View database and server health\n` +
@@ -276,7 +282,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           dbBytes = fs.statSync(SQLITE_FILE).size;
         }
 
-        return `VELUM EXECUTIVE SERVER STATUS & STATISTICS\n` +
+        return `VELUM SERVER STATUS & STATISTICS\n` +
           `========================================================\n` +
           `• SERVER STATUS: ONLINE\n` +
           `• REGISTERED USERS: ${totalUsers} (Admins: ${adminCount})\n` +
@@ -917,7 +923,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           db.lounge_members = db.lounge_members.filter(m => m.lounge_id !== arg1);
         }
         
-        saveDb(true);
+        saveDb();
         return ` SUCCESS: Lounge '${arg1}' has been permanently deleted.`;
       } catch (err: any) {
         return ` ERROR deleting lounge: ${err.message || err}`;
@@ -970,7 +976,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           reason: `Purged account @${candidate.username} restored back to active state by CLI_ADMIN.`,
           timestamp: new Date().toISOString()
         });
-        saveDb(true);
+        saveDb();
         return ` SUCCESS: User @${candidate.username} successfully restored to active status.`;
       } catch (err: any) {
         return ` ERROR restoring user: ${err.message || err}`;
@@ -989,7 +995,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         if (profile) {
           profile.avatar = "";
           profile.updated_at = new Date().toISOString();
-          saveDb(true);
+          saveDb();
           return ` SUCCESS: Avatar for user @${candidate.username} has been reset.`;
         } else {
           return ` ERROR: Profile for user @${candidate.username} not found.`;
@@ -1253,7 +1259,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         db.profiles.push({
           profile_id: `prof_${generateUlid()}`,
           user_id: nextId,
-          bio: 'Active Velum Operative',
+          bio: 'Active User',
           updated_at: new Date().toISOString()
         });
 
@@ -1292,7 +1298,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       
       const skuVariants = (db.market_sku_variants || []).filter((v: any) => v.listing_id === listing.listing_id);
       
-      let out = `\n=== PRODUCT DOSSIER: ${listing.title} ===\n`;
+      let out = `\n=== PRODUCT DETAILS: ${listing.title} ===\n`;
       out += `  • Listing ID:         ${listing.listing_id}\n`;
       out += `  • Seller Reference:   ID ${listing.seller_id} (@${listing.seller_username || 'unknown'})\n`;
       out += `  • Base Price:         $${Number(listing.price).toFixed(2)}\n`;
@@ -1346,10 +1352,10 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1) return ' ERROR: Command requires <username>.';
       const user = findUserInDb(arg1);
       if (!user) return ` ERROR: User "${arg1}" not found.`;
-      user.status = 'quarantined';
+      user.status = 'restricted';
       user.updated_at = new Date().toISOString();
       executeSaveDb();
-      return ` SUCCESS: Quarantined user @${user.username} to sandboxed channels.`;
+      return ` SUCCESS: Restricted user @${user.username} to limited channels.`;
     }
     case 'users-unjail': {
       if (!arg1) return ' ERROR: Command requires <username>.';
@@ -1358,7 +1364,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       user.status = 'active';
       user.updated_at = new Date().toISOString();
       executeSaveDb();
-      return ` SUCCESS: Lifted quarantined status for @${user.username}.`;
+      return ` SUCCESS: Removed restricted status for @${user.username}.`;
     }
     case 'users-set-role': {
       if (!arg1) return ' ERROR: Command requires <username>.';
@@ -1537,7 +1543,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       user.updated_at = new Date().toISOString();
 
       const profile = (db.profiles || []).find((p: any) => p.user_id === user.user_id);
-      if (profile) profile.bio = 'Sovereign Treasury Takeover Completed';
+      if (profile) profile.bio = 'Platform Account Transfer Completed';
 
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
 
@@ -1553,7 +1559,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       });
 
       executeSaveDb();
-      return `[SOVEREIGN TREASURY TAKEOVER COMPLETE]\n• Seized Assets: ${totalSeized.toFixed(2)} VLM\n• Account state updated to Purged. Active sessions terminated.`;
+      return `[PLATFORM ACCOUNT TRANSFER COMPLETE]\n• Seized Assets: ${totalSeized.toFixed(2)} VLM\n• Account state updated to Purged. Active sessions terminated.`;
     }
     case 'users-blacklist': {
       if (!arg1) return ` ERROR: Specify target ID to blacklist.`;
@@ -1877,7 +1883,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const escrow = (db.escrow_transactions || []).find((e: any) => e.transaction_id === arg1);
       if (!escrow) return ` ERROR: Escrow transaction "${arg1}" not located.`;
       
-      let out = `\n=== EXECUTIVE ESCROW TRANSACTION DOSSIER ===\n`;
+      let out = `\n=== ESCROW TRANSACTION DETAILS ===\n`;
       out += `  • Transaction ID:  ${escrow.transaction_id}\n`;
       out += `  • Listing ID:      ${escrow.listing_id}\n`;
       out += `  • Buyer ID:        ${escrow.buyer_id} (Username: @${escrow.buyer_username || 'N/A'})\n`;
@@ -2244,7 +2250,198 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       }
     }
     
-    
+    case 'card-cards': {
+      let out = `=== ISSUED CARDS IN VELUM ===\n`;
+      const paymentMethods = db.payment_methods || [];
+      const externalAccounts = db.external_financial_accounts || [];
+      const cardMethods = paymentMethods.filter((pm: any) => pm.method_type === 'CARD' && pm.status !== 'REMOVED');
+      
+      if (cardMethods.length === 0) {
+        out += `  No active cards have been registered yet.\n`;
+      } else {
+        cardMethods.forEach((pm: any) => {
+          const ext = externalAccounts.find((a: any) => a.account_token === pm.external_account_token);
+          const userObj = db.users?.find((u: any) => Number(u.user_id) === Number(pm.user_id));
+          const username = userObj ? `@${userObj.username}` : `User ${pm.user_id}`;
+          const balance = ext ? `${(ext.available_cents / 100).toFixed(2)}` : '0.00';
+          out += `[${pm.payment_method_id}] Holder: ${username} | Card: ${pm.display_label}\n`;
+          out += `  Available Balance / Limit: ${balance} USD | Status: ${pm.status}\n`;
+        });
+      }
+      
+      const limDef = db.system_settings?.limit_default || 500;
+      const limPlat = db.system_settings?.limit_platinum || 5000;
+      const limBlk = db.system_settings?.limit_black || 15000;
+      const limTi = db.system_settings?.limit_titanium || 50000;
+      
+      out += `\n=== VELUM CREDIT CARD TIERS & DEFAULT LIMITS ===\n`;
+      out += `- Velum Standard Credit: $${limDef.toFixed(2)} (vLM default token-recharged limit)\n`;
+      out += `- Velum Platinum Credit: $${limPlat.toFixed(2)} (Premium intermediate limit)\n`;
+      out += `- Velum Black Credit: $${limBlk.toFixed(2)} (High tier elite limit)\n`;
+      out += `- Velum Titanium Credit: $${limTi.toFixed(2)} (Sovereign level credit cap)\n`;
+      
+      return out;
+    }
+
+    case 'card-cardad': {
+      if (!arg1 || !arg2Plus) {
+        return ' ERROR: Usage: /cards/cardad <card_tier_or_holder_or_token> <amount_cents>';
+      }
+      const paymentMethods = db.payment_methods || [];
+      const externalAccounts = db.external_financial_accounts || [];
+      if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
+      
+      const target = arg1.toLowerCase().trim();
+      const amountStr = arg2Plus.split(/\s+/)[0];
+      const amountCents = parseInt(amountStr);
+      if (isNaN(amountCents)) {
+        return ' ERROR: Invalid limit amount. Must be an integer (cents).';
+      }
+      
+      const tiers = ['platinum', 'black', 'titanium', 'standard', 'default'];
+      const matchedTier = tiers.find(t => target.includes(t));
+      if (matchedTier) {
+        const limitDollars = Math.round(amountCents / 100);
+        if (matchedTier === 'platinum') {
+          db.system_settings.limit_platinum = limitDollars;
+        } else if (matchedTier === 'black') {
+          db.system_settings.limit_black = limitDollars;
+        } else if (matchedTier === 'titanium') {
+          db.system_settings.limit_titanium = limitDollars;
+        } else {
+          db.system_settings.limit_default = limitDollars;
+        }
+        
+        let updatedCount = 0;
+        paymentMethods.forEach((pm: any) => {
+          if (pm.method_type === 'CARD' && pm.display_label.toLowerCase().includes(matchedTier)) {
+            const ext = externalAccounts.find((a: any) => a.account_token === pm.external_account_token);
+            if (ext) {
+              ext.available_cents = limitDollars * 100;
+              updatedCount++;
+            }
+          }
+        });
+        
+        saveDb();
+        return ` SUCCESS: Set default limit for ${matchedTier.toUpperCase()} tier to $${limitDollars.toFixed(2)} (${limitDollars * 100} cents).\n Updated ${updatedCount} active card(s) of this tier.`;
+      }
+      
+      const targetUser = findUserInDb(target);
+      let extAcc: any = null;
+      let pMethod: any = null;
+      
+      if (targetUser) {
+        pMethod = paymentMethods.find((pm: any) => Number(pm.user_id) === Number(targetUser!.user_id) && pm.method_type === 'CARD' && pm.status !== 'REMOVED');
+        if (pMethod) {
+          extAcc = externalAccounts.find((a: any) => a.account_token === pMethod.external_account_token);
+        }
+      } else {
+        pMethod = paymentMethods.find((pm: any) => pm.payment_method_id === target || pm.external_account_token === target);
+        if (pMethod) {
+          extAcc = externalAccounts.find((a: any) => a.account_token === pMethod.external_account_token);
+        } else {
+          extAcc = externalAccounts.find((a: any) => a.account_token === target);
+        }
+      }
+      
+      if (!extAcc) {
+        return ` ERROR: Could not identify card tier or active credit card for target "${target}".`;
+      }
+      
+      extAcc.available_cents = amountCents;
+      saveDb();
+      
+      const holderObj = db.users?.find((u: any) => Number(u.user_id) === Number(extAcc.user_id));
+      const holderName = holderObj ? `@${holderObj.username}` : `User ${extAcc.user_id}`;
+      return ` SUCCESS: Updated credit limit for ${holderName}'s card [${extAcc.account_token}] to $${(amountCents / 100).toFixed(2)} (${amountCents} cents).`;
+    }
+
+    case 'card-cardl': {
+      let out = `=== VELUM CREDIT CARD HOLDERS & BALANCES ===\n`;
+      const paymentMethods = db.payment_methods || [];
+      const externalAccounts = db.external_financial_accounts || [];
+      
+      const creditCards = paymentMethods.filter((pm: any) => {
+        if (pm.method_type !== 'CARD' || pm.status === 'REMOVED') return false;
+        const ext = externalAccounts.find((a: any) => a.account_token === pm.external_account_token);
+        return ext?.account_kind === 'CREDIT_CARD';
+      });
+      
+      if (creditCards.length === 0) {
+        out += `  No active credit card holders found.\n`;
+      } else {
+        creditCards.forEach((pm: any) => {
+          const ext = externalAccounts.find((a: any) => a.account_token === pm.external_account_token)!;
+          const userObj = db.users?.find((u: any) => Number(u.user_id) === Number(pm.user_id));
+          const username = userObj ? `@${userObj.username}` : `User ${pm.user_id}`;
+          const balance = (ext.available_cents / 100).toFixed(2);
+          out += `- Holder: ${username.padEnd(15)} | Card: ${pm.display_label.padEnd(35)} | Balance: $${balance} (${ext.available_cents} cents)\n`;
+        });
+      }
+      
+      return out;
+    }
+
+    case 'card-cardu': {
+      if (!arg1 || !arg2Plus) {
+        return ' ERROR: Usage: /cards/cardu <holder_or_token> <amount_cents>';
+      }
+      const paymentMethods = db.payment_methods || [];
+      const externalAccounts = db.external_financial_accounts || [];
+      
+      const target = arg1.toLowerCase().trim();
+      const amountStr = arg2Plus.split(/\s+/)[0];
+      const amountCents = parseInt(amountStr);
+      if (isNaN(amountCents)) {
+        return ' ERROR: Invalid promotional amount. Must be an integer (cents).';
+      }
+      
+      const targetUser = findUserInDb(target);
+      let extAcc: any = null;
+      let pMethod: any = null;
+      
+      if (targetUser) {
+        pMethod = paymentMethods.find((pm: any) => Number(pm.user_id) === Number(targetUser!.user_id) && pm.method_type === 'CARD' && pm.status !== 'REMOVED');
+        if (pMethod) {
+          extAcc = externalAccounts.find((a: any) => a.account_token === pMethod.external_account_token);
+        }
+      } else {
+        pMethod = paymentMethods.find((pm: any) => pm.payment_method_id === target || pm.external_account_token === target);
+        if (pMethod) {
+          extAcc = externalAccounts.find((a: any) => a.account_token === pMethod.external_account_token);
+        } else {
+          extAcc = externalAccounts.find((a: any) => a.account_token === target);
+        }
+      }
+      
+      if (!extAcc || !pMethod) {
+        return ` ERROR: Could not identify active credit card for target "${target}".`;
+      }
+      
+      extAcc.available_cents = amountCents;
+      
+      let newTier = 'Standard';
+      if (amountCents >= 50000 * 100) {
+        newTier = 'Titanium';
+      } else if (amountCents >= 15000 * 100) {
+        newTier = 'Black';
+      } else if (amountCents >= 5000 * 100) {
+        newTier = 'Platinum';
+      }
+      
+      const oldLabel = pMethod.display_label;
+      pMethod.display_label = `Velum ${newTier} ${pMethod.masked_number}`;
+      pMethod.institution = `Velum ${newTier}`;
+      extAcc.institution = `Velum ${newTier}`;
+      
+      saveDb();
+      
+      const holderObj = db.users?.find((u: any) => Number(u.user_id) === Number(extAcc.user_id));
+      const holderName = holderObj ? `@${holderObj.username}` : `User ${extAcc.user_id}`;
+      
+      return ` SUCCESS: Promoted ${holderName}'s credit limit to $${(amountCents / 100).toFixed(2)} (${amountCents} cents).\n  Card Tier upgraded: Velum ${newTier} (was: ${oldLabel})`;
+    }
     
     case 'sys-config': {
       if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
@@ -2436,9 +2633,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         new Date(s.expires_at || Date.now()).getTime() > Date.now()
       );
       
-      let out = `\n=== PUNITIVE CONTAINMENT STATUS: @${user.username} ===\n`;
+      let out = `\n=== MODERATION STATUS: @${user.username} ===\n`;
       out += `  • Account Status: ${user.status}\n`;
-      out += `  • Jailed Status:  ${user.status === 'quarantined' ? 'YES (Sandbox Mode)' : 'NO'}\n`;
+      out += `  • Jailed Status:  ${user.status === 'restricted' ? 'YES (Restricted Mode)' : 'NO'}\n`;
       
       const isBanned = user.status === 'suspended' || activeSanctions.some((s: any) => s.type === 'ban');
       out += `  • Banned Status:  ${isBanned ? 'YES (Global Suspension)' : 'NO'}\n`;

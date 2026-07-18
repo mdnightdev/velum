@@ -30,7 +30,7 @@ export function getOrCreateWallet(userId: number): UserWallet {
       updated_at: Date.now()
     };
     db.user_wallets.push(wallet);
-    saveDb(true);
+    saveDb();
   }
   return wallet;
 }
@@ -51,7 +51,7 @@ export function getOrCreateWalletBalance(userId: number, currencyCode: string): 
       updated_at: Date.now()
     };
     db.wallet_balances.push(bal);
-    saveDb(true);
+    saveDb();
   }
   return bal;
 }
@@ -69,7 +69,7 @@ export function getOrCreateKyc(userId: number): KycVerification {
       updated_at: Date.now()
     };
     db.kyc_verifications.push(kyc);
-    saveDb(true);
+    saveDb();
   }
   return kyc;
 }
@@ -180,7 +180,7 @@ export const submitKyc = async (req: Request, res: Response) => {
       kyc.updated_at = Date.now();
     }
 
-    saveDb(true);
+    saveDb();
     res.json(kyc);
   } catch (err: any) {
     res.status(500).json({ error: 'Submission failed' });
@@ -207,7 +207,7 @@ export const processKycReview = async (req: Request, res: Response) => {
     kyc.reviewed_at = Date.now();
     kyc.updated_at = Date.now();
 
-    saveDb(true);
+    saveDb();
     res.json(kyc);
   } catch (err: any) {
     res.status(500).json({ error: 'KYC review simulation failed.' });
@@ -356,7 +356,7 @@ export const addPaymentMethod = async (req: Request, res: Response) => {
     };
     db.payment_methods.push(newMethod);
 
-    saveDb(true);
+    saveDb();
     res.json({
       ...newMethod,
       method_id: newMethod.payment_method_id,
@@ -387,7 +387,7 @@ export const removePaymentMethod = async (req: Request, res: Response) => {
     method.status = 'REMOVED';
     method.removed_at = Date.now();
 
-    saveDb(true);
+    saveDb();
     res.json({ success: true, payment_method_id: methodId });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to remove method' });
@@ -434,7 +434,7 @@ export const rechargeWallet = async (req: Request, res: Response) => {
     }
 
     loadDb();
-    const idempotencyKey = req.headers['x-idempotency-key'];
+    const idempotencyKey = req.headers ? req.headers['x-idempotency-key'] : undefined;
     if (idempotencyKey) {
       db.idempotency_records = db.idempotency_records || [];
       const existing = db.idempotency_records.find((r: any) => r.key === idempotencyKey);
@@ -578,7 +578,7 @@ export const rechargeWallet = async (req: Request, res: Response) => {
           created_at: Date.now()
         });
       }
-      saveDb(true);
+      saveDb();
       return res.json(responsePayload);
 
     } else {
@@ -597,7 +597,7 @@ export const rechargeWallet = async (req: Request, res: Response) => {
           created_at: Date.now()
         });
       }
-      saveDb(true);
+      saveDb();
       return res.status(400).json(responsePayload);
     }
   } catch (err: any) {
@@ -618,42 +618,46 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
     }
 
     loadDb();
-    const idempotencyKey = req.headers['x-idempotency-key'];
-    if (idempotencyKey) {
-      db.idempotency_records = db.idempotency_records || [];
-      const existing = db.idempotency_records.find((r: any) => r.key === idempotencyKey);
-      if (existing) {
-        return res.status(200).json(existing.response);
-      }
-    }
-    db.payment_methods = db.payment_methods || [];
-    db.kyc_verifications = db.kyc_verifications || [];
-    db.withdrawal_requests = db.withdrawal_requests || [];
-    db.wallet_ledger_entries = db.wallet_ledger_entries || [];
-
-    const kyc = db.kyc_verifications.find(
-      k => Number(k.user_id) === Number(user.user_id)
-    );
-    if (!kyc || kyc.status !== 'VERIFIED') {
-      return res.status(403).json({ error: 'KYC identity verification required for withdrawals.' });
-    }
-
-    const limit = maxWithdrawalCentsFor(kyc.verification_level);
-    if (amount > limit) {
-      return res.status(400).json({ 
-        error: `Amount exceeds the maximum withdrawal cap of $${(limit / 100).toFixed(2)} for ${kyc.verification_level} level.` 
-      });
-    }
-
-    const method = db.payment_methods.find(
-      m => m.payment_method_id === payout_method_id && Number(m.user_id) === Number(user.user_id)
-    );
-    if (!method || method.status !== 'ACTIVE') {
-      return res.status(404).json({ error: 'Payout destination method not found.' });
-    }
-
+    const idempotencyKey = req.headers ? req.headers['x-idempotency-key'] : undefined;
     const lock = getLockForUser(user.user_id);
+    
     const result = await lock.run(async () => {
+      if (idempotencyKey) {
+        db.idempotency_records = db.idempotency_records || [];
+        const existing = db.idempotency_records.find((r: any) => r.key === idempotencyKey);
+        if (existing) {
+          return { isIdempotencyHit: true, response: existing.response };
+        }
+      }
+
+      db.payment_methods = db.payment_methods || [];
+      db.kyc_verifications = db.kyc_verifications || [];
+      db.withdrawal_requests = db.withdrawal_requests || [];
+      db.wallet_ledger_entries = db.wallet_ledger_entries || [];
+
+      const kyc = db.kyc_verifications.find(
+        k => Number(k.user_id) === Number(user.user_id)
+      );
+      if (!kyc || kyc.status !== 'VERIFIED') {
+        return { isError: true, status: 403, message: 'KYC identity verification required for withdrawals.' };
+      }
+
+      const limit = maxWithdrawalCentsFor(kyc.verification_level);
+      if (amount > limit) {
+        return { 
+          isError: true, 
+          status: 400, 
+          message: `Amount exceeds the maximum withdrawal cap of $${(limit / 100).toFixed(2)} for ${kyc.verification_level} level.` 
+        };
+      }
+
+      const method = db.payment_methods.find(
+        m => m.payment_method_id === payout_method_id && Number(m.user_id) === Number(user.user_id)
+      );
+      if (!method || method.status !== 'ACTIVE') {
+        return { isError: true, status: 404, message: 'Payout destination method not found.' };
+      }
+
       return await runInTransaction((uow) => {
         const preferredCurrency = user.preferred_currency || 'USD';
         const currentBalance = uow.getBalance(user.user_id, preferredCurrency);
@@ -700,11 +704,18 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
       });
     });
 
+    if ('isIdempotencyHit' in result && result.isIdempotencyHit) {
+      return res.status(200).json((result as any).response);
+    }
+    if ('isError' in result && result.isError) {
+      return res.status((result as any).status).json({ error: (result as any).message });
+    }
+
     const wallet = getOrCreateWallet(user.user_id);
     const responsePayload = {
       success: true,
       status: 'PENDING_REVIEW',
-      request: result.newRequest,
+      request: (result as any).newRequest,
       wallet
     };
 
@@ -715,7 +726,7 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
         response: responsePayload,
         created_at: Date.now()
       });
-      saveDb(true);
+      saveDb();
     }
     res.json(responsePayload);
   } catch (err: any) {
@@ -723,7 +734,7 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
       return res.status(400).json({ error: err.message });
     }
     console.error('[WITHDRAWAL-ERROR]', err);
-    res.status(500).json({ error: 'Failed to process withdrawal request.' });
+    res.status(500).json({ error: 'Withdrawal failed' });
   }
 };
 
@@ -819,7 +830,7 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
           status: 'completed'
         });
 
-        saveDb(true);
+        saveDb();
         res.json({ success: true, status: 'COMPLETED', request, event: processorEvent });
       } else {
         // Fallback frozen account, handle as reject to refund
@@ -857,7 +868,7 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
           });
         });
 
-        saveDb(true);
+        saveDb();
         res.json({ success: true, status: 'REJECTED_REFUNDED', request, event: processorEvent });
       }
     } else {
@@ -895,12 +906,12 @@ export const processWithdrawalReview = async (req: Request, res: Response) => {
         });
       });
 
-      saveDb(true);
+      saveDb();
       res.json({ success: true, status: 'REJECTED_REFUNDED', request });
     }
   } catch (err: any) {
     console.error('[PAYOUT-REVIEW-ERROR]', err);
-    res.status(500).json({ error: 'Failed to process payout review: ' + (err.message || String(err)) });
+    res.status(500).json({ error: 'Review failed' });
   }
 };
 
@@ -915,7 +926,7 @@ export const getLedgerHistory = async (req: Request, res: Response) => {
     ).sort((a, b) => Number(b.created_at) - Number(a.created_at));
     res.json(entries);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to access audit ledger.' });
+    res.status(500).json({ error: 'Audit ledger unavailable' });
   }
 };
 
@@ -936,7 +947,7 @@ export const getExternalProcessorEvents = async (req: Request, res: Response) =>
 
     res.json(relevantEvents);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to read outside transaction feed.' });
+    res.status(500).json({ error: 'Feed unavailable' });
   }
 };
 
@@ -950,7 +961,7 @@ export const getWithdrawalsHistory = async (req: Request, res: Response) => {
     ).sort((a, b) => Number(b.created_at) - Number(a.created_at));
     res.json(requests);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to retrieve payout feed.' });
+    res.status(500).json({ error: 'Feed unavailable' });
   }
 };
 
@@ -961,7 +972,7 @@ export const getCurrencies = async (req: Request, res: Response) => {
     db.currencies = db.currencies || [];
     res.json(db.currencies.filter(c => c.active));
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to retrieve currencies.' });
+    res.status(500).json({ error: 'Currencies unavailable' });
   }
 };
 
@@ -991,13 +1002,13 @@ export const getWalletBalances = async (req: Request, res: Response) => {
           updated_at: Date.now()
         });
       }
-      saveDb(true);
+      saveDb();
     }
     
     const balances = db.wallet_balances!.filter(b => Number(b.user_id) === Number(user.user_id));
     res.json(balances);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to retrieve wallet balances.' });
+    res.status(500).json({ error: 'Balances unavailable' });
   }
 };
 
@@ -1007,7 +1018,7 @@ export const getExchangeRates = async (req: Request, res: Response) => {
     db.exchange_rates = db.exchange_rates || [];
     res.json(db.exchange_rates);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to retrieve exchange rates.' });
+    res.status(500).json({ error: 'Rates unavailable' });
   }
 };
 
@@ -1021,7 +1032,7 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
     }
 
     loadDb();
-    const idempotencyKey = req.headers['x-idempotency-key'];
+    const idempotencyKey = req.headers ? req.headers['x-idempotency-key'] : undefined;
     if (idempotencyKey) {
       db.idempotency_records = db.idempotency_records || [];
       const existing = db.idempotency_records.find((r: any) => r.key === idempotencyKey);
@@ -1114,13 +1125,14 @@ export const exchangeCurrencyAction = async (req: Request, res: Response) => {
         response: responsePayload,
         created_at: Date.now()
       });
-      saveDb(true);
+      saveDb();
     }
     res.json(responsePayload);
   } catch (err: any) {
+    console.error("EXCHANGE ACTION FAILED:", err);
     if (err.message === 'Insufficient balance') {
       return res.status(400).json({ error: err.message });
     }
-    res.status(500).json({ error: 'Failed to execute currency conversion.' });
+    res.status(500).json({ error: 'Conversion failed' });
   }
 };

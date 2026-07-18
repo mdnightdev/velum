@@ -30,11 +30,7 @@ function enrichEscrow(esc: any) {
   
   let sandboxLogs = esc.sandbox_logs;
   if (!sandboxLogs) {
-    sandboxLogs = [
-      `[SYS-SECURE] INITIALIZING ISO-WORKER DOCK STATE...`,
-      ` ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
-      ` ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
-    ];
+    sandboxLogs = [];
   } else if (typeof sandboxLogs === 'string') {
     try {
       sandboxLogs = JSON.parse(sandboxLogs);
@@ -210,9 +206,6 @@ export const createListing = async (req: Request, res: Response) => {
     } else if (hasExecutablePayload || hasExecutableText) {
       verification_status = 'PENDING_REVIEW';
       checkReason = 'Listing contains script or executable payload / text references.';
-    } else if (!isSellerVerified) {
-      verification_status = 'PENDING_REVIEW';
-      checkReason = 'Seller is not platform verified.';
     }
 
     const listingId = generatePrefixedId('list');
@@ -401,14 +394,14 @@ export const createListingReview = async (req: Request, res: Response) => {
     );
 
     if (!hasPurchased) {
-      return res.status(403).json({ error: 'Restricted: Verified Reviews are locked. You must acquire and clear this asset via escrow first.' });
+      return res.status(403).json({ error: 'You must purchase this item before leaving a review.' });
     }
 
     const hasReviewed = reviews.some(
       r => r.listing_id === listingId && Number(r.buyer_id) === Number(user.user_id) && !r.is_reported
     );
     if (hasReviewed) {
-      return res.status(400).json({ error: 'You have already published a review regarding this asset.' });
+      return res.status(400).json({ error: 'You have already reviewed this product.' });
     }
 
     const newReview: MarketReview = {
@@ -707,6 +700,172 @@ export const createEscrow = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Error initiating escrow hold:', err);
     res.status(500).json({ error: 'Failed to open escrow hold.' });
+  }
+};
+
+// Batch checkout multiple cart items atomically
+export const batchCartCheckout = async (req: Request, res: Response) => {
+  try {
+    const { items } = req.body;
+    const user = (req as any).user;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Cart items are required.' });
+    }
+
+    loadDb();
+
+    const buyerId = Number(user.user_id);
+    const buyerUsername = user.username;
+
+    // First validate all items and calculate total price
+    let totalCostCents = 0;
+    const itemsToProcess = [];
+
+    // Group items by listingId to ensure accurate inventory checks
+    const inventoryDemanded: Record<string, number> = {};
+
+    for (const item of items) {
+      const { listingId, skuVariantId, quantity } = item;
+      const qty = parseInt(String(quantity), 10) || 1;
+
+      if (!listingId) {
+        return res.status(400).json({ error: 'Each item must have a listing ID.' });
+      }
+
+      const listing = marketRepository.findListingById(listingId);
+      if (!listing) {
+        return res.status(404).json({ error: `Listing not found: ${listingId}` });
+      }
+
+      if (listing.status !== 'ACTIVE') {
+        return res.status(400).json({ error: `Listing is no longer active: ${listing.title}` });
+      }
+
+      if (listing.verification_status && listing.verification_status !== 'APPROVED') {
+        return res.status(400).json({ error: `Listing is under review: ${listing.title}` });
+      }
+
+      if (Number(listing.seller_id) === buyerId) {
+        return res.status(400).json({ error: 'You cannot purchase your own listing.' });
+      }
+
+      // Check inventory
+      if (listing.inventory_count !== undefined) {
+        inventoryDemanded[listingId] = (inventoryDemanded[listingId] || 0) + qty;
+        if (listing.inventory_count < inventoryDemanded[listingId]) {
+          return res.status(400).json({ error: `Insufficient stock for listing: ${listing.title}` });
+        }
+      }
+
+      const basePrice = (listing.discount_price !== undefined && listing.discount_price !== null) ? listing.discount_price : listing.price;
+      const basePriceCents = Math.round(basePrice * 100);
+
+      let additionalCostCents = 0;
+      let selectedSku: any = undefined;
+      if (skuVariantId) {
+        db.market_sku_variants = db.market_sku_variants || [];
+        selectedSku = db.market_sku_variants.find(s => s && s.sku_id === skuVariantId);
+        if (selectedSku) {
+          additionalCostCents = selectedSku.additional_cost_cents || 0;
+        }
+      }
+
+      const itemUnitPriceCents = basePriceCents + additionalCostCents;
+      const itemTotalCents = itemUnitPriceCents * qty;
+
+      totalCostCents += itemTotalCents;
+
+      itemsToProcess.push({
+        listing,
+        skuVariantId,
+        qty,
+        itemUnitPriceCents,
+        itemTotalCents
+      });
+    }
+
+    const buyerWallet = walletRepository.getOrCreateWalletBalance(buyerId, 'VLM');
+    if (buyerWallet.balance_cents < totalCostCents) {
+      return res.status(400).json({ error: 'Insufficient funds.' });
+    }
+
+    // All checks passed! Execute state mutations atomically.
+    walletRepository.updateWalletBalanceCents(buyerId, 'VLM', buyerWallet.balance_cents - totalCostCents);
+
+    const createdEscrows = [];
+
+    for (const p of itemsToProcess) {
+      const { listing, skuVariantId, qty, itemTotalCents } = p;
+
+      // Update inventory count
+      if (listing.inventory_count !== undefined) {
+        const updatedInventory = listing.inventory_count - qty;
+        marketRepository.updateListing(listing.listing_id, {
+          inventory_count: updatedInventory,
+          status: updatedInventory <= 0 ? 'OUT_OF_STOCK' : 'ACTIVE'
+        });
+      } else {
+        marketRepository.updateListing(listing.listing_id, {
+          status: 'ACTIVE'
+        });
+      }
+
+      const transactionId = generateTrcCode('hold', 'AST48');
+
+      // Create ledger entry
+      walletRepository.createLedgerEntry({
+        entry_id: generateTrcCode('hold', 'AST48'),
+        user_id: buyerId,
+        entry_type: 'ESCROW_HOLD',
+        amount_cents: -itemTotalCents,
+        balance_after_cents: walletRepository.getOrCreateWalletBalance(buyerId, 'VLM').balance_cents,
+        related_transaction_id: transactionId,
+        actor_type: 'USER',
+        actor_id: String(buyerId),
+        is_simulated: true,
+        created_at: Date.now()
+      });
+
+      const feePercent = (db.system_settings?.platform_fee_percent || 5) / 100;
+      const platformFee = parseFloat(((itemTotalCents * feePercent) / 100).toFixed(2));
+      const payoutAmount = parseFloat(((itemTotalCents - (itemTotalCents * feePercent)) / 100).toFixed(2));
+
+      const sandbox_logs = [
+        `[SYS-SECURE] INITIALIZING ISO-WORKER DOCK STATE...`,
+        ` ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
+        ` INGESTING EXECUTABLE BUNDLE: ${listing.title.replace(/\s+/g, '_').toLowerCase()}.zip`,
+        ` ANALYZING RAW BUFFER FOR METADATA LEAKS... CLEAN`,
+        ` RUNNING SYNTAX VERIFICATION THROUGHOUT MODULE POOL...`,
+        ` ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
+      ];
+
+      const newEscrow: EscrowTransaction = {
+        transaction_id: transactionId,
+        listing_id: listing.listing_id,
+        buyer_id: buyerId,
+        buyer_username: buyerUsername,
+        seller_id: listing.seller_id,
+        amount: parseFloat((itemTotalCents / 100).toFixed(2)),
+        sku_variant_id: skuVariantId || null,
+        platform_fee: platformFee,
+        payout_amount: payoutAmount,
+        status: 'HELD_IN_ESCROW',
+        sandbox_state: 'DEPLOYED_SANDBOX',
+        sandbox_logs,
+        created_at: Date.now(),
+        updated_at: Date.now()
+      };
+
+      marketRepository.createEscrow(newEscrow);
+      createdEscrows.push(enrichEscrow(newEscrow));
+    }
+
+    saveDb();
+    res.json({ success: true, escrows: createdEscrows });
+  } catch (err: any) {
+    console.error('Error in batch checkout:', err);
+    res.status(500).json({ error: 'Failed to process batch checkout.' });
   }
 };
 

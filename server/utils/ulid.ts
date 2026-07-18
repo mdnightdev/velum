@@ -21,6 +21,10 @@ export function generateUlid(seedTime: number = Date.now()): string {
   return timePart + randomPart;
 }
 
+export function generateSecureSessionToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
 export function generatePrefixedId(prefix: string): string {
   return `${prefix}_${generateUlid()}`;
 }

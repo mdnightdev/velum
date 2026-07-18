@@ -35,7 +35,18 @@ export interface ClientConnection {
 
 export let connectedClients: ClientConnection[] = [];
 
-wss.on('connection', (ws, req) => {
+const interval = setInterval(() => {
+  wss.clients.forEach((ws: any) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('connection', (ws: any, req) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
   // Sync the latest state from SQLite relational tables on new socket handshake
   loadDb();
   
@@ -44,7 +55,7 @@ wss.on('connection', (ws, req) => {
   const userId = parseInt(urlParams.get('userId') || '0', 10);
 
   if (!userId) {
-    ws.close(3000, 'Unauthorized user ID missing');
+    console.log('Closing 3000'); ws.close(3000, 'Unauthorized user ID missing');
     return;
   }
 
@@ -53,7 +64,7 @@ wss.on('connection', (ws, req) => {
   
   // If JWT verification fails, reject connection immediately
   if (!decoded) {
-    ws.close(3003, 'Unauthorized: Invalid or expired session token.');
+    console.log("WS CLOSE 3003"); ws.close(3003, 'Unauthorized: Invalid or expired session token.');
     return;
   }
   
@@ -61,7 +72,7 @@ wss.on('connection', (ws, req) => {
 
   const userObj = db.users.find(u => u.user_id === userId);
   if (!userObj || userObj.status !== 'active') {
-    ws.close(3001, 'Unauthorized: User account suspended, quarantined, or not found.');
+    console.log("WS CLOSE 3001"); ws.close(3001, 'Unauthorized: User account suspended, quarantined, or not found.');
     return;
   }
 
@@ -70,7 +81,7 @@ wss.on('connection', (ws, req) => {
     const baseCleanName = userObj.username.replace(/^SA-/, '');
     const baseUser = db.users.find(u => u.username.replace(/^@/, '').toLowerCase() === baseCleanName.toLowerCase());
     if (!baseUser || baseUser.promotion_status !== 'APPROVED_SUPPORT') {
-      ws.close(3200, 'Unauthorized: Security credentials revoked.');
+      console.log("WS CLOSE 3200"); ws.close(3200, 'Unauthorized: Security credentials revoked.');
       return;
     }
   }
@@ -82,7 +93,7 @@ wss.on('connection', (ws, req) => {
     s.status === 'active'
   );
   if (!session) {
-    ws.close(3002, 'Unauthorized: Active session expired or revoked.');
+    console.log("WS CLOSE 3002"); ws.close(3002, 'Unauthorized: Active session expired or revoked.');
     return;
   }
 
@@ -100,7 +111,7 @@ wss.on('connection', (ws, req) => {
   updateUserPresence(userId, 'online');
 
   // Handle messages
-  ws.on('message', async (rawData) => {
+  ws.on('message', async (rawData: any) => {
     try {
       // Fast-path parsing: if this is a lightweight ping/heartbeat packet, respond immediately and avoid expensive database loading/authorization
       let parsedPayload: any = null;
@@ -124,7 +135,7 @@ wss.on('connection', (ws, req) => {
       const currentUserObj = db.users.find(u => u.user_id === userId);
       if (!currentUserObj || currentUserObj.status !== 'active') {
         ws.send(JSON.stringify({ type: 'error', message: 'SESSION_TERMINATED: Account suspended, quarantined, or deleted.' }));
-        ws.close(3001, 'Account suspended, quarantined, or deleted.');
+        console.log("WS CLOSE 3001"); ws.close(3001, 'Account suspended, quarantined, or deleted.');
         return;
       }
 
@@ -134,7 +145,7 @@ wss.on('connection', (ws, req) => {
         const baseUser = db.users.find(u => u.username.replace(/^@/, '').toLowerCase() === baseCleanName.toLowerCase());
         if (!baseUser || baseUser.promotion_status !== 'APPROVED_SUPPORT') {
           ws.send(JSON.stringify({ type: 'error', message: 'SESSION_TERMINATED: Security credentials revoked.' }));
-          ws.close(3200, 'Security credentials revoked.');
+          console.log("WS CLOSE 3200"); ws.close(3200, 'Security credentials revoked.');
           return;
         }
       }
@@ -147,7 +158,7 @@ wss.on('connection', (ws, req) => {
       );
       if (!currentSessionObj) {
         ws.send(JSON.stringify({ type: 'error', message: 'SESSION_TERMINATED: Active session expired or revoked.' }));
-        ws.close(3002, 'Active session expired or revoked.');
+        console.log("WS CLOSE 3002"); ws.close(3002, 'Active session expired or revoked.');
         return;
       }
 
@@ -157,11 +168,11 @@ wss.on('connection', (ws, req) => {
       const currentBan = db.admin_sanctions.find(s => 
         s.user_id === userId && 
         s.type === 'ban' && 
-        new Date(s.expires_at || 0).getTime() > Date.now()
+        (!s.expires_at || new Date(s.expires_at).getTime() > Date.now())
       );
       if (currentBan) {
         ws.send(JSON.stringify({ type: 'error', message: `BANNED: Access denied. Reason: ${currentBan.reason}` }));
-        ws.close(3001, 'Banned');
+        console.log("WS CLOSE 3001"); ws.close(3001, 'Banned');
         return;
       }
 
@@ -195,30 +206,24 @@ wss.on('connection', (ws, req) => {
           // General lounges security check
           const isLounge = db.lounges?.find(l => l.lounge_id === roomId);
           if (isLounge) {
-            const isPrivate = isLounge.visibility === 'private' || isLounge.visibility === 'invite_only' || isLounge.is_private === 1;
+            const isPrivate = isLounge.visibility === 'private' || isLounge.visibility === 'invite_only' || isLounge.is_private === 1 || isLounge.is_locked === 1;
             if (isPrivate) {
               const profile = db.profiles?.find(p => p.user_id === userId);
-              const isJoined = profile?.joined_lounges?.includes(roomId);
-              const isOwner = String(isLounge.creator_id || isLounge.owner_id) === String(userId);
+              const isJoined = profile?.joined_lounges?.includes(roomId) || profile?.joined_lounge_rooms?.includes(roomId);
+              const isOwner = String(isLounge.creator_id || isLounge.owner_id || isLounge.owner_user_id) === String(userId);
               const isAdmin = currentUserObj.role === 'CLI_ADMIN' || currentUserObj.role === 'LOGIN_ADMIN';
-              if (!isJoined && !isOwner && !isAdmin) {
+              // Check parent lounge if sublounge
+              const parentLoungeId = isLounge.parent_lounge_id;
+              let isParentOwnerOrAdmin = false;
+              if (parentLoungeId) {
+                const parentLounge = db.lounges?.find(l => l.lounge_id === parentLoungeId);
+                if (parentLounge) {
+                  isParentOwnerOrAdmin = String(parentLounge.creator_id || parentLounge.owner_id || parentLounge.owner_user_id) === String(userId);
+                }
+              }
+              if (!isJoined && !isOwner && !isAdmin && !isParentOwnerOrAdmin) {
                 ws.send(JSON.stringify({ type: 'error', message: 'Forbidden: Private Lounge room access rejected.' }));
                 return;
-              }
-            }
-          } else {
-            const isRoom = db.lounge_rooms?.find(r => r.id === roomId);
-            if (isRoom) {
-              const pLounge = db.lounges?.find(l => l.lounge_id === isRoom.lounge_id);
-              if (pLounge && (pLounge.visibility === 'private' || pLounge.visibility === 'invite_only' || pLounge.is_private === 1)) {
-                const profile = db.profiles?.find(p => p.user_id === userId);
-                const isJoined = profile?.joined_lounges?.includes(pLounge.lounge_id);
-                const isOwner = String(pLounge.creator_id || pLounge.owner_id) === String(userId);
-                const isAdmin = currentUserObj.role === 'CLI_ADMIN' || currentUserObj.role === 'LOGIN_ADMIN';
-                if (!isJoined && !isOwner && !isAdmin) {
-                  ws.send(JSON.stringify({ type: 'error', message: 'Forbidden: Private Lounge room access rejected.' }));
-                  return;
-                }
               }
             }
           }
@@ -275,14 +280,14 @@ wss.on('connection', (ws, req) => {
         let isGloballyMuted = false;
         
         // Check local sqlite room muting
-        const isRoom = db.lounge_rooms?.find(r => r.id === targetRoomId);
-        const activeMuteLoungeId = isRoom ? isRoom.lounge_id : targetRoomId;
+        const isLoungeRoom = db.lounges?.find(l => l.lounge_id === targetRoomId);
+        const activeMuteLoungeId = isLoungeRoom ? (isLoungeRoom.parent_lounge_id || targetRoomId) : targetRoomId;
 
         isGloballyMuted = db.admin_sanctions.some(s => 
           s.user_id === userId && 
           s.type === 'mute' && 
           (s.room_id === null || s.room_id === activeMuteLoungeId) &&
-          new Date(s.expires_at || 0).getTime() > Date.now()
+          (!s.expires_at || new Date(s.expires_at).getTime() > Date.now())
         );
 
         if (isGloballyMuted) {

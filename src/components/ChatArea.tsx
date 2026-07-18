@@ -564,14 +564,8 @@ export default function ChatArea({
       />
       {/* Primary Message Log area */}
       <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 ${isDark ? 'bg-transparent' : 'bg-velum-900'}`}>
-        {conversationMessages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-text-secondary uppercase tracking-wider font-mono text-[9px] space-y-2">
-            <AlertCircle className="w-6 h-6 text-text-disabled animate-pulse" />
-            <p>Verification Secure handshake ready. No message logs found.</p>
-          </div>
-        ) : (
-          conversationMessages.map((msg) => {
-            const isMe = msg.user_id === currentUserId;
+        {conversationMessages.map((msg) => {
+          const isMe = msg.user_id === currentUserId;
             let cleanName = stripAt(msg.username || 'Client');
             let isSpecialTheme = false;
             let customBubbleClass = '';
@@ -1045,8 +1039,7 @@ export default function ChatArea({
                 </div>
               </div>
             );
-          })
-        )}
+          })}
         <div ref={messagesEndRef} />
       </div>
 

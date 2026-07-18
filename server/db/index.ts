@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { createRequire } from 'module';
 // @ts-ignore
 import sqliteModule from 'node:sqlite';
 import { DbSchema, defaultDb } from './schema.js';
@@ -38,7 +39,42 @@ export {
   closeSqliteConnection
 };
 
-const DatabaseSync = (sqliteModule as any)?.DatabaseSync;
+let DatabaseSync = (sqliteModule as any)?.DatabaseSync;
+
+if (!DatabaseSync) {
+  try {
+    const require = createRequire(import.meta.url);
+    const BetterSqlite3Database = require('better-sqlite3');
+    
+    class BetterSqlite3Adapter {
+      private dbInstance: any;
+      constructor(filePath: string) {
+        this.dbInstance = new BetterSqlite3Database(filePath);
+      }
+      exec(sql: string) {
+        return this.dbInstance.exec(sql);
+      }
+      prepare(sql: string) {
+        const stmt = this.dbInstance.prepare(sql);
+        return {
+          all: (...args: any[]) => stmt.all(...args),
+          get: (...args: any[]) => stmt.get(...args),
+          run: (...args: any[]) => stmt.run(...args),
+        };
+      }
+      close() {
+        try {
+          this.dbInstance.close();
+        } catch (_) {}
+      }
+    }
+    
+    DatabaseSync = BetterSqlite3Adapter as any;
+    console.log('[SYS-SECURE] Node.js native node:sqlite DatabaseSync is not available in this environment. Seamlessly fell back to high-performance better-sqlite3 adapter.');
+  } catch (err: any) {
+    console.error('[SYS-SECURE] CRITICAL ERROR: Both native node:sqlite and better-sqlite3 are unavailable:', err?.message || err);
+  }
+}
 
 export const DB_DIR = path.join(process.cwd(), 'data');
 export const DB_FILE = path.join(DB_DIR, 'velum_state_v3.bin');
@@ -95,7 +131,7 @@ export function initSqlite() {
   try {
     const conn = new DatabaseSync(SQLITE_FILE);
     try {
-      fs.chmodSync(SQLITE_FILE, 0o777);
+      fs.chmodSync(SQLITE_FILE, 0o600);
     } catch (_) {}
     
     // Override close method to prevent closing the persistent global connection
@@ -639,6 +675,7 @@ export function ensureSeededIntegrity() {
       });
     }
   }
+
   if (!db.market_listings) db.market_listings = [];
   if (!db.escrow_transactions) db.escrow_transactions = [];
 

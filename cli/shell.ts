@@ -159,7 +159,7 @@ export class VelumShell {
       const isLong = flags['l'] === true;
 
       if (this.currentPath === '/') {
-        const namespaces = ['users', 'sanctions', 'db', 'market', 'escrow', 'devops', 'sys', 'banks', 'audits', 'fraud'];
+        const namespaces = ['users', 'sanctions', 'db', 'market', 'escrow', 'devops', 'sys', 'banks', 'cards', 'audits', 'fraud'];
         const descriptions: Record<string, string> = {
           users: 'User Account Lifecycle',
           sanctions: 'Punitive Actions & Containment',
@@ -169,6 +169,7 @@ export class VelumShell {
           devops: 'System Configurations',
           sys: 'System Metrics & Daemons',
           banks: 'Banking & Sovereign Ledger',
+          cards: 'Credit Cards & Limits',
           audits: 'Forensic Investigations',
           fraud: 'Threat Control & Seizures'
         };
@@ -326,18 +327,18 @@ export class VelumShell {
     exit, quit        - Close CLI session
     help, ?           - Show this navigation catalog
     man <command>     - View the system manual entry for a command
-    
+
   Namespaces:
     /users            - User Account Lifecycle
-    /sanctions        - Punitive Actions & Containment
-    /db               - Database Operations & Sanitization
+    /sanctions        - Moderation Actions
+    /db               - Database Operations
     /market           - Marketplace Controls
     /escrow           - Escrow Operations
     /devops           - System Configurations
-    /sys              - System Metrics & Daemons
-    /banks            - Banking & Sovereign Ledger
-    /audits           - Forensic Investigations
-    /fraud            - Threat Control & Seizures
+    /sys              - System Metrics
+    /banks            - Banking & Ledger
+    /audits           - Audit Logs
+    /fraud            - Fraud Prevention
     
   Tip:
     - You can run absolute commands from anywhere (e.g. /sys/status).

@@ -26,9 +26,9 @@ export async function processCreateEscrow(
     const listing = marketRepository.findListingById(listingId);
     if (!listing) return { success: false, error: 'Listing not found.' };
     if (listing.status !== 'ACTIVE') return { success: false, error: 'Listing is no longer active.' };
-    if (listing.verification_status && listing.verification_status !== 'APPROVED') return { success: false, error: 'Listing is pending verification.' };
+    if (listing.verification_status && listing.verification_status !== 'APPROVED') return { success: false, error: 'Listing is under review.' };
     if (listing.inventory_count !== undefined && listing.inventory_count <= 0) return { success: false, error: 'Listing is out of stock.' };
-    if (Number(listing.seller_id) === Number(buyerId)) return { success: false, error: 'You are forbidden from acquiring your own listings.' };
+    if (Number(listing.seller_id) === Number(buyerId)) return { success: false, error: 'You cannot purchase your own listing.' };
 
     const basePrice = (listing.discount_price !== undefined && listing.discount_price !== null) ? listing.discount_price : listing.price;
     const basePriceCents = Math.round(basePrice * 100);
@@ -72,15 +72,16 @@ export async function processCreateEscrow(
         status: updatedInventory <= 0 ? 'OUT_OF_STOCK' : 'ACTIVE'
       });
     } else {
+      // Unlimited items: do not lock, keep status ACTIVE
       marketRepository.updateListing(listing.listing_id, {
-        status: 'PENDING_ESCROW'
+        status: 'ACTIVE'
       });
     }
 
     const priceCents = settlement.gross_amount_cents - settlement.discount_deduction_cents + settlement.net_tax_amount_cents;
     const buyerWallet = walletRepository.getOrCreateWalletBalance(buyerId, 'VLM');
     if (buyerWallet.balance_cents < priceCents) {
-      return { success: false, error: 'Insufficient wallet ledger balance.' };
+      return { success: false, error: 'Insufficient funds.' };
     }
 
     const platformFee = parseFloat((settlement.platform_fee_deduction_cents / 100).toFixed(2));
@@ -101,15 +102,6 @@ export async function processCreateEscrow(
       created_at: Date.now()
     });
 
-    const sandbox_logs = [
-      `[SYS-SECURE] INITIALIZING ISO-WORKER DOCK STATE...`,
-      ` ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
-      ` INGESTING EXECUTABLE BUNDLE: ${listing.title.replace(/\s+/g, '_').toLowerCase()}.zip`,
-      ` ANALYZING RAW BUFFER FOR METADATA LEAKS... CLEAN`,
-      ` RUNNING SYNTAX VERIFICATION THROUGHOUT MODULE POOL...`,
-      ` ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
-    ];
-
     const newEscrow: EscrowTransaction = {
       transaction_id: transactionId,
       listing_id: listing.listing_id,
@@ -122,8 +114,8 @@ export async function processCreateEscrow(
       platform_fee: platformFee,
       payout_amount: finalPayout,
       status: 'HELD_IN_ESCROW',
-      sandbox_state: 'DEPLOYED_SANDBOX',
-      sandbox_logs,
+      sandbox_state: 'ACTIVE',
+      sandbox_logs: [],
       created_at: Date.now(),
       updated_at: Date.now()
     };
@@ -135,7 +127,7 @@ export async function processCreateEscrow(
 
 export async function processReleaseEscrow(transactionId: string, actorId: number, adminOverride: boolean = false): Promise<EscrowActionResult> {
   const escrow = marketRepository.findEscrowById(transactionId);
-  if (!escrow) return { success: false, error: 'Escrow transaction not located.' };
+  if (!escrow) return { success: false, error: 'Transaction not found.' };
 
   const buyerId = Number(escrow.buyer_id);
   const sellerId = Number(escrow.seller_id);
@@ -147,11 +139,11 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
   return await firstLock.run(async () => {
     return await secondLock.run(async () => {
       if (!adminOverride && Number(escrow.buyer_id) !== Number(actorId)) {
-        return { success: false, error: 'Forbidden: Only the buyer is authorized to release funds.' };
+        return { success: false, error: 'Only the buyer can release these funds.' };
       }
 
       if (escrow.status !== 'HELD_IN_ESCROW') {
-        return { success: false, error: 'Escrow is not in editable HELD_IN_ESCROW status.' };
+        return { success: false, error: 'This transaction is already completed.' };
       }
 
       const openDisputes = (db.market_support_chats || []).filter(
@@ -159,7 +151,7 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
       );
 
       if (openDisputes.length > 0) {
-        return { success: false, error: 'Cannot release escrow: There is an active open dispute/support chat for this transaction.' };
+        return { success: false, error: 'Cannot release funds: There is an active dispute for this transaction.' };
       }
 
       marketRepository.updateEscrow(transactionId, {
@@ -169,7 +161,7 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
 
       const listing = marketRepository.findListingById(escrow.listing_id);
       if (listing && listing.inventory_count === undefined) {
-        marketRepository.updateListing(listing.listing_id, { status: 'COMPLETED' });
+        marketRepository.updateListing(listing.listing_id, { status: 'ACTIVE' });
       }
 
       const sellerWallet = walletRepository.getOrCreateWalletBalance(sellerId, 'VLM');
@@ -178,12 +170,12 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
       const payoutCents = releaseCents - feeCents;
 
       // Escrow release goes to wallet first
-      walletRepository.updateWalletBalanceCents(sellerId, 'VLM', sellerWallet.balance_cents + payoutCents);
+      walletRepository.updateWalletBalanceCents(sellerId, 'VLM', sellerWallet.balance_cents + releaseCents);
       walletRepository.createLedgerEntry({
         entry_id: generateTrcCode('release', 'AST48'),
         user_id: sellerId,
         entry_type: 'ESCROW_RELEASE',
-        amount_cents: payoutCents, // Only adding payout cents here
+        amount_cents: releaseCents,
         balance_after_cents: sellerWallet.balance_cents, // already updated in repository
         related_transaction_id: escrow.transaction_id,
         actor_type: adminOverride ? 'ADMIN' : 'USER',
@@ -191,6 +183,23 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
         is_simulated: true,
         created_at: Date.now()
       });
+
+      // Platform fee deduction ledger entry
+      if (feeCents > 0) {
+        walletRepository.updateWalletBalanceCents(sellerId, 'VLM', sellerWallet.balance_cents - feeCents);
+        walletRepository.createLedgerEntry({
+          entry_id: generateTrcCode('release', 'AST48'),
+          user_id: sellerId,
+          entry_type: 'PLATFORM_FEE',
+          amount_cents: -feeCents,
+          balance_after_cents: sellerWallet.balance_cents, // already updated in repository
+          related_transaction_id: escrow.transaction_id,
+          actor_type: adminOverride ? 'ADMIN' : 'USER',
+          actor_id: String(actorId),
+          is_simulated: true,
+          created_at: Date.now()
+        });
+      }
 
       // Send the fee to Velum Central Bank
       if (feeCents > 0) {
@@ -275,7 +284,7 @@ export async function processReleaseEscrow(transactionId: string, actorId: numbe
 
 export async function processRevertEscrow(transactionId: string, actorId: number, isAdmin: boolean = false): Promise<EscrowActionResult> {
   const esc = marketRepository.findEscrowById(transactionId);
-  if (!esc) return { success: false, error: 'Transaction index not found.' };
+  if (!esc) return { success: false, error: 'Transaction not found.' };
 
   const buyerId = Number(esc.buyer_id);
   const sellerId = Number(esc.seller_id);
@@ -290,11 +299,11 @@ export async function processRevertEscrow(transactionId: string, actorId: number
       const isSeller = Number(esc.seller_id) === Number(actorId);
 
       if (!isBuyer && !isSeller && !isAdmin) {
-        return { success: false, error: 'Unauthorized and forbidden from reverting escrow ledger.' };
+        return { success: false, error: 'Unauthorized to cancel this transaction.' };
       }
 
       if (esc.status !== 'HELD_IN_ESCROW') {
-        return { success: false, error: 'Escrow is not in active HELD_IN_ESCROW hold to revert.' };
+        return { success: false, error: 'This transaction cannot be cancelled.' };
       }
 
       marketRepository.updateEscrow(transactionId, {
@@ -363,9 +372,9 @@ export async function processResolveDispute(
       const sellerWallet = walletRepository.getOrCreateWalletBalance(escrow.seller_id, 'VLM');
 
       let logs = [
-        `[SYS-DISPUTE] ADMIN '${adminUsername}' INITIATED DISPUTE RESOLUTION PROTOCOL...`,
-        ` RESOLUTION: ${resolution}`,
-        ` PENALTY SYSTEM: ${penalty_applied_to}`
+        `[SYSTEM] Administrator '${adminUsername}' resolved the dispute.`,
+        `[SYSTEM] Resolution status: ${resolution}`,
+        `[SYSTEM] Penalty setting: ${penalty_applied_to}`
       ];
 
       if (resolution === 'REFUND_BUYER') {

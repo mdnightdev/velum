@@ -47,13 +47,11 @@ export default function EscrowTransactionCard({
       <div className="grid grid-cols-2 gap-4 text-[10px] font-mono border-y border-emerald-950/40 py-3 text-emerald-300">
         <div>
           <span className="text-[8.5px] text-text-secondary block uppercase">Seller</span>
-          <span className="font-sans font-bold text-white">@{stripAt(targetAccountName)}</span>
-          <span className="text-[8.5px] text-text-secondary block mt-1">ID: {escrow.seller_id}</span>
+          <span className="font-sans font-bold text-white">{stripAt(targetAccountName)}</span>
         </div>
         <div>
           <span className="text-[8.5px] text-text-secondary block uppercase">Buyer</span>
-          <span className="font-sans font-bold text-white">@{stripAt(buyerAccountName)}</span>
-          <span className="text-[8.5px] text-text-secondary block mt-1">ID: {escrow.buyer_id}</span>
+          <span className="font-sans font-bold text-white">{stripAt(buyerAccountName)}</span>
         </div>
       </div>
 

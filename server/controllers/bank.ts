@@ -182,6 +182,7 @@ export const freezeBankAccount = async (req: Request, res: Response) => {
 
     // Log audit trail
     if (!db.audit_logs) db.audit_logs = [];
+    const masked = String(acc.account_number).slice(-4).padStart(String(acc.account_number).length, '*');
     db.audit_logs.push({
       log_id: `${generatePrefixedId('al')}_bank`,
       admin_id: user.user_id,
@@ -189,7 +190,7 @@ export const freezeBankAccount = async (req: Request, res: Response) => {
       action: frozen ? 'freeze_account' : 'unfreeze_account',
       target_type: 'bank_account',
       target_id: id,
-      reason: `${frozen ? 'Froze' : 'Unfroze'} financial account ${acc.account_name} (${acc.account_number})`,
+      reason: `${frozen ? 'Froze' : 'Unfroze'} financial account ${acc.account_name} (${masked})`,
       timestamp: new Date().toISOString()
     });
 

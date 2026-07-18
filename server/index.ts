@@ -128,7 +128,7 @@ export async function startServer() {
     });
   }
 
-  const PORT = process.env.PORT ? parseInt(String(process.env.PORT), 10) : 3000;
+  const PORT = 3000;
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[SYS-SECURE] [Velum V3] Premium Secure Engine active. Listening on port: ${PORT}`);
   });

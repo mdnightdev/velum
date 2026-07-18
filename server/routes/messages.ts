@@ -16,7 +16,7 @@ messagesRouter.get('/rooms', authenticateUser, (req, res) => {
     // Add global lobby/lounges
     if (db.lounges) {
       for (const lounge of db.lounges) {
-        if (lounge.is_official === 1) {
+        if (lounge.is_official === 1 && !lounge.parent_lounge_id) {
           roomsList.push({
             room_id: lounge.lounge_id,
             name: lounge.name,
@@ -26,25 +26,20 @@ messagesRouter.get('/rooms', authenticateUser, (req, res) => {
       }
     }
     
-    // Add lounge rooms
-    if (db.lounge_rooms) {
-      for (const lr of db.lounge_rooms) {
-        roomsList.push({
-          room_id: lr.id,
-          name: lr.name,
-          permissions: { isPrivate: !!lr.is_locked }
-        });
+    // Add sublounges as rooms
+    if (db.lounges) {
+      for (const lounge of db.lounges) {
+        if (lounge && lounge.parent_lounge_id) {
+          roomsList.push({
+            room_id: lounge.lounge_id,
+            name: lounge.name,
+            parent_lounge_id: lounge.parent_lounge_id,
+            permissions: { isPrivate: lounge.is_private === 1 || lounge.visibility === 'private' || lounge.is_locked === 1 }
+          });
+        }
       }
     }
     
-    // Fallback lobby if missing
-    if (!roomsList.find(r => r.room_id === 'velum_lounge')) {
-      roomsList.push({ room_id: 'velum_lounge', name: 'Velum Lounge', permissions: { isPrivate: false } });
-    }
-    // Fallback secops if missing
-    if (!roomsList.find(r => r.room_id === 'secops')) {
-      roomsList.push({ room_id: 'secops', name: 'Admins SecOps Lounge', permissions: { isPrivate: true } });
-    }
 
     res.json(roomsList);
   } catch (err: any) {
@@ -76,7 +71,7 @@ messagesRouter.get('/rooms/:roomId/messages', authenticateUser, (req, res) => {
           const isSenderAdmin = (user.role as string) === 'SUPPORT_ADMIN' || (user.role as string) === 'SYSTEM_ADMIN' || (user.role as string) === 'LOGIN_ADMIN' || (user.role as string) === 'ADMIN' || (user.role && (user.role as string).includes('ADMIN'));
           const isTargetAdmin = (target.role as string) === 'SUPPORT_ADMIN' || (target.role as string) === 'SYSTEM_ADMIN' || (target.role as string) === 'LOGIN_ADMIN' || (target.role as string) === 'ADMIN' || (target.role && (target.role as string).includes('ADMIN'));
           if (isTargetAdmin && !isSenderAdmin) {
-            return res.status(403).json({ error: 'Action Dev-Blocked: Enclave channels to administrators are restricted.' });
+            return res.status(403).json({ error: 'Admin messages are restricted.' });
           }
         }
       }
@@ -85,31 +80,33 @@ messagesRouter.get('/rooms/:roomId/messages', authenticateUser, (req, res) => {
     let resolvedLoungeId = 'unknown';
     let resolvedRoomId: string | undefined = roomId;
     
+    
     if (roomId && typeof roomId === 'string') {
       if (roomId.startsWith('dm_')) {
         resolvedLoungeId = 'dm';
       } else if (roomId === 'velum_lounge') {
         resolvedLoungeId = 'velum_lounge';
-        resolvedRoomId = undefined;
+        resolvedRoomId = 'velum_lounge';
       } else {
         const isLounge = db.lounges?.find(l => l.lounge_id === roomId);
         if (isLounge) {
-          resolvedLoungeId = roomId;
-          resolvedRoomId = undefined;
-        } else {
-          const isRoom = db.lounge_rooms?.find(r => r.id === roomId);
-          if (isRoom) {
-            resolvedLoungeId = isRoom.lounge_id;
-            if (isRoom.is_locked) {
+          if (isLounge.parent_lounge_id) {
+            resolvedLoungeId = isLounge.parent_lounge_id;
+            resolvedRoomId = roomId;
+            const isPrivate = isLounge.is_private === 1 || isLounge.visibility === 'private' || isLounge.is_locked === 1;
+            if (isPrivate) {
               const profile = db.profiles?.find(p => p.user_id === user.user_id);
-              const isCreator = String(isRoom.created_by) === String(user.user_id);
+              const isCreator = String(isLounge.creator_id || isLounge.owner_id || isLounge.owner_user_id) === String(user.user_id);
               const isSystemAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN';
-              const parentLounge = db.lounges?.find(l => l.lounge_id === isRoom.lounge_id);
-              const isLoungeOwner = parentLounge && String(parentLounge.owner_id) === String(user.user_id);
-              if (!isCreator && !isSystemAdmin && !isLoungeOwner && !profile?.joined_lounge_rooms?.includes(roomId)) {
+              const isMember = db.lounge_members?.some(m => m.lounge_id === roomId && String(m.user_id) === String(user.user_id) && m.status === 'active');
+              const joinedLegacy = profile?.joined_lounges?.includes(roomId);
+              if (!isCreator && !isSystemAdmin && !isMember && !joinedLegacy) {
                 return res.status(403).json({ error: 'Access denied.' });
               }
             }
+          } else {
+            resolvedLoungeId = roomId;
+            resolvedRoomId = undefined;
           }
         }
       }
@@ -124,7 +121,7 @@ messagesRouter.get('/rooms/:roomId/messages', authenticateUser, (req, res) => {
     const filtered = (db.messages || []).filter(msg => {
       if (!msg) return false;
       if (resolvedRoomId !== undefined) {
-        return msg.room_id === resolvedRoomId;
+        return msg.room_id === resolvedRoomId || (resolvedRoomId === 'velum_lounge' && msg.lounge_id === 'velum_lounge');
       }
       return msg.lounge_id === resolvedLoungeId && !msg.room_id;
     });
@@ -171,7 +168,7 @@ messagesRouter.post('/rooms/:roomId/messages', authenticateUser, (req, res) => {
           const isSenderAdmin = (user.role as string) === 'SUPPORT_ADMIN' || (user.role as string) === 'SYSTEM_ADMIN' || (user.role as string) === 'LOGIN_ADMIN' || (user.role as string) === 'ADMIN' || (user.role && (user.role as string).includes('ADMIN'));
           const isTargetAdmin = (target.role as string) === 'SUPPORT_ADMIN' || (target.role as string) === 'SYSTEM_ADMIN' || (target.role as string) === 'LOGIN_ADMIN' || (target.role as string) === 'ADMIN' || (target.role && (target.role as string).includes('ADMIN'));
           if (isTargetAdmin && !isSenderAdmin) {
-            return res.status(403).json({ error: 'Action Dev-Blocked: Enclave channels to administrators are read-only.' });
+            return res.status(403).json({ error: 'Admin messages are read-only.' });
           }
         }
       }
@@ -180,31 +177,33 @@ messagesRouter.post('/rooms/:roomId/messages', authenticateUser, (req, res) => {
     let resolvedLoungeId = 'unknown';
     let resolvedRoomId: string | undefined = roomId;
     
+    
     if (roomId && typeof roomId === 'string') {
       if (roomId.startsWith('dm_')) {
         resolvedLoungeId = 'dm';
       } else if (roomId === 'velum_lounge') {
         resolvedLoungeId = 'velum_lounge';
-        resolvedRoomId = undefined;
+        resolvedRoomId = 'velum_lounge';
       } else {
         const isLounge = db.lounges?.find(l => l.lounge_id === roomId);
         if (isLounge) {
-          resolvedLoungeId = roomId;
-          resolvedRoomId = undefined;
-        } else {
-          const isRoom = db.lounge_rooms?.find(r => r.id === roomId);
-          if (isRoom) {
-            resolvedLoungeId = isRoom.lounge_id;
-            if (isRoom.is_locked) {
+          if (isLounge.parent_lounge_id) {
+            resolvedLoungeId = isLounge.parent_lounge_id;
+            resolvedRoomId = roomId;
+            const isPrivate = isLounge.is_private === 1 || isLounge.visibility === 'private' || isLounge.is_locked === 1;
+            if (isPrivate) {
               const profile = db.profiles?.find(p => p.user_id === user.user_id);
-              const isCreator = String(isRoom.created_by) === String(user.user_id);
+              const isCreator = String(isLounge.creator_id || isLounge.owner_id || isLounge.owner_user_id) === String(user.user_id);
               const isSystemAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN';
-              const parentLounge = db.lounges?.find(l => l.lounge_id === isRoom.lounge_id);
-              const isLoungeOwner = parentLounge && String(parentLounge.owner_id) === String(user.user_id);
-              if (!isCreator && !isSystemAdmin && !isLoungeOwner && !profile?.joined_lounge_rooms?.includes(roomId)) {
+              const isMember = db.lounge_members?.some(m => m.lounge_id === roomId && String(m.user_id) === String(user.user_id) && m.status === 'active');
+              const joinedLegacy = profile?.joined_lounges?.includes(roomId);
+              if (!isCreator && !isSystemAdmin && !isMember && !joinedLegacy) {
                 return res.status(403).json({ error: 'Access denied.' });
               }
             }
+          } else {
+            resolvedLoungeId = roomId;
+            resolvedRoomId = undefined;
           }
         }
       }

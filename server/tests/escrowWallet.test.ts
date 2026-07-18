@@ -152,7 +152,7 @@ describe('Escrow & Wallet Ledger Integration Tests', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'Insufficient wallet ledger balance.'
+      error: 'Insufficient funds.'
     }));
   });
 
@@ -191,9 +191,11 @@ describe('Escrow & Wallet Ledger Integration Tests', () => {
     const sellerWallet = (db.user_wallets || []).find(w => w.user_id === 102);
     expect(sellerWallet?.balance_cents).toBe(9500);
 
-    expect(db.wallet_ledger_entries).toHaveLength(1);
+    expect(db.wallet_ledger_entries).toHaveLength(2);
     expect((db.wallet_ledger_entries || [])[0].entry_type).toBe('ESCROW_RELEASE');
-    expect((db.wallet_ledger_entries || [])[0].amount_cents).toBe(9500);
+    expect((db.wallet_ledger_entries || [])[0].amount_cents).toBe(10000);
+    expect((db.wallet_ledger_entries || [])[1].entry_type).toBe('PLATFORM_FEE');
+    expect((db.wallet_ledger_entries || [])[1].amount_cents).toBe(-500);
   });
 
   it('should successfully revert/refund escrow back to buyer', async () => {
@@ -403,7 +405,7 @@ describe('Escrow & Wallet Ledger Integration Tests', () => {
       expect(scanCheck?.result).toBe('FAIL');
     });
 
-    it('should set status PENDING_REVIEW if seller is not verified', async () => {
+    it('should auto-approve listing if seller is not verified and content is clean', async () => {
       const req = {
         body: { title: 'Standard Item', description: 'Clean description', price: 10 },
         user: { user_id: 101, username: 'buyer' } // buyer is not verified
@@ -420,14 +422,14 @@ describe('Escrow & Wallet Ledger Integration Tests', () => {
 
       await createListing(req, res);
 
-      expect(responseData.verification_status).toBe('PENDING_REVIEW');
+      expect(responseData.verification_status).toBe('APPROVED');
     });
 
     it('should prevent purchase of non-approved listing', async () => {
-      // Create a pending listing first
+      // Create a pending listing first by using a prohibited keyword
       const reqCreate = {
-        body: { title: 'Pending Store Listing', price: 15 },
-        user: { user_id: 101, username: 'buyer' } // Non-verified seller -> PENDING_REVIEW
+        body: { title: 'Pending Store Listing hack', price: 15 },
+        user: { user_id: 101, username: 'buyer' }
       } as any;
 
       let createdListing: any;
@@ -460,7 +462,7 @@ describe('Escrow & Wallet Ledger Integration Tests', () => {
       } as any;
 
       await createEscrow(reqBuy, resBuy);
-      expect(errorMsg).toContain('pending verification');
+      expect(errorMsg).toContain('under review');
     });
 
     it('should support multi-currency exchange with static rates and platform spread', async () => {

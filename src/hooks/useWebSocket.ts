@@ -215,8 +215,8 @@ export function useWebSocket({
       }
     };
 
-    ws.onclose = () => {
-      console.log('Socket closed.');
+    ws.onclose = (event) => {
+      console.log('Socket closed. Code: ', event.code, 'Reason: ', event.reason);
       handleCloseOrError();
     };
 
@@ -228,7 +228,20 @@ export function useWebSocket({
 
   const sendMessage = (text: string, burnSeconds: number | null, isEncrypted: boolean) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    const shouldEncrypt = activeRoomId !== 'velum_lounge';
+    const isOfficialChannel = [
+      'velum_lounge',
+      'general',
+      'off-topic',
+      'announcements',
+      'resources',
+      'introduce-yourself',
+      'events',
+      'media',
+      'voice-room',
+      'support',
+      'feedback'
+    ].includes(activeRoomId);
+    const shouldEncrypt = !isOfficialChannel;
     const finalContent = shouldEncrypt ? encryptMessage(text, activeRoomId) : text;
     wsRef.current.send(JSON.stringify({
       type: 'send_message',

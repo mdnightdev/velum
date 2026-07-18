@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { db, saveDb, ensureVelumSystemDM } from '../db.js';
 import { verifyArgon2id, hashArgon2id } from '../services/cryptoService.js';
-import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
+import { generateUlid, generateSecureSessionToken, generatePrefixedId } from '../utils/ulid.js';
 import { cleanIp, getIpGeoLocation, getIpGeoData, getCurrencyForCountryCode } from '../utils.js';
 import { Session, User } from '../../src/types.js';
 import { userRepository } from '../db/userRepository.js';
@@ -45,7 +45,7 @@ export function executePanicWipe() {
   db.recovery_events = [];
   db.suspicious_events = [];
   db.invites = [];
-  saveDb(true);
+  saveDb();
 }
 
 /**
@@ -64,7 +64,7 @@ export function createNewSession(
     return s;
   });
 
-  const sessionId = generateUlid();
+  const sessionId = generateSecureSessionToken();
   const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
   const SESSION_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -81,7 +81,7 @@ export function createNewSession(
   };
 
   db.sessions.push(newSession);
-  saveDb();
+  saveDb(true);
   return { sessionId, sessionRecord: newSession };
 }
 
@@ -217,8 +217,7 @@ export async function performUserRegistration(params: {
     first_seen: new Date().toISOString(),
     last_seen: new Date().toISOString()
   });
-  saveDb();
-
+  saveDb(true);
   return { userId, deviceId };
 }
 
@@ -341,7 +340,8 @@ export async function performUserLogin(params: {
   rateLimiterCache.delete(userRlKey);
   rateLimiterCache.delete(ipRlKey);
 
-  if (user.needs_reset || !user.salt) {
+  const isAdminRole = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
+  if ((user.needs_reset || !user.salt) && !isAdminRole) {
     return { status: 'NEEDS_MIGRATION', user };
   }
 
@@ -531,7 +531,7 @@ export async function performPermanentOtpRegistration(params: {
     status: 'trusted'
   });
 
-  const sessionId = generateUlid();
+  const sessionId = generateSecureSessionToken();
   const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
 
   const newSession: Session = {
@@ -582,6 +582,10 @@ export async function performUserMigration(params: {
   const user = userRepository.findById(parseInt(userId, 10));
   if (!user) {
     throw new Error('User context not found.');
+  }
+
+  if (user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN') {
+    throw new Error('FAIL: Administrative users are not permitted to use this migration flow.');
   }
 
   let formattedUsername = username.trim();
@@ -666,7 +670,7 @@ export async function performAdminActivation(params: {
   saveDb();
 
   const deviceId = `dev_admin_${Math.random().toString(36).substring(2, 8)}`;
-  const sessionId = generateUlid();
+  const sessionId = generateSecureSessionToken();
   const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
 
   const newSession: Session = {
@@ -707,7 +711,7 @@ export function performUserLogout(sessionId: string): void {
     }
     return s;
   });
-  saveDb();
+  saveDb(true);
 }
 
 export async function performUserPanic(params: {

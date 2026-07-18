@@ -14,19 +14,6 @@ import {
 import { decryptMessage } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 
-const SUBLOUNGES = [
-  { id: 'general', name: '# general', description: 'General discussions' },
-  { id: 'off-topic', name: '# off-topic', description: 'Chat about anything' },
-  { id: 'announcements', name: '# announcements', description: 'Official updates' },
-  { id: 'resources', name: '# resources', description: 'Useful links & resources' },
-  { id: 'introduce-yourself', name: '# introduce-yourself', description: 'Say hello to everyone' },
-  { id: 'events', name: '# events', description: 'Events & hangouts' },
-  { id: 'media', name: '# media', description: 'Share images & videos' },
-  { id: 'voice-room', name: '# voice room', description: 'Join the voice conversation' },
-  { id: 'support', name: '# support', description: 'Get help & support' },
-  { id: 'feedback', name: '# feedback', description: 'Share your feedback' },
-];
-
 interface AdminBroadcastsProps {
   adminRole: 'SUPPORT_ADMIN' | 'LOGIN_ADMIN' | 'CLI_ADMIN';
   user?: any;
@@ -49,6 +36,14 @@ export default function AdminBroadcasts({
   const [isVelumExpanded, setIsVelumExpanded] = useState(true);
   const [isPostingMsg, setIsPostingMsg] = useState(false);
   const [announcementsMobileView, setAnnouncementsMobileView] = useState<'list' | 'chat'>('list');
+
+  const dynamicSublounges = availableRooms.filter(
+    (r) => r.parent_lounge_id === 'velum_lounge'
+  ).map(r => ({
+    id: r.room_id,
+    name: r.name.startsWith('#') ? r.name : `# ${r.name}`,
+    description: r.description || ''
+  }));
 
   // Fetch functions
   const fetchChannelMessages = async (roomId: string) => {
@@ -134,7 +129,7 @@ export default function AdminBroadcasts({
   };
 
   const currentRoom = availableRooms.find((r) => r.room_id === selectedChannel);
-  const subRoom = SUBLOUNGES.find((s) => s.id === selectedChannel);
+  const subRoom = dynamicSublounges.find((s) => s.id === selectedChannel);
   const displayHeaderTitle = subRoom
     ? `Velum Lounge ${subRoom.name}`
     : currentRoom
@@ -181,7 +176,7 @@ export default function AdminBroadcasts({
                 }}
                 className={`w-full flex items-center justify-between p-3.5 text-left rounded-xl transition cursor-pointer select-none border ${
                   selectedChannel === 'velum_lounge' ||
-                  SUBLOUNGES.some((s) => s.id === selectedChannel)
+                  dynamicSublounges.some((s) => s.id === selectedChannel)
                     ? 'bg-accent-10 text-text-primary border-accent-40 shadow-[0_4px_12px_rgba(212,131,106,0.05)]'
                     : 'bg-transparent border-transparent hover:bg-text-primary-2 text-text-secondary'
                 }`}
@@ -190,7 +185,7 @@ export default function AdminBroadcasts({
                   <div
                     className={`p-2.5 rounded-xl ${
                       selectedChannel === 'velum_lounge' ||
-                      SUBLOUNGES.some((s) => s.id === selectedChannel)
+                      dynamicSublounges.some((s) => s.id === selectedChannel)
                         ? 'bg-accent-20 text-accent-hover'
                         : 'bg-text-primary-2 text-text-secondary'
                     } transition shrink-0`}
@@ -221,7 +216,7 @@ export default function AdminBroadcasts({
               {/* Sublounges list under Velum Lounge */}
               {isVelumExpanded && (
                 <div className="pl-6 pt-1.5 space-y-1 border-l border-white-5 ml-5">
-                  {SUBLOUNGES.map((sub) => (
+                  {dynamicSublounges.map((sub) => (
                     <button
                       key={sub.id}
                       type="button"
@@ -286,10 +281,9 @@ export default function AdminBroadcasts({
           <span className="text-[9px] font-mono font-black text-text-secondary uppercase tracking-widest block mb-4 border-b border-white-5 pb-2">
             // User Discussions
           </span>
-
           <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
             {availableRooms.filter(
-              (r) => r.room_id !== 'velum_lounge' && r.room_id !== 'secops' && !r.room_id.startsWith('dm_')
+              (r) => r.room_id !== 'velum_lounge' && r.room_id !== 'secops' && !r.room_id.startsWith('dm_') && !dynamicSublounges.some(s => s.id === r.room_id)
             ).length === 0 ? (
               <div className="text-center py-8 text-text-secondary font-mono text-[9px] uppercase leading-relaxed font-bold border border-dashed border-white-5 rounded-xl select-none">
                 // No user channels launched //
@@ -298,7 +292,7 @@ export default function AdminBroadcasts({
               availableRooms
                 .filter(
                   (r) =>
-                    r.room_id !== 'velum_lounge' && r.room_id !== 'secops' && !r.room_id.startsWith('dm_')
+                    r.room_id !== 'velum_lounge' && r.room_id !== 'secops' && !r.room_id.startsWith('dm_') && !dynamicSublounges.some(s => s.id === r.room_id)
                 )
                 .map((room) => {
                   const isPrivate = room.permissions?.isPrivate;

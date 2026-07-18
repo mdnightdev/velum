@@ -227,42 +227,6 @@ export const getLounge = async (req: Request, res: Response) => {
 };
 
 // GET sublounges for a parent lounge
-export const getSublounges = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const user = (req as any).user;
-    loadDb();
-    db.lounges = db.lounges || [];
-
-    const parent = db.lounges.find(l => l.lounge_id === id || l.id === id);
-    if (!parent) {
-      return res.status(404).json({ error: 'Parent lounge not found.' });
-    }
-
-    const sublounges = db.lounges.filter(l => l && l.parent_lounge_id === id && l.status !== 'deleted');
-
-    // Filter sublounges access rules (Section 15 minimal profile access for parent admins)
-    const filtered = sublounges.filter(sub => {
-      const isParentAdmin = db.lounge_members?.some(m => m.lounge_id === id && String(m.user_id) === String(user.user_id) && (m.role === 'admin' || m.role === 'owner'));
-      const isSubMember = db.lounge_members?.some(m => m.lounge_id === sub.lounge_id && String(m.user_id) === String(user.user_id) && m.status === 'active');
-      const isCreator = String(sub.creator_id || sub.owner_id || sub.owner_user_id) === String(user.user_id);
-      const isSystemAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN';
-
-      if (sub.type === 'private_sublounge' || sub.visibility === 'private') {
-        if (isSystemAdmin || isCreator || isSubMember) return true;
-        // Parent admin sees minimal card only (Section 15)
-        if (isParentAdmin) return true;
-        return false;
-      }
-      return true;
-    });
-
-    res.json(filtered);
-  } catch (err: any) {
-    console.error('Error fetching sublounges:', err);
-    res.status(500).json({ error: 'Failed to retrieve sublounges.' });
-  }
-};
 
 // POST create lounge
 export const createLounge = async (req: Request, res: Response) => {

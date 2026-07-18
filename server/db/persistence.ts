@@ -63,7 +63,7 @@ export function loadDb(force = false) {
                 }
                 return obj;
               } catch (decErr) {
-                console.error(`[SYS-SECURE] CRITICAL DECRYPTION FAILURE in ${tableName}:`, decErr);
+                console.error(`[DB] Decryption failure in ${tableName}:`, decErr);
                 setDecryptionErrorDetected(true);
                 return null;
               }
@@ -130,7 +130,7 @@ export function loadDb(force = false) {
             if (!tablesInDb.has(tableName)) return null;
             return conn.prepare(`SELECT * FROM ${tableName}`).all() as any[];
           } catch (err) {
-            console.warn(`[SYS-SECURE] Error loading structured table ${tableName}:`, err);
+            console.warn(`[DB] Error loading table ${tableName}:`, err);
             return null;
           }
         };
@@ -334,7 +334,7 @@ export function loadDb(force = false) {
 
         sqliteLoaded = true;
       } catch (err: any) {
-        console.error('[SYS-SECURE] Failed loading from SQLITE_FILE directly:', err.message || err);
+        console.error('[DB] Failed loading from SQLITE_FILE:', err.message || err);
       } finally {
         if (conn) {
           try {
@@ -357,7 +357,7 @@ export function loadDb(force = false) {
                 try {
                   return JSON.parse(decryptData(r.payload));
                 } catch (decErr) {
-                  console.error(`[SYS-SECURE] CRITICAL DECRYPTION FAILURE in legacy table ${tableName}:`, decErr);
+                  console.error(`[DB] Decryption failure in legacy table ${tableName}:`, decErr);
                   setDecryptionErrorDetected(true);
                   return null;
                 }
@@ -388,7 +388,7 @@ export function loadDb(force = false) {
             sqliteLoaded = true;
             executeSaveDb();
           } catch (err) {
-            console.error('[SYS-SECURE] Extraction failed from DB_FILE SQLite format:', err);
+            console.error('[DB] Extraction failed from DB_FILE SQLite format:', err);
           }
         } else {
           // It's raw JSON
@@ -401,7 +401,7 @@ export function loadDb(force = false) {
             sqliteLoaded = true;
             executeSaveDb(); // This will save directly to SQLite SQLITE_FILE
           } catch (err: any) {
-            console.warn('[SYS-SECURE] Local state DB file cannot be decrypted or parsed. Initiating clean state recovery:', err.message || err);
+            console.warn('[DB] Local state DB file cannot be decrypted or parsed. Initiating clean state recovery:', err.message || err);
             try {
               const backupPath = `${DB_FILE}.corrupt_${Date.now()}`;
               fs.renameSync(DB_FILE, backupPath);
@@ -505,7 +505,7 @@ export function loadDb(force = false) {
       rebuildBlocksCache();
     } catch (_) {}
   } catch (error: any) {
-    console.error('[SYS-SECURE] Failed loading state database. Falling back to fresh seed:', error);
+    console.error('[DB] Failed loading state database. Falling back to fresh seed:', error);
     setDb({ ...defaultDb });
     ensureSeededIntegrity();
     setupAuditLogProxy();
@@ -542,7 +542,7 @@ export function saveDb(force = false) {
 export function executeSaveDb() {
   if (isSaving) return;
   if (decryptionErrorDetected) {
-    console.error('[SYS-SECURE] CRITICAL: Database write aborted. Decryption errors were detected during load, saving would cause data purge.');
+    console.error('[DB] Database write aborted. Decryption errors were detected during load.');
     return;
   }
   
@@ -562,26 +562,41 @@ export function executeSaveDb() {
             return;
           }
           conn.exec('BEGIN TRANSACTION');
-          conn.exec(`DELETE FROM ${tableName}`);
+          
           if (rows && rows.length > 0) {
-            const stmt = conn.prepare(`INSERT INTO ${tableName} (id, payload) VALUES (?, ?)`);
+            const idsToKeep: string[] = [];
             for (const row of rows) {
-              const rawId = row[idField];
-              const id = (rawId !== undefined && rawId !== null && rawId !== '') ? String(rawId) : generateUlid();
-              
-              if (row[idField] === undefined || row[idField] === null || row[idField] === '') {
-                row[idField] = id;
+              let rawId = row[idField];
+              if (rawId === undefined || rawId === null || rawId === '') {
+                rawId = generateUlid();
+                row[idField] = rawId;
               }
+              idsToKeep.push(String(rawId));
+            }
 
+            if (idsToKeep.length > 0) {
+              const placeholders = idsToKeep.map(() => '?').join(',');
+              const deleteStmt = conn.prepare(`DELETE FROM ${tableName} WHERE id NOT IN (${placeholders})`);
+              deleteStmt.run(...idsToKeep);
+            } else {
+              conn.exec(`DELETE FROM ${tableName}`);
+            }
+
+            const stmt = conn.prepare(`INSERT OR REPLACE INTO ${tableName} (id, payload) VALUES (?, ?)`);
+            for (const row of rows) {
+              const id = String(row[idField]);
               const encryptedPayload = encryptData(JSON.stringify(row));
               stmt.run(id, encryptedPayload);
             }
+          } else {
+            conn.exec(`DELETE FROM ${tableName}`);
           }
+          
           conn.exec('COMMIT');
           lastSavedTableJson[tableName] = currentJson;
         } catch (err) {
           try { conn.exec('ROLLBACK'); } catch (_) {}
-          console.error(`[SYS-SECURE] Save Table ${tableName} SQLite failed:`, err);
+          console.error(`[DB] Save table ${tableName} failed:`, err);
         }
       };
       
@@ -934,14 +949,14 @@ export function executeSaveDb() {
       const encryptedData = encryptData(plainJson);
       fs.writeFileSync(DB_FILE, encryptedData, 'utf8');
       try {
-        fs.chmodSync(DB_FILE, 0o777);
+        fs.chmodSync(DB_FILE, 0o600);
       } catch (_) {}
     } else {
       const plainJson = JSON.stringify(db);
       const encryptedData = encryptData(plainJson);
       fs.writeFileSync(DB_FILE, encryptedData, 'utf8');
       try {
-        fs.chmodSync(DB_FILE, 0o777);
+        fs.chmodSync(DB_FILE, 0o600);
       } catch (_) {}
     }
     

@@ -89,9 +89,11 @@ export function ChatHeader({
           {/* Title & Status */}
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-white">{chatTitle}</span>
-            <span className="text-[11px] text-text-secondary">
-              {activeChatPeer ? formatLastSeen(peerPresence) : `${conversationMessages.length} Messages`}
-            </span>
+            {activeChatPeer && (
+              <span className="text-[11px] text-text-secondary">
+                {formatLastSeen(peerPresence)}
+              </span>
+            )}
           </div>
         </div>
       </div>

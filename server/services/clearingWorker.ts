@@ -39,7 +39,6 @@ export async function processEscrowClearingWorker(): Promise<void> {
         continue;
       }
 
-      // Execute automated release by invoking the shared release service
       const { processReleaseEscrow } = await import('./marketplaceService.js');
       const res = await processReleaseEscrow(esc.transaction_id, 999, true);
 
@@ -60,7 +59,7 @@ export async function processEscrowClearingWorker(): Promise<void> {
 
     if (releasedCount > 0) {
       console.log(`[SYS-SECURE] Escrow clearing worker released ${releasedCount} escrow(s).`);
-      saveDb(true);
+      saveDb();
     }
   } catch (error) {
     console.error('[SYS-SECURE] Error in escrow clearing worker:', error);

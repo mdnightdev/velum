@@ -8,14 +8,14 @@ export interface CommandMeta {
 export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
   '/users': {
     list: {
-      desc: 'List registered operatives',
+      desc: 'List registered users',
       risk: 'LOW',
       flags: {
-        '--status <status>': 'Filter users by status (active, suspended, quarantined, deleted)'
+        '--status <status>': 'Filter users by status (active, suspended, restricted, deleted)'
       }
     },
     cat: {
-      desc: 'View dossier profile details of a user',
+      desc: 'View user profile details',
       risk: 'LOW',
       args: ['<uid/username>']
     },
@@ -76,7 +76,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       args: ['<uid/username>']
     },
     status: {
-      desc: 'Query active containment, mute, or jail status',
+      desc: 'Query active restriction, mute, or jail status',
       risk: 'LOW',
       args: ['<uid/username>']
     },
@@ -112,15 +112,15 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       args: ['<uid/username>']
     },
     jail: {
-      desc: 'Quarantine user to sandboxed channels',
+      desc: 'Restrict user to limited channels',
       risk: 'MEDIUM',
       args: ['<uid/username>'],
       flags: {
-        '--reason <reason>': 'Reason for jail quarantine'
+        '--reason <reason>': 'Reason for restriction'
       }
     },
     unjail: {
-      desc: 'Lift quarantined jail status from a user',
+      desc: 'Remove restricted status from a user',
       risk: 'MEDIUM',
       args: ['<uid/username>']
     }
@@ -215,7 +215,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       args: ['<transaction_id>']
     },
     seize: {
-      desc: 'Seize escrowed funds directly to sovereign treasury 999',
+      desc: 'Seize escrowed funds to platform account 999',
       risk: 'CRITICAL',
       args: ['<transaction_id>']
     }
@@ -293,7 +293,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       risk: 'HIGH'
     }
   },
-  '/banks': {
+  '/bank': {
     bankau: {
       desc: 'Audit centralized liquidity, deposits, and withdrawal delta',
       risk: 'LOW'
@@ -307,7 +307,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       risk: 'LOW'
     },
     staff: {
-      desc: 'List all operatives carrying bank admin roles',
+      desc: 'List all users carrying bank admin roles',
       risk: 'LOW'
     },
     wire: {
@@ -316,7 +316,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       args: ['<from_account>', '<to_account>', '<cents>']
     },
     fundc: {
-      desc: 'Fund central bank reserve account from sovereign assets',
+      desc: 'Fund central bank reserve account from platform assets',
       risk: 'CRITICAL',
       args: ['<cents>', '<description>']
     },
@@ -339,6 +339,26 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       desc: 'Manually adjust account balance with compensating ledger entry',
       risk: 'CRITICAL',
       args: ['<account_id>', '<amount_cents>', '<reason>']
+    }
+  },
+  '/cards': {
+    cards: {
+      desc: 'Show all available cards in Velum',
+      risk: 'LOW'
+    },
+    cardad: {
+      desc: 'Set the credit limit for a credit card',
+      risk: 'HIGH',
+      args: ['<card_or_token>', '<amount_cents>']
+    },
+    cardl: {
+      desc: 'Populate every credit card holder name and balance',
+      risk: 'LOW'
+    },
+    cardu: {
+      desc: 'Promote a specific credit limit for a credit card',
+      risk: 'HIGH',
+      args: ['<card_or_token>', '<amount_cents>']
     }
   },
   '/audits': {
@@ -397,7 +417,7 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       args: ['<uid/username>']
     },
     seize: {
-      desc: 'Transfer all user assets to treasury 999 and purge account',
+      desc: 'Transfer all user assets to platform account 999 and purge account',
       risk: 'CRITICAL',
       args: ['<uid/username>'],
       flags: {

@@ -31,8 +31,8 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
 
   const handleAddSku = () => {
     setSkus([...skus, {
-      attribute_name: 'license_tier',
-      attribute_value: 'enterprise_unlimited',
+      attribute_name: '',
+      attribute_value: '',
       additional_cost: '0.00',
       inventory_count: '100',
       file_payload_path: ''
@@ -240,23 +240,25 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Attribute (e.g. license_tier)</label>
+                      <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Attribute (e.g. License Type)</label>
                       <input
                         type="text"
                         required
                         value={sku.attribute_name}
                         onChange={(e) => handleSkuChange(index, 'attribute_name', e.target.value)}
-                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                        placeholder="e.g. License Type"
+                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none placeholder-text-secondary/50"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Value (e.g. enterprise)</label>
+                      <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Value (e.g. Enterprise)</label>
                       <input
                         type="text"
                         required
                         value={sku.attribute_value}
                         onChange={(e) => handleSkuChange(index, 'attribute_value', e.target.value)}
-                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                        placeholder="e.g. Enterprise"
+                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none placeholder-text-secondary/50"
                       />
                     </div>
                   </div>
@@ -270,7 +272,8 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
                         required
                         value={sku.additional_cost}
                         onChange={(e) => handleSkuChange(index, 'additional_cost', e.target.value)}
-                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                        placeholder="0.00"
+                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none placeholder-text-secondary/50"
                       />
                     </div>
                     <div className="space-y-1">
@@ -280,18 +283,20 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
                         required
                         value={sku.inventory_count}
                         onChange={(e) => handleSkuChange(index, 'inventory_count', e.target.value)}
-                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                        placeholder="100"
+                        className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none placeholder-text-secondary/50"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Secure File Payload Path (Optional)</label>
+                    <label className="text-[8px] uppercase tracking-wider font-mono text-text-secondary">Product File Path / URL (Optional)</label>
                     <input
                       type="text"
                       value={sku.file_payload_path}
                       onChange={(e) => handleSkuChange(index, 'file_payload_path', e.target.value)}
-                      className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                      placeholder="e.g. /files/package.zip"
+                      className="w-full bg-black/50 border border-white-5 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none placeholder-text-secondary/50"
                     />
                   </div>
                 </div>

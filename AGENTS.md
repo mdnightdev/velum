@@ -30,6 +30,12 @@ Once a trigger is present, implement the requested change immediately. Do not as
 
 ## IV. Execution Workflow
 
+### Planning & Brainstorming Protocol
+* **Brainstorming/Planning Phase:** A conversational stage focusing on analysis, design decisions, and question-answer discovery. No production codebase files may be modified during this stage. Once agreement or satisfaction is reached on any point, the agent must document the agreed details in a dedicated, newly created temporary planning file named `/PLANNING.md` to persist the specific state and context.
+* **End Phase & Implementation Sequencing:** When the brainstorming concludes, the agent must organize the agreed items into structured implementation phases (e.g., Phase 1, Phase 2) within `/PLANNING.md`.
+* **Execution Awaiting Authorization:** The agent must halt immediately and wait for an explicit user command specifying the target phase or a general execution trigger (e.g., `start working`, `implement phase 1`, `execute plan`) before starting any modification to production code files.
+* **Reconciliation and Deletion:** Traditional standalone triggers and sequential continuation commands (`proceed`, `next`, `execute all`) remain fully in effect. Upon successful completion, testing, and reconciliation of all planned phases, `/PLANNING.md` must be deleted entirely to maintain a clean workspace.
+
 ### Multi-Step Tasks
 If a request contains multiple independent steps or touches several architectural boundaries:
 1. Propose a concise, ordered plan of the steps.
@@ -44,7 +50,7 @@ After you deliver one step and stop, the user will issue a continuation command:
 **Action Bias:** Once a step is unlocked by a trigger, implement it fully. Do not re-confirm individual sub-actions within that step.
 
 ### Execution Boundaries
-* **During analysis / planning** (before a trigger): You may never run build scripts, invoke native binaries, or touch the filesystem.
+* **During analysis / planning** (before a trigger): You may never run build scripts, invoke native binaries, or touch the codebase filesystem. You are allowed to create or edit the `/PLANNING.md` file to track details.
 * **After trigger authorization:** You may run build, lint, type-check, and unit/integration test commands required to verify your changes.
 * **Destructive operations** (database migrations, deployment scripts, data-mutating CLI commands) require a separate explicit permission, even after a trigger.
 
@@ -71,6 +77,8 @@ After you deliver one step and stop, the user will issue a continuation command:
 * **Clarity Over Decoration:** Every screen must answer: *Where am I? What can I do? What is happening?* Prioritize functional purpose over visual noise.
 * **Anti-Bloat:** Do not populate screens with mock telemetry, unnecessary cards, or generic HTML dropdowns. Do not auto-inject sub-headers or description fields into list cards unless explicitly requested.
 * **No UI Placeholders:** Never expose placeholder text, dummy strings, or explanatory pseudo-labels in application forms.
+* **NO REDUNDANT SECURITY/TECH LARPING JARGON:** YOU ARE STRICTLY FORBIDDEN FROM SNEAKING "SECURE", "NODES", "DAEMONS", "CRYPTOGRAPHIC", "VAULT", "ISOLATED", OR SIMILAR TECH-LARPING JARGON INTO THE USER-FACING FRONTEND LABELS, BUTTONS, DRAWERS, OR DESCRIPTIONS. ALL FRONTEND CONTEXTS, TITLES, ALERTS, CONFIRMATIONS, AND LABELS MUST USE HUMBLE, SIMPLE, LITERAL, HUMAN-READABLE WORDS.
+* **NO TINY GREY SUBHEADINGS OR SYSTEM SUB-CONTEXTS:** DO NOT CLUTTER THE SCREEN WITH DISTRACTING AUXILIARY GREY SUBHEADINGS, SYSTEM PATHS, STATS INDICATORS, OR SUB-TEXT STRINGS (E.G. "READY FOR SECURE ACQUISITION" IN THE CART, OR "VELUM NETWORK LAYER" IN HEADERS). ALL PAGES, DRAWERS, AND CARDS MUST HAVE POLISHED, COMPACT TYPOGRAPHY AND NEGATIVE SPACE WITH NO TECH-LARP NOISE.
 * **Layout Integrity:** When removing an element, adjust surrounding padding and margins to maintain a tight, polished layout.
 * **Forbidden Aesthetic:** No neon cyberpunk, RGB glow, or hacker-themed visuals.
 

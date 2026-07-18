@@ -15,6 +15,7 @@ import {
   getListingDiscussions, 
   getEscrows, 
   createEscrow, 
+  batchCartCheckout,
   testSandboxEscrow, 
   releaseEscrow, 
   revertEscrow,
@@ -51,6 +52,7 @@ marketplaceRouter.get('/marketplace/listings/:listingId/discussions', authentica
 // PILLAR F: Secure Escrow & Sandboxed Execution
 marketplaceRouter.get('/marketplace/escrows', authenticateUser, getEscrows);
 marketplaceRouter.post('/marketplace/escrows', authenticateUser, createEscrow);
+marketplaceRouter.post('/marketplace/cart/checkout', authenticateUser, batchCartCheckout);
 marketplaceRouter.post('/marketplace/escrows/:transactionId/test-sandbox', authenticateUser, testSandboxEscrow);
 marketplaceRouter.post('/marketplace/escrows/:transactionId/release', authenticateUser, releaseEscrow);
 marketplaceRouter.post('/marketplace/escrows/:transactionId/revert', authenticateUser, revertEscrow);
