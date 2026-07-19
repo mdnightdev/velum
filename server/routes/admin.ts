@@ -3,7 +3,6 @@ import { authenticateAdmin } from '../middleware.js';
 import { 
   getVerifications,
   reviewVerification,
-  broadcastMessage, 
   getTickets, 
   replyTicket, 
   deleteTicket, 
@@ -28,9 +27,6 @@ import {
 export const adminRouter = express.Router();
 adminRouter.get('/admin/verifications', authenticateAdmin, getVerifications);
 adminRouter.post('/admin/verifications/:listingId/review', authenticateAdmin, reviewVerification);
-
-
-adminRouter.post('/admin/broadcast', authenticateAdmin, broadcastMessage);
 adminRouter.get('/admin/tickets', authenticateAdmin, getTickets);
 adminRouter.post('/admin/tickets/:ticket_id/reply', authenticateAdmin, replyTicket);
 adminRouter.get('/admin/reports', authenticateAdmin, getReports);

@@ -694,7 +694,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                     {props.loungeName}
                   </span>
                   <div className="flex items-center gap-1">
-                    {props.loungeId !== 'velum_lounge' && props.loungeId !== 'secops' && isParentAdmin && (
+                    {isParentAdmin && (
                       <button
                         onClick={() => setShowManageModal(true)}
                         className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer shrink-0"
@@ -703,7 +703,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                         <Settings className="w-4 h-4" />
                       </button>
                     )}
-                    {props.loungeId !== 'velum_lounge' && props.loungeId !== 'secops' && (
+                    {
                       <button
                         onClick={() => {
                           setStatusMessage('');
@@ -714,15 +714,14 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                       >
                         <Plus className="w-4 h-4" />
                       </button>
-                    )}
+                    }
                   </div>
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto">
                 {renderRoomsList()}
               </div>
-              {/* Dedicated Invite Code Display Card (Section 16) */}
-              {props.loungeId !== 'velum_lounge' && loungeDetails?.invite_code && (
+              {loungeDetails?.invite_code && (
                 <div className="p-4 border-t border-white-5 bg-transparent">
                   <div className="p-3 bg-velum-800 border border-white-5 rounded-xl flex flex-col gap-1.5 shadow-lg shadow-black/20">
                     <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary select-none">Lounge Invite</div>
@@ -823,7 +822,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               </h1>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {props.loungeId !== 'velum_lounge' && props.loungeId !== 'secops' && isParentAdmin && (
+              {isParentAdmin && (
                 <button
                   onClick={() => setShowManageModal(true)}
                   className="p-2.5 bg-white-5 border border-white-5 hover:bg-white-10 text-text-secondary hover:text-white rounded-xl transition cursor-pointer"
@@ -832,7 +831,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                   <Settings className="w-4 h-4" />
                 </button>
               )}
-              {props.loungeId !== 'velum_lounge' && props.loungeId !== 'secops' && (
+              {
                 <button
                   onClick={() => {
                     setStatusMessage('');
@@ -843,7 +842,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 >
                   <Plus className="w-4 h-4" />
                 </button>
-              )}
+              }
             </div>
           </div>
         </div>

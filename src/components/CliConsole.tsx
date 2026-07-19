@@ -30,7 +30,7 @@ export default function CliConsole({ adminId, onLogout, onSwitchToGui }: CliCons
       displayName: '[Security] Login Administrator',
       role: 'LOGIN_ADMIN',
       roleDisplay: 'IAM Guard Service',
-      bio: "Purpose: Oversees authentication layers, multi-factor tokens, and account isolation events.\nPrivileges: Directory write-access and identity scope moderation.\nBehavior: Broadcasts secure authentication payloads and anomalies.\nAdministrative Contact: SecOps Identity & Access Management.",
+      bio: "Purpose: Oversees authentication layers, multi-factor tokens, and account isolation events.\nPrivileges: Directory write-access and identity scope moderation.\nBehavior: Broadcasts secure authentication payloads and anomalies.\nAdministrative Contact: Security Operations Identity & Access Management.",
       avatar: null,
       bubbleColor: 'bg-accent-secondary-10 border-white-5',
       textColor: 'text-white',

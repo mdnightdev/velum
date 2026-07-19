@@ -37,7 +37,7 @@ export async function validateCredentials(
  * Execute standard SQL WAL cascade purging for panic triggers
  */
 export function executePanicWipe() {
-  db.messages = (db.messages || []).filter(m => m.room_id === 'velum_lounge');
+  db.messages = [];
   db.lounges = [];
   db.market_listings = [];
   db.escrow_transactions = [];

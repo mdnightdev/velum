@@ -29,17 +29,110 @@ export const ROLE_PERMISSIONS: Record<string, number> = {
 };
 
 // Centralized permission check function (Authority Model Axis 1 & 2)
-export const can = (actor: any, action: number, resource: any): boolean => {
-  // Axis 2 — Platform authority: cli_admin or login_admin short-circuits everything
-  if (actor.role === 'CLI_ADMIN' || actor.role === 'LOGIN_ADMIN') {
+// Visibility helper mapping Discord-style system/user community permissions
+export const isLoungeVisible = (lounge: any, user: any): boolean => {
+  if (!lounge || lounge.status === 'deleted') return false;
+
+  const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
+  const isCreator = String(lounge.creator_id || lounge.owner_id || lounge.owner_user_id) === String(user.user_id);
+  const isMember = db.lounge_members?.some(m => m.lounge_id === lounge.lounge_id && String(m.user_id) === String(user.user_id) && m.status === 'active') || false;
+
+  // Official/System Lounges (all other official sublounges or the parent velum_lounge)
+  if (lounge.type === 'official' || lounge.is_official === 1 || lounge.is_system === 1) {
     return true;
   }
 
+  // Suspended/Archived check first
+  if (lounge.status === 'suspended' || lounge.status === 'archived') {
+    return isCreator || isAdmin;
+  }
+
+  // Creator/Member can always see their own lounges
+  if (isCreator || isMember) {
+    return true;
+  }
+
+  // Admins can see user-created lounges ONLY if there is a pending report
+  if (isAdmin) {
+    const hasPendingReport = (db.reports || []).some(r => {
+      if (r && r.status === 'pending') {
+        if (r.target_lounge_id === lounge.lounge_id) return true;
+        if (r.target_message_id) {
+          const msg = (db.messages || []).find(m => m && m.message_id === r.target_message_id);
+          return msg && msg.lounge_id === lounge.lounge_id;
+        }
+      }
+      return false;
+    });
+    return hasPendingReport;
+  }
+
+  // Regular users see public lounges
+  const isPrivateVisibility = lounge.visibility === 'private' || lounge.visibility === 'invite_only' || Number(lounge.is_private) === 1;
+  return !isPrivateVisibility;
+};
+
+// Centralized permission check function (Authority Model Axis 1 & 2)
+export const can = (actor: any, action: number, resource: any): boolean => {
   const loungeId = resource.lounge_id || resource.id;
   if (!loungeId) return false;
 
-  const parentLoungeId = resource.parent_lounge_id || null;
-  const isPrivateSublounge = resource.type === 'private_sublounge' || (parentLoungeId && (resource.visibility === 'private' || resource.is_private === 1));
+  // Find target lounge to evaluate general visibility
+  const lounge = db.lounges?.find(l => l && (l.lounge_id === loungeId || l.id === loungeId));
+  if (!lounge) return false;
+
+  // Guard: if lounge is not visible to actor, deny all actions
+  if (!isLoungeVisible(lounge, actor)) {
+    return false;
+  }
+
+  const isAdmin = actor.role === 'CLI_ADMIN' || actor.role === 'LOGIN_ADMIN' || actor.role === 'SUPPORT_ADMIN';
+
+  // #announcements (velum_announcements) write-protection: only admins can post/write messages
+  if ((loungeId === 'velum_announcements' || lounge.lounge_id === 'velum_announcements') && action === PERMISSIONS.SEND_MESSAGE) {
+    return isAdmin;
+  }
+
+  // Admins context
+  if (isAdmin) {
+    // Official channels are wide open to admins
+    const isOfficial = lounge.type === 'official' || lounge.is_official === 1 || lounge.is_system === 1;
+    if (isOfficial) {
+      return true;
+    }
+
+    // Member checks
+    const membership = db.lounge_members?.find(m => m.lounge_id === loungeId && String(m.user_id) === String(actor.user_id));
+    if (membership) {
+      if (membership.status === 'banned' || membership.status === 'kicked') return false;
+      const roleBitmask = ROLE_PERMISSIONS[membership.role] || 0;
+      return (roleBitmask & action) === action;
+    }
+
+    // Admin who is not a member: can only intervene if there is a pending report
+    const hasPendingReport = (db.reports || []).some(r => {
+      if (r && r.status === 'pending') {
+        if (r.target_lounge_id === loungeId) return true;
+        if (r.target_message_id) {
+          const msg = (db.messages || []).find(m => m && m.message_id === r.target_message_id);
+          return msg && msg.lounge_id === loungeId;
+        }
+      }
+      return false;
+    });
+
+    if (hasPendingReport) {
+      // Allow moderation-level interventions only
+      const allowedInterventions = PERMISSIONS.SEND_MESSAGE | PERMISSIONS.DELETE_MESSAGE | PERMISSIONS.MUTE_MEMBER | PERMISSIONS.KICK_MEMBER | PERMISSIONS.VIEW_MEMBERS;
+      return (allowedInterventions & action) === action;
+    }
+
+    return false;
+  }
+
+  // Normal users context
+  const parentLoungeId = lounge.parent_lounge_id || null;
+  const isPrivateSublounge = lounge.type === 'private_sublounge' || (parentLoungeId && (lounge.visibility === 'private' || lounge.is_private === 1));
 
   // Find membership
   const membership = db.lounge_members?.find(m => m.lounge_id === loungeId && String(m.user_id) === String(actor.user_id));
@@ -52,7 +145,7 @@ export const can = (actor: any, action: number, resource: any): boolean => {
   // Check role-based permission
   if (!membership) {
     // If not a member, check if it's a public lounge and action is SEND_MESSAGE or VIEW_MEMBERS
-    const isPublic = resource.visibility === 'public' && resource.status !== 'suspended' && resource.status !== 'deleted';
+    const isPublic = lounge.visibility === 'public' && lounge.status !== 'suspended' && lounge.status !== 'deleted';
     if (isPublic && (action === PERMISSIONS.SEND_MESSAGE || action === PERMISSIONS.VIEW_MEMBERS)) {
       return true;
     }
@@ -115,27 +208,7 @@ export const getLounges = async (req: Request, res: Response) => {
     let visible = db.lounges.filter(c => {
       if (!c) return false;
       if (c.parent_lounge_id) return false; // top-level only
-
-      const isCreator = String(c.creator_id || c.owner_id || c.owner_user_id) === String(user.user_id);
-      if (c.status === 'suspended' || c.status === 'archived' || c.status === 'deleted') {
-        if (!isCreator && !isAdmin) return false;
-      }
-
-      if (isAdmin) {
-        return true;
-      } else {
-        if (c.lounge_id === 'secops' || c.id === 'secops') return false;
-
-        const isPrivateVisibility = c.visibility === 'private' || c.visibility === 'invite_only' || Number(c.is_private) === 1;
-        if (isPrivateVisibility) {
-          const isMember = db.lounge_members?.some(m => m.lounge_id === c.lounge_id && String(m.user_id) === String(user.user_id) && m.status === 'active');
-          const profile = db.profiles?.find(p => String(p.user_id) === String(user.user_id));
-          const joinedLegacy = profile?.joined_lounges?.includes(c.lounge_id) || profile?.joined_lounges?.includes(c.id || '');
-          return !!isMember || !!joinedLegacy || isCreator;
-        }
-
-        return true;
-      }
+      return isLoungeVisible(c, user);
     });
 
     // Decorate and sort by pin preferences (Section 14)
@@ -177,12 +250,22 @@ export const getLounge = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Lounge not found.' });
     }
 
+    if (!isLoungeVisible(lounge, user)) {
+      const isPrivate = lounge.type === 'private_sublounge' || lounge.visibility === 'private' || lounge.is_private === 1;
+      const isParentAdmin = lounge.parent_lounge_id && db.lounge_members?.some(m => m.lounge_id === lounge.parent_lounge_id && String(m.user_id) === String(user.user_id) && (m.role === 'admin' || m.role === 'owner'));
+      if (isPrivate && isParentAdmin) {
+        // Allow fallback to minimal view
+      } else {
+        return res.status(403).json({ error: 'Access denied.' });
+      }
+    }
+
     // Check parent-admin minimal view constraint (Section 15)
     const isPrivate = lounge.type === 'private_sublounge' || lounge.visibility === 'private' || lounge.is_private === 1;
     if (isPrivate && lounge.parent_lounge_id) {
       const isSubMember = db.lounge_members?.some(m => m.lounge_id === lounge.lounge_id && String(m.user_id) === String(user.user_id) && m.status === 'active');
       const isCreator = String(lounge.owner_user_id || lounge.owner_id || lounge.creator_id) === String(user.user_id);
-      const isSystemAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN';
+      const isSystemAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
       
       const isParentAdmin = db.lounge_members?.some(m => m.lounge_id === lounge.parent_lounge_id && String(m.user_id) === String(user.user_id) && (m.role === 'admin' || m.role === 'owner'));
 
@@ -474,9 +557,22 @@ export const getSystemLounges = async (req: Request, res: Response) => {
 // GET user lounges
 export const getUserLounges = async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user;
     loadDb();
     db.lounges = db.lounges || [];
-    const userLounges = db.lounges.filter(l => l && Number(l.is_system) === 0 && l.type !== 'official' && l.status !== 'deleted');
+    db.lounge_members = db.lounge_members || [];
+
+    const memberLoungeIds = db.lounge_members
+      .filter(m => m && String(m.user_id) === String(user.user_id) && m.status === 'active')
+      .map(m => m.lounge_id);
+
+    const userLounges = db.lounges.filter(l => 
+      l && 
+      Number(l.is_system) === 0 && 
+      l.type !== 'official' && 
+      l.status !== 'deleted' &&
+      memberLoungeIds.includes(l.lounge_id)
+    );
     res.json(userLounges);
   } catch (err: any) {
     console.error('Error fetching user lounges:', err);
@@ -591,17 +687,16 @@ export const getRooms = async (req: Request, res: Response) => {
     const { loungeId } = req.params;
     const user = (req as any).user;
 
-    if (loungeId === 'secops') {
-      const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
-      if (!isAdmin) return res.status(403).json({ error: 'Access denied.' });
-    }
-
     loadDb();
     db.lounges = db.lounges || [];
 
     const parentLounge = db.lounges.find(l => l && l.lounge_id === loungeId);
     if (!parentLounge) {
       return res.status(404).json({ error: 'Parent lounge not found.' });
+    }
+
+    if (!isLoungeVisible(parentLounge, user)) {
+      return res.status(403).json({ error: 'Access denied.' });
     }
 
     let rooms = db.lounges
@@ -637,11 +732,6 @@ export const createRoom = async (req: Request, res: Response) => {
     const { name, is_locked } = req.body;
     const user = (req as any).user;
 
-    if (loungeId === 'secops') {
-      const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
-      if (!isAdmin) return res.status(403).json({ error: 'Access denied.' });
-    }
-
     if (!name) {
       return res.status(400).json({ error: 'Room name is required.' });
     }
@@ -652,6 +742,10 @@ export const createRoom = async (req: Request, res: Response) => {
     const parentLounge = db.lounges.find(l => l && l.lounge_id === loungeId);
     if (!parentLounge) {
       return res.status(404).json({ error: 'Parent lounge not found.' });
+    }
+
+    if (!isLoungeVisible(parentLounge, user) || !can(user, PERMISSIONS.MANAGE_SUBLOUNGES, parentLounge)) {
+      return res.status(403).json({ error: 'Access denied.' });
     }
 
     // Section 2: Max 10 sublounges per parent
@@ -868,12 +962,12 @@ export const getLoungeMembers = async (req: Request, res: Response) => {
     db.lounges = db.lounges || [];
 
     const lounge = db.lounges.find(l => l && (l.id === loungeId || l.lounge_id === loungeId));
-    if (!lounge && loungeId !== 'velum_lounge') {
+    if (!lounge) {
       return res.status(404).json({ error: 'Lounge not found.' });
     }
 
     // Section 2: Owner controlled hide member list
-    if (lounge && lounge.hide_member_list) {
+    if (lounge.hide_member_list) {
       const isActorAdmin = db.lounge_members?.some(m => m.lounge_id === loungeId && String(m.user_id) === String(actor.user_id) && (m.role === 'admin' || m.role === 'owner'));
       const isSystemAdmin = actor.role === 'CLI_ADMIN' || actor.role === 'LOGIN_ADMIN';
       if (!isActorAdmin && !isSystemAdmin) {
@@ -881,17 +975,11 @@ export const getLoungeMembers = async (req: Request, res: Response) => {
       }
     }
 
-    let loungeMembers = [];
-
-    if (loungeId === 'velum_lounge' || (lounge && lounge.parent_lounge_id === 'velum_lounge')) {
-      loungeMembers = db.users;
-    } else {
-      loungeMembers = db.users.filter(u => {
-        const isMember = db.lounge_members?.some(m => m.lounge_id === loungeId && m.user_id === u.user_id && m.status === 'active');
-        const legacyJoined = db.profiles.find(p => p && String(p.user_id) === String(u.user_id))?.joined_lounges?.includes(loungeId);
-        return isMember || legacyJoined || (lounge && String(u.user_id) === String(lounge.owner_id || lounge.owner_user_id));
-      });
-    }
+    const loungeMembers = db.users.filter(u => {
+      const isMember = db.lounge_members?.some(m => m.lounge_id === loungeId && m.user_id === u.user_id && m.status === 'active');
+      const legacyJoined = db.profiles.find(p => p && String(p.user_id) === String(u.user_id))?.joined_lounges?.includes(loungeId);
+      return isMember || legacyJoined || (lounge && String(u.user_id) === String(lounge.owner_id || lounge.owner_user_id));
+    });
 
     const membersData = loungeMembers.map(u => {
       const prof = db.profiles.find(p => p && String(p.user_id) === String(u.user_id));
@@ -900,9 +988,7 @@ export const getLoungeMembers = async (req: Request, res: Response) => {
         user_id: u.user_id,
         userId: u.user_id,
         username: u.username,
-        role: loungeId === 'velum_lounge'
-          ? (u.user_id === 1 || u.user_id === 2 ? 'owner' : (u.role === 'SUPPORT_ADMIN' ? 'moderator' : 'member'))
-          : (membership?.role || u.role || 'member'),
+        role: membership?.role || u.role || 'member',
         status: u.status,
         last_seen_at: u.last_seen_at || null,
         displayName: prof?.displayName || u.username,

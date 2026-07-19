@@ -99,6 +99,7 @@ export function registerBroadcastToRoomCallback(cb: (roomId: string, object: any
 
 
 export function ensureSeededIntegrity() {
+  let mutated = false;
   if (!db) db = { ...defaultDb };
   if (!db.users) db.users = [];
   if (!db.profiles) db.profiles = [];
@@ -130,107 +131,18 @@ export function ensureSeededIntegrity() {
   if (!db.user_lounge_preferences) db.user_lounge_preferences = [];
   if (!db.lounge_audit_logs) db.lounge_audit_logs = [];
   if (!db.system_audit_logs) db.system_audit_logs = [];
-  if (!db.lounges || db.lounges.length === 0) {
-    db.lounges = [
-      {
-        lounge_id: 'velum_lounge',
-        name: 'Velum Lounge',
-        description: 'System default lounge',
-        owner_id: '2',
-        created_at: Date.now(),
-        is_private: 0,
-        is_official: 1,
-        last_message_at: Date.now(),
-        invite_code: 'VELUM1',
-        id: 'velum_lounge',
-        slug: 'velum-lounge',
-        creator_id: '2',
-        parent_lounge_id: null,
-        updated_at: Date.now(),
-        is_system: 1
-      },
-      {
-        lounge_id: 'secops',
-        name: 'SecOps Executive Coordinates',
-        description: 'Private administration lounge',
-        owner_id: '2',
-        created_at: Date.now(),
-        is_private: 1,
-        is_official: 1,
-        last_message_at: Date.now(),
-        invite_code: 'SECOPS',
-        id: 'secops',
-        slug: 'secops',
-        creator_id: '2',
-        parent_lounge_id: null,
-        updated_at: Date.now(),
-        is_system: 0
-      }
-    ];
-  } else {
-    const hasVelum = db.lounges.some(l => l && l.lounge_id === 'velum_lounge');
-    if (!hasVelum) {
-      db.lounges.push({
-        lounge_id: 'velum_lounge',
-        name: 'Velum Lounge',
-        description: 'System default lounge',
-        owner_id: '2',
-        created_at: Date.now(),
-        is_private: 0,
-        is_official: 1,
-        last_message_at: Date.now(),
-        invite_code: 'VELUM1',
-        id: 'velum_lounge',
-        slug: 'velum-lounge',
-        creator_id: '2',
-        parent_lounge_id: null,
-        updated_at: Date.now(),
-        is_system: 1
-      });
-    }
-  }
+  if (!db.lounges) db.lounges = [];
 
-  let mutated = false;
-  const defaultSublounges = [
-    { id: 'announcements', name: 'Announcements', desc: 'Official system announcements' },
-    { id: 'general', name: 'General', desc: 'General discussion for all users' },
-    { id: 'offtopic', name: 'Off Topic', desc: 'Casual chat and off-topic discussions' },
-    { id: 'support', name: 'Support', desc: 'Technical and community support' },
-    { id: 'marketplace', name: 'Marketplace', desc: 'Trading and listing discussion' },
-    { id: 'trading', name: 'Trading Desk', desc: 'Escrow and transaction coordinates' },
-    { id: 'alerts', name: 'Security Alerts', desc: 'Critical system and security alerts' },
-    { id: 'operations', name: 'Operations', desc: 'System operational feeds' },
-    { id: 'sandbox', name: 'Sandbox', desc: 'Platform sandbox feedback' },
-    { id: 'executives', name: 'Executives', desc: 'System staff coordination' }
-  ];
-
-  db.lounges = db.lounges || [];
-  for (const sub of defaultSublounges) {
-    const subLoungeId = `velum_${sub.id}`;
-    const hasSub = db.lounges.some(l => l && l.lounge_id === subLoungeId);
-    if (!hasSub) {
-      db.lounges.push({
-        lounge_id: subLoungeId,
-        name: sub.name,
-        description: sub.desc,
-        owner_id: '2',
-        created_at: Date.now(),
-        is_private: 0,
-        is_official: 1,
-        last_message_at: Date.now(),
-        invite_code: `VELUM_${sub.id.toUpperCase()}`,
-        id: subLoungeId,
-        slug: `velum-${sub.id}`,
-        creator_id: '2',
-        parent_lounge_id: 'velum_lounge',
-        updated_at: Date.now(),
-        is_system: 1,
-        visibility: 'public',
-        status: 'active',
-        type: 'official'
-      });
-      mutated = true;
-    }
+  if (db.lounges) {
+    db.lounges = db.lounges.filter(l => 
+      l && 
+      l.lounge_id !== 'velum_lounge' && 
+      l.id !== 'velum_lounge' && 
+      !l.lounge_id.startsWith('velum_') && 
+      !l.id.startsWith('velum_') && 
+      l.lounge_id !== 'secops' && 
+      l.id !== 'secops'
+    );
   }
 
   if (!db.market_listings) db.market_listings = [];

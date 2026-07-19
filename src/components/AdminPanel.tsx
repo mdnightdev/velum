@@ -16,7 +16,6 @@ import AdminOverview from './Admin/AdminOverview';
 import AdminUsers from './Admin/AdminUsers';
 import AdminTickets from './Admin/AdminTickets';
 import AdminReports from './Admin/AdminReports';
-import AdminBroadcasts from './Admin/AdminBroadcasts';
 import AdminSystem from './Admin/AdminSystem';
 import AdminBank from './Admin/AdminBank';
 import AdminProfile from './Admin/AdminProfile';
@@ -267,7 +266,6 @@ export default function AdminPanel({
     { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'SUPPORT_ADMIN'] },
     { id: 'tickets', label: 'Tickets', icon: <HelpCircle className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'reports', label: 'Reports', icon: <FileText className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
-    { id: 'announcements', label: 'Broadcasts', icon: <Megaphone className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'moderation', label: 'Sanctions', icon: <Ban className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'verifications', label: 'Verifications', icon: <ShieldCheck className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'CLI_ADMIN'] },
   ];
@@ -516,15 +514,6 @@ export default function AdminPanel({
                 user={user}
                 adminFetch={adminFetch}
                 fetchData={fetchData}
-              />
-            )}
-
-            {activeTab === 'announcements' && (
-              <AdminBroadcasts
-                adminRole={adminRole}
-                user={user}
-                onLogout={onLogout}
-                adminFetch={adminFetch}
               />
             )}
 
