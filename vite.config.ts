@@ -3,9 +3,10 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { visualizer } from "rollup-plugin-visualizer";
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 export default defineConfig({
-  plugins: [react(),visualizer({ open: true })
-  , tailwindcss()],
+  plugins: [react(), visualizer({ open: true }), tailwindcss(), cloudflare()],
   server: {
     port: 3000,
     strictPort: true,
@@ -13,9 +14,6 @@ export default defineConfig({
     hmr: process.env.DISABLE_HMR !== 'true',
     // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
     watch: process.env.DISABLE_HMR === 'true' ? null : {},
-  },
-  test: {
-    testTimeout: 20000,
   },
   resolve: {
     alias: {
