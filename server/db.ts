@@ -207,7 +207,7 @@ export function generateLoginNonce(): string {
     const fallback = crypto.randomBytes(32).toString('hex');
     ephemeralNonceCache.add(fallback);
     ephemeralNonceTimes.set(fallback, Date.now());
-    writeServerLog('[SYS-SECURE] [NONCE-FALLBACK] SQLite unavailable, generated ephemeral nonce.');
+    writeServerLog('[DB] SQLite unavailable, using ephemeral nonce.');
     return fallback;
   }
   try {
@@ -216,13 +216,13 @@ export function generateLoginNonce(): string {
     
     const nonce = crypto.randomBytes(32).toString('hex');
     conn.prepare('INSERT INTO login_nonces (nonce, created_at, used) VALUES (?, ?, 0)').run(nonce, Date.now());
-    writeServerLog(`[SYS-SECURE] [NONCE-DB-GEN] Persisted secure nonce in SQLite: ${nonce}`);
+    writeServerLog(`[DB] Persisted nonce in SQLite: ${nonce}`);
     return nonce;
   } catch (err: any) {
     const fallback = crypto.randomBytes(32).toString('hex');
     ephemeralNonceCache.add(fallback);
     ephemeralNonceTimes.set(fallback, Date.now());
-    writeServerLog(`[SYS-SECURE] [NONCE-DB-ERR] Failed to write nonce to SQLite: ${err?.message || err}. Falling back to ephemeral.`);
+    writeServerLog(`[DB] Failed to write nonce to SQLite: ${err?.message || err}. Using ephemeral.`);
     return fallback;
   } finally {
     try { conn.close?.(); } catch (_) {}
@@ -234,37 +234,37 @@ export function verifyAndConsumeNonce(nonce: string): boolean {
   if (ephemeralNonceCache.has(nonce)) {
     ephemeralNonceCache.delete(nonce);
     ephemeralNonceTimes.delete(nonce);
-    writeServerLog(`[SYS-SECURE] [NONCE-EPHEMERAL-SUCCESS] Nonce ${nonce} successfully verified from ephemeral cache.`);
+    writeServerLog(`[DB] Nonce ${nonce} verified from ephemeral cache.`);
     return true;
   }
 
   const conn = initSqlite();
   if (!conn) {
-    writeServerLog('[SYS-SECURE] [NONCE-FALLBACK] SQLite connection unavailable during verify.');
+    writeServerLog('[DB] SQLite connection unavailable during verify.');
     return false;
   }
   try {
     const pruneTime = Date.now() - 90000;
     conn.prepare('DELETE FROM login_nonces WHERE created_at < ?').run(pruneTime);
 
-    writeServerLog(`[SYS-SECURE] [NONCE-DB-VERIFY] Verifying nonce: ${nonce}`);
+    writeServerLog(`[DB] Verifying nonce: ${nonce}`);
     const record = conn.prepare('SELECT * FROM login_nonces WHERE nonce = ?').get(nonce) as any;
     if (!record) {
-      writeServerLog(`[SYS-SECURE] [NONCE-DB-FAIL] Nonce ${nonce} not found in SQLite.`);
+      writeServerLog(`[DB] Nonce ${nonce} not found in SQLite.`);
       return false;
     }
 
     if (record.used === 1) {
-      writeServerLog(`[SYS-SECURE] [NONCE-DB-FAIL] Nonce ${nonce} has already been used.`);
+      writeServerLog(`[DB] Nonce ${nonce} has already been used.`);
       conn.prepare('DELETE FROM login_nonces WHERE nonce = ?').run(nonce);
       return false;
     }
 
     conn.prepare('DELETE FROM login_nonces WHERE nonce = ?').run(nonce);
-    writeServerLog(`[SYS-SECURE] [NONCE-DB-SUCCESS] Nonce ${nonce} successfully verified and consumed.`);
+    writeServerLog(`[DB] Nonce ${nonce} verified and consumed.`);
     return true;
   } catch (err: any) {
-    writeServerLog(`[SYS-SECURE] [NONCE-DB-ERR] Failed to verify/consume nonce in SQLite: ${err?.message || err}`);
+    writeServerLog(`[DB] Failed to verify/consume nonce in SQLite: ${err?.message || err}`);
     return false;
   } finally {
     try { conn.close?.(); } catch (_) {}
@@ -286,7 +286,7 @@ export async function hardResetAndSeedDatabase(force = false) {
       }
     });
     if (migrated) {
-      console.log('[SYS-SECURE] Migrated existing administrative accounts to Midnight and Lexie.');
+      console.log('[DB] Migrated existing administrative accounts to Midnight and Lexie.');
       saveDb();
     }
   }
@@ -303,8 +303,8 @@ export async function hardResetAndSeedDatabase(force = false) {
 
   if (!midnight_pass || !midnight_safe || !midnight_panic || !midnight_rec ||
       !lexie_pass || !lexie_safe || !lexie_panic || !lexie_rec) {
-    console.warn('[SYS-SECURE] WARNING: Administrative environment variables (MIDNIGHT_PASSWORD, LEXIE_PASSWORD, etc.) are unconfigured or empty in .env.');
-    console.warn('[SYS-SECURE] Database administrative accounts cannot be seeded/reset to prevent insecure empty credentials.');
+    console.warn('[DB] WARNING: Administrative environment variables (MIDNIGHT_PASSWORD, LEXIE_PASSWORD, etc.) are unconfigured or empty in .env.');
+    console.warn('[DB] Database administrative accounts cannot be seeded/reset to prevent insecure empty credentials.');
     return;
   }
 
@@ -316,20 +316,20 @@ export async function hardResetAndSeedDatabase(force = false) {
   if (!midnight || !lexie) {
     mustReSeed = true;
   } else if (!midnight.password_hash?.startsWith('argon2id:') || !lexie.password_hash?.startsWith('argon2id:')) {
-    console.log('[SYS-SECURE] Administrative password hashes are legacy or missing argon2id. Triggering upgrade re-seed.');
+    console.log('[DB] Administrative password hashes are legacy or missing argon2id. Triggering upgrade re-seed.');
     mustReSeed = true;
   } else {
     // Retain existing admin profiles and credentials as the source of truth,
     // bypassing forced re-seeding if env credentials differ.
-    writeServerLog('[SYS-SECURE] Valid administrative accounts verified in database.');
+    writeServerLog('[DB] Valid administrative accounts verified in database.');
   }
 
   if (!force && !mustReSeed && db.users && db.users.length > 0) {
-    writeServerLog('[SYS-SECURE] Checked existing database administrative accounts. Retaining persistence.');
+    writeServerLog('[DB] Checked existing database administrative accounts. Retaining persistence.');
     return;
   }
 
-  writeServerLog('[SYS-SECURE] Performing database reset/re-seed of administrative accounts via Argon2id...');
+  writeServerLog('[DB] Performing database reset/re-seed of administrative accounts via Argon2id...');
 
   const cli_admin_salt = crypto.randomBytes(32).toString('hex');
   const Admin_salt = crypto.randomBytes(32).toString('hex');
@@ -449,7 +449,7 @@ export async function hardResetAndSeedDatabase(force = false) {
   if (!db.purged_profiles) db.purged_profiles = [];
 
   saveDb();
-  writeServerLog('[SYS-SECURE] Security standards initialized. Verified administrative accounts seeded.');
+  writeServerLog('[DB] Security standards initialized. Verified administrative accounts seeded.');
 }
 
 import { executeCliCommand as serviceExecuteCliCommand } from './services/admin.js';

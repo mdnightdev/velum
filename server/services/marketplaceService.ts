@@ -114,8 +114,6 @@ export async function processCreateEscrow(
       platform_fee: platformFee,
       payout_amount: finalPayout,
       status: 'HELD_IN_ESCROW',
-      sandbox_state: 'ACTIVE',
-      sandbox_logs: [],
       created_at: Date.now(),
       updated_at: Date.now()
     };
@@ -371,12 +369,6 @@ export async function processResolveDispute(
       const buyerWallet = walletRepository.getOrCreateWalletBalance(escrow.buyer_id, 'VLM');
       const sellerWallet = walletRepository.getOrCreateWalletBalance(escrow.seller_id, 'VLM');
 
-      let logs = [
-        `[SYSTEM] Administrator '${adminUsername}' resolved the dispute.`,
-        `[SYSTEM] Resolution status: ${resolution}`,
-        `[SYSTEM] Penalty setting: ${penalty_applied_to}`
-      ];
-
       if (resolution === 'REFUND_BUYER') {
         walletRepository.updateWalletBalanceCents(escrow.buyer_id, 'VLM', buyerWallet.balance_cents + escrowAmountCents);
         walletRepository.createLedgerEntry({
@@ -396,7 +388,6 @@ export async function processResolveDispute(
           status: 'REFUNDED',
           updated_at: Date.now()
         });
-        logs.push(` FUNDS RETURNED TO BUYER WALLET: +$${(escrowAmountCents / 100).toFixed(2)}`);
 
         if (penalty_applied_to === 'SELLER') {
           const penaltyCents = Math.round(escrowAmountCents * 0.25);
@@ -428,9 +419,6 @@ export async function processResolveDispute(
             is_simulated: true,
             created_at: Date.now()
           });
-
-          logs.push(` SELLER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
-          logs.push(` COMPENSATED BUYER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
         }
       } else if (resolution === 'RELEASE_SELLER') {
         walletRepository.updateWalletBalanceCents(escrow.seller_id, 'VLM', sellerWallet.balance_cents + payoutCents);
@@ -464,7 +452,6 @@ export async function processResolveDispute(
           status: 'RELEASED',
           updated_at: Date.now()
         });
-        logs.push(` FUNDS RELEASED TO SELLER: +$${(payoutCents / 100).toFixed(2)}`);
 
         if (penalty_applied_to === 'BUYER') {
           const penaltyCents = Math.round(escrowAmountCents * 0.25);
@@ -496,9 +483,6 @@ export async function processResolveDispute(
             is_simulated: true,
             created_at: Date.now()
           });
-
-          logs.push(` BUYER FRAUD PENALTY APPLIED (25%): -$${(penaltyCents / 100).toFixed(2)}`);
-          logs.push(` COMPENSATED SELLER WITH FRAUD REWARD: +$${(penaltyCents / 100).toFixed(2)}`);
         }
       }
 
@@ -511,10 +495,6 @@ export async function processResolveDispute(
         created_at: Date.now()
       });
 
-      const existingLogs = escrow.sandbox_logs || [];
-      marketRepository.updateEscrow(escrow.transaction_id, {
-        sandbox_logs: [...existingLogs, ...logs]
-      });
       saveDb();
 
       return { success: true, chat, escrow: marketRepository.findEscrowById(escrow.transaction_id) };

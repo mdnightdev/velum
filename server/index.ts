@@ -56,22 +56,27 @@ export async function startServer() {
   try {
     await hardResetAndSeedDatabase(false);
   } catch (err) {
-    writeServerLog(`[SYS-SECURE] Error during administrative startup seeding: ${err}`);
+    writeServerLog(`[SERVER] Error during administrative startup seeding: ${err}`);
   }
 
   // Start the background automated clearing worker & run reconciliation audits
-  try {
-    startClearingWorker();
-  } catch (err) {
-    writeServerLog(`[SYS-SECURE] Error starting clearing worker: ${err}`);
+  const instanceId = process.env.PM2_INSTANCE_ID || "0";
+  if (instanceId === "0") {
+    try {
+      startClearingWorker();
+    } catch (err) {
+      writeServerLog(`[SERVER] Error starting clearing worker: ${err}`);
+    }
+  } else {
+    writeServerLog(`[SERVER] Replica Node [${instanceId}] online. Background clearing workers bypassed.`);
   }
 
   // 2. Perform remote cloud restore check asynchronously in the background so it doesn't block server startup
   if (process.env.NODE_ENV === 'development' || process.env.DISABLE_CLOUD_BACKUP === '1') {
-    writeServerLog('[SYS-SECURE] Development/cloud-backup-disabled mode: skipping cloud restore and realtime sync.');
+    writeServerLog('[SERVER] Development/cloud-backup-disabled mode: skipping cloud restore and realtime sync.');
   } else {
     (async () => {
-      writeServerLog('[SYS-SECURE] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
+      writeServerLog('[SERVER] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
       try {
         await restoreDbFromCloud();
         // Reload memory and SQLite mirrors if cloud restore successfully fetched and unlinked the local DB
@@ -79,22 +84,22 @@ export async function startServer() {
           loadDb(true);
         }
       } catch (err) {
-        writeServerLog(`[SYS-SECURE] Error during cloud restore: ${err}`);
+        writeServerLog(`[SERVER] Error during cloud restore: ${err}`);
       }
 
       // Initialize distributed cloud message replication observer
       try {
         setupCloudMessageSync();
       } catch (err) {
-        writeServerLog(`[SYS-SECURE] Distributed message listener error: ${err}`);
+        writeServerLog(`[SERVER] Distributed message listener error: ${err}`);
       }
     })().catch(err => {
-      console.error('[SYS-SECURE] Background cloud restore unhandled rejection:', err);
+      console.error('[SERVER] Background cloud restore unhandled rejection:', err);
     });
   }
 
   if (!isProduction) {
-    writeServerLog('[SYS-SECURE] Mounting Vite Dev Server middleware for dynamic asset compiling...');
+    writeServerLog('[SERVER] Mounting Vite Dev Server middleware for dynamic asset compiling...');
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
@@ -104,7 +109,7 @@ export async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    writeServerLog('[SYS-SECURE] Serving pre-compiled production build from dist/ directory...');
+    writeServerLog('[SERVER] Serving pre-compiled production build from dist/ directory...');
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath, { 
       index: false,
@@ -130,7 +135,7 @@ export async function startServer() {
 
   const PORT = 3000;
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SYS-SECURE] [Velum V3] Premium Secure Engine active. Listening on port: ${PORT}`);
+    console.log(`[SERVER] [Velum V3] Premium Secure Engine active. Listening on port: ${PORT}`);
   });
 }
 

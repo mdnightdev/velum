@@ -736,7 +736,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
     case 'prune-db':
     case 'hard-reset': {
       try {
-        console.log('[SYS-SECURE] CLI Console triggered database purge procedure.');
+        console.log('[ADMIN] CLI Console triggered database purge procedure.');
         const { hardResetAndSeedDatabase } = await import('../db.js');
         await hardResetAndSeedDatabase(true);
         executeSaveDb();

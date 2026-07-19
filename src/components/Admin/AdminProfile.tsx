@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, Plus, RefreshCw } from 'lucide-react';
 import PasswordInput from '../PasswordInput';
 import { compressImage } from '../../utils/imageCompressor';
+import { streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
 
 interface AdminProfileProps {
   adminId: number;
@@ -62,20 +63,10 @@ export default function AdminProfile({
     if (!avatarFile || !avatarPreview) return null;
     setIsUploading(true);
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
       const blob = await compressImage(avatarPreview, 512, 0.85);
-      const uploadRes = await fetch('/api/user/upload-avatar', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${sId}`,
-          'Content-Type': 'image/jpeg',
-        },
-        body: blob,
-      });
-      if (uploadRes.ok) {
-        const data = await uploadRes.json();
-        return data.url;
-      }
+      const ext = avatarFile.name.split('.').pop() || 'webp';
+      const url = await streamFileDirectToCloudStorage(blob, 'avatars', ext);
+      return url;
     } catch (err) {
       console.error('Error uploading avatar:', err);
     } finally {

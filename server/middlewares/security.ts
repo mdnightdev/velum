@@ -61,7 +61,7 @@ export const fileProtection = (req: Request, res: Response, next: NextFunction) 
 
   for (const pattern of restrictedPatterns) {
     if (pattern.test(urlPath)) {
-      console.warn(`[SYS-SECURE] Restricted access attempt blocked: ${req.method} ${req.originalUrl} from IP: ${req.ip}`);
+      console.warn(`[SECURITY] Restricted access attempt blocked: ${req.method} ${req.originalUrl} from IP: ${req.ip}`);
       return res.status(403).json({ error: 'Access Denied: Restricted administrative configuration.' });
     }
   }
@@ -69,7 +69,7 @@ export const fileProtection = (req: Request, res: Response, next: NextFunction) 
   // Prevent production access to internal project folders
   if (isProduction) {
     if (/^(\/server|\/data|\/bin|\/src)/i.test(urlPath)) {
-      console.warn(`[SYS-SECURE] Restricted production folder access attempt blocked: ${req.method} ${req.originalUrl}`);
+      console.warn(`[SECURITY] Restricted production folder access attempt blocked: ${req.method} ${req.originalUrl}`);
       return res.status(403).json({ error: 'Access Denied: Production access to internal project directories is forbidden.' });
     }
   }

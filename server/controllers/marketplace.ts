@@ -832,12 +832,7 @@ export const batchCartCheckout = async (req: Request, res: Response) => {
       const payoutAmount = parseFloat(((itemTotalCents - (itemTotalCents * feePercent)) / 100).toFixed(2));
 
       const sandbox_logs = [
-        `[SYS-SECURE] INITIALIZING ISO-WORKER DOCK STATE...`,
-        ` ALLOCATING SECURE MEMORY CELL: 16.00MB RAM`,
-        ` INGESTING EXECUTABLE BUNDLE: ${listing.title.replace(/\s+/g, '_').toLowerCase()}.zip`,
-        ` ANALYZING RAW BUFFER FOR METADATA LEAKS... CLEAN`,
-        ` RUNNING SYNTAX VERIFICATION THROUGHOUT MODULE POOL...`,
-        ` ISOLATION VERIFICATION INITIATED ON HELD_IN_ESCROW BUFFER...`
+        `[SYSTEM] Escrow initialized.`
       ];
 
       const newEscrow: EscrowTransaction = {

@@ -22,7 +22,7 @@ try {
     }
   }
 } catch (err) {
-  console.warn('[SYS-SECURE] Failed reading persisted .key file:', err);
+  console.warn('[CRYPTO] Failed reading persisted .key file:', err);
 }
 
 let encryptionKeySource = process.env.DB_ENCRYPTION_KEY;
@@ -52,7 +52,7 @@ if (!encryptionKeySource || !dbCryptoSalt) {
     }
     fs.writeFileSync(keyPath, JSON.stringify({ key: encryptionKeySource, salt: dbCryptoSalt }), 'utf8');
   } catch (err) {
-    console.error('[SYS-SECURE] Failed to save/update persistent encryption parameters:', err);
+    console.error('[CRYPTO] Failed to save/update persistent encryption parameters:', err);
   }
 }
 
@@ -68,7 +68,7 @@ if (loadedKey) {
     fileCryptoKey = crypto.scryptSync(loadedKey, loadedSalt || 'salt_velum', 32);
     fileCryptoKeyLegacy = crypto.scryptSync(loadedKey, 'salt_velum', 32);
   } catch (err) {
-    console.error('[SYS-SECURE] Failed to derive fallback keys from file:', err);
+    console.error('[CRYPTO] Failed to derive fallback keys from file:', err);
   }
 }
 

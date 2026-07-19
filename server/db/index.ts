@@ -35,54 +35,30 @@ export {
   setCloudBackupDisabled,
   loadDb,
   saveDb,
-  executeSaveDb,
-  closeSqliteConnection
+  executeSaveDb
 };
 
-let DatabaseSync = (sqliteModule as any)?.DatabaseSync;
+import {
+  DB_DIR,
+  DB_FILE,
+  SQLITE_FILE,
+  sqliteDb,
+  initSqlite,
+  verifySqliteFile,
+  closeSqliteConnection,
+  wipeAndRebuildDatabaseFile
+} from './connection.js';
 
-if (!DatabaseSync) {
-  try {
-    const require = createRequire(import.meta.url);
-    const BetterSqlite3Database = require('better-sqlite3');
-    
-    class BetterSqlite3Adapter {
-      private dbInstance: any;
-      constructor(filePath: string) {
-        this.dbInstance = new BetterSqlite3Database(filePath);
-      }
-      exec(sql: string) {
-        return this.dbInstance.exec(sql);
-      }
-      prepare(sql: string) {
-        const stmt = this.dbInstance.prepare(sql);
-        return {
-          all: (...args: any[]) => stmt.all(...args),
-          get: (...args: any[]) => stmt.get(...args),
-          run: (...args: any[]) => stmt.run(...args),
-        };
-      }
-      close() {
-        try {
-          this.dbInstance.close();
-        } catch (_) {}
-      }
-    }
-    
-    DatabaseSync = BetterSqlite3Adapter as any;
-    console.log('[SYS-SECURE] Node.js native node:sqlite DatabaseSync is not available in this environment. Seamlessly fell back to high-performance better-sqlite3 adapter.');
-  } catch (err: any) {
-    console.error('[SYS-SECURE] CRITICAL ERROR: Both native node:sqlite and better-sqlite3 are unavailable:', err?.message || err);
-  }
-}
-
-export const DB_DIR = path.join(process.cwd(), 'data');
-export const DB_FILE = path.join(DB_DIR, 'velum_state_v3.bin');
-export const SQLITE_FILE = path.join(DB_DIR, 'velum_db.sqlite');
-
-if (!fs.existsSync(DB_DIR)) {
-  fs.mkdirSync(DB_DIR, { recursive: true });
-}
+export {
+  DB_DIR,
+  DB_FILE,
+  SQLITE_FILE,
+  sqliteDb,
+  initSqlite,
+  verifySqliteFile,
+  closeSqliteConnection,
+  wipeAndRebuildDatabaseFile
+};
 
 export let db: DbSchema = { ...defaultDb };
 
@@ -99,7 +75,7 @@ export function isUserBlocked(userA: number, userB: number): boolean {
   if (!userA || !userB) return false;
   return activeUserBlocksSet.has(`${userA}_${userB}`) || activeUserBlocksSet.has(`${userB}_${userA}`);
 }
-export let sqliteDb: any = null;
+
 export let dbLoaded = false;
 export let isSaving = false;
 export let decryptionErrorDetected = false;
@@ -118,468 +94,6 @@ export function setLastSavedDbJson(val: string) {
 export let broadcastToRoomCallback: ((roomId: string, object: any) => void) | null = null;
 export function registerBroadcastToRoomCallback(cb: (roomId: string, object: any) => void) {
   broadcastToRoomCallback = cb;
-}
-
-export function initSqlite() {
-  if (sqliteDb) {
-    return sqliteDb;
-  }
-  if (!DatabaseSync) {
-    console.error('[SYS-SECURE] Native SQLite DatabaseSync class is not available in this environment.');
-    return null;
-  }
-  try {
-    const conn = new DatabaseSync(SQLITE_FILE);
-    try {
-      fs.chmodSync(SQLITE_FILE, 0o600);
-    } catch (_) {}
-    
-    // Override close method to prevent closing the persistent global connection
-    const originalClose = conn.close;
-    conn.close = () => {
-      // Safe no-op to keep connection persistent across calls
-    };
-    (conn as any).realClose = () => {
-      if (originalClose) {
-        originalClose.call(conn);
-      }
-    };
-    
-    sqliteDb = conn;
-    
-    // Drop incompatible node_overwrites table if it exists with old schema
-    try {
-      let needsDrop = false;
-      try {
-        conn.prepare("SELECT id FROM node_overwrites LIMIT 1").get();
-      } catch (e: any) {
-        if (!e.message.includes("no such table")) {
-          needsDrop = true;
-        }
-      }
-      if (needsDrop) {
-        conn.exec("DROP TABLE IF EXISTS node_overwrites");
-      }
-    } catch (_) {}
-    
-    // Main relational database schemas
-    const tables = [
-      'users', 'profiles', 'sessions', 'devices', 'ip_addresses',
-      'messages', 'user_blocks', 'user_mutes', 'admin_sanctions',
-      'invites', 'tickets', 'reports', 'recovery_events', 'suspicious_events', 'audit_logs',
-      'friend_requests', 'peer_relationships', 'join_requests', 'node_overwrites',
-      // New banking/payments tables
-      'bank_accounts', 'bank_transactions', 'user_wallets', 'wallet_ledger_entries', 'recharge_requests', 'withdrawal_requests',
-      'kyc_verifications', 'payment_methods', 'external_financial_accounts', 'external_processor_events',
-      'wallet_balances', 'currencies', 'exchange_rates', 'platform_admins',
-      // New marketplace tables
-      'market_assets', 'market_sku_variants', 'market_asset_media', 'market_reviews',
-      'market_coupons', 'market_discussions', 'market_support_chats', 'listing_verification_checks',
-      // Missing tables to avoid data loss
-      'platform_financial_audit_logs', 'automation_actions', 'refund_requests', 'idempotency_records'
-    ];
-    
-    for (const table of tables) {
-      conn.exec(`CREATE TABLE IF NOT EXISTS ${table} (
-        id TEXT PRIMARY KEY,
-        payload TEXT NOT NULL,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )`);
-    }
-
-    // Persistent login nonces table schema for challenge-response replay protection
-    conn.exec(`CREATE TABLE IF NOT EXISTS login_nonces (
-        nonce TEXT PRIMARY KEY,
-        created_at INTEGER NOT NULL,
-        used INTEGER DEFAULT 0
-    )`);
-
-    // Lounges table schema (with icon_url, is_official, last_message_at)
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounges (
-        lounge_id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        description TEXT,
-        owner_id TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        is_private INTEGER DEFAULT 0,
-        is_official INTEGER DEFAULT 0,
-        last_message_at INTEGER,
-        icon_url TEXT,
-        invite_code TEXT,
-        
-        -- New architecture columns
-        id TEXT,
-        slug TEXT UNIQUE,
-        creator_id TEXT,
-        parent_lounge_id TEXT REFERENCES lounges(lounge_id) ON DELETE CASCADE,
-        updated_at INTEGER,
-        is_system INTEGER DEFAULT 0,
-        visibility TEXT DEFAULT 'public',
-        status TEXT DEFAULT 'active'
-    )`);
-
-    // Ensure icon_url column exists in lounges if table was already created
-    try {
-      conn.exec(`ALTER TABLE lounges ADD COLUMN icon_url TEXT`);
-    } catch (_) {
-      // Column may already exist
-    }
-    // Ensure new columns exist
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN is_official INTEGER DEFAULT 0`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN last_message_at INTEGER`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN invite_code TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN id TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN slug TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN creator_id TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN parent_lounge_id TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN updated_at INTEGER`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN is_system INTEGER DEFAULT 0`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN visibility TEXT DEFAULT 'public'`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN status TEXT DEFAULT 'active'`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN type TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN owner_user_id INTEGER`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN hide_member_list INTEGER DEFAULT 0`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN is_locked INTEGER DEFAULT 0`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounges ADD COLUMN last_active_at INTEGER`); } catch (_) {}
-
-    // Ensure new columns exist for market_listings
-    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN seller_username TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN discount_price REAL`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN verification_status TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE market_listings ADD COLUMN inventory_count INTEGER`); } catch (_) {}
-
-    // Ensure new columns exist for escrow_transactions
-    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN coupon_applied TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN sku_variant_id TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN platform_fee REAL`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN payout_amount REAL`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN sandbox_logs TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE escrow_transactions ADD COLUMN sandbox_state TEXT`); } catch (_) {}
-    
-    // Parent Index
-    try {
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_parent ON lounges(parent_lounge_id)`);
-    } catch (_) {}
-
-    // Lounge Rooms table schema: DEPRECATED (lounge_rooms are represented as sublounges in lounges table) but still active in legacy paths
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_rooms (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        is_locked INTEGER DEFAULT 0,
-        invite_code TEXT,
-        created_by TEXT,
-        created_at INTEGER,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    // Nodes (polymorphic fractal tree nodes representing channels, workspaces, sub-spaces)
-    conn.exec(`CREATE TABLE IF NOT EXISTS nodes (
-        node_id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        parent_id TEXT,
-        name TEXT NOT NULL,
-        configuration_json TEXT NOT NULL DEFAULT '{}',
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE,
-        FOREIGN KEY(parent_id) REFERENCES nodes(node_id) ON DELETE CASCADE
-    )`);
-
-    // Precomputed closure paths table for O(1) subtree operations and ancestry querying
-    conn.exec(`CREATE TABLE IF NOT EXISTS node_closure (
-        ancestor_id TEXT NOT NULL,
-        descendant_id TEXT NOT NULL,
-        depth INTEGER NOT NULL CHECK (depth >= 0),
-        PRIMARY KEY (ancestor_id, descendant_id),
-        FOREIGN KEY(ancestor_id) REFERENCES nodes(node_id) ON DELETE CASCADE,
-        FOREIGN KEY(descendant_id) REFERENCES nodes(node_id) ON DELETE CASCADE
-    )`);
-
-    // Polymorphic custom view settings for any node space (e.g. Chat, Forum, Store)
-    conn.exec(`CREATE TABLE IF NOT EXISTS node_views (
-        view_id TEXT PRIMARY KEY,
-        node_id TEXT NOT NULL,
-        view_type TEXT NOT NULL CHECK (view_type IN ('chat', 'forum', 'marketplace_embedded', 'voice')),
-        display_order INTEGER NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-        FOREIGN KEY(node_id) REFERENCES nodes(node_id) ON DELETE CASCADE
-    )`);
-
-    // Inter-lounge space sharing router
-    conn.exec(`CREATE TABLE IF NOT EXISTS node_federation (
-        federation_id TEXT PRIMARY KEY,
-        origin_node_id TEXT NOT NULL,
-        target_lounge_id TEXT NOT NULL,
-        mounted_parent_id TEXT,
-        status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REVOKED')),
-        FOREIGN KEY(origin_node_id) REFERENCES nodes(node_id) ON DELETE CASCADE,
-        FOREIGN KEY(target_lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE,
-        FOREIGN KEY(mounted_parent_id) REFERENCES nodes(node_id) ON DELETE SET NULL
-    )`);
-
-    // Lounge 64-Bit Bitwise RBAC Roles Config
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_roles (
-        role_id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        position INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0),
-        permissions_bitfield INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    // High performance compound indexes for prefix scans
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_closure_lookup ON node_closure (ancestor_id, descendant_id, depth)`);
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_closure_reverse ON node_closure (descendant_id, ancestor_id, depth)`);
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_nodes_hierarchy ON nodes (lounge_id, parent_id)`);
-
-    // Market listings table schema
-    conn.exec(`CREATE TABLE IF NOT EXISTS market_listings (
-        listing_id TEXT PRIMARY KEY,
-        seller_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT,
-        price REAL NOT NULL,
-        status TEXT DEFAULT 'ACTIVE',
-        created_at INTEGER NOT NULL,
-        seller_username TEXT,
-        discount_price REAL,
-        verification_status TEXT,
-        inventory_count INTEGER
-    )`);
-
-    // Escrow transactions table schema
-    conn.exec(`CREATE TABLE IF NOT EXISTS escrow_transactions (
-        transaction_id TEXT PRIMARY KEY,
-        listing_id TEXT NOT NULL,
-        buyer_id TEXT NOT NULL,
-        seller_id TEXT NOT NULL,
-        amount REAL NOT NULL,
-        status TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        coupon_applied TEXT,
-        sku_variant_id TEXT,
-        platform_fee REAL,
-        payout_amount REAL,
-        sandbox_logs TEXT,
-        sandbox_state TEXT,
-
-        FOREIGN KEY(listing_id) REFERENCES market_listings(listing_id) ON DELETE CASCADE
-    )`);
-
-    // New architecture tables
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_members (
-        lounge_id TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        status TEXT NOT NULL,
-        joined_via TEXT NOT NULL,
-        joined_at INTEGER NOT NULL,
-        PRIMARY KEY (lounge_id, user_id),
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_invites (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
-        created_by INTEGER NOT NULL,
-        max_uses INTEGER DEFAULT 1,
-        uses_count INTEGER DEFAULT 0,
-        expires_at INTEGER,
-        revoked_at INTEGER,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_sanctions (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        applied_by INTEGER NOT NULL,
-        applied_by_type TEXT NOT NULL,
-        applied_at INTEGER NOT NULL,
-        lifted_at INTEGER,
-        reason TEXT,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_join_requests (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        message TEXT,
-        status TEXT NOT NULL,
-        reviewed_by INTEGER,
-        reviewed_at INTEGER,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_ownership_transfers (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        from_user_id INTEGER NOT NULL,
-        to_user_id INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        initiated_at INTEGER NOT NULL,
-        resolved_at INTEGER,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS account_deletion_requests (
-        id TEXT PRIMARY KEY,
-        user_id INTEGER NOT NULL,
-        requested_at INTEGER NOT NULL,
-        scheduled_purge_at INTEGER NOT NULL,
-        status TEXT NOT NULL
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS user_lounge_preferences (
-        user_id INTEGER NOT NULL,
-        lounge_id TEXT NOT NULL,
-        notifications_muted INTEGER DEFAULT 0,
-        pinned INTEGER DEFAULT 0,
-        pin_order INTEGER,
-        PRIMARY KEY (user_id, lounge_id),
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_audit_logs (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        actor_id INTEGER NOT NULL,
-        actor_type TEXT NOT NULL,
-        action TEXT NOT NULL,
-        target_type TEXT NOT NULL,
-        target_id TEXT NOT NULL,
-        metadata TEXT,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
-
-    conn.exec(`CREATE TABLE IF NOT EXISTS system_audit_logs (
-        id TEXT PRIMARY KEY,
-        actor_id INTEGER NOT NULL,
-        actor_type TEXT NOT NULL,
-        action TEXT NOT NULL,
-        target_type TEXT NOT NULL,
-        target_id TEXT NOT NULL,
-        metadata TEXT,
-        created_at INTEGER NOT NULL
-    )`);
-
-    // ==========================================
-    // HIGH-PERFORMANCE SECONDARY INDEXES
-    // ==========================================
-    try {
-      // Lounges Table Indexes
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_owner ON lounges (owner_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_official ON lounges (is_official)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_invite_code ON lounges (invite_code)`);
-
-      // Lounge Rooms Table Index: DEPRECATED
-
-      // Node Views Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_views_node ON node_views (node_id)`);
-
-      // Node Federation Table Indexes
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_origin ON node_federation (origin_node_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_target ON node_federation (target_lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_mounted ON node_federation (mounted_parent_id)`);
-
-      // Lounge Roles Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_roles_lounge ON lounge_roles (lounge_id)`);
-
-      // Market Listings Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_market_listings_seller ON market_listings (seller_id, status)`);
-
-      // Escrow Transactions Table Indexes
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_listing ON escrow_transactions (listing_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_buyer ON escrow_transactions (buyer_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_seller ON escrow_transactions (seller_id, status)`);
-
-      // Lounge Members Table Index (Compound PK is indexed, add index on user_id)
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_members_user ON lounge_members (user_id)`);
-
-      // Lounge Invites Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_invites_lounge ON lounge_invites (lounge_id)`);
-
-      // Lounge Sanctions Table Indexes
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_sanctions_lounge ON lounge_sanctions (lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_sanctions_user ON lounge_sanctions (user_id)`);
-
-      // Lounge Join Requests Table Indexes
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_join_reqs_lounge ON lounge_join_requests (lounge_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_join_reqs_user ON lounge_join_requests (user_id)`);
-
-      // Lounge Ownership Transfers Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_transfers_lounge ON lounge_ownership_transfers (lounge_id, status)`);
-
-      // Account Deletion Requests Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_account_deletions_user ON account_deletion_requests (user_id, status)`);
-
-      // User Lounge Preferences Table Index (Compound PK is indexed, add index on lounge_id)
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_user_lounge_prefs_lounge ON user_lounge_preferences (lounge_id)`);
-
-      // Lounge Audit Logs Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_audit_logs_lounge ON lounge_audit_logs (lounge_id)`);
-
-      // System Audit Logs Table Index
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_system_audit_logs_actor ON system_audit_logs (actor_id)`);
-    } catch (idxErr) {
-      console.warn('[SYS-SECURE] Secondary indexes initialization warning:', idxErr);
-    }
-    
-    return conn;
-  } catch (err: any) {
-    console.error('[SYS-SECURE] SQLite database connection init fault:', err?.message || err);
-    return null;
-  }
-}
-
-export function verifySqliteFile(filePath: string): boolean {
-  if (!DatabaseSync) return false;
-  let testDb: any = null;
-  try {
-    if (!fs.existsSync(filePath)) return false;
-    const size = fs.statSync(filePath).size;
-    if (size === 0) return true;
-    testDb = new DatabaseSync(filePath);
-    const row = testDb.prepare("PRAGMA integrity_check").get() as any;
-    const ok = row && row.integrity_check === 'ok';
-    try {
-      testDb.close?.();
-    } catch (_) {}
-    return ok;
-  } catch (err) {
-    console.error(`[SYS-SECURE] SQLite verification failed for ${filePath}:`, err);
-    if (testDb) {
-      try {
-        testDb.close?.();
-      } catch (_) {}
-    }
-    return false;
-  }
-}
-
-function closeSqliteConnection() {
-  if (sqliteDb) {
-    try {
-      (sqliteDb as any).realClose?.();
-    } catch (_) {}
-    sqliteDb = null;
-  }
-}
-
-export function wipeAndRebuildDatabaseFile() {
-  try {
-    closeSqliteConnection();
-    if (fs.existsSync(SQLITE_FILE)) {
-      fs.unlinkSync(SQLITE_FILE);
-    }
-    if (fs.existsSync(DB_FILE)) {
-      fs.unlinkSync(DB_FILE);
-    }
-  } catch (_) {}
 }
 
 
@@ -676,6 +190,49 @@ export function ensureSeededIntegrity() {
     }
   }
 
+  let mutated = false;
+  const defaultSublounges = [
+    { id: 'announcements', name: 'Announcements', desc: 'Official system announcements' },
+    { id: 'general', name: 'General', desc: 'General discussion for all users' },
+    { id: 'offtopic', name: 'Off Topic', desc: 'Casual chat and off-topic discussions' },
+    { id: 'support', name: 'Support', desc: 'Technical and community support' },
+    { id: 'marketplace', name: 'Marketplace', desc: 'Trading and listing discussion' },
+    { id: 'trading', name: 'Trading Desk', desc: 'Escrow and transaction coordinates' },
+    { id: 'alerts', name: 'Security Alerts', desc: 'Critical system and security alerts' },
+    { id: 'operations', name: 'Operations', desc: 'System operational feeds' },
+    { id: 'sandbox', name: 'Sandbox', desc: 'Platform sandbox feedback' },
+    { id: 'executives', name: 'Executives', desc: 'System staff coordination' }
+  ];
+
+  db.lounges = db.lounges || [];
+  for (const sub of defaultSublounges) {
+    const subLoungeId = `velum_${sub.id}`;
+    const hasSub = db.lounges.some(l => l && l.lounge_id === subLoungeId);
+    if (!hasSub) {
+      db.lounges.push({
+        lounge_id: subLoungeId,
+        name: sub.name,
+        description: sub.desc,
+        owner_id: '2',
+        created_at: Date.now(),
+        is_private: 0,
+        is_official: 1,
+        last_message_at: Date.now(),
+        invite_code: `VELUM_${sub.id.toUpperCase()}`,
+        id: subLoungeId,
+        slug: `velum-${sub.id}`,
+        creator_id: '2',
+        parent_lounge_id: 'velum_lounge',
+        updated_at: Date.now(),
+        is_system: 1,
+        visibility: 'public',
+        status: 'active',
+        type: 'official'
+      });
+      mutated = true;
+    }
+  }
+
   if (!db.market_listings) db.market_listings = [];
   if (!db.escrow_transactions) db.escrow_transactions = [];
 
@@ -765,6 +322,11 @@ export function ensureSeededIntegrity() {
       salt: 'SYSTEM_LOCKED',
       uid: 'VEL-UID-VELUM'
     });
+    mutated = true;
+  }
+
+  if (mutated && process.env.NODE_ENV !== 'test') {
+    saveDb(true);
   }
 }
 

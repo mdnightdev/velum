@@ -883,7 +883,7 @@ export const getLoungeMembers = async (req: Request, res: Response) => {
 
     let loungeMembers = [];
 
-    if (loungeId === 'velum_lounge') {
+    if (loungeId === 'velum_lounge' || (lounge && lounge.parent_lounge_id === 'velum_lounge')) {
       loungeMembers = db.users;
     } else {
       loungeMembers = db.users.filter(u => {

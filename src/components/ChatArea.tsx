@@ -8,6 +8,7 @@ import { decryptMessage } from '../services/encryptionService';
 import ProfileCard from './ProfileCard';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { ChatHeader } from './Chat/ChatHeader';
+import { streamFileDirectToCloudStorage } from '../utils/mediaPipeline';
 import logoSvg from '../assets/logo.svg?raw';
 
 interface ChatAreaProps {
@@ -307,22 +308,8 @@ export default function ChatArea({
           const response = await fetch(`data:audio/webm;base64,${audioBase64}`);
           const blob = await response.blob();
           
-          const sid = sessionStorage.getItem('velum-sessionId') || '';
-          const uploadRes = await fetch('/api/user/upload-media', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'audio/webm',
-              'Authorization': `Bearer ${sid}`
-            },
-            body: blob
-          });
-          
-          if (uploadRes.ok) {
-            const data = await uploadRes.json();
-            onSendMessage(`[Voice Note  duration:${durationSeconds}s url:${data.url}]`, null, false);
-          } else {
-            onSendMessage(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
-          }
+          const url = await streamFileDirectToCloudStorage(blob, 'media', 'webm');
+          onSendMessage(`[Voice Note  duration:${durationSeconds}s url:${url}]`, null, false);
         } catch (err) {
           console.error('Audio upload failed:', err);
           onSendMessage(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
@@ -345,24 +332,11 @@ export default function ChatArea({
         const response = await fetch(selectedAttachment.data);
         const blob = await response.blob();
         
-        const sid = sessionStorage.getItem('velum-sessionId') || '';
-        const uploadRes = await fetch('/api/user/upload-media', {
-          method: 'POST',
-          headers: {
-            'Content-Type': selectedAttachment.type,
-            'Authorization': `Bearer ${sid}`
-          },
-          body: blob
-        });
-        
-        if (uploadRes.ok) {
-          const data = await uploadRes.json();
-          textToSend = `[Attachment: ${selectedAttachment.name} size:${selectedAttachment.size} type:${selectedAttachment.type} url:${data.url}] ${inputText.trim()}`.trim();
-        } else {
-          textToSend = `[Attachment: ${selectedAttachment.name} size:${selectedAttachment.size} type:${selectedAttachment.type} data:${selectedAttachment.data}] ${inputText.trim()}`.trim();
-        }
+        const ext = selectedAttachment.name.split('.').pop() || 'bin';
+        const url = await streamFileDirectToCloudStorage(blob, 'media', ext);
+        textToSend = `[Attachment: ${selectedAttachment.name} size:${selectedAttachment.size} type:${selectedAttachment.type} url:${url}] ${inputText.trim()}`.trim();
       } catch (err) {
-        console.error('Upload failed:', err);
+        console.error('Attachment upload failed:', err);
         textToSend = `[Attachment: ${selectedAttachment.name} size:${selectedAttachment.size} type:${selectedAttachment.type} data:${selectedAttachment.data}] ${inputText.trim()}`.trim();
       }
     }

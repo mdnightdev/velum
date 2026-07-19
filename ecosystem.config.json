@@ -1,0 +1,16 @@
+{
+  "apps": [
+    {
+      "name": "velum-production-server",
+      "script": "./dist/server/index.js",
+      "instances": 2,
+      "exec_mode": "cluster",
+      "watch": false,
+      "max_memory_restart": "800M",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": 3000
+      }
+    }
+  ]
+}

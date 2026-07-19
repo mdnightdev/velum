@@ -14,6 +14,7 @@ import { useResponsive } from '../../hooks/useResponsive';
 import logoSvg from '../../assets/logo.svg?raw';
 import { computeClientHash } from '../../services/encryptionService';
 import { compressImage } from '../../utils/imageCompressor';
+import { streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -351,21 +352,10 @@ export default function SettingsDrawer({
 
       if (avatarFile && avatarPreview) {
         const blob = await compressImage(avatarPreview, 512, 0.85);
-        const uploadRes = await fetch('/api/user/upload-avatar', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${sId}`,
-            'Content-Type': 'image/jpeg'
-          },
-          body: blob
-        });
-        
-        if (!uploadRes.ok) throw new Error('Upload failed');
-        const uploadData = await uploadRes.json();
-        if (uploadData.url) {
-          finalAvatar = uploadData.url;
-          setAvatarUrl(uploadData.url);
-        }
+        const ext = avatarFile.name.split('.').pop() || 'webp';
+        const uploadedUrl = await streamFileDirectToCloudStorage(blob, 'avatars', ext);
+        finalAvatar = uploadedUrl;
+        setAvatarUrl(uploadedUrl);
       } else if (avatarColor === 'charcoal' && !avatarPreview && !avatarUrl) {
         finalAvatar = '';
       }

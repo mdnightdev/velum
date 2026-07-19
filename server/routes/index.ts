@@ -10,6 +10,7 @@ import { loungesRouter } from './lounges.js';
 import { marketplaceRouter } from './marketplace.js';
 import { paymentsRouter } from './payments.js';
 import { bankRouter } from './bank.js';
+import { storageRouter } from './storage.js';
 
 export const apiRouter = express.Router();
 
@@ -24,3 +25,4 @@ apiRouter.use(loungesRouter);
 apiRouter.use(marketplaceRouter);
 apiRouter.use(paymentsRouter);
 apiRouter.use(bankRouter);
+apiRouter.use(storageRouter);

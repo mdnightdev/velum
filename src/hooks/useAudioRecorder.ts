@@ -1,13 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
+import { initiateMicrophoneStream, terminateMicrophoneStream, cancelMicrophoneStream } from '../utils/mediaPipeline';
 
 export function useAudioRecorder() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
   const secondsRef = useRef<number>(0);
 
   useEffect(() => {
@@ -31,19 +28,7 @@ export function useAudioRecorder() {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.start();
+      await initiateMicrophoneStream();
       setIsRecording(true);
       setMicError(null);
     } catch (err) {
@@ -52,14 +37,10 @@ export function useAudioRecorder() {
     }
   };
 
-  const stopRecording = (onRecordingComplete: (audioBase64: string, durationSeconds: number) => void) => {
-    if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
-      setIsRecording(false);
-      return;
-    }
-
-    mediaRecorderRef.current.onstop = () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+  const stopRecording = async (onRecordingComplete: (audioBase64: string, durationSeconds: number) => void) => {
+    setIsRecording(false);
+    try {
+      const audioBlob = await terminateMicrophoneStream();
       if (audioBlob.size > 5 * 1024 * 1024) {
         alert('Voice note exceeds 5MB limit. Please record a shorter message.');
         return;
@@ -75,26 +56,14 @@ export function useAudioRecorder() {
         alert('Failed to process voice note. Please try again.');
       };
       reader.readAsDataURL(audioBlob);
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-
-    mediaRecorderRef.current.stop();
-    setIsRecording(false);
+    } catch (err) {
+      console.error('Failed to stop voice recording:', err);
+    }
   };
 
   const cancelRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.onstop = null;
-      mediaRecorderRef.current.stop();
-    }
+    cancelMicrophoneStream();
     setIsRecording(false);
-    audioChunksRef.current = [];
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
   };
 
   return {

@@ -86,7 +86,7 @@ export function generateLoginNonce(): string {
     createdAt: Date.now(),
     used: false
   });
-  writeServerLog(`[SYS-SECURE] [NONCE-GEN] Generated secure login nonce: ${nonce}`);
+  writeServerLog(`[AUTH] Generated login nonce: ${nonce}`);
   return nonce;
 }
 
@@ -95,10 +95,10 @@ export function generateLoginNonce(): string {
  */
 export function verifyAndConsumeNonce(nonce: string): boolean {
   pruneNonceCache();
-  writeServerLog(`[SYS-SECURE] [NONCE-VERIFY] Verifying incoming nonce: ${nonce}. Cache size: ${nonceCache.size}`);
+  writeServerLog(`[AUTH] Verifying nonce: ${nonce}. Cache size: ${nonceCache.size}`);
   const record = nonceCache.get(nonce);
   if (!record) {
-    writeServerLog(`[SYS-SECURE] [NONCE-FAIL] Nonce ${nonce} not found in cache. Current keys: ${Array.from(nonceCache.keys()).join(', ')}`);
+    writeServerLog(`[AUTH] Nonce ${nonce} not found in cache. Current keys: ${Array.from(nonceCache.keys()).join(', ')}`);
     return false;
   }
 
