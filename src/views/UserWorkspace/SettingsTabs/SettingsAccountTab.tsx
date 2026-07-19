@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, AlertTriangle, Upload, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
 import PasswordInput from '../../../components/PasswordInput';
 
 export function SettingsAccountTab({
@@ -22,7 +22,8 @@ export function SettingsAccountTab({
   setPhone,
   setDisplayName,
   setBio,
-  handleFileChange
+  handleFileChange,
+  handleDeleteAvatar
 }: any) {
   // We'll just return the form contents here
   return (
@@ -66,9 +67,19 @@ export function SettingsAccountTab({
                 )}
               </div>
               <label className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 rounded-full transition-opacity cursor-pointer">
-                <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                <input type="file" accept="image/*" capture="user" className="hidden" onChange={handleFileChange} />
                 <Upload className="w-6 h-6 text-white" />
               </label>
+              {(avatarPreview || (avatarColor === 'custom' && avatarUrl)) && (
+                <button
+                  type="button"
+                  onClick={handleDeleteAvatar}
+                  className="absolute -bottom-1 -right-1 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full transition border border-velum-800 shadow-md cursor-pointer z-10 flex items-center justify-center"
+                  title="Delete avatar"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
             
             <h4 className="text-lg font-bold leading-tight flex items-center gap-1">

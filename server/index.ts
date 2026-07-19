@@ -19,6 +19,7 @@ import { securityHeaders, fileProtection } from './middlewares/security.js';
 import { apiRouter } from './routes/index.js';
 import helmet from 'helmet';
 import { writeServerLog } from './utils/logger.js';
+import { getSecureAssetStream } from './services/storageService.js';
 
 export const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -32,6 +33,39 @@ app.use(fileProtection);
 
 app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ limit: '12mb', extended: true }));
+
+// Serve avatar and media files from local storage, fallback to Cloudflare R2
+app.get('/avatars/:filename', async (req, res, next) => {
+  const publicDir = path.join(process.cwd(), 'public');
+  const filepath = path.join(publicDir, 'avatars', req.params.filename);
+  if (fs.existsSync(filepath)) {
+    return res.sendFile(filepath);
+  }
+  try {
+    const { stream, contentType, contentLength } = await getSecureAssetStream('avatars', req.params.filename);
+    if (contentType) res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    (stream as any).pipe(res);
+  } catch (err) {
+    res.status(404).send('Not Found');
+  }
+});
+
+app.get('/media/:filename', async (req, res, next) => {
+  const publicDir = path.join(process.cwd(), 'public');
+  const filepath = path.join(publicDir, 'media', req.params.filename);
+  if (fs.existsSync(filepath)) {
+    return res.sendFile(filepath);
+  }
+  try {
+    const { stream, contentType, contentLength } = await getSecureAssetStream('media', req.params.filename);
+    if (contentType) res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    (stream as any).pipe(res);
+  } catch (err) {
+    res.status(404).send('Not Found');
+  }
+});
 
 // Bind consolidated API routes
 app.use('/api', apiRouter);

@@ -224,12 +224,14 @@ export default function UserSidebar({
       }
 
       const profileData = await safeParseJson(profileRes);
-      if (profileData && profileData.avatar) {
-        if (profileData.avatar.startsWith('http') || profileData.avatar.startsWith('data:') || profileData.avatar.startsWith('/')) {
-          setCurrentUserAvatarUrl(profileData.avatar);
+      if (profileData) {
+        const avatarVal = profileData.avatar || '';
+        if (avatarVal.startsWith('http') || avatarVal.startsWith('data:') || avatarVal.startsWith('/')) {
+          setCurrentUserAvatarUrl(avatarVal);
           setCurrentUserAvatar('custom');
         } else {
-          setCurrentUserAvatar(profileData.avatar);
+          setCurrentUserAvatarUrl('');
+          setCurrentUserAvatar(avatarVal || 'charcoal');
         }
       }
 

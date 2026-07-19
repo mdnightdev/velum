@@ -2,7 +2,7 @@
   "apps": [
     {
       "name": "velum-production-server",
-      "script": "./dist/server/index.js",
+      "script": "./dist/server.cjs",
       "instances": 2,
       "exec_mode": "cluster",
       "watch": false,

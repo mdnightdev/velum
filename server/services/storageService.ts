@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const accountId = process.env.R2_ACCOUNT_ID || 'dummy_account';
@@ -31,5 +31,19 @@ export const getSecureUploadAssetConfig = async (userId: string, targetFolder: '
     return {
         uploadUrl, // Target streaming path used by client application PUT requests
         relativeDbPath: `/${targetFolder}/${userId}_${timestamp}.${ext}` // Lightweight index string for SQLite
+    };
+};
+
+export const getSecureAssetStream = async (targetFolder: 'avatars' | 'media', filename: string) => {
+    const fileKey = `${targetFolder}/${filename}`;
+    const command = new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME || 'dummy_bucket',
+        Key: fileKey,
+    });
+    const response = await s3Client.send(command);
+    return {
+        stream: response.Body,
+        contentType: response.ContentType,
+        contentLength: response.ContentLength
     };
 };

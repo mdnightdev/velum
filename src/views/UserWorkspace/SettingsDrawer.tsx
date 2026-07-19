@@ -13,8 +13,7 @@ import TicketsMainDashboard from '../../components/SidebarTabs/TicketsMainDashbo
 import { useResponsive } from '../../hooks/useResponsive';
 import logoSvg from '../../assets/logo.svg?raw';
 import { computeClientHash } from '../../services/encryptionService';
-import { compressImage } from '../../utils/imageCompressor';
-import { streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
+import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -66,7 +65,7 @@ export default function SettingsDrawer({
   const [profileError, setProfileError] = useState<string | null>(null);
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | Blob | null>(null);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [loungesCount, setLoungesCount] = useState(2);
   const [connectionsCount, setConnectionsCount] = useState(2);
@@ -127,12 +126,14 @@ export default function SettingsDrawer({
             } else {
               setDisplayName(currentUsername.replace('@', ''));
             }
-            if (data.avatar) {
-              if (data.avatar.startsWith('http') || data.avatar.startsWith('data:') || data.avatar.startsWith('/')) {
-                setAvatarUrl(data.avatar);
+            if (data.avatar !== undefined) {
+              const avatarVal = data.avatar || '';
+              if (avatarVal.startsWith('http') || avatarVal.startsWith('data:') || avatarVal.startsWith('/')) {
+                setAvatarUrl(avatarVal);
                 setAvatarColor('custom');
               } else {
-                setAvatarColor(data.avatar);
+                setAvatarUrl('');
+                setAvatarColor(avatarVal || 'charcoal');
               }
             }
             if (data.email) setEmail(data.email);
@@ -308,17 +309,19 @@ export default function SettingsDrawer({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setAvatarFile(file);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const compressedBlob = await captureAndCompressPhoto(e);
+      setAvatarFile(compressedBlob);
       
       const reader = new FileReader();
       reader.onload = (event) => {
         setAvatarPreview(event.target?.result as string);
         setAvatarColor('custom');
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(compressedBlob);
+    } catch (err) {
+      console.error("Camera transaction pipeline dropped processing:", err);
     }
     setShowAvatarMenu(false);
   };
@@ -351,9 +354,7 @@ export default function SettingsDrawer({
       };
 
       if (avatarFile && avatarPreview) {
-        const blob = await compressImage(avatarPreview, 512, 0.85);
-        const ext = avatarFile.name.split('.').pop() || 'webp';
-        const uploadedUrl = await streamFileDirectToCloudStorage(blob, 'avatars', ext);
+        const uploadedUrl = await streamFileDirectToCloudStorage(avatarFile, 'avatars', 'webp');
         finalAvatar = uploadedUrl;
         setAvatarUrl(uploadedUrl);
       } else if (avatarColor === 'charcoal' && !avatarPreview && !avatarUrl) {
@@ -758,6 +759,7 @@ export default function SettingsDrawer({
                 setDisplayName={setDisplayName}
                 setBio={setBio}
                 handleFileChange={handleFileChange}
+                handleDeleteAvatar={handleRemovePhoto}
               />
             )}
 

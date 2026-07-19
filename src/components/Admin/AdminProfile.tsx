@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { User, Plus, RefreshCw } from 'lucide-react';
 import PasswordInput from '../PasswordInput';
-import { compressImage } from '../../utils/imageCompressor';
-import { streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
+import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
 
 interface AdminProfileProps {
   adminId: number;
@@ -24,7 +23,7 @@ export default function AdminProfile({
   c,
 }: AdminProfileProps) {
   // Local profile/settings states
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | Blob | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
@@ -37,25 +36,17 @@ export default function AdminProfile({
   const [rotationResult, setRotationResult] = useState<string | null>(null);
   const [rotationError, setRotationError] = useState<string | null>(null);
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('File size exceeds the 5MB security threshold.');
-        return;
-      }
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
-        alert('Invalid file format. Only JPEG, PNG, and WebP images are permitted.');
-        return;
-      }
-
-      setAvatarFile(file);
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const compressedBlob = await captureAndCompressPhoto(e);
+      setAvatarFile(compressedBlob);
       const reader = new FileReader();
       reader.onloadend = () => {
         setAvatarPreview(reader.result as string);
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(compressedBlob);
+    } catch (err) {
+      console.error('Camera transaction pipeline dropped processing:', err);
     }
   };
 
@@ -63,9 +54,7 @@ export default function AdminProfile({
     if (!avatarFile || !avatarPreview) return null;
     setIsUploading(true);
     try {
-      const blob = await compressImage(avatarPreview, 512, 0.85);
-      const ext = avatarFile.name.split('.').pop() || 'webp';
-      const url = await streamFileDirectToCloudStorage(blob, 'avatars', ext);
+      const url = await streamFileDirectToCloudStorage(avatarFile, 'avatars', 'webp');
       return url;
     } catch (err) {
       console.error('Error uploading avatar:', err);
@@ -204,6 +193,7 @@ export default function AdminProfile({
                   type="file"
                   id="admin-avatar-input"
                   accept="image/jpeg,image/png,image/webp"
+                  capture="user"
                   className="hidden"
                   onChange={handleAvatarChange}
                 />
