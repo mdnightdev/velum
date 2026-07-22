@@ -46,7 +46,8 @@ import {
   activeUserBlocksSet,
   rebuildBlocksCache,
   isUserBlocked,
-  closeSqliteConnection
+  closeSqliteConnection,
+  syncDbIfNeeded
 } from './db/index.js';
 import { DbSchema, defaultDb } from './db/schema.js';
 
@@ -118,6 +119,7 @@ export {
   db,
   DB_DIR,
   DB_FILE,
+  syncDbIfNeeded,
   broadcastToRoomCallback,
   registerBroadcastToRoomCallback,
   encryptData,
@@ -202,69 +204,39 @@ function pruneEphemeralNonces(): void {
 
 export function generateLoginNonce(): string {
   pruneEphemeralNonces();
-  const conn = initSqlite();
-  if (!conn) {
-    const fallback = crypto.randomBytes(32).toString('hex');
-    ephemeralNonceCache.add(fallback);
-    ephemeralNonceTimes.set(fallback, Date.now());
-    writeServerLog('[DB] SQLite unavailable, using ephemeral nonce.');
-    return fallback;
-  }
-  try {
-    const pruneTime = Date.now() - 90000;
-    conn.prepare('DELETE FROM login_nonces WHERE created_at < ?').run(pruneTime);
-    
-    const nonce = crypto.randomBytes(32).toString('hex');
-    conn.prepare('INSERT INTO login_nonces (nonce, created_at, used) VALUES (?, ?, 0)').run(nonce, Date.now());
-    writeServerLog(`[DB] Persisted nonce in SQLite: ${nonce}`);
-    return nonce;
-  } catch (err: any) {
-    const fallback = crypto.randomBytes(32).toString('hex');
-    ephemeralNonceCache.add(fallback);
-    ephemeralNonceTimes.set(fallback, Date.now());
-    writeServerLog(`[DB] Failed to write nonce to SQLite: ${err?.message || err}. Using ephemeral.`);
-    return fallback;
-  } finally {
-    try { conn.close?.(); } catch (_) {}
-  }
+  const nonce = crypto.randomBytes(32).toString('hex');
+  ephemeralNonceCache.add(nonce);
+  ephemeralNonceTimes.set(nonce, Date.now());
+  return nonce;
 }
 
 export function verifyAndConsumeNonce(nonce: string): boolean {
+  if (!nonce) return false;
   pruneEphemeralNonces();
   if (ephemeralNonceCache.has(nonce)) {
     ephemeralNonceCache.delete(nonce);
     ephemeralNonceTimes.delete(nonce);
-    writeServerLog(`[DB] Nonce ${nonce} verified from ephemeral cache.`);
     return true;
   }
 
   const conn = initSqlite();
   if (!conn) {
-    writeServerLog('[DB] SQLite connection unavailable during verify.');
     return false;
   }
   try {
-    const pruneTime = Date.now() - 90000;
-    conn.prepare('DELETE FROM login_nonces WHERE created_at < ?').run(pruneTime);
-
-    writeServerLog(`[DB] Verifying nonce: ${nonce}`);
     const record = conn.prepare('SELECT * FROM login_nonces WHERE nonce = ?').get(nonce) as any;
     if (!record) {
-      writeServerLog(`[DB] Nonce ${nonce} not found in SQLite.`);
       return false;
     }
 
     if (record.used === 1) {
-      writeServerLog(`[DB] Nonce ${nonce} has already been used.`);
       conn.prepare('DELETE FROM login_nonces WHERE nonce = ?').run(nonce);
       return false;
     }
 
     conn.prepare('DELETE FROM login_nonces WHERE nonce = ?').run(nonce);
-    writeServerLog(`[DB] Nonce ${nonce} verified and consumed.`);
     return true;
   } catch (err: any) {
-    writeServerLog(`[DB] Failed to verify/consume nonce in SQLite: ${err?.message || err}`);
     return false;
   } finally {
     try { conn.close?.(); } catch (_) {}

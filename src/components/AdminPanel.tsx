@@ -22,7 +22,7 @@ import AdminProfile from './Admin/AdminProfile';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 
 import logoSvg from '../assets/logo.svg?raw';
-import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report } from '../types';
+import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report, ClientDiagnosticLog } from '../types';
 
 interface AdminPanelProps {
   adminId: number;
@@ -93,6 +93,7 @@ export default function AdminPanel({
   // Diagnostics lists
   const [suspicious, setSuspicious] = useState<SuspiciousEvent[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<ClientDiagnosticLog[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [activeSanctions, setActiveSanctions] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -158,6 +159,7 @@ export default function AdminPanel({
         const diagData = await diagRes.json();
         setSuspicious(diagData.suspicious || []);
         setLogs(diagData.logs || []);
+        setDiagnosticLogs(diagData.diagnostic_logs || []);
         setInvites(diagData.invites || []);
         setActiveSanctions(diagData.sanctions || []);
         setUsers(diagData.users || []);
@@ -301,7 +303,7 @@ export default function AdminPanel({
 
   const systemGates = [
     { id: 'system', label: 'System Config', icon: <Sliders className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'CLI_ADMIN'] },
-    { id: 'logs', label: 'Audit Logs', icon: <BookOpen className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'CLI_ADMIN'] },
+    { id: 'logs', label: 'Diagnostics & Logs', icon: <Activity className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'bank', label: 'Central Bank', icon: <Landmark className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'profile', label: 'Profile Settings', icon: <User className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
   ];
@@ -602,6 +604,8 @@ export default function AdminPanel({
               <AdminDiagnosticsView
                 suspicious={suspicious}
                 logs={logs}
+                initialDiagLogs={diagnosticLogs}
+                adminFetch={adminFetch}
                 c={c}
               />
             )}

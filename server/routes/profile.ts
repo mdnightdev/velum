@@ -6,6 +6,7 @@ import { db, loadDb, saveDb, rebuildBlocksCache } from '../db.js';
 import { authenticateUser } from '../middleware.js';
 import { broadcastToRoom } from '../websocket.js';
 import { generatePrefixedId, generateUlid } from '../utils/ulid.js';
+import { uploadBufferToCloudStorage, isCloudStorageConfigured } from '../services/storageService.js';
 
 export const profileRouter = express.Router();
 
@@ -58,12 +59,24 @@ profileRouter.get('/user/:userId/profile', authenticateUser, (req, res) => {
   }
 });
 
-profileRouter.post('/user/upload-avatar', authenticateUser, express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '5mb' }), (req, res) => {
+profileRouter.post('/user/upload-avatar', authenticateUser, express.raw({ type: ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream'], limit: '5mb' }), async (req, res) => {
   try {
     const user = (req as any).user;
     const buffer = req.body;
     if (!Buffer.isBuffer(buffer)) {
       return res.status(400).json({ error: 'Invalid image payload. Must be a binary blob.' });
+    }
+
+    const contentType = req.headers['content-type'] || 'image/jpeg';
+    const filename = `avatars/avatar_${user.user_id}_${generateUlid()}.jpg`;
+
+    if (isCloudStorageConfigured()) {
+      try {
+        const cloudUrl = await uploadBufferToCloudStorage(buffer, filename, contentType);
+        return res.json({ success: true, url: cloudUrl });
+      } catch (cloudErr) {
+        console.warn('R2/S3 Avatar upload failed, using local disk fallback:', cloudErr);
+      }
     }
     
     const publicDir = path.join(process.cwd(), 'public', 'avatars');
@@ -71,14 +84,11 @@ profileRouter.post('/user/upload-avatar', authenticateUser, express.raw({ type: 
       fs.mkdirSync(publicDir, { recursive: true });
     }
     
-    const filename = `avatar_${user.user_id}_${generateUlid()}.jpg`;
-    const filepath = path.join(publicDir, filename);
+    const localFilename = `avatar_${user.user_id}_${generateUlid()}.jpg`;
+    const filepath = path.join(publicDir, localFilename);
     fs.writeFileSync(filepath, buffer);
     
-    // Return a lightweight URL string (simulating a cloud storage bucket URL)
-    // Since we write to public/avatars, Vite/Express will serve it at /avatars/filename
-    const mockCloudUrl = `/avatars/${filename}`;
-    
+    const mockCloudUrl = `/avatars/${localFilename}`;
     res.json({ success: true, url: mockCloudUrl });
   } catch (err: any) {
     console.error('Error uploading avatar:', err);
@@ -86,7 +96,7 @@ profileRouter.post('/user/upload-avatar', authenticateUser, express.raw({ type: 
   }
 });
 
-profileRouter.post('/user/upload-media', authenticateUser, express.raw({ type: ['image/jpeg', 'image/png', 'image/webp', 'audio/webm', 'audio/ogg', 'application/octet-stream'], limit: '10mb' }), (req, res) => {
+profileRouter.post('/user/upload-media', authenticateUser, express.raw({ type: ['image/jpeg', 'image/png', 'image/webp', 'audio/webm', 'audio/mp4', 'audio/ogg', 'audio/mpeg', 'audio/wav', 'application/octet-stream'], limit: '15mb' }), async (req, res) => {
   try {
     const user = (req as any).user;
     const buffer = req.body;
@@ -94,30 +104,45 @@ profileRouter.post('/user/upload-media', authenticateUser, express.raw({ type: [
       return res.status(400).json({ error: 'Invalid payload. Must be a binary blob.' });
     }
     
-    const mediaDir = path.join(process.cwd(), 'public', 'media');
-    if (!fs.existsSync(mediaDir)) {
-      fs.mkdirSync(mediaDir, { recursive: true });
-    }
-    
-    const contentType = req.headers['content-type'] || '';
+    const contentType = req.headers['content-type'] || 'application/octet-stream';
     let ext = '.bin';
     if (contentType.includes('image/jpeg')) ext = '.jpg';
     else if (contentType.includes('image/png')) ext = '.png';
     else if (contentType.includes('image/webp')) ext = '.webp';
     else if (contentType.includes('audio/webm')) ext = '.webm';
+    else if (contentType.includes('audio/mp4')) ext = '.mp4';
     else if (contentType.includes('audio/ogg')) ext = '.ogg';
+    else if (contentType.includes('audio/mpeg')) ext = '.mp3';
+    else if (contentType.includes('audio/wav')) ext = '.wav';
+
+    const fileKey = `media/media_${user.user_id}_${generateUlid()}${ext}`;
+
+    if (isCloudStorageConfigured()) {
+      try {
+        const cloudUrl = await uploadBufferToCloudStorage(buffer, fileKey, contentType);
+        return res.json({ success: true, url: cloudUrl });
+      } catch (cloudErr) {
+        console.warn('R2/S3 Media upload failed, using local disk fallback:', cloudErr);
+      }
+    }
     
-    const filename = `media_${user.user_id}_${generateUlid()}${ext}`;
-    const filepath = path.join(mediaDir, filename);
+    const mediaDir = path.join(process.cwd(), 'public', 'media');
+    if (!fs.existsSync(mediaDir)) {
+      fs.mkdirSync(mediaDir, { recursive: true });
+    }
+    
+    const localFilename = `media_${user.user_id}_${generateUlid()}${ext}`;
+    const filepath = path.join(mediaDir, localFilename);
     fs.writeFileSync(filepath, buffer);
     
-    const mediaUrl = `/media/${filename}`;
+    const mediaUrl = `/media/${localFilename}`;
     res.json({ success: true, url: mediaUrl });
   } catch (err: any) {
     console.error('Error uploading media:', err);
     res.status(500).json({ error: 'Failed to upload media.' });
   }
 });
+
 
 // Update current log payload profile parameters
 profileRouter.post('/user/profile', authenticateUser, (req, res) => {

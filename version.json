@@ -1,3 +1,6 @@
 {
-  "version": "2.1.51"
+  "version": "2.1.51",
+  "buildNumber": 1052,
+  "buildStage": "Release Candidate Stream",
+  "buildChannel": "Production"
 }

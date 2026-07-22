@@ -639,9 +639,14 @@ export function attemptRecoveryFromSqlite(): boolean {
   }
 }
 
-export function saveDb(tableName?: string | string[] | boolean, force = true) {
+export function saveDb(tableName?: string | string[] | boolean, force = false) {
   if (tableName) {
-    if (Array.isArray(tableName)) {
+    if (typeof tableName === 'boolean') {
+      force = tableName;
+      for (const t of ALL_TABLE_NAMES) {
+        dirtyTables.add(t);
+      }
+    } else if (Array.isArray(tableName)) {
       for (const t of tableName) {
         dirtyTables.add(t);
       }
@@ -654,11 +659,21 @@ export function saveDb(tableName?: string | string[] | boolean, force = true) {
     }
   }
 
-  if (saveTimeout) {
-    clearTimeout(saveTimeout);
-    saveTimeout = null;
+  if (force) {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+    executeSaveDb(true);
+    return;
   }
-  executeSaveDb(true);
+
+  if (!saveTimeout) {
+    saveTimeout = setTimeout(() => {
+      saveTimeout = null;
+      executeSaveDb(false);
+    }, 50);
+  }
 }
 
 export function executeSaveDb(force = false) {
@@ -668,11 +683,7 @@ export function executeSaveDb(force = false) {
     return;
   }
 
-  // NOTE: table dirtiness is set by saveDb() (specific table(s) or all, if no
-  // tableName given). Do NOT re-mark every table dirty here — that defeats
-  // the whole point of tracking dirty tables and forces a full rewrite of
-  // every structured table (lounges, market_listings, escrow_transactions,
-  // audit logs, etc.) on every single save, even when only one row changed.
+  if (dirtyTables.size === 0 && !force) return;
 
   const plainJson = JSON.stringify(db);
   if (plainJson === lastSavedDbJson && !legacyDecryptionSucceeded && fs.existsSync(SQLITE_FILE)) {
@@ -689,6 +700,7 @@ export function executeSaveDb(force = false) {
       const yieldIfNeeded = () => {};
 
       const saveTable = (tableName: string, rows: any[], idField: string) => {
+        if (!force && !dirtyTables.has(tableName)) return;
         try {
           const currentJson = JSON.stringify(rows || []);
           if (lastSavedTableJson[tableName] === currentJson && !force) {

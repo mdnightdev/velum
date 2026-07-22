@@ -127,7 +127,7 @@ export const streamFileDirectToCloudStorage = async (
   const sid = sessionStorage.getItem('velum-sessionId') || '';
   
   try {
-    // 1. Fetch secure temporary upload link from Velum core node
+    // 1. Fetch secure upload config from Velum node
     const tokenNegotiator = await fetch('/api/storage/upload-token', {
       method: "POST",
       headers: {
@@ -140,27 +140,29 @@ export const streamFileDirectToCloudStorage = async (
     if (tokenNegotiator.ok) {
       const { uploadUrl, relativeDbPath }: UploadConfig = await tokenNegotiator.json();
 
-      // 2. Stream binary payload directly to Cloudflare edge server
-      const httpPipe = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": processedBlob.type },
-        body: processedBlob // Transmits pure binary stream data without heavy nested wrappers
-      });
+      if (uploadUrl && uploadUrl.startsWith('http')) {
+        // Stream binary payload directly to Cloudflare R2 / S3 edge
+        const httpPipe = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": processedBlob.type || "application/octet-stream" },
+          body: processedBlob
+        });
 
-      if (httpPipe.ok) {
-        return relativeDbPath;
+        if (httpPipe.ok) {
+          return relativeDbPath;
+        }
       }
     }
   } catch (err) {
     console.warn('[STORAGE] Presigned S3 upload failed, falling back to local server upload:', err);
   }
 
-  // Fallback to local server upload if presigned endpoint fails or is unconfigured
+  // Fallback to direct binary POST endpoint
   const endpoint = folderDestination === 'avatars' ? '/api/user/upload-avatar' : '/api/user/upload-media';
   const uploadRes = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      'Content-Type': processedBlob.type,
+      'Content-Type': processedBlob.type || 'application/octet-stream',
       'Authorization': `Bearer ${sid}`
     },
     body: processedBlob
@@ -173,3 +175,4 @@ export const streamFileDirectToCloudStorage = async (
   const data = await uploadRes.json();
   return data.url; 
 };
+

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, ShieldAlert, Key, Lock, User, Eye, EyeOff, ChevronLeft, HelpCircle, Zap, Brain } from 'lucide-react';
 import PasswordInput from './PasswordInput';
 import logoSvg from '../assets/logo.svg?raw';
+import { LegalDocModal, LegalDocType } from './LegalDocModal';
 
 async function computeClientHash(secret: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -60,6 +61,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
   const [redeemUsername, setRedeemUsername] = useState('');
   const [redeemCode, setRedeemCode] = useState('');
   const [redeemNewPassword, setRedeemNewPassword] = useState('');
+  const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
 
   useEffect(() => {
     setUsername('');
@@ -602,8 +604,8 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                   </div>
                 )}
                 <div className="mt-2 pt-2 border-t border-white-5 text-center">
-                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-[9px] text-text-secondary hover:text-accent underline mr-3">Terms of Service</a>
-                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-[9px] text-text-secondary hover:text-accent underline">Privacy Policy</a>
+                  <button type="button" onClick={() => setActiveLegalDoc('terms')} className="text-[9px] text-text-secondary hover:text-accent underline mr-3 cursor-pointer">Terms of Service</button>
+                  <button type="button" onClick={() => setActiveLegalDoc('privacy')} className="text-[9px] text-text-secondary hover:text-accent underline cursor-pointer">Privacy Policy</button>
                 </div>
               </form>
             ) : (
@@ -678,8 +680,8 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                     className="w-4 h-4 rounded border-white-5 bg-velum-850 accent-accent cursor-pointer"
                     required
                   />
-                  <label htmlFor="termsAgreement" className="text-[10px] text-text-secondary">
-                    I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-accent underline">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-accent underline">Privacy Policy</a>
+                  <label htmlFor="termsAgreement" className="text-[10px] text-text-secondary select-none">
+                    I agree to the <button type="button" onClick={() => setActiveLegalDoc('terms')} className="text-accent underline cursor-pointer">Terms of Service</button> and <button type="button" onClick={() => setActiveLegalDoc('privacy')} className="text-accent underline cursor-pointer">Privacy Policy</button>
                   </label>
                 </div>
 
@@ -986,6 +988,8 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
           </div>
         )}
       </div>
+
+      <LegalDocModal docType={activeLegalDoc} onClose={() => setActiveLegalDoc(null)} />
     </div>
   );
 }

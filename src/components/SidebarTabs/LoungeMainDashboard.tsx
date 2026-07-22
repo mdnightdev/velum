@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Plus, X,Link, Info } from 'lucide-react';
+import { Globe, Plus, X, Link } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
+import { useLanguage } from '../../i18n/LanguageContext';
+import logoSvg from '../../assets/logo.svg?raw';
 
 interface LoungeMainDashboardProps {
   currentUserId: number;
@@ -17,7 +19,14 @@ export default function LoungeMainDashboard({
   onSectionView,
   unreadCounts
 }: LoungeMainDashboardProps) {
-  const [lounges, setLounges] = useState<any[]>([]);
+  const { t } = useLanguage();
+  const [lounges, setLounges] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('velum_cached_lounges');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  });
   const [roomsMap, setRoomsMap] = useState<Record<string, any[]>>({});
   const [selectedLounge, setSelectedLounge] = useState<any>(null);
   
@@ -100,6 +109,9 @@ export default function LoungeMainDashboard({
       if (res.ok) {
         const data = await res.json();
         setLounges(data);
+        try {
+          localStorage.setItem('velum_cached_lounges', JSON.stringify(data));
+        } catch {}
       }
     } catch (err) {
       console.error('Failed to load lounges', err);
@@ -232,7 +244,7 @@ export default function LoungeMainDashboard({
         <div className="relative flex items-center">
           <input
             type="text"
-            placeholder="Search lounges..."
+            placeholder={t('lounge.search', 'Search lounges...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none transition-all ${
@@ -251,7 +263,7 @@ export default function LoungeMainDashboard({
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {lounges.filter((lounge) => lounge.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
           <div className={`p-8 text-center font-mono text-[10px] uppercase tracking-widest ${isDark ? 'text-text-secondary/60' : 'text-text-disabled'}`}>
-            No communities found
+            {t('lounge.no_communities', 'No communities found')}
           </div>
         ) : (
           lounges
@@ -265,29 +277,18 @@ export default function LoungeMainDashboard({
                 {lounge.icon_url ? (
                   <img src={lounge.icon_url} alt={lounge.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white-10 group-hover:border-accent transition-colors" />
                 ) : (
-                  <div className="w-10 h-10 rounded-xl bg-accent text-black font-bold text-xs flex items-center justify-center shrink-0 font-mono uppercase group-hover:bg-accent-hover transition-colors">
-                    {lounge.name.slice(0, 2)}
+                  <div className="w-10 h-10 rounded-xl bg-velum-800 border border-white-10 text-accent flex items-center justify-center shrink-0 group-hover:border-accent transition-colors">
+                    <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
                   <div className={`font-bold text-sm uppercase tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
-                  {lounge.description && (
-                    <div className={`text-[11px] mt-1 opacity-70 truncate ${isDark ? 'text-text-secondary' : 'text-text-secondary'}`}>
-                      {lounge.description}
-                    </div>
-                  )}
                 </div>
                 {unreadCounts && unreadCounts[lounge.lounge_id] > 0 && (
                   <div className="bg-accent text-velum-900 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
                     {unreadCounts[lounge.lounge_id]}
                   </div>
                 )}
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setSelectedLounge(lounge); }}
-                  className="p-1.5 rounded bg-white-5 hover:bg-white-10 text-text-secondary transition-colors"
-                >
-                  <Info className="w-4 h-4" />
-                </button>
               </div>
             ))
         )}
@@ -390,7 +391,7 @@ export default function LoungeMainDashboard({
                       ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
                       : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
                   }`}
-                  placeholder="ENTER UNIQUE ALPHANUMERIC IDENTIFIER"
+                  placeholder="e.g. general-lounge"
                 />
               </div>
               <div>
@@ -403,7 +404,7 @@ export default function LoungeMainDashboard({
                       ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
                       : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
                   }`}
-                  placeholder="Describe your community node parameters..."
+                  placeholder="Describe your lounge topic or rules..."
                 />
               </div>
               <div>
@@ -417,7 +418,7 @@ export default function LoungeMainDashboard({
                       ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
                       : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
                   }`}
-                  placeholder="LEAVE EMPTY FOR PUBLIC ADMISSION"
+                  placeholder="Optional access code"
                 />
               </div>
               <div className="flex items-center gap-2">

@@ -283,7 +283,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         const messagesCount = db.messages?.length || 0;
 
         const ticketsCount = db.tickets?.length || 0;
-        const activeConns = Number((sqliteDb.prepare("SELECT COUNT(*) as count FROM sessions WHERE json_extract(payload, '$.status') = 'active'").get() as any)?.count || 0);
+        const activeConns = (db.sessions || []).filter((s: any) => s && s.status === 'active').length;
 
         let dbBytes = 0;
         if (fs.existsSync(SQLITE_FILE)) {
@@ -559,7 +559,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         candidate.status = 'suspended';
         candidate.updated_at = new Date().toISOString();
 
-        sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(candidate.user_id);
+        sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(candidate.user_id);
         db.sessions = db.sessions.filter(s => s.user_id !== candidate.user_id);
 
         if (!db.admin_sanctions) db.admin_sanctions = [];
@@ -803,8 +803,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
     case 'vacuum':
     case 'db-vacuum': {
       try {
-        const expiredCount = Number((sqliteDb.prepare("SELECT COUNT(*) as count FROM sessions WHERE json_extract(payload, '$.status') = 'expired' OR json_extract(payload, '$.status') = 'revoked'").get() as any)?.count || 0);
-        sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.status') = 'expired' OR json_extract(payload, '$.status') = 'revoked'").run();
+        const expiredCount = (db.sessions || []).filter((s: any) => s && (s.status === 'expired' || s.status === 'revoked')).length;
         if (db.sessions) {
           db.sessions = db.sessions.filter(s => s.status === 'active');
         }
@@ -1049,7 +1048,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
 
         db.user_blocks = db.user_blocks.filter(b => b.blocker_id !== uId && b.blocked_id !== uId);
         db.user_mutes = (db.user_mutes || []).filter(m => m.muter_id !== uId && m.muted_id !== uId);
-        sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(uId);
+        sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(uId);
         db.sessions = db.sessions.filter(s => s.user_id !== uId);
         db.tickets = db.tickets.filter(t => t.user_id !== uId);
 
@@ -1423,7 +1422,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!user) return ` ERROR: User "${arg1}" not found.`;
       user.status = 'deactivated';
       user.updated_at = new Date().toISOString();
-      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
+      sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.user_id);
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
 
       (db as any).account_deletion_requests = (db as any).account_deletion_requests || [];
@@ -1512,7 +1511,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         profile.avatar = '';
       }
 
-      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
+      sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.user_id);
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
       req.status = 'purged';
 
@@ -1585,7 +1584,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const profile = (db.profiles || []).find((p: any) => p.user_id === user.user_id);
       if (profile) profile.bio = 'Platform Account Transfer Completed';
 
-      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
+      sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.user_id);
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
 
       (db as any).platform_financial_audit_logs = (db as any).platform_financial_audit_logs || [];
@@ -2091,7 +2090,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const idArray = Array.from(userIds);
       if (idArray.length > 0) {
         const placeholders = idArray.map(() => '?').join(',');
-        sqliteDb.prepare(`DELETE FROM sessions WHERE json_extract(payload, '$.user_id') NOT IN (${placeholders})`).run(...idArray);
+        sqliteDb.prepare(`DELETE FROM sessions WHERE user_id NOT IN (${placeholders})`).run(...idArray);
       } else {
         sqliteDb.prepare(`DELETE FROM sessions`).run();
       }
@@ -2635,7 +2634,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const user = findUserInDb(arg1);
       if (!user) return ` ERROR: User "${arg1}" not found.`;
 
-      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
+      sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.user_id);
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
 
       import('./websocket.js').then(({ connectedClients, broadcastToRoom }) => {

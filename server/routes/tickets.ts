@@ -32,11 +32,8 @@ ticketsRouter.post('/tickets', (req, res) => {
 
   const { username, issueType, disputeText, senderUserId, ipAddress, deviceFingerprint, safeWordEntered, reason, credentialsForwarded } = req.body;
 
-  const actualIssueType = issueType || 'arbitration_support';
-  let actualDisputeText = disputeText || reason || 'No details provided.';
-  if (credentialsForwarded) {
-    actualDisputeText += `\n\n[Forwarded Details / Encrypted Metadata]:\n${credentialsForwarded}`;
-  }
+  const actualIssueType = issueType || 'general_support';
+  let actualDisputeText = (disputeText || reason || 'No details provided.').trim();
 
   const targetUser = activeUser || db.users.find(u => u.username === username) || db.users.find(u => u.user_id === senderUserId);
   if (!targetUser) {
@@ -49,8 +46,19 @@ ticketsRouter.post('/tickets', (req, res) => {
   let score = 0;
   if (targetUser) {
     // 1. IP-ID Match (35%)
-    const rows = sqliteDb.prepare("SELECT payload FROM sessions WHERE json_extract(payload, '$.user_id') = ?").all(targetUser.user_id) as { payload: string }[];
-    const userSessions = rows.map(r => JSON.parse(r.payload));
+    const userSessions: any[] = (db.sessions || []).filter((s: any) => s && s.user_id === targetUser.user_id);
+    if (sqliteDb) {
+      try {
+        const rows = sqliteDb.prepare("SELECT payload FROM sessions WHERE user_id = ?").all(targetUser.user_id) as { payload: string }[];
+        for (const r of rows) {
+          if (!r.payload) continue;
+          try {
+            const s = JSON.parse(decryptData(r.payload));
+            if (s) userSessions.push(s);
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
     const hasIpMatch = userSessions.some(s => s.ip_id === ipAddress || ipAddress === '127.0.0.1' || ipAddress === '::1' || ipAddress === 'localhost');
     if (ipAddress && hasIpMatch) {
       score += 35;
@@ -115,6 +123,7 @@ ticketsRouter.post('/tickets', (req, res) => {
     user_id: uId,
     username: uName,
     reason: actualDisputeText,
+    credentials_forwarded: credentialsForwarded || null,
     issue_type: actualIssueType,
     status: 'open',
     assigned_admin: null,
@@ -141,13 +150,20 @@ ticketsRouter.post('/tickets', (req, res) => {
     ticketId, 
     trackingId: tracking_uuid,
     credibilityScore: score,
-    message: `Secure record submitted successfully. Anonymous tracking identifier is: ${tracking_uuid}. Please record this handle to query recovery credentials.` 
+    message: `Support ticket submitted successfully. Reference ID: ${ticketId}.` 
   });
 });
+
+function stripLarpNoise(str?: string | null): string {
+  if (!str) return '';
+  return str.replace(/\n*\[Forwarded Details \/ Encrypted Metadata\]:\s*/gi, '\n').trim();
+}
 
 function formatUserTicket(ticket: Ticket) {
   return {
     ...ticket,
+    reason: stripLarpNoise(ticket.reason),
+    credentials_forwarded: ticket.credentials_forwarded || null,
     messages: (ticket.messages || []).map(m => {
       const senderUser = (db.users || []).find(u => u && Number(u.user_id) === Number(m.sender_id));
       const isOperator = m.sender_id === 0 ? false : (
@@ -159,7 +175,7 @@ function formatUserTicket(ticket: Ticket) {
       return {
         sender_id: m.sender_id,
         sender_name: m.sender_id === 0 ? 'System' : (isOperator ? 'Support operator' : m.sender_name),
-        content: m.content,
+        content: stripLarpNoise(m.content),
         timestamp: m.timestamp
       };
     })
@@ -175,7 +191,7 @@ ticketsRouter.get('/user/tickets', authenticateUser, (req, res) => {
   }
 
   const userTickets = (db.tickets || [])
-    .filter(t => t.user_id === authenticatedUser.user_id)
+    .filter(t => Number(t.user_id) === Number(authenticatedUser.user_id))
     .map(t => formatUserTicket(t));
   res.json(userTickets);
 });
@@ -310,7 +326,7 @@ ticketsRouter.post('/user/tickets/:ticketId/reply', authenticateUser, (req, res)
     return res.status(404).json({ error: 'Ticket not found' });
   }
 
-  if (ticket.user_id !== user.user_id) {
+  if (Number(ticket.user_id) !== Number(user.user_id)) {
     return res.status(403).json({ error: 'Unauthorized ticket access.' });
   }
 
@@ -341,7 +357,7 @@ ticketsRouter.post('/user/tickets/:ticketId/close', authenticateUser, (req, res)
     return res.status(404).json({ error: 'Ticket not found' });
   }
 
-  if (ticket.user_id !== user.user_id) {
+  if (Number(ticket.user_id) !== Number(user.user_id)) {
     return res.status(403).json({ error: 'Unauthorized ticket access.' });
   }
 
@@ -372,7 +388,7 @@ ticketsRouter.delete('/user/tickets/:ticketId', authenticateUser, (req, res) => 
   }
 
   const ticket = db.tickets[ticketIndex];
-  if (ticket.user_id !== user.user_id) {
+  if (Number(ticket.user_id) !== Number(user.user_id)) {
     return res.status(403).json({ error: 'Unauthorized ticket access.' });
   }
 

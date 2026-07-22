@@ -13,6 +13,8 @@ import {
   revokeSanction, 
   lockUser, 
   getDiagnostics, 
+  getDiagnosticsLogs,
+  resolveDiagnosticLog,
   createInvite, 
   getInvites, 
   nominateSupport, 
@@ -46,6 +48,8 @@ adminRouter.post('/admin/sanction', authenticateAdmin, sanctionUser);
 adminRouter.post('/admin/sanction/revoke', authenticateAdmin, revokeSanction);
 adminRouter.post('/admin/user-lock', authenticateAdmin, lockUser);
 adminRouter.get('/admin/diagnostics', authenticateAdmin, getDiagnostics);
+adminRouter.get('/admin/diagnostics/logs', authenticateAdmin, getDiagnosticsLogs);
+adminRouter.post('/admin/diagnostics/logs/:logId/resolve', authenticateAdmin, resolveDiagnosticLog);
 
 adminRouter.post('/admin/invites', authenticateAdmin, createInvite);
 adminRouter.get('/admin/invites', authenticateAdmin, getInvites);

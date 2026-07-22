@@ -141,7 +141,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       // Soft-Purge: Change user status to 'purged' and terminate sessions, but keep records in SQLite
       targetUser.status = 'purged';
       targetUser.updated_at = new Date().toISOString();
-      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(uId);
+      sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(uId);
       db.sessions = db.sessions.filter(s => s.user_id !== uId);
 
       db.audit_logs.push({
@@ -176,7 +176,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     db.users = db.users.filter(u => u.user_id !== uId);
     db.profiles = db.profiles.filter(p => p.user_id !== uId);
     db.user_blocks = db.user_blocks.filter(b => b.blocker_id !== uId && b.blocked_id !== uId);
-    sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(uId);
+    sqliteDb.prepare("DELETE FROM sessions WHERE user_id = ?").run(uId);
     db.sessions = db.sessions.filter(s => s.user_id !== uId);
     db.tickets = db.tickets.filter(t => t.user_id !== uId);
     db.friend_requests = (db.friend_requests || []).filter(fr => fr.sender_id !== uId && fr.receiver_id !== uId);
@@ -560,10 +560,11 @@ export const getDiagnostics = async (req: Request, res: Response) => {
       sessions: db.sessions,
       devices: db.devices,
       sanctions: db.admin_sanctions,
+      diagnostic_logs: db.diagnostic_logs || [],
       metrics: {
         totalUsers: db.users.length,
         totalRooms: 0,
-        activeSessionsCount: Number((sqliteDb.prepare("SELECT COUNT(*) as count FROM sessions WHERE json_extract(payload, '$.status') = 'active'").get() as any)?.count || 0),
+        activeSessionsCount: db.sessions.filter(s => s && s.status === 'active').length,
         totalTickets: db.tickets.length,
         openTicketsCount: db.tickets.filter(t => t.status !== 'resolved').length,
         totalMessages: db.messages.length,
@@ -581,6 +582,49 @@ export const getDiagnostics = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to access diagnostics.' });
   }
 };
+
+export const getDiagnosticsLogs = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).adminUser;
+    loadDb(true);
+
+    if (user.role !== 'LOGIN_ADMIN' && user.role !== 'SUPPORT_ADMIN' && user.role !== 'CLI_ADMIN') {
+      return res.status(403).json({ error: 'Unprivileged diagnostic logs access.' });
+    }
+
+    res.json(db.diagnostic_logs || []);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch diagnostic logs.' });
+  }
+};
+
+export const resolveDiagnosticLog = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).adminUser;
+    const { logId } = req.params;
+    const { status } = req.body;
+
+    loadDb();
+
+    if (user.role !== 'LOGIN_ADMIN' && user.role !== 'SUPPORT_ADMIN' && user.role !== 'CLI_ADMIN') {
+      return res.status(403).json({ error: 'Unprivileged diagnostic log modification.' });
+    }
+
+    if (!db.diagnostic_logs) db.diagnostic_logs = [];
+    const entry = db.diagnostic_logs.find(d => d.id === logId);
+    if (!entry) {
+      return res.status(404).json({ error: 'Diagnostic record not located.' });
+    }
+
+    entry.status = status || 'resolved';
+    saveDb();
+
+    res.json({ success: true, log: entry });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update diagnostic log status.' });
+  }
+};
+
 
 export const createInvite = async (req: Request, res: Response) => {
   try {

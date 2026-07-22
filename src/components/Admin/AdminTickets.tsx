@@ -603,35 +603,29 @@ export default function AdminTickets({
                     {(adminRole === 'LOGIN_ADMIN' || user?.role === 'CLI_ADMIN') && (
                       <button
                         onClick={async () => {
-                          if (
-                            confirm(
-                              `Are you sure you want to permanently delete ticket case #${activeTicket.ticket_id}?\n\nThis will delete all correspondence and activity logs with zero option of rollback.`
-                            )
-                          ) {
-                            try {
-                              const res = await adminFetch(
-                                `/api/admin/tickets/${activeTicket.ticket_id}/delete`,
-                                {
-                                  method: 'POST',
-                                }
-                              );
-                              if (res.ok) {
-                                alert(`Ticket Case #${activeTicket.ticket_id} successfully deleted.`);
-                                setActiveTicket(null);
-                                fetchData();
-                              } else {
-                                const errData = await res.json();
-                                alert(errData.error || 'Failed to delete ticket.');
+                          try {
+                            const res = await adminFetch(
+                              `/api/admin/tickets/${activeTicket.ticket_id}/delete`,
+                              {
+                                method: 'POST',
                               }
-                            } catch {
-                              alert('Network error.');
+                            );
+                            if (res.ok) {
+                              setActiveTicket(null);
+                              fetchData();
+                            } else {
+                              const errData = await res.json();
+                              console.error(errData.error || 'Failed to delete ticket.');
                             }
+                          } catch (err) {
+                            console.error('Network error deleting ticket:', err);
                           }
                         }}
-                        className="p-2.5 rounded-xl bg-status-dnd/10 hover:bg-rose-600 text-status-dnd hover:text-text-primary transition duration-150 cursor-pointer border border-status-dnd/10"
+                        className="p-2.5 rounded-xl bg-status-dnd/10 hover:bg-rose-600 text-status-dnd hover:text-text-primary transition duration-150 cursor-pointer border border-status-dnd/10 flex items-center gap-1.5 text-xs font-semibold"
                         title="Delete Case Dossier File"
                       >
                         <Trash2 className="w-4 h-4" />
+                        <span>Delete Ticket</span>
                       </button>
                     )}
                   </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Sliders, UserPlus, MessageSquare, MoreHorizontal, Unlock, UserCheck, Check, X, Shield, Globe } from 'lucide-react';
 import { FriendRequest, stripAt } from '../../types';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface PeopleMainDashboardProps {
   friendRequests: FriendRequest[];
@@ -53,6 +54,7 @@ export default function PeopleMainDashboard({
   onSectionView,
   getCountryOnly
 }: PeopleMainDashboardProps) {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'pending' | 'blocked'>('all');
   const [relationships, setRelationships] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -184,7 +186,7 @@ export default function PeopleMainDashboard({
             <Search className={`w-4 h-4 flex-shrink-0 ${isDark ? 'text-text-secondary' : 'text-gray-400'}`} />
             <input
               type="text"
-              placeholder="Search friends..."
+              placeholder={t('people.search', 'Search friends...')}
               value={userSearchTerm}
               onChange={(e) => setUserSearchTerm(e.target.value)}
               className="w-full bg-transparent border-none outline-none text-xs ml-2 text-inherit"
@@ -196,7 +198,7 @@ export default function PeopleMainDashboard({
           </button>
           <button onClick={() => setShowAddModal(true)} className="h-9 px-4 flex items-center gap-1.5 rounded-full bg-accent hover:bg-accent-hover text-velum-900 text-xs font-bold transition-colors flex-shrink-0 cursor-pointer">
             <UserPlus className="w-4 h-4" />
-            <span className="hidden sm:inline">Add Friend</span>
+            <span className="hidden sm:inline">{t('people.add_friend', 'Add Friend')}</span>
           </button>
         </div>
       </div>
@@ -204,7 +206,7 @@ export default function PeopleMainDashboard({
       {/* Tabs */}
       <div className={`px-6 flex items-center gap-6 border-b ${isDark ? 'border-white-5' : 'border-gray-200'}`}>
         {(['all', 'online', 'pending', 'blocked'] as const).map(tab => {
-          let label = tab === 'all' ? 'All Friends' : tab === 'online' ? 'Online' : tab === 'pending' ? 'Pending' : 'Blocked';
+          let label = tab === 'all' ? t('people.tab_all', 'All Friends') : tab === 'online' ? t('people.tab_online', 'Online') : tab === 'pending' ? t('people.tab_pending', 'Pending') : t('people.tab_blocked', 'Blocked');
           let count = 0;
           if (tab === 'all') count = activeFriends.length;
           if (tab === 'online') count = onlineFriends.length;

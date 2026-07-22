@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { Message } from '../../types';
+import logoSvg from '../../assets/logo.svg?raw';
 
 interface ChatHeaderProps {
   wsConnected: boolean;
@@ -72,17 +73,17 @@ export function ChatHeader({
           {/* Avatar */}
           {activeChatPeer ? (
             <div 
-              className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden"
+              className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
             >
               {activeChatPeer.avatar && (activeChatPeer.avatar.startsWith('data:image/') || activeChatPeer.avatar.startsWith('http')) ? (
                 <img src={activeChatPeer.avatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
-                activeChatPeer.username.slice(0, 2).toUpperCase()
+                <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               )}
             </div>
           ) : (
-            <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent">
-              {chatTitle.slice(0, 2).toUpperCase()}
+            <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
+              <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
             </div>
           )}
           

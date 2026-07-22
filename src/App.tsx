@@ -1,6 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
+import { LanguageProvider } from './i18n/LanguageContext';
 import AuthPortal from './components/AuthPortal';
 import DashboardLayout from './components/DashboardLayout';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -194,10 +195,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <CartProvider>
-        <AppContent />
-      </CartProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <CartProvider>
+          <AppContent />
+        </CartProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }

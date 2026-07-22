@@ -97,8 +97,8 @@ export function SettingsAccountTab({
           
           <div className="mt-5 space-y-3">
             <div>
-              <div className="text-[10px] font-bold text-text-disabled uppercase font-mono mb-1">Status / Bio</div>
-              <p className="text-xs leading-relaxed text-text-secondary italic">
+              <div className="text-[10px] font-bold text-text-secondary uppercase font-mono mb-1">Bio</div>
+              <p className="text-xs leading-relaxed text-text-secondary">
                 {bio || "No status set."}
               </p>
             </div>
@@ -107,11 +107,11 @@ export function SettingsAccountTab({
           <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white-10 pt-4">
             <div className="text-center p-2 rounded-xl bg-white-5">
               <div className="text-lg font-black text-white">{loungesCount}</div>
-              <div className="text-[9px] font-mono uppercase text-text-disabled mt-0.5">Lounges</div>
+              <div className="text-[9px] font-mono uppercase text-text-secondary mt-0.5">Lounges</div>
             </div>
             <div className="text-center p-2 rounded-xl bg-white-5">
               <div className="text-lg font-black text-white">{connectionsCount}</div>
-              <div className="text-[9px] font-mono uppercase text-text-disabled mt-0.5">Connects</div>
+              <div className="text-[9px] font-mono uppercase text-text-secondary mt-0.5">Connects</div>
             </div>
           </div>
         </div>
@@ -120,45 +120,22 @@ export function SettingsAccountTab({
         <div className="flex-1 w-full space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-disabled font-mono">Display Name</label>
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary font-mono">Display Name</label>
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 text-sm text-white focus:border-accent/50 outline-none transition"
-                placeholder="How others see you"
+                className="w-full bg-velum-750 border border-velum-600 rounded-xl px-3 py-2 text-sm text-text-primary focus:border-accent outline-none transition"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-disabled font-mono">Status Bio</label>
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary font-mono">Status Bio</label>
               <input
                 type="text"
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 text-sm text-white focus:border-accent/50 outline-none transition"
-                placeholder="A short intro..."
+                className="w-full bg-velum-750 border border-velum-600 rounded-xl px-3 py-2 text-sm text-text-primary focus:border-accent outline-none transition"
                 maxLength={100}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-disabled font-mono">Email Address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 text-sm text-white focus:border-accent/50 outline-none transition"
-                placeholder="name@example.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-disabled font-mono">Phone Number</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 text-sm text-white focus:border-accent/50 outline-none transition"
-                placeholder="+1 (555) 000-0000"
               />
             </div>
           </div>
@@ -166,9 +143,9 @@ export function SettingsAccountTab({
           <div className="pt-2">
             <button
               type="submit"
-              className="bg-accent hover:bg-accent-hover text-black px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition flex items-center justify-center shadow-lg"
+              className="bg-accent hover:bg-accent-hover text-black px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition flex items-center justify-center shadow-lg cursor-pointer"
             >
-              Save Profile Profile
+              Save Profile
             </button>
           </div>
         </div>

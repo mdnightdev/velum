@@ -3,7 +3,7 @@ import {
   User, Lock, X, Check, Upload, Bell, Volume2, 
   Type, ShieldCheck, CheckCircle, AlertTriangle, Palette, 
   Laptop, Monitor, Trash2, Camera, Mic, Image as ImageIcon, 
-  Sparkles, Globe, Clock, Shield, Zap, Play, LogOut, Info, Ticket, ChevronRight
+  Sparkles, Globe, Clock, Shield, Zap, Play, LogOut, Info, Ticket, ChevronRight, Activity
 } from 'lucide-react';
 import PasswordInput from '../../components/PasswordInput';
 import { SettingsPrivacyTab } from './SettingsTabs/SettingsPrivacyTab';
@@ -11,9 +11,14 @@ import { SettingsAccountTab } from './SettingsTabs/SettingsAccountTab';
 
 import TicketsMainDashboard from '../../components/SidebarTabs/TicketsMainDashboard';
 import { useResponsive } from '../../hooks/useResponsive';
+import { useBuildVersion } from '../../hooks/useBuildVersion';
 import logoSvg from '../../assets/logo.svg?raw';
 import { computeClientHash } from '../../services/encryptionService';
 import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
+import { submitDiagnosticLogs, collectClientDiagnosticsPayload } from '../../utils/diagnostics';
+import { FULL_BUILD_VERSION } from '../../version';
+import { useLanguage } from '../../i18n/LanguageContext';
+import { LegalDocModal, LegalDocType } from '../../components/LegalDocModal';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -26,7 +31,7 @@ interface SettingsDrawerProps {
   onProfileUpdate?: (updatedUser: any) => void;
 }
 
-type SettingCategory = 'account' | 'profile' | 'privacy' | 'appearance' | 'notifications' | 'media' | 'language' | 'tickets' | 'about';
+type SettingCategory = 'account' | 'profile' | 'privacy' | 'appearance' | 'notifications' | 'media' | 'language' | 'tickets' | 'diagnostics' | 'about';
 
 export default function SettingsDrawer({
   isOpen,
@@ -39,8 +44,11 @@ export default function SettingsDrawer({
   onProfileUpdate
 }: SettingsDrawerProps) {
   const { isMobile } = useResponsive();
+  const buildVersion = useBuildVersion();
+  const { language, setLanguage, t, supportedLanguages } = useLanguage();
 
   const [activeView, setActiveView] = useState<SettingCategory | 'menu'>('menu');
+  const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
 
   // Account settings states
   const [displayName, setDisplayName] = useState(currentUsername.replace('@', ''));
@@ -75,6 +83,7 @@ export default function SettingsDrawer({
   const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'system'>('dark');
   const [messageScaling, setMessageScaling] = useState<'cozy' | 'compact'>('cozy');
   const [fontAdjustment, setFontAdjustment] = useState<'small' | 'medium' | 'large'>('medium');
+  const [reducedMotion, setReducedMotion] = useState<boolean>(false);
   const [appearanceMsg, setAppearanceMsg] = useState<string | null>(null);
 
   // Notifications states
@@ -89,6 +98,27 @@ export default function SettingsDrawer({
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [autoPlayVoice, setAutoPlayVoice] = useState(false);
+
+  // Diagnostics state
+  const [diagNotes, setDiagNotes] = useState('');
+  const [diagSubmitting, setDiagSubmitting] = useState(false);
+  const [diagResult, setDiagResult] = useState<{ success?: boolean; log_id?: string; error?: string } | null>(null);
+
+  const handleTransmitDiagnostics = async () => {
+    setDiagSubmitting(true);
+    setDiagResult(null);
+    try {
+      const res = await submitDiagnosticLogs(diagNotes);
+      setDiagResult(res);
+      if (res.success) {
+        setDiagNotes('');
+      }
+    } catch (err: any) {
+      setDiagResult({ success: false, error: err.message || 'Transmission failed.' });
+    } finally {
+      setDiagSubmitting(false);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -408,18 +438,13 @@ export default function SettingsDrawer({
     }
   };
 
-  const handleSaveAppearance = async (newTheme: 'dark' | 'light' | 'system', newScaling: 'cozy' | 'compact', newFont: 'small' | 'medium' | 'large') => {
+  const handleSaveAppearance = async (
+    newScaling: 'cozy' | 'compact', 
+    newFont: 'small' | 'medium' | 'large',
+    newReducedMotion?: boolean
+  ) => {
     setAppearanceMsg(null);
-
-    // If changing theme explicitly and we have the toggleTheme hook
-    if (newTheme !== themeMode) {
-      if (onToggleTheme) {
-        // Toggle if switching modes
-        if ((newTheme === 'dark' && !isDark) || (newTheme === 'light' && isDark)) {
-          onToggleTheme();
-        }
-      }
-    }
+    const motionVal = newReducedMotion !== undefined ? newReducedMotion : reducedMotion;
 
     try {
       const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
@@ -436,9 +461,10 @@ export default function SettingsDrawer({
           phone,
           bannerColor,
           settings: {
-            theme: newTheme,
+            theme: 'dark',
             messageScaling: newScaling,
             fontAdjustment: newFont,
+            reducedMotion: motionVal,
             desktopPopups,
             soundTriggers,
             unreadBadges,
@@ -448,9 +474,10 @@ export default function SettingsDrawer({
           }
         })
       });
-      setThemeMode(newTheme);
+      setThemeMode('dark');
       setMessageScaling(newScaling);
       setFontAdjustment(newFont);
+      setReducedMotion(motionVal);
       setAppearanceMsg('Appearance profile updated.');
     } catch {
       setAppearanceMsg('Network exception saving settings.');
@@ -591,10 +618,6 @@ export default function SettingsDrawer({
       />
       <div className="glass-panel w-full h-full bg-velum-900 border-r border-accent/10 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none">
         
-        <div className="absolute bottom-4 right-4 text-[9px] font-mono font-bold tracking-wider text-text-secondary/20 select-none">
-          v2.1.5
-        </div>
-
         <div className="p-4 md:p-4 border-b border-white-5 flex items-center justify-between flex-shrink-0 bg-velum-850">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-widest text-accent font-mono">Settings</h2>
@@ -615,11 +638,11 @@ export default function SettingsDrawer({
             <div className="flex flex-col p-4 gap-6">
               
               <div className="space-y-1">
-                <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">Account</div>
+                <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">{t('settings.account', 'Account')}</div>
                 {[
-                  { id: 'account', label: 'Account', icon: User },
-                  { id: 'privacy', label: 'Privacy & Safety', icon: Lock },
-                  { id: 'notifications', label: 'Notifications', icon: Bell }
+                  { id: 'account', label: t('settings.account', 'Account'), icon: User },
+                  { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
+                  { id: 'notifications', label: t('settings.notifications', 'Notifications'), icon: Bell }
                 ].map((cat) => {
                   const Icon = cat.icon;
                   const active = activeView === cat.id;
@@ -647,9 +670,9 @@ export default function SettingsDrawer({
               <div className="space-y-1">
                 <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">App</div>
                 {[
-                  { id: 'appearance', label: 'Appearance', icon: Palette },
-                  { id: 'media', label: 'Voice & Audio', icon: Volume2 },
-                  { id: 'language', label: 'Language', icon: Globe }
+                  { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
+                  { id: 'media', label: t('settings.voice_audio', 'Voice & Audio'), icon: Volume2 },
+                  { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
                 ].map((cat) => {
                   const Icon = cat.icon;
                   const active = activeView === cat.id;
@@ -677,8 +700,9 @@ export default function SettingsDrawer({
               <div className="space-y-1">
                 <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">More</div>
                 {[
-                  { id: 'tickets', label: 'Tickets', icon: Ticket },
-                  { id: 'about', label: 'About Velum', icon: Info }
+                  { id: 'tickets', label: t('settings.tickets', 'Support Tickets'), icon: Ticket },
+                  { id: 'diagnostics', label: t('settings.diagnostics', 'Diagnostics'), icon: Activity },
+                  { id: 'about', label: t('settings.about', 'About Velum'), icon: Info }
                 ].map((cat) => {
                   const Icon = cat.icon;
                   const active = activeView === cat.id;
@@ -789,38 +813,10 @@ export default function SettingsDrawer({
 
                 <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Appearance</h3>
 
-                <div className="space-y-4">
-                  <span className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Theme</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {[
-                      { id: 'dark', label: 'Dark', icon: Monitor },
-                      { id: 'light', label: 'Light', icon: Monitor },
-                      { id: 'system', label: 'System', icon: Laptop }
-                    ].map((t) => {
-                      const Icon = t.icon;
-                      const active = themeMode === t.id;
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => handleSaveAppearance(t.id as any, messageScaling, fontAdjustment)}
-                          className={`p-4 border rounded-xl flex flex-col items-center gap-2 font-mono text-[10px] uppercase font-bold transition-all cursor-pointer ${
-                            active 
-                              ? 'bg-velum-750 border-accent text-accent' 
-                              : 'bg-velum-850/40 border-white-5 text-text-secondary hover:text-text-primary'
-                          }`}
-                        >
-                          <Icon className="w-4 h-4" />
-                          <span>{t.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
+                {/* Message Density Section */}
+                <div className="space-y-3">
                   <span className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Message Density</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     {[
                       { id: 'cozy', label: 'Cozy' },
                       { id: 'compact', label: 'Compact' }
@@ -830,23 +826,24 @@ export default function SettingsDrawer({
                         <button
                           key={s.id}
                           type="button"
-                          onClick={() => handleSaveAppearance(themeMode, s.id as any, fontAdjustment)}
-                          className={`p-4 border rounded-xl font-mono text-[10px] uppercase font-bold transition-all cursor-pointer ${
+                          onClick={() => handleSaveAppearance(s.id as any, fontAdjustment, reducedMotion)}
+                          className={`p-3 border rounded-xl font-mono text-xs uppercase font-bold transition cursor-pointer ${
                             active 
                               ? 'bg-velum-750 border-accent text-accent' 
                               : 'bg-velum-850/40 border-white-5 text-text-secondary hover:text-text-primary'
                           }`}
                         >
-                          <span>{s.label}</span>
+                          {s.label}
                         </button>
                       );
                     })}
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <span className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Font Size</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Font Size Section */}
+                <div className="space-y-3">
+                  <span className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Font Scale</span>
+                  <div className="grid grid-cols-3 gap-3">
                     {[
                       { id: 'small', label: 'Small' },
                       { id: 'medium', label: 'Medium' },
@@ -857,14 +854,14 @@ export default function SettingsDrawer({
                         <button
                           key={f.id}
                           type="button"
-                          onClick={() => handleSaveAppearance(themeMode, messageScaling, f.id as any)}
-                          className={`p-4 border rounded-xl font-mono text-[10px] uppercase font-bold transition-all cursor-pointer ${
+                          onClick={() => handleSaveAppearance(messageScaling, f.id as any, reducedMotion)}
+                          className={`p-3 border rounded-xl font-mono text-xs uppercase font-bold transition cursor-pointer ${
                             active 
                               ? 'bg-velum-750 border-accent text-accent' 
                               : 'bg-velum-850/40 border-white-5 text-text-secondary hover:text-text-primary'
                           }`}
                         >
-                          <span>{f.label}</span>
+                          {f.label}
                         </button>
                       );
                     })}
@@ -929,100 +926,83 @@ export default function SettingsDrawer({
 
                 <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Media & Voice</h3>
 
-                <div className="space-y-6">
-                  <div className="p-5 rounded-xl border border-white-5 bg-white-2 space-y-4">
-                    <div className="flex items-center gap-3 pb-3 border-b border-white-5">
-                      <Mic className="w-5 h-5 text-accent" />
-                      <div>
-                        <div className="text-sm font-semibold text-text-primary">Voice Messages</div>
-                        <div className="text-[10px] text-text-secondary font-mono">Record and send voice notes in chats</div>
-                      </div>
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSaveMedia(!voiceEnabled, autoPlayVoice)}
+                    className="w-full p-4 bg-velum-750/50 border border-white-5 hover:bg-velum-750 rounded-xl flex items-center justify-between text-left cursor-pointer transition select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Volume2 className="w-4 h-4 text-text-secondary" />
+                      <span className="text-sm font-medium text-text-primary">Voice Recording</span>
                     </div>
-
-                    <div className="space-y-3">
-                      <button
-                        type="button"
-                        onClick={() => handleSaveMedia(!voiceEnabled, autoPlayVoice)}
-                        className="w-full p-4 bg-velum-750/50 border border-white-5 hover:bg-velum-750 rounded-xl flex items-center justify-between text-left cursor-pointer transition select-none"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Volume2 className="w-4 h-4 text-text-secondary" />
-                          <span className="text-sm font-medium text-text-primary">Enable Voice Recording</span>
-                        </div>
-                        <div className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${voiceEnabled ? 'bg-accent' : 'bg-velum-600'}`}>
-                          <div className={`w-5 h-5 rounded-full bg-velum-900 transition-transform ${voiceEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSaveMedia(voiceEnabled, !autoPlayVoice)}
-                        className="w-full p-4 bg-velum-750/50 border border-white-5 hover:bg-velum-750 rounded-xl flex items-center justify-between text-left cursor-pointer transition select-none"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Play className="w-4 h-4 text-text-secondary" />
-                          <span className="text-sm font-medium text-text-primary">Auto-play Voice Messages</span>
-                        </div>
-                        <div className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${autoPlayVoice ? 'bg-accent' : 'bg-velum-600'}`}>
-                          <div className={`w-5 h-5 rounded-full bg-velum-900 transition-transform ${autoPlayVoice ? 'translate-x-5' : 'translate-x-0'}`} />
-                        </div>
-                      </button>
+                    <div className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${voiceEnabled ? 'bg-accent' : 'bg-velum-600'}`}>
+                      <div className={`w-5 h-5 rounded-full bg-velum-900 transition-transform ${voiceEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                     </div>
-                  </div>
+                  </button>
 
-                  <div className="p-5 rounded-xl border border-white-5 bg-white-2 space-y-4">
-                    <div className="flex items-center gap-3 pb-3 border-b border-white-5">
-                      <ImageIcon className="w-5 h-5 text-accent" />
-                      <div>
-                        <div className="text-sm font-semibold text-text-primary">Media Files</div>
-                        <div className="text-[10px] text-text-secondary font-mono">Image and file attachments</div>
-                      </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveMedia(voiceEnabled, !autoPlayVoice)}
+                    className="w-full p-4 bg-velum-750/50 border border-white-5 hover:bg-velum-750 rounded-xl flex items-center justify-between text-left cursor-pointer transition select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Play className="w-4 h-4 text-text-secondary" />
+                      <span className="text-sm font-medium text-text-primary">Auto-play Voice Notes</span>
                     </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="p-3 rounded-lg border border-white-5 bg-white-2">
-                        <div className="text-[10px] text-text-secondary font-mono uppercase mb-1">Max Upload Size</div>
-                        <div className="text-sm font-semibold text-text-primary">10MB</div>
-                      </div>
-                      <div className="p-3 rounded-lg border border-white-5 bg-white-2">
-                        <div className="text-[10px] text-text-secondary font-mono uppercase mb-1">Supported Formats</div>
-                        <div className="text-sm font-semibold text-text-primary">JPG, PNG, GIF</div>
-                      </div>
+                    <div className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${autoPlayVoice ? 'bg-accent' : 'bg-velum-600'}`}>
+                      <div className={`w-5 h-5 rounded-full bg-velum-900 transition-transform ${autoPlayVoice ? 'translate-x-5' : 'translate-x-0'}`} />
                     </div>
-                  </div>
-
-                  <div className="p-5 rounded-xl border border-white-5 bg-white-2 space-y-4">
-                    <div className="flex items-center gap-3 pb-3 border-b border-white-5">
-                      <Shield className="w-5 h-5 text-accent" />
-                      <div>
-                        <div className="text-sm font-semibold text-text-primary">Privacy</div>
-                        <div className="text-[10px] text-text-secondary font-mono">Media sharing settings</div>
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-text-secondary leading-relaxed">
-                      Voice messages and media files are encrypted end-to-end. Media files are stored securely and automatically deleted after 30 days.
-                    </div>
-                  </div>
+                  </button>
                 </div>
 
               </div>
             )}
 
             {activeView === 'language' && (
-              <div className="w-full max-w-4xl space-y-8">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Language</h3>
-                <div className="space-y-4">
-                  <div className="p-4 bg-velum-750/50 border border-accent/50 rounded-xl flex items-center justify-between transition">
-                    <span className="text-sm font-medium text-text-primary">English (US)</span>
-                    <CheckCircle className="w-4 h-4 text-accent" />
-                  </div>
-                  <div className="p-4 bg-velum-750/50 border border-white-5 rounded-xl flex items-center justify-between opacity-50 cursor-not-allowed">
-                    <span className="text-sm font-medium text-text-secondary">Spanish (Coming Soon)</span>
-                  </div>
-                  <div className="p-4 bg-velum-750/50 border border-white-5 rounded-xl flex items-center justify-between opacity-50 cursor-not-allowed">
-                    <span className="text-sm font-medium text-text-secondary">French (Coming Soon)</span>
-                  </div>
+              <div className="w-full max-w-4xl space-y-6">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">
+                    {t('language.title', 'Language Preferences')}
+                  </h3>
+                  <p className="text-xs text-text-secondary mt-1">
+                    {t('language.subtitle', 'Select your preferred display language for Velum interface and system messages.')}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {supportedLanguages.map((langOption) => {
+                    const isSelected = language === langOption.code;
+                    return (
+                      <button
+                        key={langOption.code}
+                        type="button"
+                        onClick={() => setLanguage(langOption.code)}
+                        className={`w-full p-4 rounded-xl border flex items-center justify-between transition text-left cursor-pointer select-none ${
+                          isSelected
+                            ? 'bg-velum-750 border-accent/70 text-text-primary shadow-lg ring-1 ring-accent/30'
+                            : 'bg-velum-750/50 border-white-5 hover:bg-velum-750 text-text-secondary hover:text-text-primary'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl">{langOption.flag}</span>
+                          <div>
+                            <span className="text-sm font-semibold block">{langOption.name}</span>
+                            <span className="text-xs text-text-disabled font-mono">{langOption.nativeName}</span>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono uppercase font-bold text-accent bg-accent/10 border border-accent/20 px-2 py-0.5 rounded">
+                              {t('language.active', 'Active')}
+                            </span>
+                            <CheckCircle className="w-4 h-4 text-accent" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1036,20 +1016,102 @@ export default function SettingsDrawer({
               </div>
             )}
 
+            {activeView === 'diagnostics' && (
+              <div className="w-full max-w-4xl space-y-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono flex items-center gap-2">
+                    <Activity className="w-4 h-4" />
+                    Client Diagnostics & System Logs
+                  </h3>
+                  <span className="px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent font-mono text-[10px] font-bold">
+                    Build {FULL_BUILD_VERSION}
+                  </span>
+                </div>
+
+                <div className="p-6 rounded-xl border border-white-10 bg-velum-750/50 space-y-4">
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    Submit client diagnostic telemetry directly to Velum network engineers for review. This captures your browser user agent, viewport settings, storage consumption metrics, and recent error buffers without transmitting private message contents.
+                  </p>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono font-bold uppercase text-text-secondary block">
+                      Optional Incident Notes / Description
+                    </label>
+                    <textarea
+                      value={diagNotes}
+                      onChange={(e) => setDiagNotes(e.target.value)}
+                      placeholder="Describe any UI glitch or issues experienced..."
+                      className="w-full bg-velum-850/80 border border-white-10 text-text-primary rounded-xl p-3 text-xs outline-none focus:border-accent/50 resize-none h-24 font-mono"
+                    />
+                  </div>
+
+                  {diagResult && (
+                    <div className={`p-3.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-2 ${
+                      diagResult.success 
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                        : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                    }`}>
+                      {diagResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                      <span>
+                        {diagResult.success 
+                          ? `Diagnostic payload transmitted successfully! Log Signature: ${diagResult.log_id}` 
+                          : `Transmission failed: ${diagResult.error}`}
+                      </span>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleTransmitDiagnostics}
+                    disabled={diagSubmitting}
+                    className="w-full py-3 bg-accent hover:bg-accent-hover text-velum-950 font-mono font-bold text-xs uppercase tracking-wider rounded-xl transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {diagSubmitting ? (
+                      <span>Transmitting Diagnostics...</span>
+                    ) : (
+                      <>
+                        <Activity className="w-4 h-4" />
+                        <span>Transmit Client Diagnostic Logs</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {activeView === 'about' && (
               <div className="w-full max-w-4xl space-y-8">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">About Velum</h3>
                 <div className="p-8 rounded-xl border border-white-5 bg-velum-750/50 flex flex-col items-center text-center space-y-4">
                   <div className="w-16 h-16 rounded-2xl bg-velum-800 border border-white/10 flex items-center justify-center">
-                    <div className="w-9 h-9 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+                    <div className="w-9 h-9 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
                   </div>
                   <div>
                     <div className="text-xl font-bold tracking-[0.2em] text-text-primary">VELUM</div>
                     <div className="text-[10px] text-text-secondary font-mono tracking-widest mt-1">Secure conversations, refined.</div>
                   </div>
-                  <div className="pt-4 border-t border-white-5 w-full">
-                    <div className="text-[10px] text-text-secondary font-mono">Version 2.1.5</div>
-                    <div className="text-[10px] text-text-secondary font-mono mt-1"> 2026 Velum Network. All rights reserved.</div>
+
+                  <div className="flex items-center justify-center gap-4 py-2 border-t border-b border-white-5 w-full">
+                    <button
+                      type="button"
+                      onClick={() => setActiveLegalDoc('terms')}
+                      className="text-xs font-mono text-accent hover:underline cursor-pointer"
+                    >
+                      Terms of Service
+                    </button>
+                    <span className="text-text-disabled">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveLegalDoc('privacy')}
+                      className="text-xs font-mono text-accent hover:underline cursor-pointer"
+                    >
+                      Privacy Policy
+                    </button>
+                  </div>
+
+                  <div className="pt-2 w-full">
+                    <div className="text-[10px] text-text-secondary font-mono">Version {FULL_BUILD_VERSION || '2.2.0'}</div>
+                    <div className="text-[10px] text-text-secondary font-mono mt-1">© 2026 Velum Network. All rights reserved.</div>
                   </div>
                 </div>
               </div>
@@ -1096,6 +1158,8 @@ export default function SettingsDrawer({
         </div>
       )}
 
+      {/* In-App Legal Document Modal */}
+      <LegalDocModal docType={activeLegalDoc} onClose={() => setActiveLegalDoc(null)} />
     </div>
   );
 }

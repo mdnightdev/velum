@@ -632,6 +632,35 @@ export interface Report {
   created_at: string;
 }
 
+export interface ClientDiagnosticLog {
+  id: string;
+  user_id?: number | string;
+  username?: string;
+  ip_address: string;
+  user_agent: string;
+  screen_resolution: string;
+  device_pixel_ratio: number;
+  viewport_size: string;
+  online_status: boolean;
+  connection_type?: string;
+  storage_summary: {
+    localStorage_keys_count: number;
+    localStorage_approx_size_kb: number;
+    serviceWorker_active: boolean;
+    indexedDb_supported: boolean;
+  };
+  error_buffer?: Array<{
+    message: string;
+    source?: string;
+    lineno?: number;
+    timestamp: string;
+  }>;
+  app_version: string;
+  notes?: string;
+  status: 'pending' | 'reviewed' | 'resolved';
+  created_at: string;
+}
+
 // Global window extensions for diagnostic state tracking (Pillar G)
 declare global {
   interface Window {

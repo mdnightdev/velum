@@ -129,9 +129,9 @@ export default function ProfileMigration({
         )}
 
         <form onSubmit={handleMigrationSubmit} className="space-y-4">
-          <div className="space-y-1.5ClassName">
+          <div className="space-y-1.5">
             <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">
-              NEW SECURE PASSPHRASE
+              NEW PASSWORD
             </label>
             <div className="relative">
               <input
@@ -140,7 +140,7 @@ export default function ProfileMigration({
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Required for standard handshakes"
+                placeholder="Enter your new account password"
                 className="w-full bg-velum-900 border border-white-5 rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-disabled focus:border-accent focus:outline-none transition font-sans"
               />
             </div>
@@ -157,7 +157,7 @@ export default function ProfileMigration({
                 required
                 value={safeWord}
                 onChange={(e) => setSafeWord(e.target.value)}
-                placeholder="Safeword to sign out of terminal instantly"
+                placeholder="Enter quick sign-out word"
                 className="w-full bg-velum-900 border border-white-5 rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-disabled focus:border-accent focus:outline-none transition font-sans"
               />
             </div>
@@ -174,7 +174,7 @@ export default function ProfileMigration({
                 required
                 value={panicPhrase}
                 onChange={(e) => setPanicPhrase(e.target.value)}
-                placeholder="Panic phrase triggers instant storage purge"
+                placeholder="Enter panic phrase"
                 className="w-full bg-velum-900 border border-white-5 rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-disabled focus:border-accent focus:outline-none transition font-sans"
               />
             </div>

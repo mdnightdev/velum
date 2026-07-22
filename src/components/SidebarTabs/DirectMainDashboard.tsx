@@ -2,6 +2,7 @@ import React from 'react';
 import { MessageSquare, Bot } from 'lucide-react';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface DirectMainDashboardProps {
   friendRequests: any[];
@@ -24,6 +25,7 @@ export default function DirectMainDashboard({
   loadAndShowProfileCard,
   getCountryOnly
 }: DirectMainDashboardProps) {
+  const { t } = useLanguage();
 
   const seenFriendIds = new Set<number>();
   const acceptedFriends = friendRequests.filter(r => {
@@ -50,7 +52,7 @@ export default function DirectMainDashboard({
               <div className="relative flex items-center w-full h-9 px-3 rounded-full border bg-transparent border-white-5 focus-within:border-accent">
                 <input
                   type="text"
-                  placeholder="Search chats..."
+                  placeholder={t('chats.search', 'Search chats...')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-transparent border-none outline-none text-xs ml-1"
@@ -128,7 +130,7 @@ export default function DirectMainDashboard({
                   {friendAvatar && (friendAvatar.startsWith('data:image/') || friendAvatar.startsWith('http')) ? (
                     <img src={friendAvatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    friendName.slice(0, 2).toUpperCase()
+                    <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
                   )}
                 </div>
                 <div className="min-w-0">

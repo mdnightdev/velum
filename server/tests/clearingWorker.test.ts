@@ -17,7 +17,9 @@ vi.mock('../db.js', () => {
   return {
     db: mockDb,
     saveDb: vi.fn(),
-    loadDb: vi.fn()
+    loadDb: vi.fn(),
+    executeSaveDb: vi.fn(),
+    syncDbIfNeeded: vi.fn()
   };
 });
 

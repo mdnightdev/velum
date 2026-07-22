@@ -4,6 +4,7 @@ import {
   Plus, ArrowDownToLine, ChevronDown, Check, X, Landmark, ArrowUpRight,
   Activity
 } from 'lucide-react';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface WalletMainDashboardProps {
   isDark?: boolean;
@@ -81,6 +82,7 @@ const CREDIT_ISSUERS = ['Velum Black', 'Velum Platinum', 'Velum Titanium', 'Amer
 const BANK_ISSUERS = ['HSBC', 'Chase Bank', 'Barclays', 'Citibank', 'Standard Chartered', 'Bank of America', 'Wells Fargo', 'Santander', 'UBS'];
 
 export default function WalletMainDashboard({ currentUserId, isDark }: WalletMainDashboardProps) {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'overview' | 'methods'>('overview');
   
   const [balances, setBalances] = useState<any[]>([]);
@@ -305,13 +307,13 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
             onClick={() => setActiveTab('overview')} 
             className={`px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'overview' ? 'bg-white-10 text-white shadow-sm' : 'text-text-secondary hover:text-white'}`}
           >
-            Accounts
+            {t('wallet.accounts', 'Accounts')}
           </button>
           <button 
             onClick={() => setActiveTab('methods')} 
             className={`px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'methods' ? 'bg-white-10 text-white shadow-sm' : 'text-text-secondary hover:text-white'}`}
           >
-            Cards & Banks
+            {t('wallet.cards_banks', 'Cards & Banks')}
           </button>
         </div>
       </div>

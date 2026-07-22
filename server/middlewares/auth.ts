@@ -5,17 +5,22 @@ import { decryptData, encryptData } from '../services/cryptoService.js';
 
 export const rateLimiterCache = new Map<string, any>();
 
+let lastRateLimiterCleanup = Date.now();
+
 // Enhanced rate limiter with IP and user-based tracking
 export const authRateLimiter = (req: Request, res: Response, next: NextFunction) => {
   const ip = req.ip || '127.0.0.1';
   const now = Date.now();
   
-  // Prune expired entries from cache to avoid memory leaks
-  for (const [key, value] of rateLimiterCache.entries()) {
-    if (value.expiresAt && now > value.expiresAt) {
-      rateLimiterCache.delete(key);
-    } else if (value.blockUntil && now > value.blockUntil) {
-      rateLimiterCache.delete(key);
+  // Periodically prune expired entries from cache every 30 seconds or if cache grows large
+  if (now - lastRateLimiterCleanup > 30000 || rateLimiterCache.size > 2000) {
+    lastRateLimiterCleanup = now;
+    for (const [key, value] of rateLimiterCache.entries()) {
+      if (value.expiresAt && now > value.expiresAt) {
+        rateLimiterCache.delete(key);
+      } else if (value.blockUntil && now > value.blockUntil) {
+        rateLimiterCache.delete(key);
+      }
     }
   }
   
@@ -26,7 +31,7 @@ export const authRateLimiter = (req: Request, res: Response, next: NextFunction)
       next();
     } else {
       record.count += 1;
-      // Stricter limit for auth endpoints: 20 requests per minute
+      // Stricter limit for auth endpoints
       if (record.count > 10000) {
         return res.status(429).json({ error: 'Too many authentication attempts. Please wait.' });
       }
@@ -39,23 +44,50 @@ export const authRateLimiter = (req: Request, res: Response, next: NextFunction)
 };
 
 function getSessionFromDb(hashedSessionId: string): any {
-  try {
-    const row = sqliteDb.prepare("SELECT payload FROM sessions WHERE id = ?").get(hashedSessionId) as { payload: string } | undefined;
-    if (!row) return null;
-    return JSON.parse(decryptData(row.payload));
-  } catch (err) {
-    console.error('Failed to get session from DB:', err);
-    return null;
+  if (db && Array.isArray(db.sessions)) {
+    const sess = db.sessions.find((s: any) => s && (s.session_id === hashedSessionId || s.id === hashedSessionId));
+    if (sess) return sess;
   }
+
+  try {
+    if (sqliteDb) {
+      const row = sqliteDb.prepare("SELECT payload FROM sessions WHERE id = ?").get(hashedSessionId) as { payload: string } | undefined;
+      if (row && row.payload) {
+        const sess = JSON.parse(decryptData(row.payload));
+        if (sess && db && Array.isArray(db.sessions)) {
+          db.sessions.push(sess);
+        }
+        return sess;
+      }
+    }
+  } catch (err) {
+    // sqliteDb access fallback
+  }
+
+  return null;
 }
 
 function saveSessionToDb(session: any): void {
-  try {
-    const encrypted = encryptData(JSON.stringify(session));
-    sqliteDb.prepare("INSERT OR REPLACE INTO sessions (id, payload) VALUES (?, ?)").run(session.session_id, encrypted);
-  } catch (err) {
-    console.error('Failed to save session to DB:', err);
+  const sid = session.session_id || session.id;
+  if (db && Array.isArray(db.sessions)) {
+    const idx = db.sessions.findIndex((s: any) => s && (s.session_id === sid || s.id === sid));
+    if (idx >= 0) {
+      db.sessions[idx] = session;
+    } else {
+      db.sessions.push(session);
+    }
   }
+
+  try {
+    if (sqliteDb) {
+      const encrypted = encryptData(JSON.stringify(session));
+      sqliteDb.prepare("INSERT OR REPLACE INTO sessions (id, payload) VALUES (?, ?)").run(sid, encrypted);
+    }
+  } catch (err) {
+    // sqliteDb save fallback
+  }
+
+  saveDb('sessions');
 }
 
 export const authenticateUser = (req: Request, res: Response, next: NextFunction) => {

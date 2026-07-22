@@ -9,6 +9,7 @@ import { stripAt } from '../../types';
 import { decryptMessage } from '../../services/encryptionService';
 import logoSvg from '../../assets/logo.svg?raw';
 import LoadingFallback from '../../components/LoadingFallback';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface UserSidebarProps {
   currentUserId: number;
@@ -93,7 +94,7 @@ export default function UserSidebar({
   isSidebarExpanded = true,
   onToggleExpand
 }: UserSidebarProps) {
-
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<string>('rooms');
 
   // Database states
@@ -315,13 +316,11 @@ export default function UserSidebar({
                       </button>
           
             <div className="flex items-center gap-3">
-              <div className="w-6 h-6 shrink-0 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+              <div className="w-6 h-6 shrink-0 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               <div className="flex flex-col">
                 <span className="text-sm font-semibold tracking-[0.4em] text-text-primary font-display uppercase leading-none">VELUM</span>
-                <span className="text-[8px] text-text-secondary font-mono tracking-wider mt-0.5 leading-none">vv2.0.0</span>
               </div>
             </div>
-            <p className="text-[10px] text-text-secondary italic mt-1.5 font-sans">Conversations that flow like a veil.</p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-3">
@@ -341,12 +340,12 @@ export default function UserSidebar({
       <div className="px-4 pt-2 pb-2 flex-shrink-0">
         <nav className="space-y-1.5">
           {[
-            { id: 'directs', label: 'Directs', icon: <MessageSquare className="w-4.5 h-4.5" /> },
-            { id: 'lounge', label: 'Lounge', icon: <Globe className="w-4.5 h-4.5" /> },
-            { id: 'market', label: 'Market', icon: <ShoppingCart className="w-4.5 h-4.5" /> },
-            { id: 'wallet', label: 'Wallet', icon: <Wallet className="w-4.5 h-4.5" /> },
-            { id: 'tickets', label: 'Tickets', icon: <FileText className="w-4.5 h-4.5" /> },
-            { id: 'friends', label: 'Friends', icon: <Users className="w-4.5 h-4.5" /> },
+            { id: 'directs', label: t('nav.directs', 'Directs'), icon: <MessageSquare className="w-4.5 h-4.5" /> },
+            { id: 'lounge', label: t('nav.lounge', 'Lounge'), icon: <Globe className="w-4.5 h-4.5" /> },
+            { id: 'market', label: t('nav.market', 'Market'), icon: <ShoppingCart className="w-4.5 h-4.5" /> },
+            { id: 'wallet', label: t('nav.wallet', 'Wallet'), icon: <Wallet className="w-4.5 h-4.5" /> },
+            { id: 'tickets', label: t('nav.tickets', 'Tickets'), icon: <FileText className="w-4.5 h-4.5" /> },
+            { id: 'friends', label: t('nav.friends', 'Friends'), icon: <Users className="w-4.5 h-4.5" /> },
           ].map((it) => {
             let isSelected = false;
             if (it.id === 'directs') {
@@ -436,14 +435,14 @@ export default function UserSidebar({
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className={`w-10 h-10 rounded-full border flex items-center justify-center text-sm font-mono font-bold uppercase shrink-0 transition ${
+              <div className={`w-10 h-10 rounded-full border flex items-center justify-center shrink-0 transition ${
                 currentUserAvatar === 'blue' ? 'bg-velum-800 text-accent border-velum-600 group-hover:border-accent' :
                 currentUserAvatar === 'emerald' ? 'bg-velum-800 text-status-online border-velum-600 group-hover:border-accent' :
                 currentUserAvatar === 'amber' ? 'bg-velum-800 text-status-away border-velum-600 group-hover:border-accent' :
                 currentUserAvatar === 'purple' ? 'bg-velum-800 text-accent-secondary border-velum-600 group-hover:border-accent' :
-                'bg-velum-850 text-text-secondary border-velum-600 group-hover:border-accent'
+                'bg-velum-850 text-accent border-velum-600 group-hover:border-accent'
               }`}>
-                {currentUsername.replace('@', '').charAt(0) || 'P'}
+                <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full text-current" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               </div>
             )}
 

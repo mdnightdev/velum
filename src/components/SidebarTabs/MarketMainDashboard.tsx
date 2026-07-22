@@ -10,6 +10,7 @@ import { CheckoutFlow } from '../Market/CheckoutFlow';
 import { ListingInspector } from '../Market/ListingInspector';
 import { ShoppingCartDrawer } from '../Market/ShoppingCartDrawer';
 import { useCart } from '../../context/CartContext';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface MarketMainDashboardProps {
   currentUserId: number;
@@ -31,6 +32,7 @@ export default function MarketMainDashboard({
   currentUserRole,
   isDark = true
 }: MarketMainDashboardProps) {
+  const { t } = useLanguage();
   const [listings, setListings] = useState<MarketListing[]>([]);
   const [escrows, setEscrows] = useState<EscrowTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,7 +195,7 @@ export default function MarketMainDashboard({
                 : 'text-text-secondary hover:text-white border border-transparent'
             }`}
           >
-            Buyer Mode
+            {t('market.buyer_mode', 'Buyer Mode')}
           </button>
           <button
             onClick={() => {
@@ -205,7 +207,7 @@ export default function MarketMainDashboard({
                 : 'text-text-secondary hover:text-white border border-transparent'
             }`}
           >
-            Seller Mode
+            {t('market.seller_mode', 'Seller Mode')}
           </button>
         </div>
 

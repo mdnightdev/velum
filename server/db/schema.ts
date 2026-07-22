@@ -6,7 +6,7 @@ import {
   MarketAssetMedia, MarketReview, MarketCoupon, MarketDiscussion, MarketSkuVariant, MarketSupportChat,
   LoungeMember, LoungeInvite, LoungeSanction, LoungeJoinRequest, LoungeOwnershipTransfer, AccountDeletionRequest, UserLoungePreference, LoungeAuditLog, SystemAuditLog,
   UserWallet, WalletLedgerEntry, RechargeRequest, WithdrawalRequest, KycVerification, PaymentMethod, ExternalFinancialAccount, ExternalProcessorEvent, WalletBalance, Currency, ExchangeRate, PlatformAdmin,
-  Report
+  Report, ClientDiagnosticLog
 } from '../../src/types.js';
 
 export interface DbSchema {
@@ -26,6 +26,7 @@ export interface DbSchema {
   invites: Invite[];
   tickets: Ticket[];
   reports?: Report[];
+  diagnostic_logs?: ClientDiagnosticLog[];
   recovery_events: RecoveryEvent[];
   suspicious_events: SuspiciousEvent[];
   audit_logs: AuditLog[];
@@ -73,6 +74,7 @@ export interface DbSchema {
   verified_sellers?: number[];
   system_settings?: any;
   idempotency_records?: any[];
+  buildIncrementCount?: number;
 }
 // Validate admin credentials configuration
 export const adminUsers = (() => {

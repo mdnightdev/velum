@@ -1,6 +1,6 @@
 {
   "name": "velum",
-  "version": "2.1.51",
+  "version": "2.2.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --exclude 'server/db/**' --exclude 'server/logs/**' server/index.ts",

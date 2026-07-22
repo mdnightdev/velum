@@ -173,7 +173,7 @@ export const bankStore = {
       routing_number: a.routing_number && !String(a.routing_number).includes(':') ? encryptData(a.routing_number) : a.routing_number
     }));
     (db as any).bank_accounts = encryptedAccounts;
-    executeSaveDb();
+    saveDb('bank_accounts');
   },
 
   getTransactions: async (): Promise<BankTransaction[]> => {
@@ -183,7 +183,7 @@ export const bankStore = {
 
   saveTransactions: async (transactions: BankTransaction[]): Promise<BankTransaction[]> => {
     (db as any).bank_transactions = transactions;
-    executeSaveDb();
+    saveDb('bank_transactions');
     return transactions;
   },
 

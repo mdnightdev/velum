@@ -368,7 +368,7 @@ wss.on('connection', (ws: any, req) => {
           
           let recipientOnline = false;
           try {
-            const rows = sqliteDb.prepare("SELECT payload FROM sessions WHERE json_extract(payload, '$.user_id') = ?").all(recipientId) as { payload: string }[];
+            const rows = sqliteDb.prepare("SELECT payload FROM sessions WHERE user_id = ?").all(recipientId) as { payload: string }[];
             for (const row of rows) {
               const s = JSON.parse(decryptData(row.payload));
               if (s && s.status === 'active') {
@@ -383,7 +383,17 @@ wss.on('connection', (ws: any, req) => {
             console.error('Failed to query active sessions in WS DM check:', err);
           }
 
-          if (!recipientOnline) {
+          if (recipientOnline) {
+             newMsg.status = 'delivered';
+             responsePayload.status = 'delivered';
+             saveDb();
+             broadcastToRoom(targetRoomId, {
+               type: 'message_status',
+               message_id: msgId,
+               room_id: targetRoomId,
+               status: 'delivered'
+             });
+          } else {
              console.log(`[SYS-SECURE] DM recipient User ${recipientId} is currently offline. Message queued in sqlite WAL state.`);
           }
         }
@@ -443,6 +453,24 @@ wss.on('connection', (ws: any, req) => {
             message_id: payload.message_id,
             room_id: targetRoomId,
             reactions: msgObj.reactions
+          });
+        }
+      }
+
+      // 4b. Mark message read event
+      if (payload.type === 'mark_read') {
+        const targetRoomId = payload.room_id;
+        const msgObj = db.messages.find(m => m.message_id === payload.message_id || (payload.room_id && m.room_id === payload.room_id && m.user_id !== userId));
+        
+        if (msgObj) {
+          msgObj.status = 'read';
+          saveDb();
+          
+          broadcastToRoom(targetRoomId, {
+            type: 'message_status',
+            message_id: msgObj.message_id,
+            room_id: targetRoomId,
+            status: 'read'
           });
         }
       }

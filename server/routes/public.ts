@@ -1,32 +1,67 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { db, loadDb, saveDb, isUserBlocked } from '../db.js';
 import { authenticateUser } from '../middleware.js';
+import { generatePrefixedId } from '../utils/ulid.js';
+import { ClientDiagnosticLog } from '../../src/types.js';
 
 export const publicRouter = express.Router();
 
-let BUILD_VERSION = 'v2.5.4';
-try {
-  const versionPath = path.join(process.cwd(), 'version.json');
-  if (fs.existsSync(versionPath)) {
-    const raw = fs.readFileSync(versionPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.version) {
-      BUILD_VERSION = parsed.version;
+function getBuildVersionInfo() {
+  let version = '2.1.51';
+  let buildNumber = 1052;
+  let buildStage = 'Release Candidate Stream';
+  let buildChannel = 'Production';
+
+  try {
+    const versionPath = path.join(process.cwd(), 'version.json');
+    if (fs.existsSync(versionPath)) {
+      const raw = fs.readFileSync(versionPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (parsed) {
+        if (parsed.version) version = parsed.version;
+        if (parsed.buildNumber) buildNumber = Number(parsed.buildNumber);
+        if (parsed.buildStage) buildStage = parsed.buildStage;
+        if (parsed.buildChannel) buildChannel = parsed.buildChannel;
+      }
     }
+  } catch (err) {
+    console.error('Error reading version.json in public router:', err);
   }
-} catch (err) {
-  console.error('Error reading version.json in public router:', err);
+
+  loadDb();
+  const increments = Number(db.buildIncrementCount || 0);
+  const currentBuild = buildNumber + increments;
+
+  return {
+    version: version,
+    buildNumber: currentBuild,
+    fullVersion: `v${version}-b${currentBuild}`,
+    displayVersion: `v${version}.${currentBuild}`,
+    status: 'OPTIMAL',
+    buildStage: buildStage,
+    buildChannel: buildChannel,
+    timestamp: new Date().toISOString()
+  };
 }
 
 // Version mismatch synchronization heartbeat check
 publicRouter.get('/public/version', (req, res) => {
-  res.json({
-    version: BUILD_VERSION,
-    status: 'OPTIMAL',
-    timestamp: new Date().toISOString()
-  });
+  res.json(getBuildVersionInfo());
+});
+
+// Endpoint to increment build version on system updates
+publicRouter.post('/public/version/increment', (req, res) => {
+  try {
+    loadDb();
+    db.buildIncrementCount = Number(db.buildIncrementCount || 0) + 1;
+    saveDb();
+    res.json(getBuildVersionInfo());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to increment build version' });
+  }
 });
 
 // Guest check for support ticket status
@@ -153,4 +188,69 @@ publicRouter.get('/users/:userId/status', authenticateUser, (req, res) => {
     res.status(500).json({ error: 'Failed to access status.' });
   }
 });
+
+// Client diagnostic logs submission endpoint
+publicRouter.post('/support/diagnostics', (req, res) => {
+  try {
+    const payload = req.body || {};
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+
+    let userId: number | string | undefined = undefined;
+    let username: string | undefined = undefined;
+
+    // Optional auth extraction
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      loadDb();
+      const hashedSessionId = crypto.createHash('sha256').update(token).digest('hex');
+      const sess = (db.sessions || []).find(s => s && (s.token === token || s.session_id === token || s.session_id === hashedSessionId) && s.status !== 'expired');
+      if (sess) {
+        userId = sess.user_id;
+        const u = (db.users || []).find(user => user && Number(user.user_id) === Number(userId));
+        if (u) username = u.username;
+      }
+    }
+
+    const logEntry: ClientDiagnosticLog = {
+      id: generatePrefixedId('diag'),
+      user_id: userId || payload.user_id || 'guest',
+      username: username || payload.username || 'Anonymous',
+      ip_address: clientIp,
+      user_agent: payload.user_agent || req.headers['user-agent'] || 'Unknown',
+      screen_resolution: payload.screen_resolution || '0x0',
+      device_pixel_ratio: Number(payload.device_pixel_ratio) || 1,
+      viewport_size: payload.viewport_size || '0x0',
+      online_status: payload.online_status !== undefined ? Boolean(payload.online_status) : true,
+      connection_type: payload.connection_type || 'unknown',
+      storage_summary: payload.storage_summary || {
+        localStorage_keys_count: 0,
+        localStorage_approx_size_kb: 0,
+        serviceWorker_active: false,
+        indexedDb_supported: true
+      },
+      error_buffer: Array.isArray(payload.error_buffer) ? payload.error_buffer : [],
+      app_version: payload.app_version || '2.1.51',
+      notes: payload.notes || '',
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+
+    loadDb();
+    if (!db.diagnostic_logs) db.diagnostic_logs = [];
+    db.diagnostic_logs.push(logEntry);
+
+    // Keep last 200 diagnostic logs
+    if (db.diagnostic_logs.length > 200) {
+      db.diagnostic_logs = db.diagnostic_logs.slice(-200);
+    }
+
+    saveDb();
+    res.json({ success: true, log_id: logEntry.id });
+  } catch (err: any) {
+    console.error('Error recording client diagnostics:', err);
+    res.status(500).json({ error: 'Failed to record diagnostic payload.' });
+  }
+});
+
 

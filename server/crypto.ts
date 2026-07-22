@@ -66,6 +66,7 @@ export const nonceCache = new Map<string, LoginNonce>();
  * Prune expired nonces to prevent memory leaks.
  */
 export function pruneNonceCache() {
+  if (nonceCache.size < 500) return;
   const now = Date.now();
   const TTL = 90 * 1000; // 90 seconds lifetime
   for (const [key, value] of nonceCache.entries()) {
@@ -86,7 +87,6 @@ export function generateLoginNonce(): string {
     createdAt: Date.now(),
     used: false
   });
-  writeServerLog(`[AUTH] Generated login nonce: ${nonce}`);
   return nonce;
 }
 
@@ -94,11 +94,10 @@ export function generateLoginNonce(): string {
  * Verify and consume a nonce. Returns true if valid, single-use, and not expired.
  */
 export function verifyAndConsumeNonce(nonce: string): boolean {
+  if (!nonce) return false;
   pruneNonceCache();
-  writeServerLog(`[AUTH] Verifying nonce: ${nonce}. Cache size: ${nonceCache.size}`);
   const record = nonceCache.get(nonce);
   if (!record) {
-    writeServerLog(`[AUTH] Nonce ${nonce} not found in cache. Current keys: ${Array.from(nonceCache.keys()).join(', ')}`);
     return false;
   }
 

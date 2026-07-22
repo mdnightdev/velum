@@ -41,6 +41,14 @@ app.use(fileProtection);
 app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ limit: '12mb', extended: true }));
 
+// Handle malformed JSON request bodies
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err && (err instanceof SyntaxError || err.type === 'entity.parse.failed') && 'status' in err && (err as any).status === 400) {
+    return res.status(400).json({ error: 'Malformed JSON payload provided.' });
+  }
+  next(err);
+});
+
 // Serve legal documents
 app.get('/terms', (_req, res) => {
   res.sendFile(path.join(process.cwd(), 'public', 'terms-of-service.html'));

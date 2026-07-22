@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Trash2, ArrowLeft, ChevronLeft, ShieldAlert, Smile, AlertCircle, 
-  Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag
+  Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag, Bell
 } from 'lucide-react';
 import { Message, stripAt } from '../types';
 import { decryptMessage } from '../services/encryptionService';
@@ -10,6 +10,12 @@ import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { ChatHeader } from './Chat/ChatHeader';
 import { streamFileDirectToCloudStorage } from '../utils/mediaPipeline';
 import logoSvg from '../assets/logo.svg?raw';
+import { useLanguage } from '../i18n/LanguageContext';
+import { TelegramVoiceNotePlayer } from './TelegramVoiceNotePlayer';
+import { TelegramImageCard } from './TelegramImageCard';
+import { MessageStatusTicks } from './MessageStatusTicks';
+import { requestNotificationPermission, sendDesktopNotification } from '../utils/notifications';
+
 
 interface ChatAreaProps {
   currentUserId: number;
@@ -61,6 +67,7 @@ export default function ChatArea({
   isPrivateSublounge,
   roomAccessLevel,
 }: ChatAreaProps) {
+  const { t } = useLanguage();
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [typingPeer, setTypingPeer] = useState<string | null>(null);
@@ -483,6 +490,30 @@ export default function ChatArea({
     }
   });
 
+  // Request browser notification permissions on chat mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  // Dispatch desktop notification when new message arrives from peer
+  const prevMessagesLengthRef = useRef(messages.length);
+  useEffect(() => {
+    if (messages.length > prevMessagesLengthRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.user_id !== currentUserId) {
+        const senderName = lastMsg.username || activeChatPeer?.username || 'Velum Member';
+        let bodyText = lastMsg.content || '';
+        if (bodyText.startsWith('[Voice Note')) {
+          bodyText = '🎙️ Voice Note';
+        } else if (bodyText.includes('[Attachment')) {
+          bodyText = '📷 Media Attachment';
+        }
+        sendDesktopNotification(`New message from ${senderName}`, { body: bodyText });
+      }
+    }
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages, currentUserId, activeChatPeer?.username]);
+
   // Mark messages as read when chat becomes visible
   const onMarkAsReadRef = useRef(onMarkAsRead);
   useEffect(() => {
@@ -565,10 +596,10 @@ export default function ChatArea({
             const activeContent = decryptMessage(msg.content || '', msg.room_id || roomId, msg.is_encrypted || (msg as any).isEncrypted);
             
             // Check for voice note payload
-            const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note ');
+            const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
             
             // Check for attachments
-            const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment: ');
+            const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment:');
             
             // Parse attachment details: [Attachment: name size:12KB type:image/jpeg data:base64...]
             let parsedAttachmentName = '';
@@ -578,22 +609,42 @@ export default function ChatArea({
             let parsedMsgContent = activeContent;
             
             if (isAttachment) {
-              const match = activeContent.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\s+type:(.*?)\s+(data|url):(.*?)\](?:\s*(.*))?/);
+              const match = activeContent.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\s+type:(.*?)\s+(data|url):(.*?)\](?:\s*(.*))?/s);
               if (match) {
-                parsedAttachmentName = match[1];
-                parsedAttachmentSize = match[2];
-                parsedAttachmentType = match[3];
-                parsedAttachmentData = match[5];
+                parsedAttachmentName = match[1].trim();
+                parsedAttachmentSize = match[2].trim();
+                parsedAttachmentType = match[3].trim();
+                let rawVal = match[5].trim();
+                if (match[4] === 'data' && !rawVal.startsWith('data:') && !rawVal.startsWith('http')) {
+                  rawVal = 'data:' + rawVal;
+                }
+                parsedAttachmentData = rawVal;
                 parsedMsgContent = match[6] || '';
+              } else {
+                const oldMatch = activeContent.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\](?:\s*(.*))?/s);
+                if (oldMatch) {
+                  parsedAttachmentName = oldMatch[1].trim();
+                  parsedAttachmentSize = oldMatch[2].trim();
+                  parsedMsgContent = oldMatch[3] || '';
+                }
               }
-              // Fallback for old format without data
-              const oldMatch = activeContent.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\](?:\s*(.*))?/);
-              if (oldMatch && !match) {
-                parsedAttachmentName = oldMatch[1];
-                parsedAttachmentSize = oldMatch[2];
-                parsedMsgContent = oldMatch[3] || '';
+
+              // Auto infer image type if missing or if filename/url has image extension
+              const ext = parsedAttachmentName.toLowerCase().split('.').pop() || '';
+              if (!parsedAttachmentType || !parsedAttachmentType.startsWith('image/')) {
+                if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || (parsedAttachmentData && parsedAttachmentData.startsWith('data:image/')) || /\.(jpg|jpeg|png|webp|gif)$/i.test(parsedAttachmentData)) {
+                  parsedAttachmentType = 'image/' + (ext || 'jpeg');
+                }
               }
             }
+
+            const isImageCard = isAttachment && !!parsedAttachmentData && (
+              parsedAttachmentType.startsWith('image/') ||
+              parsedAttachmentData.startsWith('data:image/') ||
+              parsedAttachmentData.startsWith('http') ||
+              /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(parsedAttachmentName) ||
+              /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(parsedAttachmentData)
+            );
 
             return (
               <div
@@ -679,11 +730,7 @@ export default function ChatArea({
                          }
                        } catch (err) {}
                     }}>
-                      {msgUserId === 999 || msgUserId === 0 || lowerUsername.includes('velum') || lowerUsername.includes('system') ? (
-                        <div className="w-4 h-4 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-                      ) : (
-                        cleanName.slice(0, 2).toUpperCase()
-                      )}
+                      <div className="w-4 h-4 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
                     </div>
                     {popoverPeer?.messageId === msg.message_id && (
                       <div className="absolute top-1/2 left-full -translate-y-1/2 ml-3" onClick={(e) => e.stopPropagation()}>
@@ -777,78 +824,40 @@ export default function ChatArea({
                 )}
                 <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
                   {/* Content Bubble Card */}
-                  <div className={`px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed break-words font-sans relative ${
-                  isSpecialTheme && customBubbleClass
-                    ? customBubbleClass
-                    : isMe 
-                      ? 'bg-velum-800 text-white rounded-br-sm' 
-                      : 'bg-velum-800 text-text-primary rounded-bl-sm border border-white-5'
-                } ${msg.deleted ? 'italic text-text-secondary opacity-60 font-mono text-[10px]' : ''}`}>
+                  <div className={
+                    isVoiceNote || isImageCard
+                      ? "relative font-sans text-[13px]"
+                      : `px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed break-words font-sans relative ${
+                          isSpecialTheme && customBubbleClass
+                            ? customBubbleClass
+                            : isMe 
+                              ? 'bg-velum-800 text-white rounded-br-sm' 
+                              : 'bg-velum-800 text-text-primary rounded-bl-sm border border-white-5'
+                        } ${msg.deleted ? 'italic text-text-secondary opacity-60 font-mono text-[10px]' : ''}`
+                  }>
                   
                   {msg.deleted ? (
                     'Message deleted by sender'
                   ) : isVoiceNote ? (
-                    /* Waveform playback UI */
-                    (() => {
-                      const durMatch = msg.content.match(/duration:(\d+)s/);
-                      const urlMatch = msg.content.match(/url:([^\]\s]+)/);
-                      const audioMatch = msg.content.match(/data:([^,]+),(.+)/);
-                      const durPrefix = durMatch ? durMatch[1] : '4';
-                      const audioData = urlMatch ? urlMatch[1] : (audioMatch ? audioMatch[2] : null);
-                      const audioType = audioMatch ? audioMatch[1] : 'audio/webm';
-                      const isPlaying = !!playingWaveforms[msg.message_id];
-                      const barsArr = [8, 18, 12, 22, 6, 14, 20, 10, 24, 16, 11, 26, 8, 17, 21, 13, 23, 7, 13, 19, 10, 15, 24, 9];
-
-                      return (
-                        <div className="flex items-center gap-3.5 max-w-full py-1">
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePlayWave(msg.message_id, durPrefix, audioData || '', audioType)}
-                            className="w-8 h-8 rounded-full bg-accent hover:bg-accent-hover text-zinc-950 flex items-center justify-center transition shrink-0 shadow"
-                          >
-                            {isPlaying ? <Pause className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current ml-0.5" />}
-                          </button>
-
-                          <div className="flex-1 min-w-[140px]">
-                            {/* Waveforms oscillatings */}
-                            <div className="flex items-end gap-0.5 h-6">
-                              {barsArr.map((hCode, ix) => {
-                                const progLimit = (ix / barsArr.length) * 100;
-                                const activeProg = isPlaying && (waveformAudioProg[msg.message_id] || 0) > progLimit;
-                                return (
-                                  <span
-                                    key={ix}
-                                    style={{ height: `${hCode}px` }}
-                                    className={`w-0.5 rounded-full transition-colors duration-150 ${
-                                      activeProg ? 'bg-accent' : 'bg-velum-500'
-                                    }`}
-                                  />
-                                );
-                              })}
-                            </div>
-                            <div className="flex items-center justify-between text-[7px] font-mono text-text-secondary mt-1 uppercase">
-                              <span>Audio Message</span>
-                              <span>0:{durPrefix.padStart(2, '0')}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()
+                    <TelegramVoiceNotePlayer content={activeContent} isMe={isMe} />
+                  ) : isImageCard ? (
+                    <TelegramImageCard
+                      src={parsedAttachmentData}
+                      name={parsedAttachmentName}
+                      size={parsedAttachmentSize}
+                      caption={parsedMsgContent}
+                      isMe={isMe}
+                      timestamp={new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    >
+                      <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <MessageStatusTicks status={msg.status} isMe={isMe} />
+                    </TelegramImageCard>
                   ) : (
                     <>
                       {/* Attachment Badge capsule if present */}
                       {isAttachment && (
                         <div className="mb-2.5">
-                          {parsedAttachmentData && parsedAttachmentType.startsWith('image/') ? (
-                            <div className="rounded-xl overflow-hidden border border-white-5">
-                              <img
-                                src={parsedAttachmentData}
-                                alt={parsedAttachmentName}
-                                className="max-w-full h-auto max-h-64 object-contain cursor-pointer"
-                                onClick={() => window.open(parsedAttachmentData, '_blank')}
-                              />
-                            </div>
-                          ) : parsedAttachmentData ? (
+                          {parsedAttachmentData ? (
                             <div className="flex items-center gap-3 p-3 bg-velum-900/40 border border-white-5 rounded-xl mb-2.5 select-none text-left cursor-pointer hover:bg-velum-900/60 transition"
                                  onClick={() => {
                                    const link = document.createElement('a');
@@ -876,8 +885,7 @@ export default function ChatArea({
                             </div>
                           )}
                         </div>
-                      
-)}
+                      )}
                       {parsedMsgContent && (
                         <div>
                           <p className="whitespace-pre-wrap">{parsedMsgContent}</p>
@@ -915,8 +923,8 @@ export default function ChatArea({
                         </div>
                       )}
                     </>
-                  
-)}
+                  )}
+
                   {/* Render Reactions */}
                   {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2.5">
@@ -983,16 +991,8 @@ export default function ChatArea({
                 <div className={`flex items-center gap-1.5 mt-1 mb-2 text-[10px] font-medium text-text-secondary ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                   <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   
-                  {isMe && (
-                    <span className={msg.status === 'read' ? 'text-accent' : 'text-text-disabled'}>
-                      {msg.status === 'sent' ? (
-                        <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
-                      ) : (msg.status === 'delivered' || msg.status === 'read') ? (
-                        <CheckCheck className="w-3.5 h-3.5" strokeWidth={2.5} />
-                      ) : null}
-                    </span>
-                  
-)}
+                  <MessageStatusTicks status={msg.status} isMe={isMe} />
+
                   {!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
                     <div className="hidden group-hover:flex items-center gap-1 ml-2">
                       <button
@@ -1128,7 +1128,7 @@ export default function ChatArea({
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder={chatTitle ? `Message ${chatTitle}` : "Message..."}
+                placeholder={chatTitle ? t('chat.message_peer', 'Message {name}').replace('{name}', chatTitle) : t('chat.message_placeholder', 'Message...')}
                 className="w-full bg-velum-800 border border-white-5 rounded-full pl-5 pr-24 py-3 text-[13px] text-white outline-none focus:border-accent/50 font-sans"
               />
               <div className="absolute right-2 flex items-center gap-1">

@@ -55,16 +55,28 @@ interface LoungeWorkspaceProps {
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const { isMobile } = useResponsive();
-  const [rooms, setRooms] = useState<any[]>([]);
-  const [members, setMembers] = useState<any[]>([]);
+  
+  // Read cache helper
+  const getLoungeCache = (loungeId: string) => {
+    try {
+      const raw = localStorage.getItem(`velum_cache_lounge_${loungeId}`);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+  };
+
+  const initialCache = getLoungeCache(props.loungeId);
+
+  const [rooms, setRooms] = useState<any[]>(() => initialCache?.rooms || []);
+  const [members, setMembers] = useState<any[]>(() => initialCache?.members || []);
   const [mobileTab, setMobileTab] = useState<'rooms' | 'members' | 'about'>('rooms');
   const [readMessages, setReadMessages] = useState<Set<string>>(new Set());
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
-  const [loungeDetails, setLoungeDetails] = useState<any | null>(null);
+  const [loungeDetails, setLoungeDetails] = useState<any | null>(() => initialCache?.details || null);
   const [loungeList, setLoungeList] = useState<any[]>([]);
   const [showLoungeProfile, setShowLoungeProfile] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
-  const [isLoadingLounge, setIsLoadingLounge] = useState<boolean>(true);
+  const [isLoadingLounge, setIsLoadingLounge] = useState<boolean>(!initialCache);
 
   const getRoomId = (room: any): string | null => {
     if (!room) return null;
@@ -435,49 +447,83 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   };
 
   useEffect(() => {
-    const fetchLoungeDetails = async () => {
-      try {
-        const sid = sessionStorage.getItem('velum-sessionId') || '';
-        const res = await fetch(`/api/lounges/${props.loungeId}`, {
-          headers: { 'Authorization': `Bearer ${sid}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setLoungeDetails(data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch lounge details:', err);
-      }
-    };
+    let isMounted = true;
+    const cache = getLoungeCache(props.loungeId);
+    
+    // If we don't have cache, show light loading state, otherwise keep cached content visible
+    if (!cache) {
+      setIsLoadingLounge(true);
+    }
 
-    const fetchMembers = async () => {
+    const loadWorkspace = async () => {
       try {
         const sid = sessionStorage.getItem('velum-sessionId') || '';
-        const res = await fetch(`/api/lounges/${props.loungeId}/members`, {
-          headers: { 'Authorization': `Bearer ${sid}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const realMembers = data.filter((u: any) => {
-            if (u.user_id === 999) return false;
-            return !(u.username.toLowerCase() === 'velum' || u.username.toLowerCase() === 'velum-msg');
-          });
+        const headers = { 'Authorization': `Bearer ${sid}` };
+
+        const [roomsRes, membersRes, detailsRes, listRes] = await Promise.allSettled([
+          fetch(`/api/lounges/${props.loungeId}/rooms`, { headers }),
+          fetch(`/api/lounges/${props.loungeId}/members`, { headers }),
+          fetch(`/api/lounges/${props.loungeId}`, { headers }),
+          fetch('/api/lounges', { headers })
+        ]);
+
+        if (!isMounted) return;
+
+        let fetchedRooms: any[] = rooms;
+        let fetchedMembers: any[] = members;
+        let fetchedDetails: any = loungeDetails;
+
+        if (roomsRes.status === 'fulfilled' && roomsRes.value.ok) {
+          const rData = await roomsRes.value.json();
+          fetchedRooms = rData;
+          setRooms(rData);
+          if (!isMobile && !props.activeRoomId && rData.length > 0) {
+            const firstRoomId = getRoomId(rData[0]);
+            if (firstRoomId) props.onRoomSelect(firstRoomId);
+          }
+        }
+
+        if (membersRes.status === 'fulfilled' && membersRes.value.ok) {
+          const mData = await membersRes.value.json();
+          const realMembers = mData.filter((u: any) => u.user_id !== 999 && !(u.username.toLowerCase() === 'velum' || u.username.toLowerCase() === 'velum-msg'));
+          fetchedMembers = realMembers;
           setMembers(realMembers);
         }
+
+        if (detailsRes.status === 'fulfilled' && detailsRes.value.ok) {
+          const dData = await detailsRes.value.json();
+          fetchedDetails = dData;
+          setLoungeDetails(dData);
+        }
+
+        if (listRes.status === 'fulfilled' && listRes.value.ok) {
+          const lData = await listRes.value.json();
+          setLoungeList(lData);
+        }
+
+        // Cache the newly fetched workspace data
+        try {
+          localStorage.setItem(`velum_cache_lounge_${props.loungeId}`, JSON.stringify({
+            rooms: fetchedRooms,
+            members: fetchedMembers,
+            details: fetchedDetails
+          }));
+        } catch {}
+
       } catch (err) {
-        console.error('Failed to fetch members', err);
+        console.error('Error loading lounge workspace:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingLounge(false);
+        }
       }
     };
 
-    setIsLoadingLounge(true);
-    Promise.all([
-      fetchRooms(),
-      fetchMembers(),
-      fetchLoungeDetails(),
-      fetchLoungeList()
-    ]).finally(() => {
-      setIsLoadingLounge(false);
-    });
+    loadWorkspace();
+
+    return () => {
+      isMounted = false;
+    };
   }, [props.loungeId, isMobile, props.currentUserId]);
 
   const displayRooms = rooms;
@@ -699,10 +745,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
   // Desktop Split View
   if (!isMobile) {
-    if (isLoadingLounge) {
+    if (isLoadingLounge && rooms.length === 0) {
       return (
-        <div className="flex items-center justify-center h-full text-text-secondary font-mono text-xs animate-pulse">
-          Loading lounge workspace...
+        <div className="flex-1 flex w-full h-full items-center justify-center bg-transparent">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+            <div className="text-text-secondary font-mono text-xs uppercase tracking-widest">
+              Initializing Lounge Workspace...
+            </div>
+          </div>
         </div>
       );
     }
@@ -1149,7 +1200,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                             ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
                             : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
                         }`}
-                        placeholder="ENTER UNIQUE ALPHANUMERIC IDENTIFIER"
+                        placeholder="e.g. general-lounge"
                       />
                     </div>
                     <div>
@@ -1162,7 +1213,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                             ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
                             : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
                         }`}
-                        placeholder="Describe your community node parameters..."
+                        placeholder="Describe lounge topic or community rules..."
                       />
                     </div>
                     <div>
@@ -1341,15 +1392,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 <div className="space-y-6">
                   {/* Direct Add User */}
                   <div className={`p-4 rounded-2xl border ${props.isDark ? 'bg-white/[0.01] border-white-5' : 'bg-text-primary border-velum-600'}`}>
-                    <h4 className="text-[10px] font-bold uppercase tracking-widest mb-3 text-accent">Direct Node Admission</h4>
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest mb-3 text-accent">Add Member Directly</h4>
                     <p className={`text-[10.5px] opacity-75 mb-4 ${props.isDark ? 'text-text-secondary' : 'text-text-secondary'}`}>
-                      Bypass join request reviews by typing any registered username below to add them directly into this lounge.
+                      Add a registered user directly to this lounge by typing their username below.
                     </p>
                     
                     <div className="flex gap-2">
                       <input 
                         type="text"
-                        placeholder="ENTER USERNAME (e.g. alice)"
+                        placeholder="Enter username (e.g. alice)"
                         value={directAddUsername}
                         onChange={(e) => setDirectAddUsername(e.target.value)}
                         className={`flex-1 p-2.5 rounded-xl text-xs outline-none border font-mono transition ${
