@@ -160,6 +160,38 @@ export default function TicketsMainDashboard({
                     </span>
                   </div>
 
+                  {/* Message Thread */}
+                  <div className="space-y-2 mt-2 max-h-40 overflow-y-auto">
+                    {(t.messages || []).map((msg, idx) => (
+                      <div key={idx} className="bg-velum-900/50 p-2 rounded text-[10px]">
+                        <span className="font-bold text-accent">{msg.sender_name}:</span> {msg.content}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Reply Form */}
+                  {t.status !== 'resolved' && (
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="text"
+                        placeholder="Reply to support..."
+                        className="flex-1 bg-velum-900 border border-white-5 rounded px-2 py-1 text-[10px] text-text-primary"
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                            const sId = fetchSessionId();
+                            await fetch(`/api/user/tickets/${t.ticket_id}/reply`, {
+                              method: 'POST',
+                              headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ content: e.currentTarget.value.trim() })
+                            });
+                            e.currentTarget.value = '';
+                            loadTickets();
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {t.credentials_forwarded && (
                     <div className="bg-velum-900 border border-white-5 p-2.5 rounded">
                       <div className="text-[8px] font-bold text-text-secondary font-mono uppercase tracking-wider mb-1">
