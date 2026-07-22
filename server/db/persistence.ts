@@ -34,6 +34,42 @@ const DatabaseSync = (sqliteModule as any)?.DatabaseSync;
 let saveTimeout: NodeJS.Timeout | null = null;
 const lastSavedTableJson: Record<string, string> = {};
 export let lastLoadedTime = 0;
+export const savedRowCache = new Map<string, Map<string, string>>();
+
+let dbFileSaveTimeout: NodeJS.Timeout | null = null;
+let pendingDbFileContent: string | null = null;
+
+function queueDbFileSave(content: string, immediate = false) {
+  pendingDbFileContent = content;
+  if (immediate) {
+    if (dbFileSaveTimeout) {
+      clearTimeout(dbFileSaveTimeout);
+      dbFileSaveTimeout = null;
+    }
+    flushDbFileSave();
+    return;
+  }
+  if (!dbFileSaveTimeout) {
+    dbFileSaveTimeout = setTimeout(() => {
+      dbFileSaveTimeout = null;
+      flushDbFileSave();
+    }, 5000);
+  }
+}
+
+function flushDbFileSave() {
+  if (!pendingDbFileContent) return;
+  const content = pendingDbFileContent;
+  pendingDbFileContent = null;
+  try {
+    const encryptedData = encryptData(content);
+    fs.writeFile(DB_FILE, encryptedData, 'utf8', () => {
+      try { fs.chmodSync(DB_FILE, 0o600); } catch (_) {}
+    });
+  } catch (err) {
+    console.error('[DB] Failed to write DB_FILE backup:', err);
+  }
+}
 
 export function syncDbIfNeeded() {
   try {
@@ -48,6 +84,7 @@ export function syncDbIfNeeded() {
 
 export function loadDb(force = false) {
   if (dbLoaded && !force) return;
+  savedRowCache.clear();
   try {
     let sqliteLoaded = false;
     
@@ -702,69 +739,79 @@ export function executeSaveDb(force = false) {
       const saveTable = (tableName: string, rows: any[], idField: string) => {
         if (!force && !dirtyTables.has(tableName)) return;
         try {
-          const currentJson = JSON.stringify(rows || []);
-          if (lastSavedTableJson[tableName] === currentJson && !force) {
-            return;
+          let tableCache = savedRowCache.get(tableName);
+          if (!tableCache) {
+            tableCache = new Map<string, string>();
+            savedRowCache.set(tableName, tableCache);
           }
           
           if (rows && rows.length > 0) {
-            const idsToKeep: string[] = [];
+            const currentIds = new Set<string>();
+            const rowsToInsert: { id: string; row: any; json: string }[] = [];
+
             for (const row of rows) {
               let rawId = row[idField];
               if (rawId === undefined || rawId === null || rawId === '') {
                 rawId = generateUlid();
                 row[idField] = rawId;
               }
-              idsToKeep.push(String(rawId));
-            }
+              const id = String(rawId);
+              currentIds.add(id);
 
-            if (idsToKeep.length > 0) {
-              const placeholders = idsToKeep.map(() => '?').join(',');
-              const deleteStmt = conn.prepare(`DELETE FROM ${tableName} WHERE id NOT IN (${placeholders})`);
-              deleteStmt.run(...idsToKeep);
-              yieldIfNeeded();
-            } else {
-              conn.exec(`DELETE FROM ${tableName}`);
-              yieldIfNeeded();
-            }
-
-            let query = `INSERT OR REPLACE INTO ${tableName} (id, payload) VALUES (?, ?)`;
-            let extraFields: string[] = [];
-            if (tableName === 'wallet_ledger_entries') {
-              query = `INSERT OR REPLACE INTO wallet_ledger_entries (id, payload, wallet_id) VALUES (?, ?, ?)`;
-              extraFields = ['wallet_id'];
-            } else if (tableName === 'bank_transactions') {
-              query = `INSERT OR REPLACE INTO bank_transactions (id, payload, sender_id, receiver_id) VALUES (?, ?, ?, ?)`;
-              extraFields = ['sender_id', 'receiver_id'];
-            } else if (tableName === 'messages') {
-              query = `INSERT OR REPLACE INTO messages (id, payload, created_at) VALUES (?, ?, ?)`;
-              extraFields = ['created_at'];
-            } else if (tableName === 'sessions') {
-              query = `INSERT OR REPLACE INTO sessions (id, payload, user_id) VALUES (?, ?, ?)`;
-              extraFields = ['user_id'];
-            }
-
-            const stmt = conn.prepare(query);
-            for (const row of rows) {
-              const id = String(row[idField]);
-              const encryptedPayload = encryptData(JSON.stringify(row));
-              const params: any[] = [id, encryptedPayload];
-              for (const field of extraFields) {
-                let val = row[field];
-                if (field === 'created_at' && val) {
-                  val = typeof val === 'string' ? new Date(val).getTime() : Number(val);
-                }
-                params.push(val !== undefined && val !== null ? String(val) : null);
+              const currentJson = JSON.stringify(row);
+              if (tableCache.get(id) !== currentJson || force) {
+                rowsToInsert.push({ id, row, json: currentJson });
               }
-              stmt.run(...params);
-              yieldIfNeeded();
+            }
+
+            // Remove rows from SQLite that were deleted from memory
+            for (const cachedId of Array.from(tableCache.keys())) {
+              if (!currentIds.has(cachedId)) {
+                conn.prepare(`DELETE FROM ${tableName} WHERE id = ?`).run(cachedId);
+                tableCache.delete(cachedId);
+              }
+            }
+
+            if (rowsToInsert.length > 0) {
+              let query = `INSERT OR REPLACE INTO ${tableName} (id, payload) VALUES (?, ?)`;
+              let extraFields: string[] = [];
+              if (tableName === 'wallet_ledger_entries') {
+                query = `INSERT OR REPLACE INTO wallet_ledger_entries (id, payload, wallet_id) VALUES (?, ?, ?)`;
+                extraFields = ['wallet_id'];
+              } else if (tableName === 'bank_transactions') {
+                query = `INSERT OR REPLACE INTO bank_transactions (id, payload, sender_id, receiver_id) VALUES (?, ?, ?, ?)`;
+                extraFields = ['sender_id', 'receiver_id'];
+              } else if (tableName === 'messages') {
+                query = `INSERT OR REPLACE INTO messages (id, payload, created_at) VALUES (?, ?, ?)`;
+                extraFields = ['created_at'];
+              } else if (tableName === 'sessions') {
+                query = `INSERT OR REPLACE INTO sessions (id, payload, user_id) VALUES (?, ?, ?)`;
+                extraFields = ['user_id'];
+              }
+
+              const stmt = conn.prepare(query);
+              for (const item of rowsToInsert) {
+                const encryptedPayload = encryptData(item.json);
+                const params: any[] = [item.id, encryptedPayload];
+                for (const field of extraFields) {
+                  let val = item.row[field];
+                  if (field === 'created_at' && val) {
+                    val = typeof val === 'string' ? new Date(val).getTime() : Number(val);
+                  }
+                  params.push(val !== undefined && val !== null ? String(val) : null);
+                }
+                stmt.run(...params);
+                tableCache.set(item.id, item.json);
+              }
             }
           } else {
-            conn.exec(`DELETE FROM ${tableName}`);
-            yieldIfNeeded();
+            if (tableCache.size > 0) {
+              conn.exec(`DELETE FROM ${tableName}`);
+              tableCache.clear();
+            }
           }
           
-          lastSavedTableJson[tableName] = currentJson;
+          lastSavedTableJson[tableName] = JSON.stringify(rows || []);
         } catch (err) {
           console.error(`[DB] Save table ${tableName} failed:`, err);
           throw err;
@@ -1163,17 +1210,9 @@ export function executeSaveDb(force = false) {
       conn.exec('COMMIT;');
       dirtyTables.clear();
       
-      const encryptedData = encryptData(plainJson);
-      fs.writeFileSync(DB_FILE, encryptedData, 'utf8');
-      try {
-        fs.chmodSync(DB_FILE, 0o600);
-      } catch (_) {}
+      queueDbFileSave(plainJson, force);
     } else {
-      const encryptedData = encryptData(plainJson);
-      fs.writeFileSync(DB_FILE, encryptedData, 'utf8');
-      try {
-        fs.chmodSync(DB_FILE, 0o600);
-      } catch (_) {}
+      queueDbFileSave(plainJson, force);
     }
     
     setLastSavedDbJson(plainJson);
