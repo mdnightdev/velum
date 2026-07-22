@@ -1,17 +1,18 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { 
-  db, 
-  loadDb, 
-  saveDb, 
-  executeSaveDb, 
-  SQLITE_FILE, 
-  initSqlite, 
-  isCloudBackupDisabled, 
-  executeCloudBackup, 
-  restoreDbFromCloud, 
-  broadcastToRoomCallback 
+import {
+  db,
+  loadDb,
+  saveDb,
+  executeSaveDb,
+  SQLITE_FILE,
+  initSqlite,
+  isCloudBackupDisabled,
+  executeCloudBackup,
+  restoreDbFromCloud,
+  broadcastToRoomCallback,
+  sqliteDb
 } from '../db/index.js';
 import { bankStore, getSystemAccount } from './bankStore.js';
 import { bankingCommands } from './banking/commands.js';
@@ -26,6 +27,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
   if (!command) {
     return ' ERROR: Command cannot be empty.';
   }
+  loadDb();
   const parts = command.trim().split(/\s+/);
   let action = parts[0].toLowerCase();
   let arg1 = parts[1];
@@ -34,7 +36,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
   function findUserInDb(query: string | undefined) {
     if (!query) return null;
     const lower = query.toLowerCase().replace(/^@/, '');
-    return db.users.find((u: any) => 
+    return db.users.find((u: any) =>
       String(u.user_id) === query ||
       u.username.toLowerCase() === lower ||
       (u.uid && u.uid.toLowerCase() === lower)
@@ -44,7 +46,8 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
   // Support spaced namespaces, e.g. /users list, /sys status
   const namespacesList = [
     '/users', '/lounges', '/support', '/db', '/sys', '/audit', '/fraud', '/bank', '/banks', '/cards',
-    '/identities', '/comms', '/dispatch', '/datastore', '/daemon', '/forensics', '/threat_intel', '/treasury', '/enforcement'
+    '/identities', '/comms', '/dispatch', '/datastore', '/daemon', '/forensics', '/threat_intel', '/treasury', '/enforcement',
+    '/sanctions', '/tickets', '/market', '/escrow', '/devops', '/audits'
   ];
   if (namespacesList.includes(action) && arg1) {
     const sub = arg1.toLowerCase();
@@ -186,8 +189,13 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
     else if (action === '/fraud/unfreeze') action = 'fraud-unfreeze';
     else if (action === '/fraud/seize') action = 'users-purge-fraudster';
 
+    // 11. /tickets
+    else if (action === '/tickets/list') action = 'tickets-list';
+    else if (action === '/tickets/delete') action = 'delete-ticket';
+    else if (action === '/tickets/purge-all') action = 'purge-all-tickets';
+
     // Directory Help Handlers
-    else if (['/users', '/sanctions', '/db', '/market', '/escrow', '/devops', '/sys', '/bank', '/banks', '/cards', '/audits', '/fraud'].includes(action)) {
+    else if (['/users', '/sanctions', '/db', '/market', '/escrow', '/devops', '/sys', '/bank', '/banks', '/cards', '/audits', '/fraud', '/tickets'].includes(action)) {
       action = 'help';
     }
   }
@@ -197,19 +205,19 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1 || !arg2Plus) return ' ERROR: Usage: fund <amount_cents> <description>';
       let amountCents = parseInt(arg1);
       if (isNaN(amountCents)) return ' ERROR: Amount must be an integer (in cents).';
-      
+
       const accounts = await bankStore.getAccounts();
       const memberTrust = await getSystemAccount('MEMBER');
       const centralReserve = await getSystemAccount('CENTRAL');
-      
+
       if (!memberTrust) return ' ERROR: MEMBER TRUST account not found.';
       if (!centralReserve) return ' ERROR: CENTRAL RESERVE account not found.';
-      
+
       memberTrust.balance_cents += amountCents;
       centralReserve.balance_cents -= amountCents;
-      
+
       await bankStore.saveAccounts(accounts);
-      
+
       const transactions = await bankStore.getTransactions();
       transactions.push({
         transaction_id: `bank_tx_${Date.now()}`,
@@ -222,7 +230,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         status: 'completed'
       });
       transactions.push({
-        transaction_id: `bank_tx_${Date.now()+1}`,
+        transaction_id: `bank_tx_${Date.now() + 1}`,
         account_id: centralReserve.account_id,
         type: 'withdrawal',
         amount_cents: Math.abs(amountCents),
@@ -232,8 +240,8 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         status: 'completed'
       });
       await bankStore.saveTransactions(transactions);
-      
-      return ` SUCCESS: Transferred ${amountCents/100} TWD from Central Reserve to Member Trust.`;
+
+      return ` SUCCESS: Transferred ${amountCents / 100} TWD from Central Reserve to Member Trust.`;
     }
     case 'help': {
       return `VELUM ADMIN COMMAND PANEL\n` +
@@ -273,9 +281,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         const adminCount = db.users?.filter(u => u.role === 'CLI_ADMIN' || u.role === 'LOGIN_ADMIN' || u.role === 'SUPPORT_ADMIN').length || 0;
         const totalUsers = db.users?.length || 0;
         const messagesCount = db.messages?.length || 0;
-        
+
         const ticketsCount = db.tickets?.length || 0;
-        const activeConns = db.sessions ? db.sessions.filter(s => s.status === 'active').length : 0;
+        const activeConns = Number((sqliteDb.prepare("SELECT COUNT(*) as count FROM sessions WHERE json_extract(payload, '$.status') = 'active'").get() as any)?.count || 0);
 
         let dbBytes = 0;
         if (fs.existsSync(SQLITE_FILE)) {
@@ -353,7 +361,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         const newSaUser: User = {
           user_id: saUserId,
           username: saUsername,
-          password_hash: pass_hash, 
+          password_hash: pass_hash,
           safe_word_hash: safe_hash,
           panic_phrase_hash: panic_hash,
           recovery_key_hash: rec_hash,
@@ -511,9 +519,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
                   message: 'Administrative Sanction: Your companion Support Operator access has been demoted and revoked.'
                 }));
                 c.ws.close(3200, 'Demoted');
-              } catch {}
+              } catch { }
             });
-          }).catch(() => {});
+          }).catch(() => { });
         }
 
         if (!db.audit_logs) db.audit_logs = [];
@@ -551,6 +559,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         candidate.status = 'suspended';
         candidate.updated_at = new Date().toISOString();
 
+        sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(candidate.user_id);
         db.sessions = db.sessions.filter(s => s.user_id !== candidate.user_id);
 
         if (!db.admin_sanctions) db.admin_sanctions = [];
@@ -794,7 +803,8 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
     case 'vacuum':
     case 'db-vacuum': {
       try {
-        const expiredCount = db.sessions ? db.sessions.filter(s => s.status === 'expired' || s.status === 'revoked').length : 0;
+        const expiredCount = Number((sqliteDb.prepare("SELECT COUNT(*) as count FROM sessions WHERE json_extract(payload, '$.status') = 'expired' OR json_extract(payload, '$.status') = 'revoked'").get() as any)?.count || 0);
+        sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.status') = 'expired' OR json_extract(payload, '$.status') = 'revoked'").run();
         if (db.sessions) {
           db.sessions = db.sessions.filter(s => s.status === 'active');
         }
@@ -820,6 +830,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (parts[0].toLowerCase() === 'clear' && !arg1) {
         return 'CLEAR_TERMINAL_SCREEN';
       }
+      sqliteDb.prepare("DELETE FROM sessions").run();
       db.sessions = [];
       executeSaveDb();
       return `FORCE FLUSH INITIATED: All active ephemeral sessions have been truncated. Readers will require re-authentication.`;
@@ -915,15 +926,15 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         if (loungeIndex === -1) {
           return ` ERROR: Lounge with ID '${arg1}' not found.`;
         }
-        
+
         if (db.lounges) {
           db.lounges.splice(loungeIndex, 1);
         }
         if (db.lounge_members) {
           db.lounge_members = db.lounge_members.filter(m => m.lounge_id !== arg1);
         }
-        
-        saveDb();
+
+        executeSaveDb();
         return ` SUCCESS: Lounge '${arg1}' has been permanently deleted.`;
       } catch (err: any) {
         return ` ERROR deleting lounge: ${err.message || err}`;
@@ -976,7 +987,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           reason: `Purged account @${candidate.username} restored back to active state by CLI_ADMIN.`,
           timestamp: new Date().toISOString()
         });
-        saveDb();
+        executeSaveDb();
         return ` SUCCESS: User @${candidate.username} successfully restored to active status.`;
       } catch (err: any) {
         return ` ERROR restoring user: ${err.message || err}`;
@@ -995,7 +1006,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         if (profile) {
           profile.avatar = "";
           profile.updated_at = new Date().toISOString();
-          saveDb();
+          executeSaveDb();
           return ` SUCCESS: Avatar for user @${candidate.username} has been reset.`;
         } else {
           return ` ERROR: Profile for user @${candidate.username} not found.`;
@@ -1035,9 +1046,10 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
 
         db.users = db.users.filter(u => u.user_id !== uId);
         db.profiles = db.profiles.filter(p => p.user_id !== uId);
-        
+
         db.user_blocks = db.user_blocks.filter(b => b.blocker_id !== uId && b.blocked_id !== uId);
         db.user_mutes = (db.user_mutes || []).filter(m => m.muter_id !== uId && m.muted_id !== uId);
+        sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(uId);
         db.sessions = db.sessions.filter(s => s.user_id !== uId);
         db.tickets = db.tickets.filter(t => t.user_id !== uId);
 
@@ -1047,9 +1059,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
             try {
               activeConn.ws.send(JSON.stringify({ type: 'system_alert', message: 'ACCOUNT RESIGNED AND PURGED BY EXECUTIVE OVERRIDE.' }));
               activeConn.ws.close(3003, 'ACCOUNT_DELETED');
-            } catch {}
+            } catch { }
           }
-        }).catch(() => {});
+        }).catch(() => { });
 
         if (!db.audit_logs) db.audit_logs = [];
         db.audit_logs.push({
@@ -1101,6 +1113,32 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         return `ERROR during delete ticket sequence: ${err.message || err}`;
       }
     }
+    case 'purge-all-tickets':
+    case 'purge_all_tickets': {
+      try {
+        const count = db.tickets.length;
+        db.tickets = [];
+        executeSaveDb();
+        return `SUCCESS: Purged all ${count} tickets from database.`;
+      } catch (err: any) {
+        return `ERROR during purge tickets sequence: ${err.message || err}`;
+      }
+    }
+    case 'tickets-list': {
+      try {
+        const filtered = db.tickets || [];
+        let out = `\n=== SUPPORT TICKETS LIST (${filtered.length} entries) ===\n`;
+        out += `Ticket ID  | User                 | Category             | Status      | Created At           \n`;
+        out += '-'.repeat(85) + '\n';
+        filtered.forEach((t: any) => {
+          const cat = t.issue_type || 'general_support';
+          out += `${t.ticket_id.padEnd(10)} | ${t.username.padEnd(20)} | ${cat.padEnd(20)} | ${t.status.padEnd(11)} | ${new Date(t.created_at).toLocaleString()}\n`;
+        });
+        return out;
+      } catch (err: any) {
+        return ` ERROR: ${err.message}`;
+      }
+    }
     case 'users-override':
     case 'override-user':
     case 'override_user': {
@@ -1129,7 +1167,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         candidate.salt = salt;
         candidate.password_hash = `argon2id:${await hashArgon2id(newPassword, saltBuf)}`;
         candidate.safe_word_hash = `argon2id:${await hashArgon2id(newSafeWord, saltBuf)}`;
-        
+
         const keySalt = crypto.randomBytes(32);
         const hashHex = await hashArgon2id(newRecoveryKey, keySalt);
         candidate.recovery_key_hash = `argon2id:${keySalt.toString('hex')}:${hashHex}`;
@@ -1192,7 +1230,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const profile = ((db.profiles || []).find((p: any) => p.user_id === user.user_id) || {}) as any;
       const wallet = (db.user_wallets || []).find((w: any) => w.user_id === user.user_id);
       const balanceText = wallet ? `${(wallet.balance_cents / 100).toFixed(2)} VLM` : '0.00 VLM';
-      
+
       let out = `\n=== EXECUTIVE USER DATA: @${user.username} ===\n`;
       out += `  • User ID:       ${user.user_id}\n`;
       out += `  • UID:           ${user.uid || 'N/A'}\n`;
@@ -1266,7 +1304,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         executeSaveDb();
 
         return ` SUCCESS: Created new user @${newUsername} (ID: ${nextId}, Role: ${newRole}).\n` +
-               `   Generated Recovery Key: ${recKey}`;
+          `   Generated Recovery Key: ${recKey}`;
       } catch (err: any) {
         return ` ERROR: Failed to instantiate user profile: ${err.message || err}`;
       }
@@ -1295,9 +1333,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       loadDb();
       const listing = (db.market_listings || []).find((l: any) => l.listing_id === arg1);
       if (!listing) return ` ERROR: Listing "${arg1}" not found.`;
-      
+
       const skuVariants = (db.market_sku_variants || []).filter((v: any) => v.listing_id === listing.listing_id);
-      
+
       let out = `\n=== PRODUCT DETAILS: ${listing.title} ===\n`;
       out += `  • Listing ID:         ${listing.listing_id}\n`;
       out += `  • Seller Reference:   ID ${listing.seller_id} (@${listing.seller_username || 'unknown'})\n`;
@@ -1385,8 +1423,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!user) return ` ERROR: User "${arg1}" not found.`;
       user.status = 'deactivated';
       user.updated_at = new Date().toISOString();
+      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
-      
+
       (db as any).account_deletion_requests = (db as any).account_deletion_requests || [];
       (db as any).account_deletion_requests = (db as any).account_deletion_requests.filter((r: any) => r.user_id !== user.user_id);
       (db as any).account_deletion_requests.push({
@@ -1415,7 +1454,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!user) return ` ERROR: User "${arg1}" not found.`;
       const req = ((db as any).account_deletion_requests || []).find((r: any) => r.user_id === user.user_id && r.status === 'pending_verification');
       if (!req) return ` ERROR: No pending deletion request found for @${user.username}.`;
-      
+
       const elapsed = Date.now() - req.requested_at;
       const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
       if (elapsed < TWO_DAYS) {
@@ -1473,6 +1512,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         profile.avatar = '';
       }
 
+      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
       req.status = 'purged';
 
@@ -1545,6 +1585,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const profile = (db.profiles || []).find((p: any) => p.user_id === user.user_id);
       if (profile) profile.bio = 'Platform Account Transfer Completed';
 
+      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
       db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
 
       (db as any).platform_financial_audit_logs = (db as any).platform_financial_audit_logs || [];
@@ -1645,18 +1686,19 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const cpuUser = (cpu.user / 1000000).toFixed(2);
       const cpuSys = (cpu.system / 1000000).toFixed(2);
       return `\nVELUM LIVE SYS PROCESS STATUS:\n` +
-             `========================================================\n` +
-             `• Daemon Process ID (PID) : ${process.pid}\n` +
-             `• Daemon Node Version    : ${process.version}\n` +
-             `• Platform Architecture  : ${process.platform} (${process.arch})\n` +
-             `• Process Resident Mem   : ${memUsage} MB\n` +
-             `• Total Process Uptime   : ${uptimeStr}\n` +
-             `• CPU Accumulated Time   : User ${cpuUser}s | System ${cpuSys}s\n` +
-             `• Global Maintenance Mode: ${isMaintenanceEnabled ? 'ENABLED' : 'DISABLED'}\n` +
-             `========================================================`;
+        `========================================================\n` +
+        `• Daemon Process ID (PID) : ${process.pid}\n` +
+        `• Daemon Node Version    : ${process.version}\n` +
+        `• Platform Architecture  : ${process.platform} (${process.arch})\n` +
+        `• Process Resident Mem   : ${memUsage} MB\n` +
+        `• Total Process Uptime   : ${uptimeStr}\n` +
+        `• CPU Accumulated Time   : User ${cpuUser}s | System ${cpuSys}s\n` +
+        `• Global Maintenance Mode: ${isMaintenanceEnabled ? 'ENABLED' : 'DISABLED'}\n` +
+        `========================================================`;
     }
     case 'sys-kill': {
       if (!arg1) return ' ERROR: Specify session ID to terminate.';
+      sqliteDb.prepare("DELETE FROM sessions WHERE id = ?").run(arg1);
       db.sessions = db.sessions.filter(s => s.session_id !== arg1);
       executeSaveDb();
       return ` SUCCESS: Session ${arg1} has been terminated.`;
@@ -1683,10 +1725,10 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1) return ' ERROR: Command requires <session_id>.';
       const session = (db.sessions || []).find((s: any) => s.session_id === arg1);
       if (!session) return ` ERROR: Session "${arg1}" not found.`;
-      
+
       const user = db.users?.find((u: any) => u.user_id === session.user_id);
       const device = (db.devices || []).find((d: any) => d.device_id === session.device_id);
-      
+
       let out = `\n=== SECURITY SESSION PROFILE: ${session.session_id} ===\n`;
       out += `  • Session ID:    ${session.session_id}\n`;
       out += `  • Status:        ${(session.status || 'ACTIVE').toUpperCase()}\n`;
@@ -1695,7 +1737,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       out += `  • Device ID:     ${session.device_id}\n`;
       out += `  • Created At:    ${session.created_at || 'N/A'}\n`;
       out += `  • Expires At:    ${session.expires_at || 'N/A'}\n`;
-      
+
       if (device) {
         out += `\n=== BROWSER FINGERPRINT SECURITY PROFILE ===\n`;
         out += `  • Fingerprint:   ${device.fingerprint || 'N/A'}\n`;
@@ -1740,16 +1782,16 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       (db.user_wallets || []).forEach((w: any) => {
         const user = db.users.find((u: any) => u.user_id === w.user_id);
         const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) => e.user_id === w.user_id && e.entry_type !== 'RECHARGE' && e.currency_code !== 'USD');
-         
+
         let sum = 0;
         for (const e of ledgerEntries) {
           sum += Number(e.amount_cents || 0) / 100;
         }
-        
+
         let precedingHash = 'GENESIS_HASH';
         let chainValid = true;
-        const sorted = [...ledgerEntries].sort((a,b) => Number(a.created_at || 0) - Number(b.created_at || 0));
-        
+        const sorted = [...ledgerEntries].sort((a, b) => Number(a.created_at || 0) - Number(b.created_at || 0));
+
         for (const entry of sorted) {
           const calculatedHash = crypto.createHash('sha256')
             .update(`${entry.entry_id}:${entry.user_id}:${entry.amount_cents}:${entry.entry_type}:${precedingHash}`)
@@ -1782,7 +1824,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       (db.sessions || []).forEach((s: any) => {
         const user = db.users.find((u: any) => u.user_id === s.user_id);
         if (s.device_id === 'dev_cli_direct') return;
-        
+
         if (s.activity_metrics && s.activity_metrics.messagesSent > 500) {
           flagged++;
           out += `   FLAGGED SESSION: user @${user?.username} (ID: ${s.session_id})\n`;
@@ -1838,7 +1880,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       let fixedCount = 0;
       const relationships = db.peer_relationships || [];
       let out = `\n=== MUTUAL RELATIONSHIPS RECONSTRUCTION ===\n`;
-      
+
       relationships.forEach((r: any) => {
         const opposite = relationships.find((o: any) => o.user_id_1 === r.user_id_2 && o.user_id_2 === r.user_id_1);
         if (!opposite) {
@@ -1869,11 +1911,11 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       } else {
         escrows.forEach((e: any) => {
           out += `${(e.transaction_id || '').padEnd(14).substring(0, 14)} | ` +
-                 `${(e.listing_id || '').padEnd(10).substring(0, 10)} | ` +
-                 `${String(e.buyer_id || '').padEnd(8).substring(0, 8)} | ` +
-                 `${String(e.seller_id || '').padEnd(9).substring(0, 9)} | ` +
-                 `$${Number(e.amount || 0).toFixed(2).padEnd(6).substring(0, 6)} | ` +
-                 `${(e.status || '').toUpperCase().padEnd(8)}\n`;
+            `${(e.listing_id || '').padEnd(10).substring(0, 10)} | ` +
+            `${String(e.buyer_id || '').padEnd(8).substring(0, 8)} | ` +
+            `${String(e.seller_id || '').padEnd(9).substring(0, 9)} | ` +
+            `$${Number(e.amount || 0).toFixed(2).padEnd(6).substring(0, 6)} | ` +
+            `${(e.status || '').toUpperCase().padEnd(8)}\n`;
         });
       }
       return out;
@@ -1882,7 +1924,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1) return ' ERROR: Command requires <transaction_id>.';
       const escrow = (db.escrow_transactions || []).find((e: any) => e.transaction_id === arg1);
       if (!escrow) return ` ERROR: Escrow transaction "${arg1}" not located.`;
-      
+
       let out = `\n=== ESCROW TRANSACTION DETAILS ===\n`;
       out += `  • Transaction ID:  ${escrow.transaction_id}\n`;
       out += `  • Listing ID:      ${escrow.listing_id}\n`;
@@ -1928,22 +1970,22 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1) return ' ERROR: Command requires <transaction_id>.';
       const escrow = (db.escrow_transactions || []).find((e: any) => e.transaction_id === arg1);
       if (!escrow) return ` ERROR: Escrow transaction "${arg1}" not located.`;
-      
+
       if (escrow.status !== 'HELD_IN_ESCROW' && escrow.status !== 'HELD') {
         return ` ERROR: Escrow transaction is not in a held state (Current status: ${escrow.status}).`;
       }
-      
+
       try {
         escrow.status = 'SEIZED';
         escrow.updated_at = Date.now();
-        
+
         const amountCents = Math.round(Number(escrow.amount || 0) * 100);
-        
+
         // Transfer to central treasury user 999
         const { walletRepository } = await import('../db/walletRepository.js');
         const treasuryWallet = walletRepository.getOrCreateWallet(999);
         walletRepository.updateWalletBalance(999, treasuryWallet.balance_cents + amountCents);
-        
+
         walletRepository.createLedgerEntry({
           entry_id: `led_seize_${generateUlid()}`,
           user_id: 999,
@@ -1955,7 +1997,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           actor_id: '1',
           created_at: Date.now()
         });
-        
+
         db.platform_financial_audit_logs = db.platform_financial_audit_logs || [];
         db.platform_financial_audit_logs.push({
           log_id: `led_aud_${generateUlid()}`,
@@ -1966,7 +2008,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           reason: `Immediate seizure of escrow contract ${escrow.transaction_id}`,
           timestamp: new Date().toISOString()
         });
-        
+
         executeSaveDb();
         return ` SUCCESS: Seized locked escrowed assets of $${escrow.amount} VLM for transaction "${arg1}". Funds transferred to sovereign Treasury 999.`;
       } catch (err: any) {
@@ -1978,14 +2020,14 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1) {
         return '\n ERROR: Usage: /audit/repair <username/user_id>\n';
       }
-    
+
       const user = findUserInDb(arg1);
       if (!user) return `\n ERROR: User "${arg1}" not found.\n`;
-    
+
       const targetUid = user.user_id;
       const wallet = (db as any).user_wallets?.find((w: any) => w.user_id === targetUid);
       if (!wallet) return `\n ERROR: Wallet not found for user @${user.username}.\n`;
-    
+
       // Compute actual ledger sum vs cached balance
       const ledgerEntries = ((db as any).wallet_ledger_entries || []).filter((e: any) => e.user_id === targetUid && e.entry_type !== 'RECHARGE' && e.currency_code !== 'USD');
       let sumCents = 0;
@@ -2046,6 +2088,13 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
     case 'db-orphans-clean': {
       const userIds = new Set(db.users.map((u: any) => u.user_id));
       db.profiles = (db.profiles || []).filter((p: any) => userIds.has(p.user_id));
+      const idArray = Array.from(userIds);
+      if (idArray.length > 0) {
+        const placeholders = idArray.map(() => '?').join(',');
+        sqliteDb.prepare(`DELETE FROM sessions WHERE json_extract(payload, '$.user_id') NOT IN (${placeholders})`).run(...idArray);
+      } else {
+        sqliteDb.prepare(`DELETE FROM sessions`).run();
+      }
       db.sessions = (db.sessions || []).filter((s: any) => userIds.has(s.user_id));
       executeSaveDb();
       return ` SUCCESS: Relational databases sanitized. Purged orphaned profiles.`;
@@ -2118,9 +2167,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!centsStr) return ' ERROR: Amount in cents required.';
       const cents = Number(centsStr);
       if (isNaN(cents) || cents <= 0) return ' ERROR: Cents must be a positive integer.';
-      
+
       const fromAccId = arg1;
-      
+
       try {
         const fromAcc = await bankStore.getAccountById(fromAccId);
         const toAcc = await bankStore.getAccountById(toAccId);
@@ -2132,10 +2181,10 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         if (fromAcc.balance_cents < cents) {
           return ` ERROR: Insufficient funds in source account. Available: ${(fromAcc.balance_cents / 100).toFixed(2)} ${fromAcc.currency_code}`;
         }
-        
+
         await bankStore.updateAccountBalance(fromAccId, -cents);
         await bankStore.updateAccountBalance(toAccId, cents);
-        
+
         const txId = `bank_tx_wire_${Date.now()}`;
         await bankStore.logTransaction({
           transaction_id: txId,
@@ -2147,7 +2196,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           timestamp: Date.now(),
           status: 'completed'
         } as any);
-        
+
         await bankStore.logTransaction({
           transaction_id: txId + '_rx',
           account_id: toAccId,
@@ -2158,7 +2207,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           timestamp: Date.now(),
           status: 'completed'
         } as any);
-        
+
         return ` SUCCESS: Wired ${(cents / 100).toFixed(2)} ${fromAcc.currency_code} from ${fromAccId} to ${toAccId}.`;
       } catch (err: any) {
         return ` ERROR: ${err.message || err}`;
@@ -2184,18 +2233,18 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       let totalLedger = 0;
       accounts.forEach((acc: any) => {
         totalLedger += acc.balance_cents;
-        out += `  [${acc.account_id}] ${acc.name} - Status: ${acc.frozen ? 'FROZEN' : 'ACTIVE'} - Balance: ${(acc.balance_cents / 100).toFixed(2)} ${acc.currency_code}\n`;
+        out += `  [${acc.account_id}] ${acc.account_name} - Status: ${acc.status === 'frozen' ? 'FROZEN' : 'ACTIVE'} - Balance: ${(acc.balance_cents / 100).toFixed(2)} ${acc.currency_code}\n`;
       });
       out += `  --------------------------------------------------\n`;
       out += `  Total Liquidity Registered: ${(totalLedger / 100).toFixed(2)} TWD\n`;
-      
+
       let depositTotal = 0;
       let withdrawalTotal = 0;
       transactions.forEach((t: any) => {
         if (t.type === 'deposit') depositTotal += t.amount_cents;
         if (t.type === 'withdrawal') withdrawalTotal += t.amount_cents;
       });
-      
+
       out += `  Total Deposits: ${(depositTotal / 100).toFixed(2)} TWD\n`;
       out += `  Total Withdrawals: ${(withdrawalTotal / 100).toFixed(2)} TWD\n`;
       out += `  Net Transaction Delta: ${((depositTotal - withdrawalTotal) / 100).toFixed(2)} TWD\n`;
@@ -2205,9 +2254,9 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const accounts = await bankStore.getAccounts();
       let out = `=== BANK ACCOUNTS ===\n`;
       accounts.forEach((acc: any) => {
-        out += `[${acc.account_id}] ${acc.name}\n`;
+        out += `[${acc.account_id}] ${acc.account_name}\n`;
         out += `  Balance: ${(acc.balance_cents / 100).toFixed(2)} ${acc.currency_code}\n`;
-        out += `  Status: ${acc.frozen ? 'FROZEN' : 'ACTIVE'}\n`;
+        out += `  Status: ${acc.status === 'frozen' ? 'FROZEN' : 'ACTIVE'}\n`;
       });
       return out;
     }
@@ -2228,10 +2277,10 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const subParts = arg2Plus ? arg2Plus.split(/\s+/) : [];
       const centsStr = subParts[0];
       const reason = subParts.slice(1).join(' ');
-      
+
       if (!accId) return ' ERROR: account_id required.';
       if (!centsStr) return ' ERROR: amount_cents required.';
-      
+
       try {
         const acc = await bankStore.updateAccountBalance(accId, Number(centsStr));
         await bankStore.logTransaction({
@@ -2244,18 +2293,18 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           timestamp: Date.now(),
           status: 'completed'
         } as any);
-        return ` SUCCESS: Account ${accId} adjusted by ${(Number(centsStr)/100).toFixed(2)} ${acc.currency_code}. Reason: ${reason || 'CLI administrative adjustment'}`;
+        return ` SUCCESS: Account ${accId} adjusted by ${(Number(centsStr) / 100).toFixed(2)} ${acc.currency_code}. Reason: ${reason || 'CLI administrative adjustment'}`;
       } catch (err: any) {
         return ` ERROR: ${err.message || err}`;
       }
     }
-    
+
     case 'card-cards': {
       let out = `=== ISSUED CARDS IN VELUM ===\n`;
       const paymentMethods = db.payment_methods || [];
       const externalAccounts = db.external_financial_accounts || [];
       const cardMethods = paymentMethods.filter((pm: any) => pm.method_type === 'CARD' && pm.status !== 'REMOVED');
-      
+
       if (cardMethods.length === 0) {
         out += `  No active cards have been registered yet.\n`;
       } else {
@@ -2268,18 +2317,18 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           out += `  Available Balance / Limit: ${balance} USD | Status: ${pm.status}\n`;
         });
       }
-      
+
       const limDef = db.system_settings?.limit_default || 500;
       const limPlat = db.system_settings?.limit_platinum || 5000;
       const limBlk = db.system_settings?.limit_black || 15000;
       const limTi = db.system_settings?.limit_titanium || 50000;
-      
+
       out += `\n=== VELUM CREDIT CARD TIERS & DEFAULT LIMITS ===\n`;
       out += `- Velum Standard Credit: $${limDef.toFixed(2)} (vLM default token-recharged limit)\n`;
       out += `- Velum Platinum Credit: $${limPlat.toFixed(2)} (Premium intermediate limit)\n`;
       out += `- Velum Black Credit: $${limBlk.toFixed(2)} (High tier elite limit)\n`;
       out += `- Velum Titanium Credit: $${limTi.toFixed(2)} (Sovereign level credit cap)\n`;
-      
+
       return out;
     }
 
@@ -2290,14 +2339,14 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const paymentMethods = db.payment_methods || [];
       const externalAccounts = db.external_financial_accounts || [];
       if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
-      
+
       const target = arg1.toLowerCase().trim();
       const amountStr = arg2Plus.split(/\s+/)[0];
       const amountCents = parseInt(amountStr);
       if (isNaN(amountCents)) {
         return ' ERROR: Invalid limit amount. Must be an integer (cents).';
       }
-      
+
       const tiers = ['platinum', 'black', 'titanium', 'standard', 'default'];
       const matchedTier = tiers.find(t => target.includes(t));
       if (matchedTier) {
@@ -2311,7 +2360,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         } else {
           db.system_settings.limit_default = limitDollars;
         }
-        
+
         let updatedCount = 0;
         paymentMethods.forEach((pm: any) => {
           if (pm.method_type === 'CARD' && pm.display_label.toLowerCase().includes(matchedTier)) {
@@ -2322,15 +2371,15 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
             }
           }
         });
-        
-        saveDb();
+
+        executeSaveDb();
         return ` SUCCESS: Set default limit for ${matchedTier.toUpperCase()} tier to $${limitDollars.toFixed(2)} (${limitDollars * 100} cents).\n Updated ${updatedCount} active card(s) of this tier.`;
       }
-      
+
       const targetUser = findUserInDb(target);
       let extAcc: any = null;
       let pMethod: any = null;
-      
+
       if (targetUser) {
         pMethod = paymentMethods.find((pm: any) => Number(pm.user_id) === Number(targetUser!.user_id) && pm.method_type === 'CARD' && pm.status !== 'REMOVED');
         if (pMethod) {
@@ -2344,14 +2393,14 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           extAcc = externalAccounts.find((a: any) => a.account_token === target);
         }
       }
-      
+
       if (!extAcc) {
         return ` ERROR: Could not identify card tier or active credit card for target "${target}".`;
       }
-      
+
       extAcc.available_cents = amountCents;
-      saveDb();
-      
+      executeSaveDb();
+
       const holderObj = db.users?.find((u: any) => Number(u.user_id) === Number(extAcc.user_id));
       const holderName = holderObj ? `@${holderObj.username}` : `User ${extAcc.user_id}`;
       return ` SUCCESS: Updated credit limit for ${holderName}'s card [${extAcc.account_token}] to $${(amountCents / 100).toFixed(2)} (${amountCents} cents).`;
@@ -2361,13 +2410,13 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       let out = `=== VELUM CREDIT CARD HOLDERS & BALANCES ===\n`;
       const paymentMethods = db.payment_methods || [];
       const externalAccounts = db.external_financial_accounts || [];
-      
+
       const creditCards = paymentMethods.filter((pm: any) => {
         if (pm.method_type !== 'CARD' || pm.status === 'REMOVED') return false;
         const ext = externalAccounts.find((a: any) => a.account_token === pm.external_account_token);
         return ext?.account_kind === 'CREDIT_CARD';
       });
-      
+
       if (creditCards.length === 0) {
         out += `  No active credit card holders found.\n`;
       } else {
@@ -2379,7 +2428,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           out += `- Holder: ${username.padEnd(15)} | Card: ${pm.display_label.padEnd(35)} | Balance: $${balance} (${ext.available_cents} cents)\n`;
         });
       }
-      
+
       return out;
     }
 
@@ -2389,18 +2438,18 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       }
       const paymentMethods = db.payment_methods || [];
       const externalAccounts = db.external_financial_accounts || [];
-      
+
       const target = arg1.toLowerCase().trim();
       const amountStr = arg2Plus.split(/\s+/)[0];
       const amountCents = parseInt(amountStr);
       if (isNaN(amountCents)) {
         return ' ERROR: Invalid promotional amount. Must be an integer (cents).';
       }
-      
+
       const targetUser = findUserInDb(target);
       let extAcc: any = null;
       let pMethod: any = null;
-      
+
       if (targetUser) {
         pMethod = paymentMethods.find((pm: any) => Number(pm.user_id) === Number(targetUser!.user_id) && pm.method_type === 'CARD' && pm.status !== 'REMOVED');
         if (pMethod) {
@@ -2414,13 +2463,13 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           extAcc = externalAccounts.find((a: any) => a.account_token === target);
         }
       }
-      
+
       if (!extAcc || !pMethod) {
         return ` ERROR: Could not identify active credit card for target "${target}".`;
       }
-      
+
       extAcc.available_cents = amountCents;
-      
+
       let newTier = 'Standard';
       if (amountCents >= 50000 * 100) {
         newTier = 'Titanium';
@@ -2429,20 +2478,20 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       } else if (amountCents >= 5000 * 100) {
         newTier = 'Platinum';
       }
-      
+
       const oldLabel = pMethod.display_label;
       pMethod.display_label = `Velum ${newTier} ${pMethod.masked_number}`;
       pMethod.institution = `Velum ${newTier}`;
       extAcc.institution = `Velum ${newTier}`;
-      
-      saveDb();
-      
+
+      executeSaveDb();
+
       const holderObj = db.users?.find((u: any) => Number(u.user_id) === Number(extAcc.user_id));
       const holderName = holderObj ? `@${holderObj.username}` : `User ${extAcc.user_id}`;
-      
+
       return ` SUCCESS: Promoted ${holderName}'s credit limit to $${(amountCents / 100).toFixed(2)} (${amountCents} cents).\n  Card Tier upgraded: Velum ${newTier} (was: ${oldLabel})`;
     }
-    
+
     case 'sys-config': {
       if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
       return `SYSTEM CONFIGURATION:
@@ -2462,7 +2511,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const val = Number(arg1);
       if (isNaN(val) || val < 0 || val > 100) return 'ERROR: Invalid tax percentage.';
       db.system_settings.tax_rate_percent = val;
-      saveDb();
+      executeSaveDb();
       return `SUCCESS: Tax rate set to ${val}%`;
     }
     case 'sys-twd-rate': {
@@ -2471,11 +2520,11 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const val = Number(arg1);
       if (isNaN(val) || val <= 0) return 'ERROR: Invalid exchange rate.';
       db.system_settings.twd_usd_rate = val;
-      
+
       const twdRate = db.exchange_rates?.find(r => r.base_currency === 'TWD' && r.quote_currency === 'USD');
       if (twdRate) twdRate.rate = val;
-      
-      saveDb();
+
+      executeSaveDb();
       return `SUCCESS: TWD/USD exchange rate set to ${val}`;
     }
     case 'sys-rate': {
@@ -2484,7 +2533,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const quote = parts[0].toUpperCase();
       const val = Number(parts[1]);
       if (isNaN(val) || val <= 0) return 'ERROR: Invalid exchange rate value.';
-      
+
       const base = arg1.toUpperCase();
       db.exchange_rates = db.exchange_rates || [];
       let rateObj = db.exchange_rates.find(r => r.base_currency === base && r.quote_currency === quote);
@@ -2501,7 +2550,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           effective_at: Date.now()
         });
       }
-      
+
       // Update reverse rate automatically to keep math consistent
       let revRateObj = db.exchange_rates.find(r => r.base_currency === quote && r.quote_currency === base);
       const revVal = Number((1 / val).toFixed(6));
@@ -2518,7 +2567,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           effective_at: Date.now()
         });
       }
-      
+
       // If updating TWD/USD or USD/TWD, keep system settings inline
       if (base === 'TWD' && quote === 'USD') {
         if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
@@ -2527,8 +2576,8 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
         if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
         db.system_settings.twd_usd_rate = revVal;
       }
-      
-      saveDb();
+
+      executeSaveDb();
       return `SUCCESS: Exchange rate for ${base}/${quote} set to ${val} (reverse ${quote}/${base} automatically set to ${revVal})`;
     }
     case 'sys-fee': {
@@ -2537,7 +2586,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const val = Number(arg1);
       if (isNaN(val) || val < 0 || val > 100) return 'ERROR: Invalid percentage value.';
       db.system_settings.platform_fee_percent = val;
-      saveDb();
+      executeSaveDb();
       return `SUCCESS: Platform fee set to ${val}%`;
     }
     case 'sys-escrow-fee': {
@@ -2546,7 +2595,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       const val = Number(arg1);
       if (isNaN(val) || val < 0 || val > 100) return 'ERROR: Invalid percentage value.';
       db.system_settings.escrow_fee_percent = val;
-      saveDb();
+      executeSaveDb();
       return `SUCCESS: Platform escrow fee set to ${val}%`;
     }
     case 'sys-limit': {
@@ -2554,15 +2603,15 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
       const val = Number(arg2Plus);
       if (isNaN(val) || val < 0) return 'ERROR: Invalid limit value.';
-      
+
       const tier = arg1.toLowerCase();
       if (tier === 'default') db.system_settings.limit_default = val;
       else if (tier === 'platinum') db.system_settings.limit_platinum = val;
       else if (tier === 'black') db.system_settings.limit_black = val;
       else if (tier === 'titanium') db.system_settings.limit_titanium = val;
       else return `ERROR: Unknown tier ${tier}`;
-      
-      saveDb();
+
+      executeSaveDb();
       return `SUCCESS: Credit limit for ${tier} set to ${val}`;
     }
     case 'sys-activest': {
@@ -2570,7 +2619,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       try {
         const wsLog = fs.readFileSync('ws.log', 'utf8');
         lines = wsLog.split('\n').length;
-      } catch(e) {}
+      } catch (e) { }
       const activeCount = db.users?.filter((u: any) => u.status === 'online').length || 0;
       return ` === ACTIVE SOCKETS (activest) ===\n  Online Users: ${activeCount}\n  WebSocket Events Processed: ${lines}\n  Node Status: HEALTHY`;
     }
@@ -2578,18 +2627,47 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       return ` SUCCESS: Cleared volatile memory caches and temp structures.`;
     }
     case 'db-fsync': {
-      saveDb();
+      executeSaveDb();
       return ` SUCCESS: Synchronized in-memory database to durable SQLite storage.`;
     }
     case 'lounges-kick': {
       if (!arg1) return ' ERROR: User ID required.';
       const user = findUserInDb(arg1);
       if (!user) return ` ERROR: User "${arg1}" not found.`;
+
+      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(user.user_id);
+      db.sessions = (db.sessions || []).filter((s: any) => s.user_id !== user.user_id);
+
+      import('./websocket.js').then(({ connectedClients, broadcastToRoom }) => {
+        const activeConn = connectedClients.find(c => c.user_id === user.user_id);
+        if (activeConn) {
+          try {
+            activeConn.ws.send(JSON.stringify({ type: 'session_revoked', message: 'Administrative Action: Your session has been forcefully terminated.' }));
+            activeConn.ws.close(3200, 'Admin Kick');
+          } catch { }
+        }
+        broadcastToRoom('admin_channel', {
+          type: 'system_alert',
+          message: `User @${user.username} (UID: ${user.user_id}) has been forcefully kicked by administrator.`
+        });
+      }).catch(() => { });
+
       return ` SUCCESS: User @${user.username} (UID: ${user.user_id}) has been forcefully kicked and socket terminated.`;
     }
     case 'lounges-bcast': {
       if (!arg1 || !arg2Plus) return ' ERROR: Usage: bcast <lounge_id> <message>';
-      return ` SUCCESS: Broadcasted system alert to lounge [${arg1}].`;
+      try {
+        import('./websocket.js').then(({ broadcastToRoom }) => {
+          broadcastToRoom(arg1, {
+            type: 'system_alert',
+            message: arg2Plus,
+            timestamp: Date.now()
+          });
+        }).catch(() => { });
+        return ` SUCCESS: Broadcasted system alert to lounge [${arg1}].`;
+      } catch (err: any) {
+        return ` ERROR: Broadcast failed: ${err.message || err}`;
+      }
     }
     case 'bank-txlog': {
       const transactions = bankStore.getTransactions ? await bankStore.getTransactions() : [];
@@ -2615,11 +2693,11 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1) return ' ERROR: User ID required.';
       const user = findUserInDb(arg1);
       if (!user) return ` ERROR: User "${arg1}" not found.`;
-      const sanctions = db.audit_logs?.filter((l: any) => l.user_id === user.user_id && ['ban', 'mute', 'jail'].includes(l.action)) || [];
+      const sanctions = db.admin_sanctions?.filter((s: any) => s.user_id === user.user_id) || [];
       if (sanctions.length === 0) return ` === SANCTIONS FOR @${user.username} ===\n  No active sanctions.`;
       let out = ` === SANCTIONS FOR @${user.username} ===\n`;
       sanctions.forEach((s: any) => {
-        out += `  [${s.timestamp}] ${s.action.toUpperCase()} - Reason: ${s.details}\n`;
+        out += `  [${s.sanction_id}] Type: ${s.type.toUpperCase()} | Reason: ${s.reason || 'N/A'} | Expires: ${new Date(s.expires_at).toISOString()}\n`;
       });
       return out;
     }
@@ -2627,19 +2705,19 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       if (!arg1) return ' ERROR: Command requires <username/id>.';
       const user = findUserInDb(arg1);
       if (!user) return ` ERROR: User "${arg1}" not found.`;
-      
-      const activeSanctions = (db.admin_sanctions || []).filter((s: any) => 
-        s.user_id === user.user_id && 
+
+      const activeSanctions = (db.admin_sanctions || []).filter((s: any) =>
+        s.user_id === user.user_id &&
         new Date(s.expires_at || Date.now()).getTime() > Date.now()
       );
-      
+
       let out = `\n=== MODERATION STATUS: @${user.username} ===\n`;
       out += `  • Account Status: ${user.status}\n`;
       out += `  • Jailed Status:  ${user.status === 'restricted' ? 'YES (Restricted Mode)' : 'NO'}\n`;
-      
+
       const isBanned = user.status === 'suspended' || activeSanctions.some((s: any) => s.type === 'ban');
       out += `  • Banned Status:  ${isBanned ? 'YES (Global Suspension)' : 'NO'}\n`;
-      
+
       const activeMutes = activeSanctions.filter((s: any) => s.type === 'mute');
       if (activeMutes.length > 0) {
         out += `  • Muted Status:   YES (Active Silencing)\n`;
@@ -2649,7 +2727,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       } else {
         out += `  • Muted Status:   NO\n`;
       }
-      
+
       if (activeSanctions.length > 0) {
         out += `\n=== ACTIVE ADMINISTRATIVE RECORD ===\n`;
         activeSanctions.forEach((s: any) => {

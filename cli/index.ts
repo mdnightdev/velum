@@ -76,12 +76,14 @@ function bootstrap(): void {
         rlAny.history = rlAny.history.slice(1);
       }
 
-      if (passwd !== MIDNIGHT_PASSWORD) {
+      if (username.trim() !== 'midnight' || passwd !== MIDNIGHT_PASSWORD) {
         console.log('Login incorrect');
         process.exit(1);
       }
 
-      console.log('Last login: ' + new Date().toUTCString().replace('GMT', 'UTC') + ' from 127.0.0.1');
+      // Display time in Taiwan timezone (UTC+8)
+      const taiwanTime = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      console.log('Last login: ' + taiwanTime.toUTCString().replace('GMT', 'CST (UTC+8)') + ' from 127.0.0.1');
       console.log('Operator session authenticated successfully.\n');
 
       const shell = new VelumShell();

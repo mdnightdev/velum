@@ -17,7 +17,6 @@ import {
   getInvites, 
   nominateSupport, 
   renameExecutive, 
-  executeCli,
   updateSettings,
   getReports,
   updateReportStatus,
@@ -52,7 +51,6 @@ adminRouter.post('/admin/invites', authenticateAdmin, createInvite);
 adminRouter.get('/admin/invites', authenticateAdmin, getInvites);
 adminRouter.post('/admin/nominate', authenticateAdmin, nominateSupport);
 adminRouter.post('/admin/rename-executive', authenticateAdmin, renameExecutive);
-adminRouter.post('/admin/cli/exec', authenticateAdmin, executeCli);
 
 adminRouter.post('/admin/update-settings', authenticateAdmin, updateSettings);
 adminRouter.post('/admin/db-recovery', authenticateAdmin, attemptDbRecovery);

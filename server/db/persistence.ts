@@ -33,6 +33,18 @@ const DatabaseSync = (sqliteModule as any)?.DatabaseSync;
 
 let saveTimeout: NodeJS.Timeout | null = null;
 const lastSavedTableJson: Record<string, string> = {};
+export let lastLoadedTime = 0;
+
+export function syncDbIfNeeded() {
+  try {
+    if (fs.existsSync(SQLITE_FILE)) {
+      const mtime = fs.statSync(SQLITE_FILE).mtimeMs;
+      if (mtime > lastLoadedTime) {
+        loadDb(true);
+      }
+    }
+  } catch (_) {}
+}
 
 export function loadDb(force = false) {
   if (dbLoaded && !force) return;
@@ -389,7 +401,7 @@ export function loadDb(force = false) {
             } catch (_) {}
             
             sqliteLoaded = true;
-            executeSaveDb();
+            executeSaveDb(true); // force: dirtyTables is empty on this direct call path, need a full save
           } catch (err) {
             console.error('[DB] Extraction failed from DB_FILE SQLite format:', err);
           }
@@ -402,7 +414,7 @@ export function loadDb(force = false) {
             }
             setDb(JSON.parse(decryptedData));
             sqliteLoaded = true;
-            executeSaveDb(); // This will save directly to SQLite SQLITE_FILE
+            executeSaveDb(true); // force: full save to SQLITE_FILE, dirtyTables is empty on this path
           } catch (err: any) {
             console.warn('[DB] Local state DB file cannot be decrypted or parsed. Initiating clean state recovery:', err.message || err);
             try {
@@ -423,7 +435,7 @@ export function loadDb(force = false) {
       if (!sqliteExists || sqliteSize === 0) {
         console.log('[DB] No existing SQLite database found. Initializing with default state.');
         setDb({ ...defaultDb });
-        executeSaveDb();
+        executeSaveDb(true); // force: fresh state, must persist every table including lounges/market seed data
       } else {
         // SQLite file exists but loading failed - don't overwrite it!
         // Initialize memory with default state but DON'T save to disk
@@ -460,7 +472,7 @@ export function loadDb(force = false) {
       });
       if (db.messages.length !== originalCount) {
         console.log(`[CLEANUP] Pruned ${originalCount - db.messages.length} conversational messages from Velum bot DMs.`);
-        executeSaveDb();
+        executeSaveDb(true); // force: direct call path, dirtyTables not pre-populated here
       }
     }
 
@@ -518,7 +530,7 @@ export function loadDb(force = false) {
         const migrated = results.filter(Boolean);
         if (migrated.length > 0) {
           console.log(`[MIGRATION] Regenerated recovery keys for ${migrated.length} existing users:`, migrated.map(m => m?.username));
-          executeSaveDb();
+          executeSaveDb(true); // force: direct call path, dirtyTables not pre-populated here
         }
       }).catch(err => {
         console.error('[MIGRATION] Error migrating recovery keys:', err);
@@ -530,6 +542,7 @@ export function loadDb(force = false) {
     });
     setDbLoaded(true);
     setLastSavedDbJson(JSON.stringify(db));
+    lastLoadedTime = Date.now();
     try {
       rebuildBlocksCache();
     } catch (_) {}
@@ -553,7 +566,7 @@ export function loadDb(force = false) {
     // Only save if SQLite file doesn't exist or is empty
     if (!sqliteExists || sqliteSize === 0) {
       try {
-        executeSaveDb();
+        executeSaveDb(true); // force: fresh default state, must persist every table
       } catch (_) {}
     } else {
       console.error('[DB] In-memory state initialized with defaults, but SQLite file preserved.');
@@ -564,6 +577,7 @@ export function loadDb(force = false) {
     });
     setDbLoaded(true);
     setLastSavedDbJson(JSON.stringify(db));
+    lastLoadedTime = Date.now();
     try {
       rebuildBlocksCache();
     } catch (_) {}
@@ -625,22 +639,14 @@ export function attemptRecoveryFromSqlite(): boolean {
   }
 }
 
-export function saveDb(tableName?: string | string[] | boolean, force = false) {
-  let isForce = false;
-  if (typeof tableName === 'boolean') {
-    isForce = tableName;
-    tableName = undefined;
-  } else if (force) {
-    isForce = force;
-  }
-
+export function saveDb(tableName?: string | string[] | boolean, force = true) {
   if (tableName) {
     if (Array.isArray(tableName)) {
       for (const t of tableName) {
         dirtyTables.add(t);
       }
     } else {
-      dirtyTables.add(tableName);
+      dirtyTables.add(tableName as string);
     }
   } else {
     for (const t of ALL_TABLE_NAMES) {
@@ -648,28 +654,26 @@ export function saveDb(tableName?: string | string[] | boolean, force = false) {
     }
   }
 
-  if (isForce) {
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
-      saveTimeout = null;
-    }
-    executeSaveDb(isForce);
-    return;
-  }
-  if (saveTimeout) return;
-  saveTimeout = setTimeout(() => {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
     saveTimeout = null;
-    executeSaveDb(false);
-  }, 2000);
+  }
+  executeSaveDb(true);
 }
 
-export async function executeSaveDb(force = false) {
+export function executeSaveDb(force = false) {
   if (isSaving) return;
   if (decryptionErrorDetected) {
     console.error('[DB] Database write aborted. Decryption errors were detected during load.');
     return;
   }
-  
+
+  // NOTE: table dirtiness is set by saveDb() (specific table(s) or all, if no
+  // tableName given). Do NOT re-mark every table dirty here — that defeats
+  // the whole point of tracking dirty tables and forces a full rewrite of
+  // every structured table (lounges, market_listings, escrow_transactions,
+  // audit logs, etc.) on every single save, even when only one row changed.
+
   const plainJson = JSON.stringify(db);
   if (plainJson === lastSavedDbJson && !legacyDecryptionSucceeded && fs.existsSync(SQLITE_FILE)) {
     return;
@@ -682,21 +686,12 @@ export async function executeSaveDb(force = false) {
       conn.exec('BEGIN IMMEDIATE TRANSACTION;');
       
       let operationCounter = 0;
-      const yieldIfNeeded = async () => {
-        operationCounter++;
-        if (operationCounter % 50 === 0) {
-          await setImmediate();
-        }
-      };
+      const yieldIfNeeded = () => {};
 
-      const saveTable = async (tableName: string, rows: any[], idField: string) => {
+      const saveTable = (tableName: string, rows: any[], idField: string) => {
         try {
-          if (!force && !dirtyTables.has(tableName)) {
-            return;
-          }
-          
           const currentJson = JSON.stringify(rows || []);
-          if (lastSavedTableJson[tableName] === currentJson) {
+          if (lastSavedTableJson[tableName] === currentJson && !force) {
             return;
           }
           
@@ -715,10 +710,10 @@ export async function executeSaveDb(force = false) {
               const placeholders = idsToKeep.map(() => '?').join(',');
               const deleteStmt = conn.prepare(`DELETE FROM ${tableName} WHERE id NOT IN (${placeholders})`);
               deleteStmt.run(...idsToKeep);
-              await yieldIfNeeded();
+              yieldIfNeeded();
             } else {
               conn.exec(`DELETE FROM ${tableName}`);
-              await yieldIfNeeded();
+              yieldIfNeeded();
             }
 
             let query = `INSERT OR REPLACE INTO ${tableName} (id, payload) VALUES (?, ?)`;
@@ -750,11 +745,11 @@ export async function executeSaveDb(force = false) {
                 params.push(val !== undefined && val !== null ? String(val) : null);
               }
               stmt.run(...params);
-              await yieldIfNeeded();
+              yieldIfNeeded();
             }
           } else {
             conn.exec(`DELETE FROM ${tableName}`);
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
           
           lastSavedTableJson[tableName] = currentJson;
@@ -764,13 +759,20 @@ export async function executeSaveDb(force = false) {
         }
       };
       
-      const saveLoungesDb = async () => {
+      const saveLoungesDb = () => {
         if (!force && !dirtyTables.has('lounges')) return;
         try {
-          conn.exec(`DELETE FROM lounges`);
-          await yieldIfNeeded();
-          const stmt = conn.prepare(`INSERT INTO lounges (lounge_id, name, description, owner_id, created_at, is_private, is_official, last_message_at, icon_url, invite_code, id, slug, creator_id, parent_lounge_id, updated_at, is_system, visibility, status, type, owner_user_id, hide_member_list, is_locked, last_active_at, accessLevel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-          for (const c of db.lounges || []) {
+          const list = db.lounges || [];
+          const idsToKeep = list.map((c: any) => c.lounge_id);
+          if (idsToKeep.length > 0) {
+            const placeholders = idsToKeep.map(() => '?').join(',');
+            conn.prepare(`DELETE FROM lounges WHERE lounge_id NOT IN (${placeholders})`).run(...idsToKeep);
+          } else {
+            conn.exec(`DELETE FROM lounges`);
+          }
+          yieldIfNeeded();
+          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounges (lounge_id, name, description, owner_id, created_at, is_private, is_official, last_message_at, icon_url, invite_code, id, slug, creator_id, parent_lounge_id, updated_at, is_system, visibility, status, type, owner_user_id, hide_member_list, is_locked, last_active_at, accessLevel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          for (const c of list) {
             const idVal = c.id || c.lounge_id;
             const slugVal = c.slug || c.lounge_id;
             const creatorIdVal = c.creator_id || String(c.owner_id);
@@ -811,7 +813,7 @@ export async function executeSaveDb(force = false) {
               lastActiveAtVal,
               c.accessLevel || 'ALL'
             );
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounges failed:', err);
@@ -819,15 +821,22 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveLoungeRoomsDb = async () => {
+      const saveLoungeRoomsDb = () => {
         if (!force && !dirtyTables.has('lounge_rooms')) return;
         try {
-          conn.exec(`DELETE FROM lounge_rooms`);
-          await yieldIfNeeded();
-          const stmt = conn.prepare(`INSERT INTO lounge_rooms (id, lounge_id, name, is_locked, invite_code, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-          for (const lr of db.lounge_rooms || []) {
+          const list = db.lounge_rooms || [];
+          const idsToKeep = list.map((lr: any) => lr.id);
+          if (idsToKeep.length > 0) {
+            const placeholders = idsToKeep.map(() => '?').join(',');
+            conn.prepare(`DELETE FROM lounge_rooms WHERE id NOT IN (${placeholders})`).run(...idsToKeep);
+          } else {
+            conn.exec(`DELETE FROM lounge_rooms`);
+          }
+          yieldIfNeeded();
+          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_rooms (id, lounge_id, name, is_locked, invite_code, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+          for (const lr of list) {
             stmt.run(lr.id, lr.lounge_id, lr.name, Number(lr.is_locked || 0), lr.invite_code || null, String(lr.created_by), Number(lr.created_at || Date.now()));
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounge_rooms failed:', err);
@@ -835,13 +844,20 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveMarketListingsDb = async () => {
+      const saveMarketListingsDb = () => {
         if (!force && !dirtyTables.has('market_listings')) return;
         try {
-          conn.exec(`DELETE FROM market_listings`);
-          await yieldIfNeeded();
-          const stmt = conn.prepare(`INSERT INTO market_listings (listing_id, seller_id, title, description, price, status, created_at, seller_username, discount_price, verification_status, inventory_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-          for (const l of db.market_listings || []) {
+          const list = db.market_listings || [];
+          const idsToKeep = list.map((l: any) => l.listing_id);
+          if (idsToKeep.length > 0) {
+            const placeholders = idsToKeep.map(() => '?').join(',');
+            conn.prepare(`DELETE FROM market_listings WHERE listing_id NOT IN (${placeholders})`).run(...idsToKeep);
+          } else {
+            conn.exec(`DELETE FROM market_listings`);
+          }
+          yieldIfNeeded();
+          const stmt = conn.prepare(`INSERT OR REPLACE INTO market_listings (listing_id, seller_id, title, description, price, status, created_at, seller_username, discount_price, verification_status, inventory_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          for (const l of list) {
             stmt.run(
               l.listing_id,
               String(l.seller_id),
@@ -855,7 +871,7 @@ export async function executeSaveDb(force = false) {
               l.verification_status || null,
               l.inventory_count !== undefined && l.inventory_count !== null ? Number(l.inventory_count) : null
             );
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save market_listings failed:', err);
@@ -863,15 +879,15 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveLoungeSanctionsDb = async () => {
+      const saveLoungeSanctionsDb = () => {
         if (!force && !dirtyTables.has('lounge_sanctions')) return;
         try {
           conn.exec('DELETE FROM lounge_sanctions');
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO lounge_sanctions (id, lounge_id, user_id, type, applied_by, applied_by_type, applied_at, lifted_at, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const s of db.lounge_sanctions || []) {
             stmt.run(s.id, s.lounge_id, Number(s.user_id), s.type, Number(s.applied_by), s.applied_by_type, Number(s.applied_at), s.lifted_at, s.reason);
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounge_sanctions failed:', err);
@@ -879,13 +895,20 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveEscrowTransactionsDb = async () => {
+      const saveEscrowTransactionsDb = () => {
         if (!force && !dirtyTables.has('escrow_transactions')) return;
         try {
-          conn.exec(`DELETE FROM escrow_transactions`);
-          await yieldIfNeeded();
-          const stmt = conn.prepare(`INSERT INTO escrow_transactions (transaction_id, listing_id, buyer_id, seller_id, amount, status, created_at, updated_at, coupon_applied, sku_variant_id, platform_fee, payout_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-          for (const t of db.escrow_transactions || []) {
+          const list = db.escrow_transactions || [];
+          const idsToKeep = list.map((t: any) => t.transaction_id);
+          if (idsToKeep.length > 0) {
+            const placeholders = idsToKeep.map(() => '?').join(',');
+            conn.prepare(`DELETE FROM escrow_transactions WHERE transaction_id NOT IN (${placeholders})`).run(...idsToKeep);
+          } else {
+            conn.exec(`DELETE FROM escrow_transactions`);
+          }
+          yieldIfNeeded();
+          const stmt = conn.prepare(`INSERT OR REPLACE INTO escrow_transactions (transaction_id, listing_id, buyer_id, seller_id, amount, status, created_at, updated_at, coupon_applied, sku_variant_id, platform_fee, payout_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          for (const t of list) {
             stmt.run(
               t.transaction_id,
               t.listing_id,
@@ -900,7 +923,7 @@ export async function executeSaveDb(force = false) {
               t.platform_fee === undefined || t.platform_fee === null ? null : Number(t.platform_fee),
               t.payout_amount === undefined || t.payout_amount === null ? null : Number(t.payout_amount)
             );
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save escrow_transactions failed:', err);
@@ -908,13 +931,20 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveLoungeMembersDb = async () => {
+      const saveLoungeMembersDb = () => {
         if (!force && !dirtyTables.has('lounge_members')) return;
         try {
-          conn.exec(`DELETE FROM lounge_members`);
-          await yieldIfNeeded();
-          const stmt = conn.prepare(`INSERT INTO lounge_members (lounge_id, user_id, role, status, joined_via, joined_at) VALUES (?, ?, ?, ?, ?, ?)`);
-          for (const m of db.lounge_members || []) {
+          const list = db.lounge_members || [];
+          const keysToKeep = list.map((m: any) => m.lounge_id + '_' + m.user_id);
+          if (keysToKeep.length > 0) {
+            const placeholders = keysToKeep.map(() => '?').join(',');
+            conn.prepare(`DELETE FROM lounge_members WHERE (lounge_id || '_' || user_id) NOT IN (${placeholders})`).run(...keysToKeep);
+          } else {
+            conn.exec(`DELETE FROM lounge_members`);
+          }
+          yieldIfNeeded();
+          const stmt = conn.prepare(`INSERT OR REPLACE INTO lounge_members (lounge_id, user_id, role, status, joined_via, joined_at) VALUES (?, ?, ?, ?, ?, ?)`);
+          for (const m of list) {
             stmt.run(
               m.lounge_id,
               Number(m.user_id),
@@ -923,7 +953,7 @@ export async function executeSaveDb(force = false) {
               m.joined_via,
               Number(m.joined_at || Date.now())
             );
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounge_members failed:', err);
@@ -931,11 +961,11 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveLoungeJoinRequestsDb = async () => {
+      const saveLoungeJoinRequestsDb = () => {
         if (!force && !dirtyTables.has('lounge_join_requests')) return;
         try {
           conn.exec(`DELETE FROM lounge_join_requests`);
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO lounge_join_requests (id, lounge_id, user_id, message, status, reviewed_by, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
           for (const r of db.lounge_join_requests || []) {
             stmt.run(
@@ -947,7 +977,7 @@ export async function executeSaveDb(force = false) {
               r.reviewed_by ? Number(r.reviewed_by) : null,
               r.reviewed_at ? Number(r.reviewed_at) : null
             );
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounge_join_requests failed:', err);
@@ -955,15 +985,15 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveLoungeInvitesDb = async () => {
+      const saveLoungeInvitesDb = () => {
         if (!force && !dirtyTables.has('lounge_invites')) return;
         try {
           conn.exec(`DELETE FROM lounge_invites`);
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO lounge_invites (id, lounge_id, code, created_by, max_uses, uses_count, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const i of db.lounge_invites || []) {
             stmt.run(i.id, i.lounge_id, i.code, Number(i.created_by), Number(i.max_uses), Number(i.uses_count), i.expires_at, i.revoked_at);
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounge_invites failed:', err);
@@ -971,15 +1001,15 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveLoungeOwnershipTransfersDb = async () => {
+      const saveLoungeOwnershipTransfersDb = () => {
         if (!force && !dirtyTables.has('lounge_ownership_transfers')) return;
         try {
           conn.exec(`DELETE FROM lounge_ownership_transfers`);
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO lounge_ownership_transfers (id, lounge_id, from_user_id, to_user_id, status, initiated_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
           for (const t of db.lounge_ownership_transfers || []) {
             stmt.run(t.id, t.lounge_id, Number(t.from_user_id), Number(t.to_user_id), t.status, Number(t.initiated_at), t.resolved_at);
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounge_ownership_transfers failed:', err);
@@ -987,15 +1017,15 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveAccountDeletionRequestsDb = async () => {
+      const saveAccountDeletionRequestsDb = () => {
         if (!force && !dirtyTables.has('account_deletion_requests')) return;
         try {
           conn.exec(`DELETE FROM account_deletion_requests`);
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO account_deletion_requests (id, user_id, requested_at, scheduled_purge_at, status) VALUES (?, ?, ?, ?, ?)`);
           for (const d of db.account_deletion_requests || []) {
             stmt.run(d.id, Number(d.user_id), Number(d.requested_at), Number(d.scheduled_purge_at), d.status);
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save account_deletion_requests failed:', err);
@@ -1003,15 +1033,15 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveUserLoungePreferencesDb = async () => {
+      const saveUserLoungePreferencesDb = () => {
         if (!force && !dirtyTables.has('user_lounge_preferences')) return;
         try {
           conn.exec(`DELETE FROM user_lounge_preferences`);
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO user_lounge_preferences (user_id, lounge_id, notifications_muted, pinned, pin_order) VALUES (?, ?, ?, ?, ?)`);
           for (const p of db.user_lounge_preferences || []) {
             stmt.run(Number(p.user_id), p.lounge_id, p.notifications_muted ? 1 : 0, p.pinned ? 1 : 0, p.pin_order);
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save user_lounge_preferences failed:', err);
@@ -1019,15 +1049,15 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveLoungeAuditLogsDb = async () => {
+      const saveLoungeAuditLogsDb = () => {
         if (!force && !dirtyTables.has('lounge_audit_logs')) return;
         try {
           conn.exec(`DELETE FROM lounge_audit_logs`);
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO lounge_audit_logs (id, lounge_id, actor_id, actor_type, action, target_type, target_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const l of db.lounge_audit_logs || []) {
             stmt.run(l.id, l.lounge_id, Number(l.actor_id), l.actor_type, l.action, l.target_type, l.target_id, typeof l.metadata === 'string' ? l.metadata : JSON.stringify(l.metadata), Number(l.created_at));
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save lounge_audit_logs failed:', err);
@@ -1035,15 +1065,15 @@ export async function executeSaveDb(force = false) {
         }
       };
 
-      const saveSystemAuditLogsDb = async () => {
+      const saveSystemAuditLogsDb = () => {
         if (!force && !dirtyTables.has('system_audit_logs')) return;
         try {
           conn.exec(`DELETE FROM system_audit_logs`);
-          await yieldIfNeeded();
+          yieldIfNeeded();
           const stmt = conn.prepare(`INSERT INTO system_audit_logs (id, actor_id, actor_type, action, target_type, target_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const l of db.system_audit_logs || []) {
             stmt.run(l.id, Number(l.actor_id), l.actor_type, l.action, l.target_type, l.target_id, typeof l.metadata === 'string' ? l.metadata : JSON.stringify(l.metadata), Number(l.created_at));
-            await yieldIfNeeded();
+            yieldIfNeeded();
           }
         } catch (err) {
           console.error('[DB] Save system_audit_logs failed:', err);
@@ -1051,71 +1081,72 @@ export async function executeSaveDb(force = false) {
         }
       };
       
-      await saveTable('users', db.users, 'user_id');
-      await saveTable('profiles', db.profiles, 'profile_id');
-      await saveTable('sessions', db.sessions, 'session_id');
-      await saveTable('devices', db.devices, 'device_id');
-      await saveTable('ip_addresses', db.ip_addresses, 'ip_id');
-      await saveTable('messages', db.messages, 'message_id');
-      await saveTable('user_blocks', db.user_blocks, 'block_id');
-      await saveTable('user_mutes', db.user_mutes || [], 'mute_id');
-      await saveTable('admin_sanctions', db.admin_sanctions, 'sanction_id');
-      await saveTable('invites', db.invites, 'invite_id');
-      await saveTable('tickets', db.tickets, 'ticket_id');
-      await saveTable('reports', db.reports || [], 'report_id');
-      await saveTable('recovery_events', db.recovery_events, 'event_id');
-      await saveTable('suspicious_events', db.suspicious_events, 'event_id');
-      await saveTable('audit_logs', db.audit_logs, 'log_id');
-      await saveTable('friend_requests', db.friend_requests || [], 'request_id');
-      await saveTable('peer_relationships', db.peer_relationships || [], 'id');
-      await saveTable('join_requests', db.join_requests || [], 'id');
-      await saveTable('node_overwrites', db.node_overwrites || [], 'overwrite_id');
+      saveTable('users', db.users, 'user_id');
+      saveTable('profiles', db.profiles, 'profile_id');
+      // Bypassed: sessions table is handled directly in SQLite to prevent PM2 cluster desync overwrites
+      // saveTable('sessions', db.sessions, 'session_id');
+      saveTable('devices', db.devices, 'device_id');
+      saveTable('ip_addresses', db.ip_addresses, 'ip_id');
+      saveTable('messages', db.messages, 'message_id');
+      saveTable('user_blocks', db.user_blocks, 'block_id');
+      saveTable('user_mutes', db.user_mutes || [], 'mute_id');
+      saveTable('admin_sanctions', db.admin_sanctions, 'sanction_id');
+      saveTable('invites', db.invites, 'invite_id');
+      saveTable('tickets', db.tickets, 'ticket_id');
+      saveTable('reports', db.reports || [], 'report_id');
+      saveTable('recovery_events', db.recovery_events, 'event_id');
+      saveTable('suspicious_events', db.suspicious_events, 'event_id');
+      saveTable('audit_logs', db.audit_logs, 'log_id');
+      saveTable('friend_requests', db.friend_requests || [], 'request_id');
+      saveTable('peer_relationships', db.peer_relationships || [], 'id');
+      saveTable('join_requests', db.join_requests || [], 'id');
+      saveTable('node_overwrites', db.node_overwrites || [], 'overwrite_id');
 
       // Save Banking Tables
-      await saveTable('user_wallets', db.user_wallets || [], 'user_id');
-      await saveTable('wallet_ledger_entries', db.wallet_ledger_entries || [], 'entry_id');
-      await saveTable('recharge_requests', db.recharge_requests || [], 'request_id');
-      await saveTable('withdrawal_requests', db.withdrawal_requests || [], 'request_id');
-      await saveTable('kyc_verifications', db.kyc_verifications || [], 'kyc_id');
-      await saveTable('bank_accounts', (db as any).bank_accounts || [], 'account_id');
-      await saveTable('bank_transactions', (db as any).bank_transactions || [], 'transaction_id');
-      await saveTable('payment_methods', db.payment_methods || [], 'payment_method_id');
-      await saveTable('external_financial_accounts', db.external_financial_accounts || [], 'account_token');
-      await saveTable('external_processor_events', db.external_processor_events || [], 'event_id');
-      await saveTable('wallet_balances', db.wallet_balances || [], 'balance_id');
-      await saveTable('currencies', db.currencies || [], 'currency_code');
-      await saveTable('exchange_rates', db.exchange_rates || [], 'rate_id');
-      await saveTable('platform_admins', db.platform_admins || [], 'admin_id');
+      saveTable('user_wallets', db.user_wallets || [], 'user_id');
+      saveTable('wallet_ledger_entries', db.wallet_ledger_entries || [], 'entry_id');
+      saveTable('recharge_requests', db.recharge_requests || [], 'request_id');
+      saveTable('withdrawal_requests', db.withdrawal_requests || [], 'request_id');
+      saveTable('kyc_verifications', db.kyc_verifications || [], 'kyc_id');
+      saveTable('bank_accounts', (db as any).bank_accounts || [], 'account_id');
+      saveTable('bank_transactions', (db as any).bank_transactions || [], 'transaction_id');
+      saveTable('payment_methods', db.payment_methods || [], 'payment_method_id');
+      saveTable('external_financial_accounts', db.external_financial_accounts || [], 'account_token');
+      saveTable('external_processor_events', db.external_processor_events || [], 'event_id');
+      saveTable('wallet_balances', db.wallet_balances || [], 'balance_id');
+      saveTable('currencies', db.currencies || [], 'currency_code');
+      saveTable('exchange_rates', db.exchange_rates || [], 'rate_id');
+      saveTable('platform_admins', db.platform_admins || [], 'admin_id');
 
       // Save Marketplace Tables
-      await saveTable('market_assets', db.market_assets || [], 'listing_id');
-      await saveTable('market_sku_variants', db.market_sku_variants || [], 'sku_id');
-      await saveTable('market_asset_media', db.market_asset_media || [], 'media_id');
-      await saveTable('market_reviews', db.market_reviews || [], 'review_id');
-      await saveTable('market_coupons', db.market_coupons || [], 'coupon_id');
-      await saveTable('market_discussions', db.market_discussions || [], 'discussion_id');
-      await saveTable('market_support_chats', db.market_support_chats || [], 'chat_id');
-      await saveTable('listing_verification_checks', db.listing_verification_checks || [], 'check_id');
+      saveTable('market_assets', db.market_assets || [], 'listing_id');
+      saveTable('market_sku_variants', db.market_sku_variants || [], 'sku_id');
+      saveTable('market_asset_media', db.market_asset_media || [], 'media_id');
+      saveTable('market_reviews', db.market_reviews || [], 'review_id');
+      saveTable('market_coupons', db.market_coupons || [], 'coupon_id');
+      saveTable('market_discussions', db.market_discussions || [], 'discussion_id');
+      saveTable('market_support_chats', db.market_support_chats || [], 'chat_id');
+      saveTable('listing_verification_checks', db.listing_verification_checks || [], 'check_id');
 
       // Save Missing Tables
-      await saveTable('platform_financial_audit_logs', db.platform_financial_audit_logs || [], 'log_id');
-      await saveTable('automation_actions', db.automation_actions || [], 'action_id');
-      await saveTable('refund_requests', db.refund_requests || [], 'request_id');
-      await saveTable('idempotency_records', db.idempotency_records || [], 'key');
+      saveTable('platform_financial_audit_logs', db.platform_financial_audit_logs || [], 'log_id');
+      saveTable('automation_actions', db.automation_actions || [], 'action_id');
+      saveTable('refund_requests', db.refund_requests || [], 'request_id');
+      saveTable('idempotency_records', db.idempotency_records || [], 'key');
 
-      await saveLoungesDb();
-      await saveLoungeRoomsDb();
-      await saveLoungeMembersDb();
-      await saveLoungeInvitesDb();
-      await saveLoungeSanctionsDb();
-      await saveLoungeJoinRequestsDb();
-      await saveLoungeOwnershipTransfersDb();
-      await saveAccountDeletionRequestsDb();
-      await saveUserLoungePreferencesDb();
-      await saveLoungeAuditLogsDb();
-      await saveSystemAuditLogsDb();
-      await saveMarketListingsDb();
-      await saveEscrowTransactionsDb();
+      saveLoungesDb();
+      saveLoungeRoomsDb();
+      saveLoungeMembersDb();
+      saveLoungeInvitesDb();
+      saveLoungeSanctionsDb();
+      saveLoungeJoinRequestsDb();
+      saveLoungeOwnershipTransfersDb();
+      saveAccountDeletionRequestsDb();
+      saveUserLoungePreferencesDb();
+      saveLoungeAuditLogsDb();
+      saveSystemAuditLogsDb();
+      saveMarketListingsDb();
+      saveEscrowTransactionsDb();
 
       conn.exec('COMMIT;');
       dirtyTables.clear();

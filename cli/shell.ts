@@ -159,31 +159,48 @@ export class VelumShell {
       const isLong = flags['l'] === true;
 
       if (this.currentPath === '/') {
-        const namespaces = ['users', 'sanctions', 'db', 'market', 'escrow', 'devops', 'sys', 'banks', 'cards', 'audits', 'fraud'];
-        const descriptions: Record<string, string> = {
-          users: 'User Account Lifecycle',
-          sanctions: 'Punitive Actions & Containment',
-          db: 'Database Operations & Sanitization',
-          market: 'Marketplace Controls',
-          escrow: 'Escrow Operations',
-          devops: 'System Configurations',
-          sys: 'System Metrics & Daemons',
-          banks: 'Banking & Sovereign Ledger',
-          cards: 'Credit Cards & Limits',
-          audits: 'Forensic Investigations',
-          fraud: 'Threat Control & Seizures'
-        };
+        const namespaces = [
+          { name: 'users',    desc: 'User Account Lifecycle' },
+          { name: 'sanctions', desc: 'Moderation Actions' },
+          { name: 'tickets',  desc: 'Support Tickets' },
+          { name: 'db',       desc: 'Database Operations' },
+          { name: 'market',   desc: 'Marketplace Controls' },
+          { name: 'escrow',   desc: 'Escrow Operations' },
+          { name: 'devops',   desc: 'System Configurations' },
+          { name: 'sys',      desc: 'System Metrics & Daemons' },
+          { name: 'bank',     desc: 'Banking & Ledger' },
+          { name: 'cards',    desc: 'Credit Cards & Limits' },
+          { name: 'audits',   desc: 'Audit Logs' },
+          { name: 'fraud',    desc: 'Fraud Prevention' }
+        ];
 
         if (isLong) {
           console.log();
-          namespaces.forEach(ns => {
-            console.log(`\x1b[90mdr-xr-xr-x\x1b[0m   \x1b[36m%-10s\x1b[0m   %s`.replace(/%/g, '%-'), ns, descriptions[ns]);
+          console.log('\x1b[90mdrwxr-xr-x\x1b[0m  \x1b[36m%-8s\x1b[0m  \x1b[90m%4s\x1b[0m  \x1b[33m%-12s\x1b[0m  %s'.replace(/%/g, '%-'), 'NAME', 'RISK', 'ACCESS', 'DESCRIPTION'.padEnd(35));
+          console.log('\x1b[90m' + '-'.repeat(85) + '\x1b[0m');
+          namespaces.forEach((ns, idx) => {
+            const riskLevel = ['LOW','LOW','LOW','LOW','LOW','LOW','HIGH','LOW','MEDIUM','HIGH','LOW','MEDIUM'][idx] || 'LOW';
+            let riskColor = '\x1b[32m'; // LOW: Green
+            if (riskLevel === 'MEDIUM') riskColor = '\x1b[33m';
+            else if (riskLevel === 'HIGH') riskColor = '\x1b[91m';
+            else if (riskLevel === 'CRITICAL') riskColor = '\x1b[31m\x1b[1m';
+            const formattedRisk = `${riskColor}${riskLevel}\x1b[0m`;
+            console.log('\x1b[90mdrwxr-xr-x\x1b[0m  \x1b[36m%-8s\x1b[0m  \x1b[90m%4s\x1b[0m  %s  %s'.replace(/%/g, '%-'), ns.name, formattedRisk, 'drwxr-xr-x', ns.desc.padEnd(35));
           });
           console.log();
         } else {
           console.log();
-          this.printGrid(namespaces);
-          console.log();
+          const totalCols = 3;
+          const colWidth = 28;
+          const rows: string[][] = [];
+          for (let i = 0; i < namespaces.length; i += totalCols) {
+            rows.push(namespaces.slice(i, i + totalCols).map(n => n.name));
+          }
+          rows.forEach(row => {
+            const padded = row.map(n => n.padEnd(colWidth));
+            console.log(`\x1b[36m${padded.join('')}\x1b[0m`);
+          });
+          console.log(`\x1b[90m${namespaces.length} namespaces\x1b[0m\n`);
         }
       } else {
         const cmds = COMMAND_REGISTRY[this.currentPath];
@@ -194,6 +211,8 @@ export class VelumShell {
 
         if (isLong) {
           console.log();
+          console.log('\x1b[90m-r-xr-x---\x1b[0m  \x1b[36m%-25s\x1b[0m  \x1b[90m%8s\x1b[0m  \x1b[33m%-12s\x1b[0m  %s'.replace(/%/g, '%-'), 'COMMAND', 'RISK', 'ACCESS', 'DESCRIPTION'.padEnd(40));
+          console.log('\x1b[90m' + '-'.repeat(95) + '\x1b[0m');
           for (const [name, meta] of Object.entries(cmds)) {
             let perm = '\x1b[90m-r-x------\x1b[0m';
             let riskColor = '\x1b[32m'; // LOW: Green
@@ -207,15 +226,24 @@ export class VelumShell {
               perm = '\x1b[90m-rwxrwxrwx\x1b[0m';
               riskColor = '\x1b[31m\x1b[1m'; // CRITICAL: Bold Red
             }
-
-            const formattedRisk = `${riskColor}[${meta.risk}]\x1b[0m`.padEnd(20);
-            console.log(`${perm}   ${formattedRisk}   %-25s   %s`.replace(/%/g, '%-'), name, meta.desc);
+            const formattedRisk = `${riskColor}[${meta.risk}]\x1b[0m`.padEnd(14);
+            console.log(`${perm}  \x1b[36m%-25s\x1b[0m  \x1b[90m%-10s\x1b[0m  %s  %s`.replace(/%/g, '%-'), name, formattedRisk, '1.0', meta.desc.padEnd(40));
           }
           console.log();
         } else {
           console.log();
-          this.printGrid(Object.keys(cmds));
-          console.log();
+          const totalCols = 4;
+          const colWidth = 22;
+          const rows: string[][] = [];
+          const keys = Object.keys(cmds);
+          for (let i = 0; i < keys.length; i += totalCols) {
+            rows.push(keys.slice(i, i + totalCols));
+          }
+          rows.forEach(row => {
+            const padded = row.map(c => c.padEnd(colWidth));
+            console.log(`\x1b[36m${padded.join('')}\x1b[0m`);
+          });
+          console.log(`\x1b[90m${keys.length} commands\x1b[0m\n`);
         }
       }
       return true;
@@ -331,12 +359,14 @@ export class VelumShell {
   Namespaces:
     /users            - User Account Lifecycle
     /sanctions        - Moderation Actions
+    /tickets          - Support Tickets
     /db               - Database Operations
     /market           - Marketplace Controls
     /escrow           - Escrow Operations
     /devops           - System Configurations
-    /sys              - System Metrics
-    /banks            - Banking & Ledger
+    /sys              - System Metrics & Daemons
+    /bank             - Banking & Ledger
+    /cards            - Credit Cards & Limits
     /audits           - Audit Logs
     /fraud            - Fraud Prevention
     

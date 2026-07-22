@@ -125,6 +125,21 @@ export const COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = {
       args: ['<uid/username>']
     }
   },
+  '/tickets': {
+    list: {
+      desc: 'List all support tickets',
+      risk: 'LOW'
+    },
+    delete: {
+      desc: 'Delete support ticket by ID',
+      risk: 'MEDIUM',
+      args: ['<id>']
+    },
+    'purge-all': {
+      desc: 'Irreversible deletion of all support tickets',
+      risk: 'CRITICAL'
+    }
+  },
   '/db': {
     integrity: {
       desc: 'Audit datastore relational foreign keys and schema health',

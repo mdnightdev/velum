@@ -1,7 +1,7 @@
 # Pending Tasks & Technical Debt
 
 ## 🐞 Bugs
-- [ ] **Tickets:** Support ticket replies vanish when sent by admin (one-way communication issue).
+- [x] **Tickets:** Support ticket replies vanish when sent by admin (one-way communication issue).
 
 ## 🚀 Refactoring & Performance
 - [ ] **Database Persistence:** Refactor `server/db/persistence.ts` from local SQLite file-based approach to Postgres/Neon for production scalability and performance.

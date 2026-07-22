@@ -8,8 +8,8 @@ import {
   Message, UserBlock, AdminSanction, Invite, Ticket, RecoveryEvent, 
   SuspiciousEvent, AuditLog, WsPayload, FriendRequest, PeerRelationship
 } from '../../src/types.js';
-import { db, loadDb, saveDb, isUserBlocked, registerBroadcastToRoomCallback } from '../db.js';
-import { checkCredential } from '../services/cryptoService.js';
+import { db, loadDb, saveDb, isUserBlocked, registerBroadcastToRoomCallback, sqliteDb } from '../db.js';
+import { checkCredential, decryptData } from '../services/cryptoService.js';
 import { verifySessionToken } from '../middlewares/auth.js';
 import { isCloudBackupDisabled } from './sync.js';
 import { updateUserPresence } from './presence.js';
@@ -86,12 +86,19 @@ wss.on('connection', (ws: any, req) => {
     }
   }
 
-  // Ensure active session exists in db.sessions
-  const session = db.sessions.find(s => 
-    s.user_id === userId && 
-    s.session_id === sessionId && 
-    s.status === 'active'
-  );
+  // Ensure active session exists in SQLite
+  let session = null;
+  try {
+    const row = sqliteDb.prepare("SELECT payload FROM sessions WHERE id = ?").get(sessionId) as { payload: string } | undefined;
+    if (row) {
+      const s = JSON.parse(decryptData(row.payload));
+      if (s.user_id === userId && s.status === 'active') {
+        session = s;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to get session from DB in WS connection:', err);
+  }
   if (!session) {
     console.log("WS CLOSE 3002"); ws.close(3002, 'Unauthorized: Active session expired or revoked.');
     return;
@@ -152,12 +159,19 @@ wss.on('connection', (ws: any, req) => {
         }
       }
 
-      // Ensure active session exists in db.sessions
-      const currentSessionObj = db.sessions.find(s => 
-        s.user_id === userId && 
-        s.session_id === sessionId && 
-        s.status === 'active'
-      );
+      // Ensure active session exists in SQLite
+      let currentSessionObj = null;
+      try {
+        const row = sqliteDb.prepare("SELECT payload FROM sessions WHERE id = ?").get(sessionId) as { payload: string } | undefined;
+        if (row) {
+          const s = JSON.parse(decryptData(row.payload));
+          if (s.user_id === userId && s.status === 'active') {
+            currentSessionObj = s;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to get session from DB in WS message:', err);
+      }
       if (!currentSessionObj) {
         ws.send(JSON.stringify({ type: 'error', message: 'SESSION_TERMINATED: Active session expired or revoked.' }));
         console.log("WS CLOSE 3002"); ws.close(3002, 'Active session expired or revoked.');
@@ -353,13 +367,21 @@ wss.on('connection', (ws: any, req) => {
           const recipientId = parts[1] === String(userId) ? parseInt(parts[2], 10) : parseInt(parts[1], 10);
           
           let recipientOnline = false;
-          db.sessions.forEach(s => {
-            if (s.user_id === recipientId && s.status === 'active') {
-              // check active websocket
-              const wsConn = connectedClients.some(c => c.user_id === recipientId && c.ws && c.ws.readyState === WebSocket.OPEN);
-              if (wsConn) recipientOnline = true;
+          try {
+            const rows = sqliteDb.prepare("SELECT payload FROM sessions WHERE json_extract(payload, '$.user_id') = ?").all(recipientId) as { payload: string }[];
+            for (const row of rows) {
+              const s = JSON.parse(decryptData(row.payload));
+              if (s && s.status === 'active') {
+                const wsConn = connectedClients.some(c => c.user_id === recipientId && c.ws && c.ws.readyState === WebSocket.OPEN);
+                if (wsConn) {
+                  recipientOnline = true;
+                  break;
+                }
+              }
             }
-          });
+          } catch (err) {
+            console.error('Failed to query active sessions in WS DM check:', err);
+          }
 
           if (!recipientOnline) {
              console.log(`[SYS-SECURE] DM recipient User ${recipientId} is currently offline. Message queued in sqlite WAL state.`);

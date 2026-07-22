@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
-import { db, loadDb, saveDb, ensureVelumSystemDM, executeCliCommand, hashArgon2id } from '../db.js';
+import { db, loadDb, saveDb, ensureVelumSystemDM, hashArgon2id, sqliteDb } from '../db.js';
 import { attemptRecoveryFromSqlite } from '../db/persistence.js';
 import { broadcastToRoom, connectedClients } from '../websocket.js';
 import { generatePrefixedId } from '../utils/ulid.js';
@@ -141,6 +141,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       // Soft-Purge: Change user status to 'purged' and terminate sessions, but keep records in SQLite
       targetUser.status = 'purged';
       targetUser.updated_at = new Date().toISOString();
+      sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(uId);
       db.sessions = db.sessions.filter(s => s.user_id !== uId);
 
       db.audit_logs.push({
@@ -175,6 +176,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     db.users = db.users.filter(u => u.user_id !== uId);
     db.profiles = db.profiles.filter(p => p.user_id !== uId);
     db.user_blocks = db.user_blocks.filter(b => b.blocker_id !== uId && b.blocked_id !== uId);
+    sqliteDb.prepare("DELETE FROM sessions WHERE json_extract(payload, '$.user_id') = ?").run(uId);
     db.sessions = db.sessions.filter(s => s.user_id !== uId);
     db.tickets = db.tickets.filter(t => t.user_id !== uId);
     db.friend_requests = (db.friend_requests || []).filter(fr => fr.sender_id !== uId && fr.receiver_id !== uId);
@@ -561,7 +563,7 @@ export const getDiagnostics = async (req: Request, res: Response) => {
       metrics: {
         totalUsers: db.users.length,
         totalRooms: 0,
-        activeSessionsCount: db.sessions.filter(s => s.status === 'active').length,
+        activeSessionsCount: Number((sqliteDb.prepare("SELECT COUNT(*) as count FROM sessions WHERE json_extract(payload, '$.status') = 'active'").get() as any)?.count || 0),
         totalTickets: db.tickets.length,
         openTicketsCount: db.tickets.filter(t => t.status !== 'resolved').length,
         totalMessages: db.messages.length,
@@ -728,95 +730,6 @@ export const renameExecutive = async (req: Request, res: Response) => {
     res.json({ success: true, username: admin.username });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to rename profile.' });
-  }
-};
-
-// Whitelist of allowed low-risk paths for Web CLI
-const ALLOWED_WEB_CLI_PATHS = [
-  '/users/list', '/identities/list',
-  '/users/cat', '/identities/cat',
-  '/users/pending-deletions', '/identities/pending-deletions',
-  '/lounges/list', '/comms/list',
-  '/lounges/cat', '/comms/cat',
-  '/lounges/kick', '/comms/kick',
-  '/lounges/bcast', '/comms/bcast',
-  '/support/pending', '/dispatch/pending',
-  '/support/token', '/dispatch/token',
-  '/db/integrity', '/datastore/integrity',
-  '/db/orphans-scan', '/datastore/orphans-scan',
-  '/db/export', '/datastore/export',
-  '/db/fsync', '/datastore/fsync',
-  '/sys/status', '/daemon/status',
-  '/sys/top', '/daemon/top',
-  '/sys/risk', '/daemon/risk',
-  '/sys/activest', '/daemon/activest',
-  '/sys/config', '/daemon/config',
-  '/sys/fee', '/daemon/fee',
-  '/sys/limit', '/daemon/limit',
-  '/sys/tax', '/daemon/tax',
-  '/sys/twd-rate', '/daemon/twd-rate',
-  '/sys/ccache', '/daemon/ccache',
-  '/audit/user', '/forensics/user',
-  '/audit/grep', '/forensics/grep',
-  '/audit/history', '/forensics/history',
-  '/audit/ledger-verify', '/forensics/ledger',
-  '/audit/hijacks', '/forensics/hijacks',
-  '/audit/ip', '/forensics/ip',
-  '/audit/nodes', '/forensics/nodes',
-  '/bank/txlog', '/treasury/txlog',
-  '/bank/staff', '/treasury/staff',
-  '/users/sanctions', '/enforcement/sanctions',
-  '/fraud/risklog', '/threat_intel/risklog'
-];
-
-const ALLOWED_WEB_CLI_ALIASES = [
-  'status', 'info', 'diagnostics', 'pending', 'lounges', 'risk', 'help', 'ls', 'pwd'
-];
-
-export const isCommandAllowedInWebCli = (command: string): boolean => {
-  const cleanCmd = command.trim();
-  if (!cleanCmd) return false;
-
-  const parts = cleanCmd.split(/\s+/);
-  const verb = parts[0].toLowerCase();
-
-  if (ALLOWED_WEB_CLI_ALIASES.includes(verb)) {
-    return true;
-  }
-
-  // Handle namespace-style commands: e.g., /users list
-  const namespacesList = [
-    '/users', '/lounges', '/support', '/db', '/sys', '/audit', '/bank', 
-    '/identities', '/comms', '/dispatch', '/datastore', '/daemon', '/forensics', '/threat_intel', '/treasury', '/enforcement'
-  ];
-  if (namespacesList.includes(verb)) {
-    const sub = parts[1] ? parts[1].toLowerCase() : '';
-    if (sub) {
-      const fullPath = `${verb}/${sub}`;
-      return ALLOWED_WEB_CLI_PATHS.includes(fullPath);
-    }
-    // E.g. /users -> help, which is allowed
-    return true;
-  }
-
-  return false;
-};
-
-export const executeCli = async (req: Request, res: Response) => {
-  try {
-    const { command } = req.body;
-    if (!command) return res.status(400).json({ error: 'Command missing' });
-    
-    // Enforce Web CLI Whitelist of low-risk commands
-    if (!isCommandAllowedInWebCli(command)) {
-      return res.status(403).json({ error: 'FAIL: This command is restricted to the Terminal CLI.' });
-    }
-
-    // Execute with isTerminal=false
-    const output = await executeCliCommand(command, false);
-    res.json({ output });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to execute CLI command.' });
   }
 };
 

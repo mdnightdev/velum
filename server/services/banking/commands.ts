@@ -63,10 +63,33 @@ export const bankingCommands = {
     const escrowReserve = await getSystemAccount('ESCROW');
     const centralReserve = await getSystemAccount('CENTRAL');
     if (!escrowReserve || !centralReserve) return 'ERROR: Required bank accounts not found.';
-    
+
     escrowReserve.balance_cents += amountCents;
     centralReserve.balance_cents -= amountCents;
     await bankStore.saveAccounts(accounts);
+
+    const transactions = await bankStore.getTransactions();
+    transactions.push({
+      transaction_id: `bank_tx_${Date.now()}`,
+      account_id: escrowReserve.account_id,
+      type: 'deposit',
+      amount_cents: Math.abs(amountCents),
+      currency_code: 'TWD',
+      description: `Transfer from Central Reserve: ${description}`,
+      timestamp: Date.now(),
+      status: 'completed'
+    });
+    transactions.push({
+      transaction_id: `bank_tx_${Date.now()+1}`,
+      account_id: centralReserve.account_id,
+      type: 'withdrawal',
+      amount_cents: Math.abs(amountCents),
+      currency_code: 'TWD',
+      description: `Transfer to Escrow Reserve: ${description}`,
+      timestamp: Date.now(),
+      status: 'completed'
+    });
+    await bankStore.saveTransactions(transactions);
     return `SUCCESS: Transferred ${amountCents/100} TWD to Escrow Reserve.`;
   }
 };

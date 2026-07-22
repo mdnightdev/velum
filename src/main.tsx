@@ -34,8 +34,7 @@ if ('serviceWorker' in navigator) {
           caches.keys().then((keys) => {
             Promise.all(keys.map(key => caches.delete(key))).then(() => {
               if (needsReload) {
-                console.log('[DEV] Caches cleared, triggering reload to retrieve latest assets from dev server.');
-                window.location.reload();
+                console.log('[DEV] Caches cleared. New assets will be fetched directly.');
               }
             });
           });

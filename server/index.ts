@@ -11,7 +11,7 @@ import { createServer as createHttpServer } from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
-import { loadDb, hardResetAndSeedDatabase, SQLITE_FILE } from './db.js';
+import { loadDb, hardResetAndSeedDatabase, SQLITE_FILE, syncDbIfNeeded } from './db.js';
 import { restoreDbFromCloud } from './services/sync.js';
 import { startClearingWorker } from './services/clearingWorker.js';
 import { wss, setupCloudMessageSync } from './services/websocket.js';
@@ -25,6 +25,12 @@ import { runPendingMigrations } from './db/migrationManager.js';
 export const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.disable('x-powered-by');
+
+// Global cache synchronization middleware to auto-reload SQLite changes across clustered worker processes
+app.use((req, res, next) => {
+  syncDbIfNeeded();
+  next();
+});
 
 const isProduction = process.env.NODE_ENV === 'production' && fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'));
 
@@ -95,36 +101,36 @@ export async function startServer() {
   // 1. Load SQLite tables into memory immediately so the UI populates instantly (sub-10ms)
   loadDb();
 
-  // Ensure administrative base seed accounts exist without force resetting existing user data
-  try {
-    await hardResetAndSeedDatabase(false);
-  } catch (err) {
-    writeServerLog(`[SERVER] Error during administrative startup seeding: ${err}`);
-  }
+  const instanceId = process.env.NODE_APP_INSTANCE || process.env.PM2_INSTANCE_ID || "0";
 
-  // Run pending database migrations
-  try {
-    const migrationResult = await runPendingMigrations();
-    if (migrationResult.applied > 0) {
-      writeServerLog(`[MIGRATIONS] Applied ${migrationResult.applied} pending migration(s) on startup.`);
-    }
-    if (migrationResult.failed > 0) {
-      writeServerLog(`[MIGRATIONS] ${migrationResult.failed} migration(s) failed on startup. Errors: ${migrationResult.errors.join(', ')}`);
-    }
-  } catch (err) {
-    writeServerLog(`[SERVER] Error running database migrations: ${err}`);
-  }
-
-  // Start the background automated clearing worker & run reconciliation audits
-  const instanceId = process.env.PM2_INSTANCE_ID || "0";
+  // Ensure administrative base seed accounts, database migrations, and clearing workers
+  // are only executed by Instance 0 to prevent 'database is locked' collisions on PM2 cluster startup.
   if (instanceId === "0") {
+    try {
+      await hardResetAndSeedDatabase(false);
+    } catch (err) {
+      writeServerLog(`[SERVER] Error during administrative startup seeding: ${err}`);
+    }
+
+    try {
+      const migrationResult = await runPendingMigrations();
+      if (migrationResult.applied > 0) {
+        writeServerLog(`[MIGRATIONS] Applied ${migrationResult.applied} pending migration(s) on startup.`);
+      }
+      if (migrationResult.failed > 0) {
+        writeServerLog(`[MIGRATIONS] ${migrationResult.failed} migration(s) failed on startup. Errors: ${migrationResult.errors.join(', ')}`);
+      }
+    } catch (err) {
+      writeServerLog(`[SERVER] Error running database migrations: ${err}`);
+    }
+
     try {
       startClearingWorker();
     } catch (err) {
       writeServerLog(`[SERVER] Error starting clearing worker: ${err}`);
     }
   } else {
-    writeServerLog(`[SERVER] Replica Node [${instanceId}] online. Background clearing workers bypassed.`);
+    writeServerLog(`[SERVER] Replica Node [${instanceId}] online. Background clearing workers, seeding, and migrations bypassed.`);
   }
 
   // 2. Perform remote cloud restore check asynchronously in the background so it doesn't block server startup
@@ -164,6 +170,18 @@ export async function startServer() {
       appType: 'spa'
     });
     app.use(vite.middlewares);
+    
+    app.get('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     writeServerLog('[SERVER] Serving pre-compiled production build from dist/ directory...');
     const distPath = path.join(process.cwd(), 'dist');

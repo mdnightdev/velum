@@ -2,7 +2,7 @@ import { User, Ticket, Session, AdminSanction, Invite, PeerRelationship, WsPaylo
 import * as fs from 'fs';
 import path from 'path';
 import express from 'express';
-import { db, loadDb, saveDb, hardResetAndSeedDatabase, ensureVelumSystemDM } from '../db.js';
+import { db, loadDb, saveDb, hardResetAndSeedDatabase, ensureVelumSystemDM, sqliteDb } from '../db.js';
 import { encryptData, decryptData, hashArgon2id, verifyArgon2id } from '../services/cryptoService.js';
 import { checkStepOTP, getStepOTP } from '../services/otpService.js';
 import { generateUlid, generatePrefixedId } from '../utils/ulid.js';
@@ -39,14 +39,18 @@ ticketsRouter.post('/tickets', (req, res) => {
   }
 
   const targetUser = activeUser || db.users.find(u => u.username === username) || db.users.find(u => u.user_id === senderUserId);
-  const uId = targetUser ? targetUser.user_id : (senderUserId || 999);
-  const uName = targetUser ? targetUser.username : (username || 'Anonymous Socket');
+  if (!targetUser) {
+    return res.status(403).json({ error: 'Only registered users can submit support tickets.' });
+  }
+  const uId = targetUser.user_id;
+  const uName = targetUser.username;
 
   // Compute dynamic Credibility score (CVP) out of 100%
   let score = 0;
   if (targetUser) {
     // 1. IP-ID Match (35%)
-    const userSessions = db.sessions.filter(s => s.user_id === targetUser.user_id);
+    const rows = sqliteDb.prepare("SELECT payload FROM sessions WHERE json_extract(payload, '$.user_id') = ?").all(targetUser.user_id) as { payload: string }[];
+    const userSessions = rows.map(r => JSON.parse(r.payload));
     const hasIpMatch = userSessions.some(s => s.ip_id === ipAddress || ipAddress === '127.0.0.1' || ipAddress === '::1' || ipAddress === 'localhost');
     if (ipAddress && hasIpMatch) {
       score += 35;
@@ -110,6 +114,7 @@ ticketsRouter.post('/tickets', (req, res) => {
     ticket_id: ticketId,
     user_id: uId,
     username: uName,
+    reason: actualDisputeText,
     issue_type: actualIssueType,
     status: 'open',
     assigned_admin: null,
@@ -140,6 +145,27 @@ ticketsRouter.post('/tickets', (req, res) => {
   });
 });
 
+function formatUserTicket(ticket: Ticket) {
+  return {
+    ...ticket,
+    messages: (ticket.messages || []).map(m => {
+      const senderUser = (db.users || []).find(u => u && Number(u.user_id) === Number(m.sender_id));
+      const isOperator = m.sender_id === 0 ? false : (
+        (senderUser && ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN'].includes(senderUser.role)) ||
+        m.sender_name.startsWith('SA-') || 
+        m.sender_name.startsWith('SUPPORT') ||
+        ['Admin', 'cli_admin', 'Midnight', 'Lexie', 'lexie', '午夜兔子', 'LEXIE'].includes(m.sender_name)
+      );
+      return {
+        sender_id: m.sender_id,
+        sender_name: m.sender_id === 0 ? 'System' : (isOperator ? 'Support operator' : m.sender_name),
+        content: m.content,
+        timestamp: m.timestamp
+      };
+    })
+  };
+}
+
 ticketsRouter.get('/user/tickets', authenticateUser, (req, res) => {
   loadDb();
   const authenticatedUser = (req as any).user;
@@ -148,9 +174,38 @@ ticketsRouter.get('/user/tickets', authenticateUser, (req, res) => {
     return res.status(401).json({ error: 'Unauthorized: Authentication required.' });
   }
 
-  const userTickets = (db.tickets || []).filter(t => t.user_id === authenticatedUser.user_id);
+  const userTickets = (db.tickets || [])
+    .filter(t => t.user_id === authenticatedUser.user_id)
+    .map(t => formatUserTicket(t));
   res.json(userTickets);
 });
+
+function formatPublicTicket(ticket: Ticket) {
+  return {
+    ticket_id: ticket.ticket_id,
+    status: ticket.status,
+    issue_type: ticket.issue_type,
+    created_at: ticket.created_at,
+    resolved_at: ticket.resolved_at,
+    credibility_score: ticket.credibility_score,
+    tracking_id: ticket.tracking_id,
+    provided_recovery_key: ((ticket.status as any) === 'resolved' || (ticket.status as any) === 'approved') ? ticket.provided_recovery_key : null,
+    messages: (ticket.messages || []).map(m => {
+      const senderUser = (db.users || []).find(u => u && Number(u.user_id) === Number(m.sender_id));
+      const isOperator = m.sender_id === 0 ? false : (
+        (senderUser && ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN'].includes(senderUser.role)) ||
+        m.sender_name.startsWith('SA-') || 
+        m.sender_name.startsWith('SUPPORT') ||
+        ['Admin', 'cli_admin', 'Midnight', 'Lexie', 'lexie', '午夜兔子', 'LEXIE'].includes(m.sender_name)
+      );
+      return {
+        sender_name: m.sender_id === 0 ? 'System' : (isOperator ? 'Support operator' : 'Client'),
+        content: m.content,
+        timestamp: m.timestamp
+      };
+    })
+  };
+}
 
 ticketsRouter.get('/public/tickets/:trackingId', (req, res) => {
   const { trackingId } = req.params;
@@ -167,19 +222,8 @@ ticketsRouter.get('/public/tickets/:trackingId', (req, res) => {
   }
 
   res.json({
-    ticket_id: ticket.ticket_id,
-    status: ticket.status,
-    issue_type: ticket.issue_type,
-    created_at: ticket.created_at,
-    resolved_at: ticket.resolved_at,
-    credibility_score: ticket.credibility_score,
-    tracking_id: ticket.tracking_id,
-    provided_recovery_key: ((ticket.status as any) === 'resolved' || (ticket.status as any) === 'approved') ? ticket.provided_recovery_key : null,
-    messages: (ticket.messages || []).map(m => ({
-      sender_name: m.sender_id === 0 ? 'System' : (m.sender_name.startsWith('SA-') || m.sender_name === 'Admin' || m.sender_name === 'cli_admin' || m.sender_name === 'Midnight' || m.sender_name === 'Lexie' || m.sender_name === 'lexie' || m.sender_name === '午夜兔子' || m.sender_name === 'LEXIE' ? 'Support operator' : 'Client'),
-      content: m.content,
-      timestamp: m.timestamp
-    }))
+    success: true,
+    ticket: formatPublicTicket(ticket)
   });
 });
 
@@ -211,7 +255,7 @@ ticketsRouter.post('/public/tickets/:trackingId/close', (req, res) => {
 
   saveDb();
   broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
-  res.json({ success: true, ticket });
+  res.json({ success: true, ticket: formatPublicTicket(ticket) });
 });
 
 ticketsRouter.post('/public/tickets/:trackingId/reply', (req, res) => {
@@ -248,7 +292,7 @@ ticketsRouter.post('/public/tickets/:trackingId/reply', (req, res) => {
 
   saveDb();
   broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
-  res.json({ success: true, ticket });
+  res.json({ success: true, ticket: formatPublicTicket(ticket) });
 });
 
 ticketsRouter.post('/user/tickets/:ticketId/reply', authenticateUser, (req, res) => {
@@ -284,7 +328,7 @@ ticketsRouter.post('/user/tickets/:ticketId/reply', authenticateUser, (req, res)
 
   saveDb();
   broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
-  res.json({ success: true, ticket });
+  res.json({ success: true, ticket: formatUserTicket(ticket) });
 });
 
 ticketsRouter.post('/user/tickets/:ticketId/close', authenticateUser, (req, res) => {
@@ -314,5 +358,26 @@ ticketsRouter.post('/user/tickets/:ticketId/close', authenticateUser, (req, res)
 
   saveDb();
   broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
-  res.json({ success: true, ticket });
+  res.json({ success: true, ticket: formatUserTicket(ticket) });
+});
+
+ticketsRouter.delete('/user/tickets/:ticketId', authenticateUser, (req, res) => {
+  loadDb();
+  const { ticketId } = req.params;
+  const user = (req as any).user;
+
+  const ticketIndex = db.tickets.findIndex(t => t.ticket_id === ticketId);
+  if (ticketIndex === -1) {
+    return res.status(404).json({ error: 'Ticket not found' });
+  }
+
+  const ticket = db.tickets[ticketIndex];
+  if (ticket.user_id !== user.user_id) {
+    return res.status(403).json({ error: 'Unauthorized ticket access.' });
+  }
+
+  db.tickets.splice(ticketIndex, 1);
+  saveDb();
+  broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
+  res.json({ success: true, message: 'Ticket deleted successfully.' });
 });

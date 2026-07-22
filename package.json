@@ -6,7 +6,8 @@
     "dev": "tsx watch --exclude 'server/db/**' --exclude 'server/logs/**' server/index.ts",
     "start": "node dist/server.cjs",
     "build": "vite build && esbuild server/index.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "cli": "tsx cli/index.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1090.0",

@@ -115,8 +115,8 @@ export function initSqlite() {
     
     // Hardened connection parameters
     try {
-      conn.exec('PRAGMA journal_mode = WAL;');
       conn.exec('PRAGMA busy_timeout = 5000;');
+        conn.exec('PRAGMA journal_mode = WAL;');
       conn.exec('PRAGMA synchronous = NORMAL;');
       conn.exec('PRAGMA cache_size = -4000;');
       conn.exec('PRAGMA foreign_keys = ON;');
@@ -344,148 +344,242 @@ export function initSqlite() {
     )`);
 
     // New architecture tables
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_members (
-        lounge_id TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        status TEXT NOT NULL,
-        joined_via TEXT NOT NULL,
-        joined_at INTEGER NOT NULL,
-        PRIMARY KEY (lounge_id, user_id),
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
+    const instanceId = process.env.NODE_APP_INSTANCE || process.env.PM2_INSTANCE_ID || "0";
+    if (instanceId === "0") {
+      // Drop incompatible node_overwrites table if it exists with old schema
+      try {
+        let needsDrop = false;
+        try {
+          conn.prepare("SELECT id FROM node_overwrites LIMIT 1").get();
+        } catch (e: any) {
+          if (!e.message.includes("no such table")) {
+            needsDrop = true;
+          }
+        }
+        if (needsDrop) {
+          conn.exec("DROP TABLE IF EXISTS node_overwrites");
+        }
+      } catch (_) {}
+      
+      // Main relational database schemas
+      const tables = [
+        'users', 'profiles', 'sessions', 'devices', 'ip_addresses',
+        'messages', 'user_blocks', 'user_mutes', 'admin_sanctions',
+        'invites', 'tickets', 'reports', 'recovery_events', 'suspicious_events', 'audit_logs',
+        'friend_requests', 'peer_relationships', 'join_requests', 'node_overwrites',
+        'bank_accounts', 'bank_transactions', 'user_wallets', 'wallet_ledger_entries', 'recharge_requests', 'withdrawal_requests',
+        'kyc_verifications', 'payment_methods', 'external_financial_accounts', 'external_processor_events',
+        'wallet_balances', 'currencies', 'exchange_rates', 'platform_admins',
+        'market_assets', 'market_sku_variants', 'market_asset_media', 'market_reviews',
+        'market_coupons', 'market_discussions', 'market_support_chats', 'listing_verification_checks',
+        'platform_financial_audit_logs', 'automation_actions', 'refund_requests', 'idempotency_records'
+      ];
+      
+      for (const table of tables) {
+        conn.exec(`CREATE TABLE IF NOT EXISTS ${table} (
+          id TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )`);
+      }
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_invites (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
-        created_by INTEGER NOT NULL,
-        max_uses INTEGER DEFAULT 1,
-        uses_count INTEGER DEFAULT 0,
-        expires_at INTEGER,
-        revoked_at INTEGER,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
+      // Persistent login nonces table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS login_nonces (
+          nonce TEXT PRIMARY KEY,
+          created_at INTEGER NOT NULL,
+          used INTEGER DEFAULT 0
+      )`);
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_sanctions (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        applied_by INTEGER NOT NULL,
-        applied_by_type TEXT NOT NULL,
-        applied_at INTEGER NOT NULL,
-        lifted_at INTEGER,
-        reason TEXT,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
+      // Lounges table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounges (
+          lounge_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          owner_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          is_private INTEGER DEFAULT 0,
+          is_official INTEGER DEFAULT 0,
+          last_message_at INTEGER,
+          icon_url TEXT,
+          invite_code TEXT,
+          id TEXT,
+          slug TEXT,
+          creator_id TEXT,
+          parent_lounge_id TEXT,
+          updated_at INTEGER,
+          is_system INTEGER DEFAULT 0,
+          visibility TEXT,
+          status TEXT DEFAULT 'active',
+          type TEXT,
+          owner_user_id INTEGER,
+          hide_member_list INTEGER DEFAULT 0,
+          is_locked INTEGER DEFAULT 0,
+          last_active_at INTEGER,
+          accessLevel TEXT DEFAULT 'ALL'
+      )`);
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_join_requests (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        message TEXT,
-        status TEXT NOT NULL,
-        reviewed_by INTEGER,
-        reviewed_at INTEGER,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
+      // Lounge rooms table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounge_rooms (
+          id TEXT PRIMARY KEY,
+          lounge_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          is_locked INTEGER DEFAULT 0,
+          invite_code TEXT,
+          created_by TEXT,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_ownership_transfers (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        from_user_id INTEGER NOT NULL,
-        to_user_id INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        initiated_at INTEGER NOT NULL,
-        resolved_at INTEGER,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
+      // Lounge members table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounge_members (
+          lounge_id TEXT NOT NULL,
+          user_id INTEGER NOT NULL,
+          role TEXT NOT NULL,
+          status TEXT NOT NULL,
+          joined_via TEXT NOT NULL,
+          joined_at INTEGER NOT NULL,
+          PRIMARY KEY (lounge_id, user_id),
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS account_deletion_requests (
-        id TEXT PRIMARY KEY,
-        user_id INTEGER NOT NULL,
-        requested_at INTEGER NOT NULL,
-        scheduled_purge_at INTEGER NOT NULL,
-        status TEXT NOT NULL
-    )`);
+      // Lounge invites table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounge_invites (
+          id TEXT PRIMARY KEY,
+          lounge_id TEXT NOT NULL,
+          code TEXT NOT NULL UNIQUE,
+          created_by INTEGER NOT NULL,
+          max_uses INTEGER DEFAULT 1,
+          uses_count INTEGER DEFAULT 0,
+          expires_at INTEGER,
+          revoked_at INTEGER,
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS user_lounge_preferences (
-        user_id INTEGER NOT NULL,
-        lounge_id TEXT NOT NULL,
-        notifications_muted INTEGER DEFAULT 0,
-        pinned INTEGER DEFAULT 0,
-        pin_order INTEGER,
-        PRIMARY KEY (user_id, lounge_id),
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
+      // Lounge sanctions table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounge_sanctions (
+          id TEXT PRIMARY KEY,
+          lounge_id TEXT NOT NULL,
+          user_id INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          applied_by INTEGER NOT NULL,
+          applied_by_type TEXT NOT NULL,
+          applied_at INTEGER NOT NULL,
+          lifted_at INTEGER,
+          reason TEXT,
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS lounge_audit_logs (
-        id TEXT PRIMARY KEY,
-        lounge_id TEXT NOT NULL,
-        actor_id INTEGER NOT NULL,
-        actor_type TEXT NOT NULL,
-        action TEXT NOT NULL,
-        target_type TEXT NOT NULL,
-        target_id TEXT NOT NULL,
-        metadata TEXT,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
-    )`);
+      // Lounge join requests table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounge_join_requests (
+          id TEXT PRIMARY KEY,
+          lounge_id TEXT NOT NULL,
+          user_id INTEGER NOT NULL,
+          message TEXT,
+          status TEXT NOT NULL,
+          reviewed_by INTEGER,
+          reviewed_at INTEGER,
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
 
-    conn.exec(`CREATE TABLE IF NOT EXISTS system_audit_logs (
-        id TEXT PRIMARY KEY,
-        actor_id INTEGER NOT NULL,
-        actor_type TEXT NOT NULL,
-        action TEXT NOT NULL,
-        target_type TEXT NOT NULL,
-        target_id TEXT NOT NULL,
-        metadata TEXT,
-        created_at INTEGER NOT NULL
-    )`);
+      // Lounge ownership transfers table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounge_ownership_transfers (
+          id TEXT PRIMARY KEY,
+          lounge_id TEXT NOT NULL,
+          from_user_id INTEGER NOT NULL,
+          to_user_id INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          initiated_at INTEGER NOT NULL,
+          resolved_at INTEGER,
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
 
-    // Schema alterations to support secondary indexes on payload tables
-    try { conn.exec(`ALTER TABLE wallet_ledger_entries ADD COLUMN wallet_id TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE bank_transactions ADD COLUMN sender_id TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE bank_transactions ADD COLUMN receiver_id TEXT`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE messages ADD COLUMN created_at INTEGER`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE lounge_rooms ADD COLUMN accessLevel TEXT DEFAULT 'ALL'`); } catch (_) {}
-    try { conn.exec(`ALTER TABLE sessions ADD COLUMN user_id TEXT`); } catch (_) {}
+      // Account deletion requests table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS account_deletion_requests (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          requested_at INTEGER NOT NULL,
+          scheduled_purge_at INTEGER NOT NULL,
+          status TEXT NOT NULL
+      )`);
 
-    // Secondary Indexes
-    try {
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_owner ON lounges (owner_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_official ON lounges (is_official)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_invite_code ON lounges (invite_code)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_views_node ON node_views (node_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_origin ON node_federation (origin_node_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_target ON node_federation (target_lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_mounted ON node_federation (mounted_parent_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_roles_lounge ON lounge_roles (lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_market_listings_seller ON market_listings (seller_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_listing ON escrow_transactions (listing_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_buyer ON escrow_transactions (buyer_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_seller ON escrow_transactions (seller_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_members_user ON lounge_members (user_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_invites_lounge ON lounge_invites (lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_sanctions_lounge ON lounge_sanctions (lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_sanctions_user ON lounge_sanctions (user_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_join_reqs_lounge ON lounge_join_requests (lounge_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_join_reqs_user ON lounge_join_requests (user_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_transfers_lounge ON lounge_ownership_transfers (lounge_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_account_deletions_user ON account_deletion_requests (user_id, status)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_user_lounge_prefs_lounge ON user_lounge_preferences (lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_audit_logs_lounge ON lounge_audit_logs (lounge_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_system_audit_logs_actor ON system_audit_logs (actor_id)`);
+      // User lounge preferences table schema
+      conn.exec(`CREATE TABLE IF NOT EXISTS user_lounge_preferences (
+          user_id INTEGER NOT NULL,
+          lounge_id TEXT NOT NULL,
+          notifications_muted INTEGER DEFAULT 0,
+          pinned INTEGER DEFAULT 0,
+          pin_order INTEGER,
+          PRIMARY KEY (user_id, lounge_id),
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
 
-      // Hardened performance secondary indexes
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_bank_ledger_perf ON wallet_ledger_entries (wallet_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_bank_tx_perf ON bank_transactions (sender_id, receiver_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_messages_chronological ON messages (created_at DESC)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_session_cleanup_perf ON sessions (user_id)`);
-      conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_members_perf ON lounge_members (lounge_id, user_id)`);
-    } catch (idxErr) {
-      console.warn('[DB] Secondary indexes initialization warning:', idxErr);
+      conn.exec(`CREATE TABLE IF NOT EXISTS lounge_audit_logs (
+          id TEXT PRIMARY KEY,
+          lounge_id TEXT NOT NULL,
+          actor_id INTEGER NOT NULL,
+          actor_type TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_type TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          metadata TEXT,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
+      )`);
+
+      conn.exec(`CREATE TABLE IF NOT EXISTS system_audit_logs (
+          id TEXT PRIMARY KEY,
+          actor_id INTEGER NOT NULL,
+          actor_type TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_type TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          metadata TEXT,
+          created_at INTEGER NOT NULL
+      )`);
+
+      // Schema alterations to support secondary indexes on payload tables
+      try { conn.exec(`ALTER TABLE wallet_ledger_entries ADD COLUMN wallet_id TEXT`); } catch (_) {}
+      try { conn.exec(`ALTER TABLE bank_transactions ADD COLUMN sender_id TEXT`); } catch (_) {}
+      try { conn.exec(`ALTER TABLE bank_transactions ADD COLUMN receiver_id TEXT`); } catch (_) {}
+      try { conn.exec(`ALTER TABLE messages ADD COLUMN created_at INTEGER`); } catch (_) {}
+      try { conn.exec(`ALTER TABLE lounge_rooms ADD COLUMN accessLevel TEXT DEFAULT 'ALL'`); } catch (_) {}
+      try { conn.exec(`ALTER TABLE sessions ADD COLUMN user_id TEXT`); } catch (_) {}
+
+      // Secondary Indexes
+      try {
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_owner ON lounges (owner_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_official ON lounges (is_official)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounges_invite_code ON lounges (invite_code)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_views_node ON node_views (node_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_origin ON node_federation (origin_node_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_target ON node_federation (target_lounge_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_node_federation_mounted ON node_federation (mounted_parent_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_roles_lounge ON lounge_roles (lounge_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_market_listings_seller ON market_listings (seller_id, status)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_listing ON escrow_transactions (listing_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_buyer ON escrow_transactions (buyer_id, status)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_transactions_seller ON escrow_transactions (seller_id, status)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_members_user ON lounge_members (user_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_invites_lounge ON lounge_invites (lounge_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_sanctions_lounge ON lounge_sanctions (lounge_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_sanctions_user ON lounge_sanctions (user_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_join_reqs_lounge ON lounge_join_requests (lounge_id, status)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_join_reqs_user ON lounge_join_requests (user_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_transfers_lounge ON lounge_ownership_transfers (lounge_id, status)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_account_deletions_user ON account_deletion_requests (user_id, status)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_user_lounge_prefs_lounge ON user_lounge_preferences (lounge_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_audit_logs_lounge ON lounge_audit_logs (lounge_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_system_audit_logs_actor ON system_audit_logs (actor_id)`);
+
+        // Hardened performance secondary indexes
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_bank_ledger_perf ON wallet_ledger_entries (wallet_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_bank_tx_perf ON bank_transactions (sender_id, receiver_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_messages_chronological ON messages (created_at DESC)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_session_cleanup_perf ON sessions (user_id)`);
+        conn.exec(`CREATE INDEX IF NOT EXISTS idx_lounge_members_perf ON lounge_members (lounge_id, user_id)`);
+      } catch (idxErr) {
+        console.warn('[DB] Secondary indexes initialization warning:', idxErr);
+      }
     }
     
     return conn;

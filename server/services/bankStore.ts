@@ -2,7 +2,7 @@ import { Mutex } from "../utils/mutex.js";
 const bankMutex = new Mutex();
 import { createClient } from 'redis';
 import { encryptData, decryptData } from './cryptoService.js';
-import { db, saveDb } from '../db.js';
+import { db, saveDb, executeSaveDb } from '../db.js';
 import { generateUlid } from '../utils/ulid.js';
 
 // Define the Bank Account Type
@@ -173,7 +173,7 @@ export const bankStore = {
       routing_number: a.routing_number && !String(a.routing_number).includes(':') ? encryptData(a.routing_number) : a.routing_number
     }));
     (db as any).bank_accounts = encryptedAccounts;
-    saveDb();
+    executeSaveDb();
   },
 
   getTransactions: async (): Promise<BankTransaction[]> => {
@@ -183,7 +183,7 @@ export const bankStore = {
 
   saveTransactions: async (transactions: BankTransaction[]): Promise<BankTransaction[]> => {
     (db as any).bank_transactions = transactions;
-    saveDb();
+    executeSaveDb();
     return transactions;
   },
 

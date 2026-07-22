@@ -19,7 +19,7 @@ import {
   BACKUP_COOLDOWN_MS,
   setCloudBackupDisabled
 } from '../services/sync.js';
-import { loadDb, saveDb, executeSaveDb, attemptRecoveryFromSqlite } from './persistence.js';
+import { loadDb, saveDb, executeSaveDb, attemptRecoveryFromSqlite, syncDbIfNeeded } from './persistence.js';
 export { UnitOfWork, runInTransaction } from './unitOfWork.js';
 
 export {
@@ -36,7 +36,8 @@ export {
   loadDb,
   saveDb,
   executeSaveDb,
-  attemptRecoveryFromSqlite
+  attemptRecoveryFromSqlite,
+  syncDbIfNeeded
 };
 
 import {

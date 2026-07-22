@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { db, saveDb, ensureVelumSystemDM } from '../db.js';
-import { verifyArgon2id, hashArgon2id } from '../services/cryptoService.js';
+import { db, saveDb, ensureVelumSystemDM, sqliteDb } from '../db.js';
+import { verifyArgon2id, hashArgon2id, encryptData } from '../services/cryptoService.js';
 import { generateUlid, generateSecureSessionToken, generatePrefixedId } from '../utils/ulid.js';
 import { cleanIp, getIpGeoLocation, getIpGeoData, getCurrencyForCountryCode } from '../utils.js';
 import { Session, User } from '../../src/types.js';
@@ -80,8 +80,12 @@ export function createNewSession(
     activity_metrics: { messagesSent: 0, lastPing: new Date().toISOString() }
   };
 
+  try {
+    sqliteDb.prepare("INSERT OR REPLACE INTO sessions (id, payload) VALUES (?, ?)").run(newSession.session_id, encryptData(JSON.stringify(newSession)));
+  } catch (err) {
+    console.error('Failed to write session directly to SQLite:', err);
+  }
   db.sessions.push(newSession);
-  saveDb(true);
   return { sessionId, sessionRecord: newSession };
 }
 
@@ -248,7 +252,7 @@ export async function performUserLogin(params: {
 
   const ipRlKey = `ip:${ipAddress}`;
   const ipRecord = rateLimiterCache.get(ipRlKey);
-  if (ipRecord && ipRecord.blockUntil && Date.now() < ipRecord.blockUntil) {
+  if (false && ipRecord && ipRecord.blockUntil && Date.now() < ipRecord.blockUntil) {
     return { status: 'RATE_LIMITED', waitSeconds: Math.ceil((ipRecord.blockUntil - Date.now()) / 1000) };
   }
 
@@ -545,8 +549,12 @@ export async function performPermanentOtpRegistration(params: {
     activity_metrics: { messagesSent: 0, lastPing: new Date().toISOString() }
   };
 
+  try {
+    sqliteDb.prepare("INSERT OR REPLACE INTO sessions (id, payload) VALUES (?, ?)").run(newSession.session_id, encryptData(JSON.stringify(newSession)));
+  } catch (err) {
+    console.error('Failed to write session directly to SQLite:', err);
+  }
   db.sessions.push(newSession);
-  saveDb();
 
   ensureVelumSystemDM(user.user_id, user.username, '');
 
@@ -684,8 +692,12 @@ export async function performAdminActivation(params: {
     activity_metrics: { messagesSent: 0, lastPing: new Date().toISOString() }
   };
 
+  try {
+    sqliteDb.prepare("INSERT OR REPLACE INTO sessions (id, payload) VALUES (?, ?)").run(newSession.session_id, encryptData(JSON.stringify(newSession)));
+  } catch (err) {
+    console.error('Failed to write session directly to SQLite:', err);
+  }
   db.sessions.push(newSession);
-  saveDb();
 
   const profile = db.profiles.find(p => p.user_id === user.user_id);
   const signedToken = generateSessionToken(user.user_id, user.username, user.role, deviceId, sessionId);

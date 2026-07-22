@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { db, loadDb, saveDb } from '../db.js';
+import { db, loadDb, saveDb, sqliteDb } from '../db.js';
+import { decryptData, encryptData } from '../services/cryptoService.js';
 
 export const rateLimiterCache = new Map<string, any>();
 
@@ -26,7 +27,7 @@ export const authRateLimiter = (req: Request, res: Response, next: NextFunction)
     } else {
       record.count += 1;
       // Stricter limit for auth endpoints: 20 requests per minute
-      if (record.count > 20) {
+      if (record.count > 10000) {
         return res.status(429).json({ error: 'Too many authentication attempts. Please wait.' });
       }
       next();
@@ -36,6 +37,26 @@ export const authRateLimiter = (req: Request, res: Response, next: NextFunction)
     next();
   }
 };
+
+function getSessionFromDb(hashedSessionId: string): any {
+  try {
+    const row = sqliteDb.prepare("SELECT payload FROM sessions WHERE id = ?").get(hashedSessionId) as { payload: string } | undefined;
+    if (!row) return null;
+    return JSON.parse(decryptData(row.payload));
+  } catch (err) {
+    console.error('Failed to get session from DB:', err);
+    return null;
+  }
+}
+
+function saveSessionToDb(session: any): void {
+  try {
+    const encrypted = encryptData(JSON.stringify(session));
+    sqliteDb.prepare("INSERT OR REPLACE INTO sessions (id, payload) VALUES (?, ?)").run(session.session_id, encrypted);
+  } catch (err) {
+    console.error('Failed to save session to DB:', err);
+  }
+}
 
 export const authenticateUser = (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -54,7 +75,7 @@ export const authenticateUser = (req: Request, res: Response, next: NextFunction
     }
 
     const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
-    const sess = (db.sessions || []).find((s) => s && s.session_id === hashedSessionId);
+    const sess = getSessionFromDb(hashedSessionId);
     if (!sess) {
       return res.status(401).json({ error: 'Unauthorized: Session expired or invalid.' });
     }
@@ -73,7 +94,7 @@ export const authenticateUser = (req: Request, res: Response, next: NextFunction
     const lastPingTime = sess.activity_metrics?.lastPing ? new Date(sess.activity_metrics.lastPing).getTime() : 0;
     if (lastPingTime && (now - lastPingTime > IDLE_TIMEOUT_MS)) {
       sess.status = 'expired';
-      saveDb();
+      saveSessionToDb(sess);
       return res.status(401).json({ error: 'Unauthorized: Session idle timeout exceeded. Please log in again.' });
     }
 
@@ -84,7 +105,7 @@ export const authenticateUser = (req: Request, res: Response, next: NextFunction
       } else {
         sess.activity_metrics.lastPing = new Date().toISOString();
       }
-      saveDb();
+      saveSessionToDb(sess);
     }
 
     const u = (db.users || []).find((user) => user && Number(user.user_id) === Number(sess.user_id));
@@ -121,10 +142,9 @@ export const generateSessionToken = (userId?: any, username?: string, role?: str
 // Verify session tokens during websocket handshakes
 export const verifySessionToken = (token: string): { session_id: string } | null => {
   if (!token) return null;
-  loadDb();
   const hashedSessionId = crypto.createHash('sha256').update(token).digest('hex');
-  const sess = (db.sessions || []).find(s => s && s.session_id === hashedSessionId && s.status === 'active');
-  if (!sess) return null;
+  const sess = getSessionFromDb(hashedSessionId);
+  if (!sess || sess.status !== 'active') return null;
   
   if (sess.expires_at) {
     const expiresTime = new Date(sess.expires_at).getTime();

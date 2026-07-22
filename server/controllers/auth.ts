@@ -175,11 +175,20 @@ export const loginUser = async (req: Request, res: Response) => {
           credibility_score: result.ticket.credibility_score,
           tracking_id: result.ticket.tracking_id,
           provided_recovery_key: result.ticket.provided_recovery_key || null,
-          messages: (result.ticket.messages || []).map((m: any) => ({
-            sender_name: m.sender_id === 0 ? 'System' : (m.sender_name.startsWith('SA-') || m.sender_name === 'Admin' || m.sender_name === 'cli_admin' || m.sender_name === 'Midnight' || m.sender_name === 'Lexie' || m.sender_name === 'lexie' || m.sender_name === '午夜兔子' || m.sender_name === 'LEXIE' ? 'Support operator' : 'Client'),
-            content: m.content,
-            timestamp: m.timestamp
-          }))
+          messages: (result.ticket.messages || []).map((m: any) => {
+            const senderUser = (db.users || []).find((u: any) => u && Number(u.user_id) === Number(m.sender_id));
+            const isOperator = m.sender_id === 0 ? false : (
+              (senderUser && ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN'].includes(senderUser.role)) ||
+              m.sender_name.startsWith('SA-') ||
+              m.sender_name.startsWith('SUPPORT') ||
+              ['Admin', 'cli_admin', 'Midnight', 'Lexie', 'lexie', '午夜兔子', 'LEXIE'].includes(m.sender_name)
+            );
+            return {
+              sender_name: m.sender_id === 0 ? 'System' : (isOperator ? 'Support operator' : 'Client'),
+              content: m.content,
+              timestamp: m.timestamp
+            };
+          })
         }
       });
     }
