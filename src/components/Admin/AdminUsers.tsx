@@ -12,6 +12,7 @@ interface AdminUsersProps {
   adminFetch: (url: string, options?: RequestInit) => Promise<Response>;
   fetchData: () => void;
   c: any;
+  isLoading?: boolean;
 }
 
 export default function AdminUsers({
@@ -25,7 +26,16 @@ export default function AdminUsers({
   adminFetch,
   fetchData,
   c,
+  isLoading = false,
 }: AdminUsersProps) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary font-mono text-xs animate-pulse">
+        Loading directory...
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white-5 pb-5 mb-6">

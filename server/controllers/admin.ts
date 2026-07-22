@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db, loadDb, saveDb, ensureVelumSystemDM, executeCliCommand, hashArgon2id } from '../db.js';
+import { attemptRecoveryFromSqlite } from '../db/persistence.js';
 import { broadcastToRoom, connectedClients } from '../websocket.js';
 import { generatePrefixedId } from '../utils/ulid.js';
 import { isSensitiveAccount } from '../utils.js';
@@ -59,7 +60,7 @@ export const replyTicket = async (req: Request, res: Response) => {
     }
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
     res.json(ticket);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to process ticket reply.' });
@@ -95,7 +96,7 @@ export const deleteTicket = async (req: Request, res: Response) => {
     });
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
     res.json({ success: true, message: `Ticket Case #${ticket_id} purged successfully.` });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to delete ticket.' });
@@ -154,7 +155,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       });
 
       saveDb();
-      broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+      broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
       return res.json({ success: true, message: `User @${targetUser.username} successfully soft-purged.` });
     }
 
@@ -206,7 +207,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     });
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
     res.json({ success: true, message: `User @${targetUser.username} successfully deleted and hard-purged.` });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to delete user.' });
@@ -280,7 +281,7 @@ export const approveRecovery = async (req: Request, res: Response) => {
       });
 
       saveDb();
-      broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+      broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
       res.json({ success: true, tempCode, message: 'Quarantine cleared. Restoration credentials issued.' });
     } else {
       if (ticket) {
@@ -295,7 +296,7 @@ export const approveRecovery = async (req: Request, res: Response) => {
         });
       }
       saveDb();
-      broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+      broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
       res.json({ success: true, message: 'Ticket denied and logged.' });
     }
   } catch (err: any) {
@@ -357,7 +358,7 @@ export const sanctionUser = async (req: Request, res: Response) => {
       }
 
       saveDb();
-      broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+      broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
 
       const activeConn = connectedClients.find(c => c.user_id === target.user_id);
       if (activeConn) {
@@ -378,7 +379,7 @@ export const sanctionUser = async (req: Request, res: Response) => {
     });
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
     res.json({ success: true, sanction: newSanction });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to process user sanction.' });
@@ -437,7 +438,7 @@ export const revokeSanction = async (req: Request, res: Response) => {
     });
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
     res.json({ success: true, username: target.username });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to revoke sanction.' });
@@ -509,7 +510,7 @@ export const lockUser = async (req: Request, res: Response) => {
     }
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
     res.json({ success: true, status: target.status });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to modify lock state.' });
@@ -606,7 +607,7 @@ export const createInvite = async (req: Request, res: Response) => {
 
     db.invites.push(invite);
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'system' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'system' });
 
     res.json(invite);
   } catch (err: any) {
@@ -665,7 +666,7 @@ export const nominateSupport = async (req: Request, res: Response) => {
     });
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
     res.json({ success: true, targetUser: { user_id: targetUser.user_id, username: targetUser.username, support_nomination: targetUser.support_nomination } });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to process nomination.' });
@@ -723,7 +724,7 @@ export const renameExecutive = async (req: Request, res: Response) => {
     });
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'settings' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'settings' });
     res.json({ success: true, username: admin.username });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to rename profile.' });
@@ -893,7 +894,7 @@ export const updateSettings = async (req: Request, res: Response) => {
 
     targetUser.updated_at = new Date().toISOString();
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'settings' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'settings' });
 
     res.json({ success: true, message: 'Settings successfully updated in database.' });
   } catch (err: any) {
@@ -930,7 +931,7 @@ export const updateReportStatus = async (req: Request, res: Response) => {
 
     report.status = status;
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'reports' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'reports' });
 
     res.json({ success: true, report });
   } catch (err: any) {
@@ -944,7 +945,7 @@ export const deleteReport = async (req: Request, res: Response) => {
     loadDb();
     db.reports = (db.reports || []).filter(r => r.report_id !== report_id);
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'reports' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'reports' });
     res.json({ success: true, message: 'Report permanently deleted.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to delete report.' });
@@ -1006,7 +1007,7 @@ export const restoreUser = async (req: Request, res: Response) => {
     });
 
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'users' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'users' });
     res.json({ success: true, message: `User @${targetUser.username} successfully restored.` });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to restore user.' });
@@ -1027,12 +1028,38 @@ export const updateSystemConfig = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message || 'Failed to update system config.' });
   }
 };
-export const getSystemConfig = async (req: Request, res: Response) => {
+
+export const attemptDbRecovery = async (req: Request, res: Response) => {
   try {
-    loadDb();
-    if (!db.system_settings) db.system_settings = { platform_fee_percent: 5 };
-    res.json(db.system_settings);
+    const admin = (req as any).adminUser;
+    
+    if (admin.role !== 'CLI_ADMIN' && admin.role !== 'LOGIN_ADMIN') {
+      return res.status(403).json({ error: 'Unauthorized. Only CLI_ADMIN and LOGIN_ADMIN can attempt database recovery.' });
+    }
+
+    const success = attemptRecoveryFromSqlite();
+    
+    if (success) {
+      const userCount = db.users ? db.users.length : 0;
+      const messageCount = db.messages ? db.messages.length : 0;
+      const loungeCount = db.lounges ? db.lounges.length : 0;
+      
+      res.json({ 
+        success: true, 
+        message: 'Database recovery successful',
+        stats: {
+          users: userCount,
+          messages: messageCount,
+          lounges: loungeCount
+        }
+      });
+    } else {
+      res.status(500).json({ 
+        success: false, 
+        error: 'Database recovery failed. Check server logs for details.' 
+      });
+    }
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to get system config.' });
+    res.status(500).json({ error: err.message || 'Failed to attempt database recovery.' });
   }
 };

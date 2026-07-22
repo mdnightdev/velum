@@ -119,34 +119,7 @@ export default function DashboardLayout({
   const [loungeRoomId, setLoungeRoomId] = useState<string>('');
 
   useEffect(() => {
-    const fetchLoungeDefault = async () => {
-      try {
-        const sId = fetchSessionId();
-        if (!sId) return;
-        const headers = { 'Authorization': `Bearer ${sId}` };
-        const commsRes = await fetch('/api/lounges', { headers });
-        if (commsRes.ok) {
-          const commsData = await commsRes.json();
-          if (commsData && commsData.length > 0) {
-            const firstComm = commsData[0];
-            const chanRes = await fetch(`/api/lounges/${firstComm.lounge_id}/rooms`, { headers });
-            if (chanRes.ok) {
-              const chanData = await chanRes.json();
-              if (chanData && chanData.length > 0) {
-                setLoungeRoomId(chanData[0].id);
-              } else {
-                setLoungeRoomId(firstComm.lounge_id);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to load default lounge channel:', err);
-      }
-    };
-    if (user?.userId) {
-      fetchLoungeDefault();
-    }
+    // Left empty since we default to direct workspace now
   }, [user]);
 
   useEffect(() => {
@@ -275,15 +248,7 @@ export default function DashboardLayout({
   const closeSidebar = () => setSidebarOpen(false);
   const toggleSidebar = () => setSidebarOpen(s => !s);
 
-  if (!user || !user.userId) {
-    return (
-      <div className="w-full h-full bg-velum-900 flex items-center justify-center font-sans">
-        <div className="text-center space-y-4 p-6">
-          <div className="text-text-secondary text-sm font-mono animate-pulse">Initializing Interface...</div>
-        </div>
-      </div>
-    );
-  }
+
   const computedUnreadCounts = React.useMemo(() => {
     const counts: Record<string, number> = {};
     const msgs = messages || [];
@@ -292,6 +257,9 @@ export default function DashboardLayout({
       const rId = m.room_id || m.lounge_id;
       if (rId) {
         counts[rId] = (counts[rId] || 0) + 1;
+      }
+      if (m.lounge_id && m.lounge_id !== rId) {
+        counts[m.lounge_id] = (counts[m.lounge_id] || 0) + 1;
       }
     });
     return counts;
@@ -479,6 +447,7 @@ export default function DashboardLayout({
                   onDeleteMessage={onDeleteMessage}
                   onMarkAsRead={onMarkAsRead}
                   onToggleSidebar={toggleSidebar}
+                  unreadCounts={(computedUnreadCounts as any) || {}}
                 />
               ) : (
                 <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col">
@@ -490,6 +459,7 @@ export default function DashboardLayout({
                       setActiveLoungeId(loungeId);
                       setActiveLoungeName(loungeName);
                     }}
+                    unreadCounts={(computedUnreadCounts as any) || {}}
                   />
                 </div>
               )}
@@ -504,7 +474,7 @@ export default function DashboardLayout({
                 onSelectPeer={(peer) => {
                   if (onSelectPeer) onSelectPeer(peer);
                 }}
-                unreadCounts={computedUnreadCounts}
+                unreadCounts={(computedUnreadCounts as any) || {}}
                 loadAndShowProfileCard={handleLoadProfileCard}
                 getCountryOnly={(loc) => {
                   if (!loc) return 'Poland';

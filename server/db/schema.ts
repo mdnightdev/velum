@@ -177,12 +177,14 @@ export const defaultDb: DbSchema = {
   idempotency_records: []
 };
 
-export interface TableConfig {
+export interface TableConfig<T = any> {
   name: string;
-  pkName: string;
-  getPkValue: (row: any) => string | number;
+  pkName: keyof T;
+  getPkValue: (row: T) => string | number;
   insertSql: string;
-  getParams: (row: any, encryptedPayload: string) => any[];
+  getParams: (row: T, encryptedPayload: string) => any[];
+  indexes?: string[];
+  description?: string;
 }
 
 export const TABLE_CONFIGS: Record<string, TableConfig> = {
@@ -191,6 +193,71 @@ export const TABLE_CONFIGS: Record<string, TableConfig> = {
     pkName: 'user_id',
     getPkValue: (r) => r.user_id,
     insertSql: "",
-    getParams: (r, enc) => []
+    getParams: (r, enc) => [],
+    description: 'User accounts and authentication data'
+  },
+  profiles: {
+    name: 'profiles',
+    pkName: 'profile_id',
+    getPkValue: (r) => r.profile_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'User profile information'
+  },
+  sessions: {
+    name: 'sessions',
+    pkName: 'session_id',
+    getPkValue: (r) => r.session_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'Active user sessions'
+  },
+  messages: {
+    name: 'messages',
+    pkName: 'message_id',
+    getPkValue: (r) => r.message_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'Chat messages'
+  },
+  lounges: {
+    name: 'lounges',
+    pkName: 'lounge_id',
+    getPkValue: (r) => r.lounge_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'Chat lounges/rooms'
+  },
+  market_listings: {
+    name: 'market_listings',
+    pkName: 'listing_id',
+    getPkValue: (r) => r.listing_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'Marketplace listings'
+  },
+  escrow_transactions: {
+    name: 'escrow_transactions',
+    pkName: 'transaction_id',
+    getPkValue: (r) => r.transaction_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'Escrow payment transactions'
+  },
+  tickets: {
+    name: 'tickets',
+    pkName: 'ticket_id',
+    getPkValue: (r) => r.ticket_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'Support tickets'
+  },
+  audit_logs: {
+    name: 'audit_logs',
+    pkName: 'log_id',
+    getPkValue: (r) => r.log_id,
+    insertSql: "",
+    getParams: (r, enc) => [],
+    description: 'System audit logs'
   }
 };

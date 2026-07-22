@@ -31,13 +31,20 @@ export const ROLE_PERMISSIONS: Record<string, number> = {
 // Centralized permission check function (Authority Model Axis 1 & 2)
 // Visibility helper mapping Discord-style system/user community permissions
 export const isLoungeVisible = (lounge: any, user: any): boolean => {
+  if (lounge.lounge_id === 'velum_master_lounge') return true;
   if (!lounge || lounge.status === 'deleted') return false;
 
   const isAdmin = user.role === 'CLI_ADMIN' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN';
+
+  // If access_level is EXEC_ONLY, only administrators can see it
+  if (lounge.access_level === 'EXEC_ONLY' || lounge.accessLevel === 'EXEC_ONLY') {
+    return isAdmin;
+  }
+
   const isCreator = String(lounge.creator_id || lounge.owner_id || lounge.owner_user_id) === String(user.user_id);
   const isMember = db.lounge_members?.some(m => m.lounge_id === lounge.lounge_id && String(m.user_id) === String(user.user_id) && m.status === 'active') || false;
 
-  // Official/System Lounges (all other official sublounges or the parent velum_lounge)
+  // Official/System Lounges
   if (lounge.type === 'official' || lounge.is_official === 1 || lounge.is_system === 1) {
     return true;
   }
@@ -52,11 +59,18 @@ export const isLoungeVisible = (lounge: any, user: any): boolean => {
     return true;
   }
 
-  // Admins can see user-created lounges ONLY if there is a pending report
+  const isPrivateVisibility = lounge.visibility === 'private' || lounge.visibility === 'invite_only' || Number(lounge.is_private) === 1;
+
+  // Regular users and admins see public lounges
+  if (!isPrivateVisibility) {
+    return true;
+  }
+
+  // Admins can see PRIVATE user-created lounges ONLY if there is a pending report
   if (isAdmin) {
     const hasPendingReport = (db.reports || []).some(r => {
       if (r && r.status === 'pending') {
-        if (r.target_lounge_id === lounge.lounge_id) return true;
+        if ((r as any).target_lounge_id === lounge.lounge_id) return true;
         if (r.target_message_id) {
           const msg = (db.messages || []).find(m => m && m.message_id === r.target_message_id);
           return msg && msg.lounge_id === lounge.lounge_id;
@@ -67,9 +81,7 @@ export const isLoungeVisible = (lounge: any, user: any): boolean => {
     return hasPendingReport;
   }
 
-  // Regular users see public lounges
-  const isPrivateVisibility = lounge.visibility === 'private' || lounge.visibility === 'invite_only' || Number(lounge.is_private) === 1;
-  return !isPrivateVisibility;
+  return false;
 };
 
 // Centralized permission check function (Authority Model Axis 1 & 2)
@@ -88,8 +100,8 @@ export const can = (actor: any, action: number, resource: any): boolean => {
 
   const isAdmin = actor.role === 'CLI_ADMIN' || actor.role === 'LOGIN_ADMIN' || actor.role === 'SUPPORT_ADMIN';
 
-  // #announcements (velum_announcements) write-protection: only admins can post/write messages
-  if ((loungeId === 'velum_announcements' || lounge.lounge_id === 'velum_announcements') && action === PERMISSIONS.SEND_MESSAGE) {
+  // access_level === 'ANNOUNCE' write-protection: only admins can post/write messages
+  if ((lounge.access_level === 'ANNOUNCE' || lounge.accessLevel === 'ANNOUNCE') && action === PERMISSIONS.SEND_MESSAGE) {
     return isAdmin;
   }
 
@@ -112,7 +124,7 @@ export const can = (actor: any, action: number, resource: any): boolean => {
     // Admin who is not a member: can only intervene if there is a pending report
     const hasPendingReport = (db.reports || []).some(r => {
       if (r && r.status === 'pending') {
-        if (r.target_lounge_id === loungeId) return true;
+        if ((r as any).target_lounge_id === loungeId) return true;
         if (r.target_message_id) {
           const msg = (db.messages || []).find(m => m && m.message_id === r.target_message_id);
           return msg && msg.lounge_id === loungeId;
@@ -708,8 +720,14 @@ export const getRooms = async (req: Request, res: Response) => {
         created_at: r.created_at,
         is_locked: r.visibility === 'private' || r.is_private === 1,
         invite_code: r.invite_code,
-        created_by: Number(r.creator_id || r.owner_id || r.owner_user_id)
+        created_by: Number(r.creator_id || r.owner_id || r.owner_user_id),
+        accessLevel: r.accessLevel || 'ALL'
       }));
+
+    const isAdmin = ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(user.role);
+    if (!isAdmin) {
+      rooms = rooms.filter(r => r.accessLevel !== 'EXEC_ONLY');
+    }
 
     // Filter to room access bounds
     rooms = rooms.filter(r => {
@@ -748,10 +766,14 @@ export const createRoom = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied.' });
     }
 
-    // Section 2: Max 10 sublounges per parent
+    // Max sublounges logic
+    let maxRooms = 20;
+    if (loungeId === 'velum_master_lounge') {
+      maxRooms = 10;
+    }
     const activeSublounges = db.lounges.filter(l => l.parent_lounge_id === loungeId && l.status !== 'deleted');
-    if (activeSublounges.length >= 10) {
-      return res.status(400).json({ error: 'Rejecting room creation: Max 10 sublounges per parent exceeded.' });
+    if (activeSublounges.length >= maxRooms) {
+      return res.status(400).json({ error: `Rejecting room creation: Max ${maxRooms} sublounges per parent exceeded.` });
     }
 
     // Section 2: One private sublounge per user per parent

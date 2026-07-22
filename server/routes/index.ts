@@ -11,6 +11,7 @@ import { marketplaceRouter } from './marketplace.js';
 import { paymentsRouter } from './payments.js';
 import { bankRouter } from './bank.js';
 import { storageRouter } from './storage.js';
+import { databaseRouter } from './database.js';
 
 export const apiRouter = express.Router();
 
@@ -26,3 +27,4 @@ apiRouter.use(marketplaceRouter);
 apiRouter.use(paymentsRouter);
 apiRouter.use(bankRouter);
 apiRouter.use(storageRouter);
+apiRouter.use(databaseRouter);

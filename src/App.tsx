@@ -6,6 +6,8 @@ import DashboardLayout from './components/DashboardLayout';
 import { useWebSocket } from './hooks/useWebSocket';
 import ProfileMigration from './components/ProfileMigration';
 
+import LoadingFallback from './components/LoadingFallback';
+
 const AdminControlDesk = lazy(() => import('./views/AdminControlDesk'));
 
 function AppContent() {
@@ -73,11 +75,7 @@ function AppContent() {
 
 
   if (isLoadingSession) {
-    return (
-      <div className="w-full h-dvh overflow-hidden flex flex-col bg-velum-900 items-center justify-center font-mono text-[10px] text-text-secondary/60 uppercase tracking-widest gap-2 select-none">
-        <span>// Verifying Security Parameters //</span>
-      </div>
-    );
+    return <LoadingFallback />;
   }
 
   if (migrationUser) {
@@ -118,12 +116,20 @@ function AppContent() {
   // CLI Executive interface
   if (user.role === 'CLI_ADMIN') {
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={<LoadingFallback />}>
         <AdminControlDesk
           user={user}
           isDark={isDark}
           setIsDark={setIsDark}
           onLogout={handleLogout}
+          wsConnected={ws.wsConnected}
+          messages={ws.messages}
+          onSendMessage={ws.sendMessage}
+          onSendTyping={ws.sendTyping}
+          onRoomKick={ws.kickMember}
+          onRoomMute={ws.muteMember}
+          activeRoomId={activeRoomId}
+          setActiveRoomId={setActiveRoomId}
         />
       </Suspense>
     );
@@ -133,12 +139,20 @@ function AppContent() {
   // System Administration desks
   if (user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_ADMIN') {
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={<LoadingFallback />}>
         <AdminControlDesk 
           user={user} 
           isDark={isDark} 
           setIsDark={setIsDark} 
           onLogout={handleLogout} 
+          wsConnected={ws.wsConnected}
+          messages={ws.messages}
+          onSendMessage={ws.sendMessage}
+          onSendTyping={ws.sendTyping}
+          onRoomKick={ws.kickMember}
+          onRoomMute={ws.muteMember}
+          activeRoomId={activeRoomId}
+          setActiveRoomId={setActiveRoomId}
         />
       </Suspense>
     );

@@ -75,8 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      let attempts = 3;
-      let delay = 1000;
+      let attempts = 2; // Reduced from 3 to 2 for faster startup
+      let delay = 500; // Reduced from 1000 to 500ms for faster startup
       while (attempts > 0) {
         try {
           const res = await fetch('/api/auth/session', {
@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsLoadingSession(false);
           } else {
             await new Promise(resolve => setTimeout(resolve, delay));
-            delay *= 1.5;
+            delay *= 1.2; // Reduced exponential backoff from 1.5 to 1.2
           }
         }
       }

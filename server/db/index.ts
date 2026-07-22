@@ -19,7 +19,7 @@ import {
   BACKUP_COOLDOWN_MS,
   setCloudBackupDisabled
 } from '../services/sync.js';
-import { loadDb, saveDb, executeSaveDb } from './persistence.js';
+import { loadDb, saveDb, executeSaveDb, attemptRecoveryFromSqlite } from './persistence.js';
 export { UnitOfWork, runInTransaction } from './unitOfWork.js';
 
 export {
@@ -35,7 +35,8 @@ export {
   setCloudBackupDisabled,
   loadDb,
   saveDb,
-  executeSaveDb
+  executeSaveDb,
+  attemptRecoveryFromSqlite
 };
 
 import {
@@ -131,18 +132,70 @@ export function ensureSeededIntegrity() {
   if (!db.user_lounge_preferences) db.user_lounge_preferences = [];
   if (!db.lounge_audit_logs) db.lounge_audit_logs = [];
   if (!db.system_audit_logs) db.system_audit_logs = [];
+  
   if (!db.lounges) db.lounges = [];
 
+  const masterLoungeId = 'velum_master_lounge';
+  if (!db.lounges.find(l => l.lounge_id === masterLoungeId)) {
+    db.lounges.push({
+      lounge_id: masterLoungeId,
+      id: masterLoungeId,
+      name: 'Velum Lounge',
+      description: 'Standard network-wide communication coordinate.',
+      owner_id: '999',
+      created_at: Date.now(),
+      is_private: 0,
+      is_official: 1,
+      invite_code: 'velum-master',
+      last_message_at: Date.now()
+    });
+    mutated = true;
+  }
+
+  
+  const subLounges = [
+    { id: 'vl_1', name: 'General', access: 'ALL' },
+    { id: 'vl_2', name: 'Marketplace', access: 'ALL' },
+    { id: 'vl_3', name: 'Escrow', access: 'ALL' },
+    { id: 'vl_4', name: 'Offtopic', access: 'ALL' },
+    { id: 'vl_5', name: 'Bugs', access: 'ALL' },
+    { id: 'vl_6', name: 'Support', access: 'ALL' },
+    { id: 'vl_7', name: 'Suggestions', access: 'ALL' },
+    { id: 'vl_8', name: 'Events', access: 'ALL' },
+    { id: 'vl_9', name: 'Announcements', access: 'ANNOUNCE' },
+    { id: 'vl_10', name: 'Executives', access: 'EXEC_ONLY' }
+  ];
+
   if (db.lounges) {
-    db.lounges = db.lounges.filter(l => 
-      l && 
-      l.lounge_id !== 'velum_lounge' && 
-      l.id !== 'velum_lounge' && 
-      !l.lounge_id.startsWith('velum_') && 
-      !l.id.startsWith('velum_') && 
-      l.lounge_id !== 'secops' && 
-      l.id !== 'secops'
-    );
+    subLounges.forEach(sl => {
+      if (!db.lounges!.find(l => l.lounge_id === sl.id)) {
+        db.lounges!.push({
+          lounge_id: sl.id,
+          id: sl.id,
+          parent_lounge_id: masterLoungeId,
+          name: sl.name,
+          created_at: Date.now(),
+          accessLevel: sl.access as any,
+          status: 'active',
+          is_official: 1,
+      invite_code: 'velum-master',
+          owner_id: '999',
+          last_message_at: Date.now()
+        });
+        mutated = true;
+      } else {
+         const rm = db.lounges!.find(l => l.lounge_id === sl.id);
+         if (rm && rm.accessLevel !== sl.access) {
+           rm.accessLevel = sl.access as any;
+           mutated = true;
+         }
+      }
+    });
+  }
+
+
+
+  if (db.lounges) {
   }
 
   if (!db.market_listings) db.market_listings = [];

@@ -87,7 +87,7 @@ export default function ProfileCard({
     const displayLoungeName = lounge.name;
     const loungeAvatarText = displayLoungeName.slice(0, 2).toUpperCase();
 
-    const isOfficial = lounge.loungeId === 'velum_lounge' || lounge.type === 'official';
+    const isOfficial = lounge.type === 'official';
     const isPrivate = lounge.isPrivate || lounge.visibility === 'private' || lounge.type === 'private_sublounge';
     
     // Visibility Badge (Section 15)

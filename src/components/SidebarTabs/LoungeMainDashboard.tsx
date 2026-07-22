@@ -1,21 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Plus, X,Link } from 'lucide-react';
+import { Globe, Plus, X,Link, Info } from 'lucide-react';
+import ProfileCard from '../ProfileCard';
 
 interface LoungeMainDashboardProps {
   currentUserId: number;
   isDark: boolean;
   onLoungeSelect: (loungeId: string, loungeName: string) => void;
   onSectionView?: (view: any) => void;
+  unreadCounts?: Record<string, number>;
 }
 
 export default function LoungeMainDashboard({
   currentUserId,
   isDark,
   onLoungeSelect,
-  onSectionView
+  onSectionView,
+  unreadCounts
 }: LoungeMainDashboardProps) {
   const [lounges, setLounges] = useState<any[]>([]);
   const [roomsMap, setRoomsMap] = useState<Record<string, any[]>>({});
+  const [selectedLounge, setSelectedLounge] = useState<any>(null);
   
   // Create Room State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -37,6 +41,8 @@ export default function LoungeMainDashboard({
   const [newLoungeDescription, setNewLoungeDescription] = useState('');
   const [newLoungeInviteCode, setNewLoungeInviteCode] = useState('');
   const [newLoungeIconUrl, setNewLoungeIconUrl] = useState('');
+  const [newLoungeIsPrivate, setNewLoungeIsPrivate] = useState(false);
+  const [isSubmittingLounge, setIsSubmittingLounge] = useState(false);
   const [loungeError, setLoungeError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -45,6 +51,9 @@ export default function LoungeMainDashboard({
       setLoungeError('Lounge name is required.');
       return;
     }
+    if (isSubmittingLounge) return;
+    setIsSubmittingLounge(true);
+    setLoungeError('');
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
       const res = await fetch('/api/lounges', {
@@ -57,7 +66,8 @@ export default function LoungeMainDashboard({
           name: newLoungeName,
           description: newLoungeDescription,
           invite_code: newLoungeInviteCode,
-          icon_url: newLoungeIconUrl
+          icon_url: newLoungeIconUrl,
+          is_private: newLoungeIsPrivate
         })
       });
 
@@ -70,11 +80,14 @@ export default function LoungeMainDashboard({
       setNewLoungeDescription('');
       setNewLoungeInviteCode('');
       setNewLoungeIconUrl('');
+      setNewLoungeIsPrivate(false);
       setLoungeError('');
       setShowCreateLoungeModal(false);
       await loadLounges();
     } catch (err: any) {
       setLoungeError(err.message || 'Something went wrong.');
+    } finally {
+      setIsSubmittingLounge(false);
     }
   };
 
@@ -87,19 +100,6 @@ export default function LoungeMainDashboard({
       if (res.ok) {
         const data = await res.json();
         setLounges(data);
-        const map: Record<string, any[]> = {};
-        await Promise.all(data.map(async (c: any) => {
-          try {
-            const roomRes = await fetch(`/api/lounges/${c.lounge_id}/rooms`, { headers });
-            if (roomRes.ok) {
-              const roomData = await roomRes.json();
-              map[c.lounge_id] = roomData;
-            }
-          } catch (chanErr) {
-            console.warn('Failed to fetch rooms', chanErr);
-          }
-        }));
-        setRoomsMap(map);
       }
     } catch (err) {
       console.error('Failed to load lounges', err);
@@ -110,11 +110,16 @@ export default function LoungeMainDashboard({
     loadLounges();
   }, []);
 
+  const [isSubmittingRoom, setIsSubmittingRoom] = useState(false);
+
   const handleCreateRoom = async () => {
     if (!newRoomName.trim()) {
       setStatusMessage('Room name is required.');
       return;
     }
+    if (isSubmittingRoom) return;
+    setIsSubmittingRoom(true);
+    setStatusMessage('');
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
       const res = await fetch(`/api/lounges/${targetLoungeId}/rooms`, {
@@ -135,12 +140,19 @@ export default function LoungeMainDashboard({
         setStatusMessage('');
         loadLounges();
       } else {
-        const err = await res.json();
-        setStatusMessage(err.error || 'Failed to create room.');
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const err = await res.json();
+          setStatusMessage(err.error || 'Failed to create room.');
+        } else {
+          setStatusMessage(`Server error: ${res.status}. Action may have been blocked.`);
+        }
       }
     } catch (err) {
       console.error('Error creating room:', err);
       setStatusMessage('Error creating room.');
+    } finally {
+      setIsSubmittingRoom(false);
     }
   };
 
@@ -236,10 +248,10 @@ export default function LoungeMainDashboard({
       </div>
 
       {/* Main Flat List Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {lounges.filter((lounge) => lounge.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
           <div className={`p-8 text-center font-mono text-[10px] uppercase tracking-widest ${isDark ? 'text-text-secondary/60' : 'text-text-disabled'}`}>
-            // No communities found //
+            No communities found
           </div>
         ) : (
           lounges
@@ -248,27 +260,34 @@ export default function LoungeMainDashboard({
               <div
                 key={lounge.lounge_id}
                 onClick={() => onLoungeSelect(lounge.lounge_id, lounge.name)}
-                className={`px-4 py-3 border-b cursor-pointer transition-all duration-200 flex items-center gap-3.5 ${
-                  isDark 
-                    ? 'border-white-5 hover:bg-velum-700 text-white' 
-                    : 'border-velum-600 hover:bg-white-5 text-velum-900'
-                }`}
+                className={`glass-card p-4 cursor-pointer transition-all duration-200 flex items-center gap-4 hover:-translate-y-0.5 group`}
               >
                 {lounge.icon_url ? (
-                  <img src={lounge.icon_url} alt={lounge.name} className="w-8 h-8 rounded-full object-cover shrink-0 border border-white-10" />
+                  <img src={lounge.icon_url} alt={lounge.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white-10 group-hover:border-accent transition-colors" />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-accent text-black font-bold text-[10px] flex items-center justify-center shrink-0 font-mono uppercase">
+                  <div className="w-10 h-10 rounded-xl bg-accent text-black font-bold text-xs flex items-center justify-center shrink-0 font-mono uppercase group-hover:bg-accent-hover transition-colors">
                     {lounge.name.slice(0, 2)}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-xs uppercase tracking-wider truncate">{lounge.name}</div>
+                  <div className={`font-bold text-sm uppercase tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
                   {lounge.description && (
-                    <div className={`text-[10px] mt-0.5 opacity-60 truncate ${isDark ? 'text-text-secondary' : 'text-text-secondary'}`}>
+                    <div className={`text-[11px] mt-1 opacity-70 truncate ${isDark ? 'text-text-secondary' : 'text-text-secondary'}`}>
                       {lounge.description}
                     </div>
                   )}
                 </div>
+                {unreadCounts && unreadCounts[lounge.lounge_id] > 0 && (
+                  <div className="bg-accent text-velum-900 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
+                    {unreadCounts[lounge.lounge_id]}
+                  </div>
+                )}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setSelectedLounge(lounge); }}
+                  className="p-1.5 rounded bg-white-5 hover:bg-white-10 text-text-secondary transition-colors"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
               </div>
             ))
         )}
@@ -304,6 +323,30 @@ export default function LoungeMainDashboard({
       </div>
 
       {/* Glassmorphic Modals */}
+      {selectedLounge && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedLounge(null)}>
+            <div onClick={e => e.stopPropagation()}>
+                <ProfileCard 
+                    type="lounge"
+                    lounge={{
+                        loungeId: selectedLounge.lounge_id,
+                        name: selectedLounge.name,
+                        description: selectedLounge.description,
+                        ownerId: Number(selectedLounge.owner_id),
+                        ownerUsername: 'Lounge Owner',
+                        memberCount: 0,
+                        createdAt: new Date(selectedLounge.created_at).toLocaleDateString(),
+                        isPrivate: selectedLounge.is_private === 1,
+                        visibility: selectedLounge.is_private === 1 ? 'private' : 'public',
+                        status: selectedLounge.status
+                    }}
+                    variant="popover"
+                    onClose={() => setSelectedLounge(null)}
+                />
+            </div>
+        </div>
+      )}
+      
       {showCreateLoungeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-60 backdrop-blur-md p-4 animate-fade-in">
           <div 
@@ -376,6 +419,18 @@ export default function LoungeMainDashboard({
                   }`}
                   placeholder="LEAVE EMPTY FOR PUBLIC ADMISSION"
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="lounge-private-toggle"
+                  checked={newLoungeIsPrivate}
+                  onChange={(e) => setNewLoungeIsPrivate(e.target.checked)}
+                  className="cursor-pointer w-4 h-4 rounded border-white-10 text-accent focus:ring-accent"
+                />
+                <label htmlFor="lounge-private-toggle" className="text-[10px] uppercase font-bold tracking-wider cursor-pointer">
+                  Private Lounge (Requires invite or access key)
+                </label>
               </div>
               <div>
                 <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Lounge Avatar / Icon URL (Optional)</label>

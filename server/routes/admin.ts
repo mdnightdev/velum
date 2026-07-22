@@ -21,7 +21,8 @@ import {
   updateSettings,
   getReports,
   updateReportStatus,
-  deleteReport
+  deleteReport,
+  attemptDbRecovery
 } from '../controllers/admin.js';
 
 export const adminRouter = express.Router();
@@ -54,3 +55,4 @@ adminRouter.post('/admin/rename-executive', authenticateAdmin, renameExecutive);
 adminRouter.post('/admin/cli/exec', authenticateAdmin, executeCli);
 
 adminRouter.post('/admin/update-settings', authenticateAdmin, updateSettings);
+adminRouter.post('/admin/db-recovery', authenticateAdmin, attemptDbRecovery);

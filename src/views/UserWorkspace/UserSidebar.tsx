@@ -8,6 +8,7 @@ import {
 import { stripAt } from '../../types';
 import { decryptMessage } from '../../services/encryptionService';
 import logoSvg from '../../assets/logo.svg?raw';
+import LoadingFallback from '../../components/LoadingFallback';
 
 interface UserSidebarProps {
   currentUserId: number;
@@ -275,13 +276,7 @@ export default function UserSidebar({
   }, [currentUserId, selectedLoungeId]);
 
   if (!currentUserId) {
-    return (
-      <div className="h-full flex flex-col justify-center items-center bg-velum-900 text-text-secondary font-sans p-4">
-        <div className="text-center space-y-2">
-          <div className="text-xs uppercase font-bold tracking-wider animate-pulse">Initializing Layout...</div>
-        </div>
-      </div>
-    );
+    return <LoadingFallback />;
   }
 
   // Alphabetic Sorting helpers

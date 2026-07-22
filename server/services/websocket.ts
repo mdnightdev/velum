@@ -97,11 +97,13 @@ wss.on('connection', (ws: any, req) => {
     return;
   }
 
+  const isGlobalAdmin = userObj && (userObj.role === 'CLI_ADMIN' || userObj.role === 'LOGIN_ADMIN' || userObj.role === 'SUPPORT_ADMIN');
+
   const client: ClientConnection = {
     ws,
     user_id: userId,
     session_id: sessionId || undefined,
-    rooms: new Set(['velum_lounge']) // automatically join lobby
+    rooms: new Set(isGlobalAdmin ? ['admin_channel'] : [])
   };
   connectedClients.push(client);
 
@@ -365,7 +367,7 @@ wss.on('connection', (ws: any, req) => {
         }
 
         // Check if message is directed to Velum Bot
-        if (targetRoomId.startsWith('dm_velum_') || (targetRoomId === 'velum_lounge' && msgContent.includes('@Velum'))) {
+        if (targetRoomId.startsWith('dm_velum_') || (targetRoomId === 'admin_channel' && msgContent.includes('@Velum'))) {
           handleVelumBotReply(userId, targetRoomId, msgContent);
         }
       }

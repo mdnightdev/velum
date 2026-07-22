@@ -3,7 +3,7 @@ import {
   ShieldAlert, UserCheck, Flame, BookOpen, AlertOctagon, HelpCircle, 
   Send, Ban, Plus, FileText, CheckCircle, ShieldCheck, RefreshCw, Key, 
   UserPlus, Lock, Unlock, Shield, Users, Search, 
-  Sliders, ChevronRight, ChevronLeft, Activity, Trash2, Megaphone, Info, Globe, AlertTriangle,
+  Sliders, ChevronRight, ChevronLeft, Activity, Trash2, Megaphone, Info, MessageSquare, Globe, AlertTriangle,
   BadgeCheck, LogOut, Menu, X, Landmark, User
 } from 'lucide-react';
 import AdminDiagnosticsView from './AdminDiagnosticsView';
@@ -19,6 +19,7 @@ import AdminReports from './Admin/AdminReports';
 import AdminSystem from './Admin/AdminSystem';
 import AdminBank from './Admin/AdminBank';
 import AdminProfile from './Admin/AdminProfile';
+import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 
 import logoSvg from '../assets/logo.svg?raw';
 import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report } from '../types';
@@ -26,11 +27,19 @@ import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report } from '../t
 interface AdminPanelProps {
   adminId: number;
   adminRole: 'SUPPORT_ADMIN' | 'LOGIN_ADMIN' | 'CLI_ADMIN';
-  activeTab: 'overview' | 'users' | 'tickets' | 'reports' | 'announcements' | 'moderation' | 'system' | 'logs' | 'profile' | any;
+  activeTab: 'overview' | 'users' | 'tickets' | 'reports' | 'moderation' | 'system' | 'logs' | 'profile' | any;
   onTabChange?: (tab: any) => void;
   isDark?: boolean;
   onLogout?: () => void;
   user?: any;
+  wsConnected?: boolean;
+  messages?: any[];
+  onSendMessage?: any;
+  onSendTyping?: any;
+  onRoomKick?: any;
+  onRoomMute?: any;
+  activeRoomId?: string;
+  setActiveRoomId?: any;
 }
 
 export default function AdminPanel({ 
@@ -40,7 +49,15 @@ export default function AdminPanel({
   onTabChange, 
   isDark = true,
   onLogout,
-  user
+  user,
+  wsConnected,
+  messages,
+  onSendMessage,
+  onSendTyping,
+  onRoomKick,
+  onRoomMute,
+  activeRoomId,
+  setActiveRoomId
 }: AdminPanelProps) {
   // Design theme variables
   const c = {
@@ -82,6 +99,7 @@ export default function AdminPanel({
   const [sessions, setSessions] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<any>(null);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Users Directory State
   const [userSearch, setUserSearch] = useState('');
@@ -113,6 +131,7 @@ export default function AdminPanel({
 
   // Refresh data
   const fetchData = async () => {
+    setIsLoadingData(true);
     try {
       const ticketRes = await adminFetch(`/api/admin/tickets?adminId=${adminId}`);
       if (ticketRes.status === 401) {
@@ -162,6 +181,8 @@ export default function AdminPanel({
       }
     } catch (err) {
       console.warn('Failed admin sync fetch', err);
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
@@ -182,6 +203,13 @@ export default function AdminPanel({
       window.removeEventListener('velum-message-received', handleAdminWsUpdate);
     };
   }, [adminId]);
+
+  // Refetch data when switching to users tab to ensure fresh data
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchData();
+    }
+  }, [activeTab]);
 
   const handleTicketReply = async (close: boolean, escalate: boolean) => {
     if (!activeTicket || !replyText.trim()) return;
@@ -263,6 +291,7 @@ export default function AdminPanel({
 
   const coreCommands = [
     { id: 'overview', label: 'Overview', icon: <Activity className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
+    { id: 'velum_lounge', label: 'Velum Lounge', icon: <MessageSquare className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" />, roles: ['LOGIN_ADMIN', 'SUPPORT_ADMIN'] },
     { id: 'tickets', label: 'Tickets', icon: <HelpCircle className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'reports', label: 'Reports', icon: <FileText className="w-4 h-4" />, roles: ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
@@ -467,6 +496,28 @@ export default function AdminPanel({
               />
             )}
 
+            {activeTab === 'velum_lounge' && (
+              <LoungeWorkspace
+                currentUserId={user?.userId}
+                currentUsername={user?.username}
+                currentUserRole={adminRole}
+                loungeId="velum_master_lounge"
+                loungeName="Velum Lounge"
+                onLoungeSelect={() => {}}
+                onBackToDirectory={() => {}}
+                activeRoomId={activeRoomId || ''}
+                onRoomSelect={setActiveRoomId}
+                wsConnected={wsConnected || false}
+                messages={messages || []}
+                onSendMessage={onSendMessage}
+                onSendTyping={onSendTyping}
+                onRoomKick={onRoomKick}
+                onRoomMute={onRoomMute}
+                isDark={isDark}
+                unreadCounts={{}}
+              />
+            )}
+            
             {activeTab === 'users' && (
               <AdminUsers
                 userSearch={userSearch}
@@ -479,6 +530,7 @@ export default function AdminPanel({
                 adminFetch={adminFetch}
                 fetchData={fetchData}
                 c={c}
+                isLoading={isLoadingData}
               />
             )}
 
@@ -516,7 +568,6 @@ export default function AdminPanel({
                 fetchData={fetchData}
               />
             )}
-
             {activeTab === 'moderation' && (
               <AdminUsersView
                 adminRole={adminRole}

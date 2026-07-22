@@ -79,36 +79,6 @@ body {
     color: var(--color-text-primary);
 }
 
-
-body::before,
-body::after {
-  content: "";
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: -1;
-}
-
-body::before {
-  top: -10%;
-  left: -10%;
-  width: 50vw;
-  height: 50vw;
-  background-color: var(--color-accent-10);
-  filter: blur(120px);
-  animation: float-slow 22s ease-in-out infinite;
-}
-
-body::after {
-  bottom: -10%;
-  right: -10%;
-  width: 60vw;
-  height: 60vw;
-  background-color: var(--color-accent-secondary-20);
-  filter: blur(150px);
-  animation: float-reverse 24s ease-in-out infinite;
-}
-
 /* Hide bottom navigation bar instantly when user is typing */
 body:has(input:focus, textarea:focus) .bottom-nav {
   transform: translate(-50%, 100%) !important;

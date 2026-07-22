@@ -51,6 +51,51 @@ if (!fs.existsSync(DB_DIR)) {
 
 export let sqliteDb: any = null;
 
+// Connection health tracking
+export interface ConnectionHealth {
+  isConnected: boolean;
+  lastPingTime: number;
+  uptimeMs: number;
+  connectionAttempts: number;
+  failedAttempts: number;
+  lastError: string | null;
+  walMode: boolean;
+  pageCount: number;
+  fileSizeBytes: number;
+}
+
+let connectionStartTime = 0;
+let connectionAttempts = 0;
+let failedAttempts = 0;
+let lastError: string | null = null;
+
+export function getConnectionHealth(): ConnectionHealth {
+  const health: ConnectionHealth = {
+    isConnected: sqliteDb !== null,
+    lastPingTime: connectionStartTime,
+    uptimeMs: connectionStartTime > 0 ? Date.now() - connectionStartTime : 0,
+    connectionAttempts,
+    failedAttempts,
+    lastError,
+    walMode: false,
+    pageCount: 0,
+    fileSizeBytes: 0
+  };
+
+  if (sqliteDb) {
+    try {
+      const journalMode = (sqliteDb.prepare("PRAGMA journal_mode").get() as any)?.journal_mode || '';
+      health.walMode = journalMode === 'wal';
+      health.pageCount = Number((sqliteDb.prepare("PRAGMA page_count").get() as any)?.page_count || 0);
+      if (fs.existsSync(SQLITE_FILE)) {
+        health.fileSizeBytes = fs.statSync(SQLITE_FILE).size;
+      }
+    } catch (_) {}
+  }
+
+  return health;
+}
+
 export function initSqlite() {
   if (sqliteDb) {
     return sqliteDb;
@@ -59,6 +104,9 @@ export function initSqlite() {
     console.error('[DB] Native SQLite DatabaseSync class is not available.');
     return null;
   }
+  
+  connectionAttempts++;
+  
   try {
     const conn = new DatabaseSync(SQLITE_FILE);
     try {
@@ -72,6 +120,8 @@ export function initSqlite() {
       conn.exec('PRAGMA synchronous = NORMAL;');
       conn.exec('PRAGMA cache_size = -4000;');
       conn.exec('PRAGMA foreign_keys = ON;');
+      conn.exec('PRAGMA temp_store = MEMORY;');
+      conn.exec('PRAGMA mmap_size = 268435456;');
     } catch (pragmaErr) {
       console.warn('[DB] Failed to apply optimized SQLite PRAGMAs:', pragmaErr);
     }
@@ -88,6 +138,8 @@ export function initSqlite() {
     };
     
     sqliteDb = conn;
+    connectionStartTime = Date.now();
+    lastError = null;
     
     // Drop incompatible node_overwrites table if it exists with old schema
     try {
@@ -158,6 +210,7 @@ export function initSqlite() {
     // Ensure new columns exist
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN icon_url TEXT`); } catch (_) {}
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN is_official INTEGER DEFAULT 0`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE lounges ADD COLUMN accessLevel TEXT DEFAULT 'ALL'`); } catch (_) {}
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN last_message_at INTEGER`); } catch (_) {}
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN invite_code TEXT`); } catch (_) {}
     try { conn.exec(`ALTER TABLE lounges ADD COLUMN id TEXT`); } catch (_) {}
@@ -197,6 +250,7 @@ export function initSqlite() {
         invite_code TEXT,
         created_by TEXT,
         created_at INTEGER,
+        accessLevel TEXT DEFAULT 'ALL',
         FOREIGN KEY(lounge_id) REFERENCES lounges(lounge_id) ON DELETE CASCADE
     )`);
 
@@ -395,6 +449,7 @@ export function initSqlite() {
     try { conn.exec(`ALTER TABLE bank_transactions ADD COLUMN sender_id TEXT`); } catch (_) {}
     try { conn.exec(`ALTER TABLE bank_transactions ADD COLUMN receiver_id TEXT`); } catch (_) {}
     try { conn.exec(`ALTER TABLE messages ADD COLUMN created_at INTEGER`); } catch (_) {}
+    try { conn.exec(`ALTER TABLE lounge_rooms ADD COLUMN accessLevel TEXT DEFAULT 'ALL'`); } catch (_) {}
     try { conn.exec(`ALTER TABLE sessions ADD COLUMN user_id TEXT`); } catch (_) {}
 
     // Secondary Indexes
@@ -435,6 +490,8 @@ export function initSqlite() {
     
     return conn;
   } catch (err: any) {
+    failedAttempts++;
+    lastError = err?.message || String(err);
     console.error('[DB] SQLite database connection init fault:', err?.message || err);
     return null;
   }

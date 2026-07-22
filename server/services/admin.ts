@@ -692,7 +692,7 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
       try {
         const initialCount = db.messages ? db.messages.length : 0;
         if (db.messages) {
-          db.messages = db.messages.filter(m => m.room_id !== 'velum_lounge');
+          db.messages = db.messages.filter(m => m.room_id !== 'admin_channel');
         }
         const finalCount = db.messages ? db.messages.length : 0;
         const clearedCount = initialCount - finalCount;
@@ -710,23 +710,23 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           admin_name: 'cli_admin',
           action: 'purge',
           target_type: 'room',
-          target_id: 'velum_lounge',
-          reason: `Cleared all channel communication records in Velum Lounge (removed ${clearedCount} payloads).`,
+          target_id: 'admin_channel',
+          reason: `Cleared all channel communication records in Admin Lounge (removed ${clearedCount} payloads).`,
           timestamp: new Date().toISOString()
         });
 
         if (broadcastToRoomCallback) {
-          broadcastToRoomCallback('velum_lounge', {
+          broadcastToRoomCallback('admin_channel', {
             type: 'lounge_cleaned',
-            room_id: 'velum_lounge',
+            room_id: 'admin_channel',
             cleared_count: clearedCount,
-            message: 'Velum Lounge has been cleared and sanitized by the Administrator Command Center.'
+            message: 'Admin Lounge has been cleared and sanitized by the Administrator Command Center.'
           });
         }
 
-        return `SUCCESS: Cleared and sanitized all active messages inside Velum Lounge. Purged ${clearedCount} secure message records completely.`;
+        return `SUCCESS: Cleared and sanitized all active messages inside Admin Lounge. Purged ${clearedCount} secure message records completely.`;
       } catch (err: any) {
-        return `ERROR clearing Velum Lounge: ${err.message || err}`;
+        return `ERROR clearing Admin Lounge: ${err.message || err}`;
       }
     }
     case 'purge':

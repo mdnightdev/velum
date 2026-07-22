@@ -23,6 +23,7 @@ messagesRouter.get('/rooms', authenticateUser, (req, res) => {
             roomsList.push({
               room_id: lounge.lounge_id,
               name: lounge.name,
+              access_level: lounge.access_level || 'ALL',
               permissions: { isPrivate: lounge.is_private === 1 }
             });
           }
@@ -40,6 +41,7 @@ messagesRouter.get('/rooms', authenticateUser, (req, res) => {
               room_id: lounge.lounge_id,
               name: lounge.name,
               parent_lounge_id: lounge.parent_lounge_id,
+              access_level: lounge.access_level || 'ALL',
               permissions: { isPrivate: lounge.is_private === 1 || lounge.visibility === 'private' || lounge.is_locked === 1 }
             });
           }
@@ -92,6 +94,10 @@ messagesRouter.get('/rooms/:roomId/messages', authenticateUser, (req, res) => {
       } else {
         const targetRoom = db.lounges?.find(l => l.lounge_id === roomId);
         if (targetRoom) {
+          const isAdmin = ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(user.role);
+          if (targetRoom.accessLevel === 'EXEC_ONLY' && !isAdmin) {
+             return res.status(403).json({ error: 'Access denied.' });
+          }
           if (!isLoungeVisible(targetRoom, user) || !can(user, PERMISSIONS.VIEW_MEMBERS, targetRoom)) {
             return res.status(403).json({ error: 'Access denied.' });
           }
@@ -174,6 +180,13 @@ messagesRouter.post('/rooms/:roomId/messages', authenticateUser, (req, res) => {
       } else {
         const targetRoom = db.lounges?.find(l => l.lounge_id === roomId);
         if (targetRoom) {
+          const isAdmin = ['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(user.role);
+          if (targetRoom.accessLevel === 'EXEC_ONLY' && !isAdmin) {
+            return res.status(403).json({ error: 'Access denied.' });
+          }
+          if (targetRoom.accessLevel === 'ANNOUNCE' && !isAdmin) {
+            return res.status(403).json({ error: 'Announcements channel is read-only for users.' });
+          }
           if (!isLoungeVisible(targetRoom, user) || !can(user, PERMISSIONS.SEND_MESSAGE, targetRoom)) {
             return res.status(403).json({ error: 'Access denied.' });
           }

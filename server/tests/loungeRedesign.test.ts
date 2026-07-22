@@ -4,7 +4,7 @@ import { can, PERMISSIONS } from '../controllers/lounges';
 vi.mock('../db.js', () => {
   const mockDb = {
     lounges: [
-      { lounge_id: 'velum_lounge', id: 'velum_lounge', visibility: 'public', type: 'official', status: 'active' },
+      { lounge_id: 'test_official_lounge', id: 'test_official_lounge', visibility: 'public', type: 'official', status: 'active' },
       { lounge_id: 'secops', id: 'secops', visibility: 'private', type: 'official', status: 'active' },
       { lounge_id: 'comm_user', id: 'comm_user', visibility: 'public', type: 'user_created', status: 'active' },
       { lounge_id: 'comm_sub', id: 'comm_sub', parent_lounge_id: 'comm_user', visibility: 'private', type: 'private_sublounge', status: 'active', owner_user_id: 10 }

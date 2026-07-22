@@ -20,6 +20,7 @@ import { apiRouter } from './routes/index.js';
 import helmet from 'helmet';
 import { writeServerLog } from './utils/logger.js';
 import { getSecureAssetStream } from './services/storageService.js';
+import { runPendingMigrations } from './db/migrationManager.js';
 
 export const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -33,6 +34,14 @@ app.use(fileProtection);
 
 app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ limit: '12mb', extended: true }));
+
+// Serve legal documents
+app.get('/terms', (_req, res) => {
+  res.sendFile(path.join(process.cwd(), 'public', 'terms-of-service.html'));
+});
+app.get('/privacy', (_req, res) => {
+  res.sendFile(path.join(process.cwd(), 'public', 'privacy-policy.html'));
+});
 
 // Serve avatar and media files from local storage, fallback to Cloudflare R2
 app.get('/avatars/:filename', async (req, res, next) => {
@@ -91,6 +100,19 @@ export async function startServer() {
     await hardResetAndSeedDatabase(false);
   } catch (err) {
     writeServerLog(`[SERVER] Error during administrative startup seeding: ${err}`);
+  }
+
+  // Run pending database migrations
+  try {
+    const migrationResult = await runPendingMigrations();
+    if (migrationResult.applied > 0) {
+      writeServerLog(`[MIGRATIONS] Applied ${migrationResult.applied} pending migration(s) on startup.`);
+    }
+    if (migrationResult.failed > 0) {
+      writeServerLog(`[MIGRATIONS] ${migrationResult.failed} migration(s) failed on startup. Errors: ${migrationResult.errors.join(', ')}`);
+    }
+  } catch (err) {
+    writeServerLog(`[SERVER] Error running database migrations: ${err}`);
   }
 
   // Start the background automated clearing worker & run reconciliation audits

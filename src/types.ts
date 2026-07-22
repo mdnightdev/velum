@@ -236,6 +236,7 @@ export interface Lounge {
   is_private?: any;
   is_official?: boolean | number;
   invite_code?: string | null;
+  accessLevel?: 'ALL' | 'ANNOUNCE' | 'EXEC_ONLY';
   last_message_at?: string | number | null;
   icon_url?: string;
   
@@ -253,6 +254,7 @@ export interface Lounge {
   is_locked?: boolean | number;
   status?: 'active' | 'muted' | 'archived' | 'deleted' | 'suspended';
   last_active_at?: number;
+  access_level?: 'ALL' | 'ANNOUNCE' | 'EXEC_ONLY';
 }
 
 export interface LoungeRoom {
@@ -264,6 +266,7 @@ export interface LoungeRoom {
   is_locked?: boolean;
   created_by?: number;
   invite_code?: string | null;
+  accessLevel?: 'ALL' | 'ANNOUNCE' | 'EXEC_ONLY';
 }
 
 export interface LoungeMember {

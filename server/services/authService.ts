@@ -66,7 +66,7 @@ export function createNewSession(
 
   const sessionId = generateSecureSessionToken();
   const hashedSessionId = crypto.createHash('sha256').update(sessionId).digest('hex');
-  const SESSION_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
+  const SESSION_EXPIRATION_MS = 1 * 60 * 60 * 1000;
 
   const newSession: Session = {
     session_id: hashedSessionId,

@@ -6,7 +6,7 @@ export function updateUserPresence(userId: number, lastSeen: string) {
   if (userObj) {
     userObj.last_seen_at = lastSeen;
     saveDb();
-    broadcastToRoom('velum_lounge', {
+    broadcastToRoom('admin_channel', {
       type: 'presence_update',
       user_id: userId,
       last_seen_at: lastSeen

@@ -94,7 +94,7 @@ ticketsRouter.post('/tickets', (req, res) => {
     db.reports = db.reports || [];
     db.reports.push(newReport);
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'reports' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'reports' });
 
     return res.json({
       success: true,
@@ -129,7 +129,7 @@ ticketsRouter.post('/tickets', (req, res) => {
 
   db.tickets.push(newTicket);
   saveDb();
-  broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+  broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
 
   res.json({ 
     success: true, 
@@ -210,7 +210,7 @@ ticketsRouter.post('/public/tickets/:trackingId/close', (req, res) => {
   });
 
   saveDb();
-  broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+  broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
   res.json({ success: true, ticket });
 });
 
@@ -247,7 +247,7 @@ ticketsRouter.post('/public/tickets/:trackingId/reply', (req, res) => {
   });
 
   saveDb();
-  broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+  broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
   res.json({ success: true, ticket });
 });
 
@@ -283,7 +283,7 @@ ticketsRouter.post('/user/tickets/:ticketId/reply', authenticateUser, (req, res)
   });
 
   saveDb();
-  broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+  broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
   res.json({ success: true, ticket });
 });
 
@@ -313,6 +313,6 @@ ticketsRouter.post('/user/tickets/:ticketId/close', authenticateUser, (req, res)
   });
 
   saveDb();
-  broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'tickets' });
+  broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'tickets' });
   res.json({ success: true, ticket });
 });

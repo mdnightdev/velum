@@ -27,6 +27,7 @@ interface ChatAreaProps {
   onMarkAsRead?: (messageId: string, roomId: string) => void;
   activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
   isDark?: boolean;
+  roomAccessLevel?: string;
   onBackToDeck?: () => void;
   onSelectProfileUser?: (user: any) => void;
   onToggleSidebar?: () => void;
@@ -58,6 +59,7 @@ export default function ChatArea({
   onToggleSidebar,
   roomName,
   isPrivateSublounge,
+  roomAccessLevel,
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -462,11 +464,9 @@ export default function ChatArea({
   // Channel details title helper (No '@' prefixes)
   const chatTitle = activeChatPeer
     ? stripAt(activeChatPeer.username)
-    : roomId === 'velum_lounge'
-      ? 'Velum Lounge'
-      : roomName
-        ? roomName.replace(/^#\s*/, '')
-        : (roomId.startsWith('#') ? roomId.slice(1) : roomId);
+    : roomName
+      ? roomName.replace(/^#\s*/, '')
+      : (roomId.startsWith('#') ? roomId.slice(1) : roomId);
 
   // Filter messages based on chat context
   const conversationMessages = messages.filter(m => {
@@ -876,8 +876,8 @@ export default function ChatArea({
                             </div>
                           )}
                         </div>
-                      )}
-
+                      
+)}
                       {parsedMsgContent && (
                         <div>
                           <p className="whitespace-pre-wrap">{parsedMsgContent}</p>
@@ -915,8 +915,8 @@ export default function ChatArea({
                         </div>
                       )}
                     </>
-                  )}
-
+                  
+)}
                   {/* Render Reactions */}
                   {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2.5">
@@ -934,8 +934,8 @@ export default function ChatArea({
                         )
                       ))}
                     </div>
-                  )}
-
+                  
+)}
                   {/* Absolute positioning inline toolbox on hover */}
                   {!msg.deleted && (
                     <div className={`absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 p-1 bg-velum-750 border border-white-10 rounded-lg shadow-xl z-20 ${
@@ -956,8 +956,8 @@ export default function ChatArea({
                         </button>
                       )}
                     </div>
-                  )}
-
+                  
+)}
                   {/* Animated Emoji Reaction Drawer overlays */}
                   {showEmojisForMsg === msg.message_id && (
                     <div className={`absolute top-8 bg-velum-750 border border-white-10 p-1.5 rounded-lg flex gap-1.5 shadow-2xl z-40 transition-all ${
@@ -991,8 +991,8 @@ export default function ChatArea({
                         <CheckCheck className="w-3.5 h-3.5" strokeWidth={2.5} />
                       ) : null}
                     </span>
-                  )}
-
+                  
+)}
                   {!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
                     <div className="hidden group-hover:flex items-center gap-1 ml-2">
                       <button
@@ -1049,8 +1049,8 @@ export default function ChatArea({
               Dismiss
             </button>
           </div>
-        )}
-
+        
+)}
         {/* Attachment slots list preview bar if selected */}
         {selectedAttachment && (
           <div className="mb-3 p-2.5 rounded-xl border border-accent/20 bg-accent/5 flex items-center justify-between gap-3 font-mono text-[10px]">
@@ -1067,14 +1067,14 @@ export default function ChatArea({
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-        )}
-
+        
+)}
         {isPrivateSublounge && (
           <div className="mb-2 px-2 text-[10px] font-mono text-text-disabled uppercase tracking-wider select-none">
              Sanctions in the parent lounge apply here automatically
           </div>
-        )}
-
+        
+)}
         {/* Recording active overlay panel bar */}
         {isRecording ? (
           <div className="flex items-center justify-between p-3.5 rounded-full border border-red-500/20 bg-velum-800 font-mono text-xs">
@@ -1106,6 +1106,12 @@ export default function ChatArea({
             This is a one-way system broadcast channel.
           </div>
         ) : (
+          <>
+          {roomAccessLevel === 'ANNOUNCE' && !['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(currentUserRole) ? (
+            <div className="w-full bg-velum-800 border border-white-5 rounded-xl p-3 text-center text-[11px] text-text-secondary font-mono tracking-widest uppercase">
+              🔒 Admins Only
+            </div>
+          ) : (
           <form onSubmit={handleSend} className="flex gap-3 items-center">
             
             <button
@@ -1144,8 +1150,9 @@ export default function ChatArea({
               </div>
             </div>
           </form>
+          )}
+          </>
         )}
-
       </div>
     </div>
   );

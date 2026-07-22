@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ChatArea from '../ChatArea';
 import { useResponsive } from '../../hooks/useResponsive';
-import { Hash, Users, Info, ChevronLeft, Plus, X, Settings } from 'lucide-react';
+import { Hash, Users, Info, ChevronLeft, Plus, X, Settings, Lock } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
 
 // Seal System Icons (Section 16)
@@ -50,6 +50,7 @@ interface LoungeWorkspaceProps {
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onMarkAsRead?: (messageId: string, roomId: string) => void;
   onToggleSidebar?: () => void;
+  unreadCounts?: Record<string, number>;
 }
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
@@ -63,6 +64,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const [loungeList, setLoungeList] = useState<any[]>([]);
   const [showLoungeProfile, setShowLoungeProfile] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [isLoadingLounge, setIsLoadingLounge] = useState<boolean>(true);
 
   const getRoomId = (room: any): string | null => {
     if (!room) return null;
@@ -410,8 +412,13 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         setStatusMessage('');
         fetchRooms();
       } else {
-        const err = await res.json();
-        setStatusMessage(err.error || 'Failed to create room.');
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const err = await res.json();
+          setStatusMessage(err.error || 'Failed to create room.');
+        } else {
+          setStatusMessage(`Server error: ${res.status}. Action may have been blocked.`);
+        }
       }
     } catch (err) {
       console.error('Error creating room:', err);
@@ -462,10 +469,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       }
     };
 
-    fetchRooms();
-    fetchMembers();
-    fetchLoungeDetails();
-    fetchLoungeList();
+    setIsLoadingLounge(true);
+    Promise.all([
+      fetchRooms(),
+      fetchMembers(),
+      fetchLoungeDetails(),
+      fetchLoungeList()
+    ]).finally(() => {
+      setIsLoadingLounge(false);
+    });
   }, [props.loungeId, isMobile, props.currentUserId]);
 
   const displayRooms = rooms;
@@ -491,10 +503,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     return false;
   });
 
-  const publicRooms = visibleRooms.filter(room => !(room.is_locked || room.visibility === 'private' || room.is_private === 1));
-  const privateRooms = visibleRooms.filter(room => room.is_locked || room.visibility === 'private' || room.is_private === 1);
+  const isMasterLounge = props.loungeId === 'velum_master_lounge';
+  const publicRooms = isMasterLounge 
+    ? visibleRooms.filter(room => room.accessLevel !== 'EXEC_ONLY')
+    : visibleRooms.filter(room => !(room.is_locked || room.visibility === 'private' || room.is_private === 1));
+  const privateRooms = isMasterLounge
+    ? visibleRooms.filter(room => room.accessLevel === 'EXEC_ONLY')
+    : visibleRooms.filter(room => room.is_locked || room.visibility === 'private' || room.is_private === 1);
 
-  const renderRoomRow = (room: any, type: 'public' | 'private_owned' | 'private_locked') => {
+  const renderRoomRow = (room: any, type: 'public' | 'private_owned' | 'private_locked' | 'exec') => {
     const roomId = getRoomId(room);
     if (!roomId) return null;
     const unread = getUnreadCount(roomId);
@@ -514,10 +531,19 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               : (props.isDark ? 'hover:bg-white-5 text-text-secondary hover:text-text-primary hover:scale-[1.01]' : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900 hover:scale-[1.01]')
         }`}
       >
-        <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-velum-900 border border-white-5 overflow-hidden shrink-0">
-          {type === 'public' && <OutlinedSeal />}
-          {type === 'private_owned' && <FilledSeal />}
-          {type === 'private_locked' && <LockedSeal />}
+        <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-velum-900 border border-white-5 overflow-hidden shrink-0 text-text-secondary">
+          {isMasterLounge ? (
+            room.accessLevel === 'ANNOUNCE' ? <div className="text-[14px]">📢</div> : 
+            room.accessLevel === 'EXEC_ONLY' ? <div className="text-[14px]">🤫</div> : 
+            <Hash className="w-4 h-4 opacity-70" />
+          ) : (
+            <>
+              {type === 'public' && <OutlinedSeal />}
+              {type === 'private_owned' && <FilledSeal />}
+              {type === 'private_locked' && <LockedSeal />}
+              {type === 'exec' && <Lock className="w-4 h-4" />}
+            </>
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-bold truncate uppercase tracking-wider">{cleanName}</div>
@@ -557,9 +583,12 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           {privateRooms.map((room, index) => {
             const isCreator = String(room.created_by || room.owner_id || room.owner_user_id) === String(props.currentUserId);
             const rId = getRoomId(room) || `priv-room-${index}`;
+            const roomType = isMasterLounge 
+              ? 'exec' 
+              : (isCreator ? 'private_owned' : 'private_locked');
             return (
               <React.Fragment key={rId}>
-                {renderRoomRow(room, isCreator ? 'private_owned' : 'private_locked')}
+                {renderRoomRow(room, roomType)}
               </React.Fragment>
             );
           })}
@@ -670,6 +699,14 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
   // Desktop Split View
   if (!isMobile) {
+    if (isLoadingLounge) {
+      return (
+        <div className="flex items-center justify-center h-full text-text-secondary font-mono text-xs animate-pulse">
+          Loading lounge workspace...
+        </div>
+      );
+    }
+
     return (
       <>
         <div className="flex-1 flex w-full h-full overflow-hidden min-h-0 bg-transparent">
@@ -748,6 +785,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 currentUsername={props.currentUsername}
                 currentUserRole={props.currentUserRole}
                 roomId={props.activeRoomId}
+                roomAccessLevel={rooms.find(r => r.id === props.activeRoomId)?.accessLevel || 'ALL'}
                 wsConnected={props.wsConnected}
                 messages={props.messages}
                 onSendMessage={props.onSendMessage || (() => {})}
@@ -769,13 +807,81 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               </div>
             )}
           </div>
+          
+          {/* Members Sidebar (Desktop) */}
+          <div className="w-60 flex-shrink-0 flex flex-col min-h-0 border-l border-white-5 bg-black/10 overflow-y-auto hidden lg:flex select-none">
+            <div className="p-4 border-b border-white-5">
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Lounge Roster</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-4">
+              {['owner', 'admin', 'moderator', 'member'].map(role => {
+                const roleMembers = members.filter(m => m.role === role);
+                if (roleMembers.length === 0) return null;
+                return (
+                  <div key={role} className="space-y-1">
+                    <div className="px-2 text-[9px] font-bold uppercase tracking-widest text-text-secondary/60 mb-2">
+                      {role} — {roleMembers.length}
+                    </div>
+                    {roleMembers.map((m: any) => (
+                      <div 
+                        key={m.user_id} 
+                        className={`flex items-center gap-2 p-2 rounded-xl transition-colors cursor-pointer ${props.isDark ? 'hover:bg-white-5 text-text-primary' : 'hover:bg-black/5 text-velum-900'}`}
+                        onClick={() => setSelectedMember(m)}
+                      >
+                        <div className="relative">
+                          {m.avatar ? (
+                            <img src={m.avatar} alt={m.username} className="w-8 h-8 rounded-full object-cover border border-white-10" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-velum-800 border border-white-10 flex items-center justify-center text-[10px] font-bold uppercase text-accent font-mono">
+                              {m.username.replace('@', '').charAt(0)}
+                            </div>
+                          )}
+                          <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-velum-900 ${
+                            m.status === 'online' ? 'bg-status-online' :
+                            m.status === 'away' ? 'bg-status-away' :
+                            m.status === 'dnd' ? 'bg-status-dnd' : 'bg-status-invisible'
+                          }`} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-bold truncate">
+                            {m.displayName || m.username.replace('@', '')}
+                          </div>
+                          {m.status_text && (
+                            <div className="text-[9px] text-text-secondary truncate">
+                              {m.status_text}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
         {renderCreateModal()}
+        {/* Selected Member Profile Card Overlay */}
+        {selectedMember && (
+          <ProfileCard
+            user={{ userId: selectedMember.user_id, username: selectedMember.username }}
+            onClose={() => setSelectedMember(null)}
+            variant={isMobile ? 'mobile' : 'popover'}
+          />
+        )}
       </>
     );
   }
 
   // Mobile View
+  if (isLoadingLounge) {
+    return (
+      <div className="flex items-center justify-center h-full text-text-secondary font-mono text-xs animate-pulse">
+        Loading lounge workspace...
+      </div>
+    );
+  }
+
   if (props.activeRoomId) {
     return (
       <div className="w-full h-full relative flex flex-col min-h-0">
@@ -784,6 +890,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           currentUsername={props.currentUsername}
           currentUserRole={props.currentUserRole}
           roomId={props.activeRoomId}
+                roomAccessLevel={rooms.find(r => r.id === props.activeRoomId)?.accessLevel || 'ALL'}
           wsConnected={props.wsConnected}
           messages={props.messages}
           onSendMessage={props.onSendMessage || (() => {})}

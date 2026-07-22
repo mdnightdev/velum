@@ -166,7 +166,7 @@ export function useWebSocket({
             return m;
           }));
         } else if (data.type === 'lounge_cleaned') {
-          if (activeRoomIdRef.current === 'velum_lounge') {
+          if (activeRoomIdRef.current === data.roomId) {
             setMessages([]);
           }
         } else if (data.type === 'history') {
@@ -229,7 +229,6 @@ export function useWebSocket({
   const sendMessage = (text: string, burnSeconds: number | null, isEncrypted: boolean) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     const isOfficialChannel = [
-      'velum_lounge',
       'general',
       'off-topic',
       'announcements',

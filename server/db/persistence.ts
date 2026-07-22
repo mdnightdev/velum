@@ -149,6 +149,7 @@ export function loadDb(force = false) {
             last_message_at: Number(r.last_message_at),
             icon_url: r.icon_url,
             invite_code: r.invite_code,
+            accessLevel: r.accessLevel || 'ALL',
             id: r.id || r.lounge_id,
             slug: r.slug || r.lounge_id,
             creator_id: r.creator_id || String(r.owner_id),
@@ -173,6 +174,7 @@ export function loadDb(force = false) {
             name: r.name,
             is_locked: !!r.is_locked,
             invite_code: r.invite_code,
+            accessLevel: r.accessLevel || 'ALL',
             created_by: r.created_by ? Number(r.created_by) : undefined,
             created_at: Number(r.created_at)
           }));
@@ -413,8 +415,34 @@ export function loadDb(force = false) {
     }
     
     if (!sqliteLoaded) {
-      setDb({ ...defaultDb });
-      executeSaveDb();
+      // Only initialize with default state if SQLite file doesn't exist or is truly empty
+      // This prevents overwriting existing data with empty state on transient failures
+      const sqliteExists = fs.existsSync(SQLITE_FILE);
+      const sqliteSize = sqliteExists ? fs.statSync(SQLITE_FILE).size : 0;
+      
+      if (!sqliteExists || sqliteSize === 0) {
+        console.log('[DB] No existing SQLite database found. Initializing with default state.');
+        setDb({ ...defaultDb });
+        executeSaveDb();
+      } else {
+        // SQLite file exists but loading failed - don't overwrite it!
+        // Initialize memory with default state but DON'T save to disk
+        console.error('[DB] SQLite file exists but failed to load. Possible decryption or corruption issue.');
+        console.error('[DB] Existing data preserved in SQLite file. Initializing in-memory state only.');
+        console.error('[DB] SQLite file size:', sqliteSize, 'bytes');
+        
+        // Try to provide recovery hints
+        try {
+          if (sqliteSize < 4096) {
+            console.error('[DB] WARNING: SQLite file suspiciously small. May be corrupted.');
+          }
+          console.error('[DB] Recovery suggestion: Check DB_ENCRYPTION_KEY and DB_ENCRYPTION_SALT in .env');
+          console.error('[DB] Recovery suggestion: Ensure data/.key file exists if not using env vars');
+        } catch (_) {}
+        
+        setDb({ ...defaultDb });
+        // DO NOT call executeSaveDb() here - this prevents overwriting existing data
+      }
     }
     
     ensureSeededIntegrity();
@@ -507,12 +535,30 @@ export function loadDb(force = false) {
     } catch (_) {}
   } catch (error: any) {
     console.error('[DB] Failed loading state database. Falling back to fresh seed:', error);
+    
+    // Check if SQLite file exists before overwriting
+    const sqliteExists = fs.existsSync(SQLITE_FILE);
+    const sqliteSize = sqliteExists ? fs.statSync(SQLITE_FILE).size : 0;
+    
+    if (sqliteExists && sqliteSize > 0) {
+      console.error('[DB] WARNING: SQLite file exists with data but load failed. NOT overwriting to preserve data.');
+      console.error('[DB] File size:', sqliteSize, 'bytes');
+      console.error('[DB] Error details:', error.message);
+    }
+    
     setDb({ ...defaultDb });
     ensureSeededIntegrity();
     setupAuditLogProxy();
-    try {
-      executeSaveDb();
-    } catch (_) {}
+    
+    // Only save if SQLite file doesn't exist or is empty
+    if (!sqliteExists || sqliteSize === 0) {
+      try {
+        executeSaveDb();
+      } catch (_) {}
+    } else {
+      console.error('[DB] In-memory state initialized with defaults, but SQLite file preserved.');
+    }
+    
     Object.keys(db).forEach((key) => {
       lastSavedTableJson[key] = JSON.stringify((db as any)[key] || []);
     });
@@ -539,6 +585,45 @@ const ALL_TABLE_NAMES = [
   'lounge_ownership_transfers', 'account_deletion_requests', 'user_lounge_preferences', 'lounge_audit_logs',
   'system_audit_logs', 'market_listings', 'escrow_transactions'
 ];
+
+/**
+ * Recovery function to attempt loading from SQLite if in-memory state is empty but SQLite has data
+ * This can be called via API or CLI to recover data after a failed startup
+ */
+export function attemptRecoveryFromSqlite(): boolean {
+  if (!fs.existsSync(SQLITE_FILE)) {
+    console.log('[DB] Recovery: No SQLite file found.');
+    return false;
+  }
+  
+  const sqliteSize = fs.statSync(SQLITE_FILE).size;
+  if (sqliteSize === 0) {
+    console.log('[DB] Recovery: SQLite file is empty.');
+    return false;
+  }
+  
+  console.log('[DB] Recovery: Attempting to load from SQLite file (size:', sqliteSize, 'bytes)');
+  
+  try {
+    const conn = initSqlite();
+    if (!conn) {
+      console.error('[DB] Recovery: Failed to initialize SQLite connection.');
+      return false;
+    }
+    
+    // Reload the database using the same logic as loadDb
+    loadDb(true); // force reload
+    
+    const userCount = db.users ? db.users.length : 0;
+    const messageCount = db.messages ? db.messages.length : 0;
+    
+    console.log('[DB] Recovery: Loaded', userCount, 'users and', messageCount, 'messages from SQLite.');
+    return true;
+  } catch (err: any) {
+    console.error('[DB] Recovery: Failed to load from SQLite:', err.message);
+    return false;
+  }
+}
 
 export function saveDb(tableName?: string | string[] | boolean, force = false) {
   let isForce = false;
@@ -684,7 +769,7 @@ export async function executeSaveDb(force = false) {
         try {
           conn.exec(`DELETE FROM lounges`);
           await yieldIfNeeded();
-          const stmt = conn.prepare(`INSERT INTO lounges (lounge_id, name, description, owner_id, created_at, is_private, is_official, last_message_at, icon_url, invite_code, id, slug, creator_id, parent_lounge_id, updated_at, is_system, visibility, status, type, owner_user_id, hide_member_list, is_locked, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+          const stmt = conn.prepare(`INSERT INTO lounges (lounge_id, name, description, owner_id, created_at, is_private, is_official, last_message_at, icon_url, invite_code, id, slug, creator_id, parent_lounge_id, updated_at, is_system, visibility, status, type, owner_user_id, hide_member_list, is_locked, last_active_at, accessLevel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
           for (const c of db.lounges || []) {
             const idVal = c.id || c.lounge_id;
             const slugVal = c.slug || c.lounge_id;
@@ -723,7 +808,8 @@ export async function executeSaveDb(force = false) {
               ownerUserIdVal,
               hideMemberListVal,
               isLockedVal,
-              lastActiveAtVal
+              lastActiveAtVal,
+              c.accessLevel || 'ALL'
             );
             await yieldIfNeeded();
           }

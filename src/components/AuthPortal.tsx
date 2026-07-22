@@ -54,6 +54,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
   const [recoveryNewPassword, setRecoveryNewPassword] = useState('');
   const [ticketTrackingId, setTicketTrackingId] = useState('');
   const [activeTicket, setActiveTicket] = useState<any | null>(null);
+  const [hasAgreedToTerms, setHasAgreedToTerms] = useState(false);
   const [ticketReplyText, setTicketReplyText] = useState('');
 
   useEffect(() => {
@@ -189,6 +190,11 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
 
     if (!password || !safeWord.trim() || !panicPhrase.trim()) {
       setAuthError('Please provide password, security word, and panic phrase.');
+      return;
+    }
+
+    if (!hasAgreedToTerms) {
+      setAuthError('You must agree to the Terms of Service and Privacy Policy to register.');
       return;
     }
 
@@ -362,7 +368,6 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
         
         {/* Absolute Bottom-Right corners build version info */}
         <div className="absolute bottom-3 right-3 text-[9px] font-mono font-bold tracking-wider text-text-secondary/25 select-none">
-          v2.1.5
         </div>
         
         {/* Brand Header — premium minimalist */}
@@ -532,19 +537,35 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                     </button>
                   </div>
                 )}
+                <div className="mt-2 pt-2 border-t border-white-5 text-center">
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-[9px] text-text-secondary hover:text-accent underline mr-3">Terms of Service</a>
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-[9px] text-text-secondary hover:text-accent underline">Privacy Policy</a>
+                </div>
               </form>
             ) : (
               <form onSubmit={handleRegisterSubmit} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Username</label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder=""
-                    className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Username</label>
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder=""
+                      className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Invite Code</label>
+                    <input
+                      type="text"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value)}
+                      placeholder=""
+                      className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">
@@ -558,39 +579,44 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Security Word</label>
-                  <input
-                    type="text"
-                    value={safeWord}
-                    onChange={(e) => setSafeWord(e.target.value)}
-                    placeholder=""
-                    className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Security Word</label>
+                    <input
+                      type="text"
+                      value={safeWord}
+                      onChange={(e) => setSafeWord(e.target.value)}
+                      placeholder=""
+                      className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+                      required
+                    />
+                  </div>
+  
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Panic Phrase</label>
+                    <input
+                      type="text"
+                      value={panicPhrase}
+                      onChange={(e) => setPanicPhrase(e.target.value)}
+                      placeholder=""
+                      className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+                      required
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Panic Phrase</label>
+                <div className="flex items-center gap-2 mt-2">
                   <input
-                    type="text"
-                    value={panicPhrase}
-                    onChange={(e) => setPanicPhrase(e.target.value)}
-                    placeholder=""
-                    className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+                    type="checkbox"
+                    id="termsAgreement"
+                    checked={hasAgreedToTerms}
+                    onChange={(e) => setHasAgreedToTerms(e.target.checked)}
+                    className="w-4 h-4 rounded border-white-5 bg-velum-850 accent-accent cursor-pointer"
                     required
                   />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Invite Code</label>
-                  <input
-                    type="text"
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value)}
-                    placeholder=""
-                    className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
-                  />
+                  <label htmlFor="termsAgreement" className="text-[10px] text-text-secondary">
+                    I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-accent underline">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-accent underline">Privacy Policy</a>
+                  </label>
                 </div>
 
                 <button
@@ -628,7 +654,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
 
             {activeTicket ? (
               <div className="space-y-4">
-                <div className="bg-velum-850 border border-white-5 rounded-xl p-4 space-y-3">
+                <div className="bg-velum-850 border border-white-5 rounded-xl p-4 space-y-4">
                   <div className="flex justify-between items-center pb-2 border-b border-white-5">
                     <div>
                       <p className="text-[9px] uppercase text-text-secondary">Ticket ID</p>
@@ -701,7 +727,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                 </div>
 
                 {authTab === 'register' ? (
-                  <form onSubmit={handleRestoreAccountSubmit} className="space-y-3">
+                  <form onSubmit={handleRestoreAccountSubmit} className="space-y-4">
                     <div className="space-y-1">
                       <label className="text-sm text-text-secondary font-medium block">Username</label>
                       <input
@@ -709,7 +735,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                         value={recoveryUsername}
                         onChange={(e) => setRecoveryUsername(e.target.value)}
                         placeholder=""
-                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white align-middle"
+                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle"
                         required
                       />
                     </div>
@@ -721,7 +747,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                         value={recoverySafeWord}
                         onChange={(e) => setRecoverySafeWord(e.target.value)}
                         placeholder=""
-                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white align-middle"
+                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle"
                         required
                       />
                     </div>
@@ -733,7 +759,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                         value={recoveryCodeInput}
                         onChange={(e) => setRecoveryCodeInput(e.target.value)}
                         placeholder=""
-                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white align-middle"
+                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle"
                         required
                       />
                     </div>
@@ -744,7 +770,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                         value={recoveryNewPassword}
                         onChange={(e) => setRecoveryNewPassword(e.target.value)}
                         placeholder=""
-                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white align-middle"
+                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle"
                         required
                       />
                     </div>
@@ -757,7 +783,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                     </button>
                   </form>
                 ) : (
-                  <form onSubmit={handleQueryTicket} className="space-y-3">
+                  <form onSubmit={handleQueryTicket} className="space-y-4">
                     <div className="space-y-1 font-mono">
                       <label className="text-[10px] uppercase text-text-secondary font-bold block">Incident Tracking ID</label>
                       <input
@@ -765,7 +791,7 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                         value={ticketTrackingId}
                         onChange={(e) => setTicketTrackingId(e.target.value)}
                         placeholder=""
-                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white align-middle"
+                        className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle"
                         required
                       />
                     </div>

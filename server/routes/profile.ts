@@ -325,7 +325,7 @@ profileRouter.post('/user/:targetId/report', authenticateUser, (req, res) => {
 
     db.reports.push(newReport);
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'reports' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'reports' });
 
     res.json({ success: true, report: newReport });
   } catch (err: any) {
@@ -361,7 +361,7 @@ profileRouter.post('/reports', authenticateUser, (req, res) => {
 
     db.reports.push(newReport);
     saveDb();
-    broadcastToRoom('velum_lounge', { type: 'admin_update', subType: 'reports' });
+    broadcastToRoom('admin_channel', { type: 'admin_update', subType: 'reports' });
 
     res.json({ success: true, report: newReport });
   } catch (err) {
