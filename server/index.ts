@@ -152,6 +152,7 @@ export async function startServer() {
         // Reload memory and SQLite mirrors if cloud restore successfully fetched and unlinked the local DB
         if (!fs.existsSync(SQLITE_FILE)) {
           loadDb(true);
+          await hardResetAndSeedDatabase(false);
         }
       } catch (err) {
         writeServerLog(`[SERVER] Error during cloud restore: ${err}`);
