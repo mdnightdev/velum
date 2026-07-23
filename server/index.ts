@@ -116,8 +116,8 @@ export async function startServer() {
   writeServerLog(`[CRYPTO-VERIFY] Key start/end: [${key[0] || ''}]/[${key.slice(-1)}], Salt start/end: [${salt[0] || ''}]/[${salt.slice(-1)}]`);
   writeServerLog(`[CRYPTO-VERIFY] Derived key hash on Render: ${DB_CRYPTO_KEY.toString('hex')}`);
 
-  // 1. Perform remote cloud restore synchronously on instance 0 before loading database
-  if (instanceId === "0" && !disableCloudBackup) {
+  // 1. Perform remote cloud restore synchronously before loading database
+  if (!disableCloudBackup) {
     writeServerLog('[SERVER] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
     try {
       await restoreDbFromCloud();
