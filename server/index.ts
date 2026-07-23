@@ -109,6 +109,9 @@ export async function startServer() {
   const instanceId = process.env.NODE_APP_INSTANCE || process.env.PM2_INSTANCE_ID || "0";
   const disableCloudBackup = process.env.DISABLE_CLOUD_BACKUP === '1' || process.env.NODE_ENV === 'development';
 
+  const { DB_CRYPTO_KEY } = await import('./services/cryptoService.js');
+  writeServerLog(`[CRYPTO-VERIFY] Derived key hash on Render: ${DB_CRYPTO_KEY.toString('hex')}`);
+
   // 1. Perform remote cloud restore synchronously on instance 0 before loading database
   if (instanceId === "0" && !disableCloudBackup) {
     writeServerLog('[SERVER] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
