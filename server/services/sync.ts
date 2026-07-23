@@ -126,6 +126,10 @@ export async function backupDbToCloud(): Promise<void> {
 }
 
 export async function executeCloudBackup(): Promise<void> {
+  const instanceId = process.env.NODE_APP_INSTANCE || process.env.PM2_INSTANCE_ID || "0";
+  if (instanceId !== "0") {
+    return;
+  }
   if (isCloudBackupDisabled || process.env.DISABLE_CLOUD_BACKUP === '1') return;
   lastBackupAttemptTime = Date.now();
   try {
