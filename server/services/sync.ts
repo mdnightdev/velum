@@ -36,14 +36,15 @@ export async function initPgBackupTable(): Promise<void> {
 
 export function getSafeDatabaseBackupBinary(): Buffer | null {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      return fs.readFileSync(DB_FILE);
-    }
     const plainJson = JSON.stringify(db);
     const encryptedData = encryptData(plainJson);
+    if (!encryptedData) {
+      writeServerLog('[DB] Serialized database payload is empty.');
+      return null;
+    }
     return Buffer.from(encryptedData, 'utf8');
   } catch (err) {
-    writeServerLog(`[DB] Error reading state database for cloud backup: ${err}`);
+    writeServerLog(`[DB] Error serializing database for cloud backup: ${err}`);
     return null;
   }
 }
@@ -129,7 +130,10 @@ export async function executeCloudBackup(): Promise<void> {
   lastBackupAttemptTime = Date.now();
   try {
     const binary = getSafeDatabaseBackupBinary();
-    if (!binary) return;
+    if (!binary || binary.length < 1024) {
+      writeServerLog(`[DB] Cloud backup skipped: binary database state is empty or too small (${binary ? binary.length : 0} bytes).`);
+      return;
+    }
 
     // Gzip compression to reduce payload sizes
     const compressedBinary = zlib.gzipSync(binary);
