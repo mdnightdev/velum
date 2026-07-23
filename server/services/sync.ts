@@ -60,12 +60,16 @@ export async function restoreDbFromCloud(): Promise<void> {
     if (isCloudBackupDisabled) return;
 
     const pool = getPgPool();
-    const res = await pool.query('SELECT sqlite_base64, gzip FROM velum_backups ORDER BY updated_at DESC LIMIT 1');
+    const res = await pool.query(
+      'SELECT sqlite_base64, gzip, id FROM velum_backups WHERE LENGTH(sqlite_base64) > 5000 ORDER BY updated_at DESC LIMIT 1'
+    );
     const row = res.rows[0];
     if (!row) {
-      writeServerLog('[DB] No previous cloud backup found in Neon PostgreSQL. Initializing zero-state system.');
+      writeServerLog('[DB] No valid cloud backup found in Neon PostgreSQL. Initializing zero-state system.');
       return;
     }
+
+    writeServerLog(`[DB] Selected cloud backup for restoration: ${row.id}`);
 
     let base64 = row.sqlite_base64;
     if (base64) {
