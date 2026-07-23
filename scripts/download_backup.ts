@@ -30,7 +30,6 @@ async function run() {
       
       if (res.rows.length === 0) {
         console.log('[BACKUP] No backups found in the database.');
-        await pool.end();
         return;
       }
 
@@ -43,7 +42,6 @@ async function run() {
       });
       console.log('\nTo download a specific backup, run:');
       console.log('npx tsx scripts/download_backup.ts <backup-id>\n');
-      await pool.end();
       return;
     }
 
