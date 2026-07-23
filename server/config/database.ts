@@ -7,9 +7,14 @@ let pgPool: pg.Pool | null = null;
 
 export function getPgPool(): pg.Pool {
   if (!pgPool) {
+    const useSsl = databaseUrl && (
+      databaseUrl.includes('sslmode=require') || 
+      databaseUrl.includes('neon.tech') || 
+      process.env.NODE_ENV === 'production'
+    );
     pgPool = new pg.Pool({
       connectionString: databaseUrl,
-      ssl: databaseUrl && databaseUrl.includes('sslmode=require') ? { rejectUnauthorized: false } : false
+      ssl: useSsl ? { rejectUnauthorized: false } : false
     });
   }
   return pgPool;

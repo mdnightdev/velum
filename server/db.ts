@@ -291,9 +291,22 @@ export async function hardResetAndSeedDatabase(force = false) {
     console.log('[DB] Administrative password hashes are legacy or missing argon2id. Triggering upgrade re-seed.');
     mustReSeed = true;
   } else {
-    // Retain existing admin profiles and credentials as the source of truth,
-    // bypassing forced re-seeding if env credentials differ.
-    writeServerLog('[DB] Valid administrative accounts verified in database.');
+    try {
+      const cli_pass_pre = crypto.createHash('sha256').update(midnight.salt + midnight_pass).digest('hex');
+      const isMidnightMatch = await verifyArgon2id(cli_pass_pre, midnight.salt, midnight.password_hash);
+
+      const admin_pass_pre = crypto.createHash('sha256').update(lexie.salt + lexie_pass).digest('hex');
+      const isLexieMatch = await verifyArgon2id(admin_pass_pre, lexie.salt, lexie.password_hash);
+
+      if (!isMidnightMatch || !isLexieMatch) {
+        console.log('[DB] Administrative environment secrets changed. Triggering credential update.');
+        mustReSeed = true;
+      } else {
+        writeServerLog('[DB] Valid administrative accounts verified in database.');
+      }
+    } catch (err) {
+      mustReSeed = true;
+    }
   }
 
   if (!force && !mustReSeed && db.users && db.users.length > 0) {
