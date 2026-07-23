@@ -3,6 +3,32 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
+// Programmatic site cache reset handler (very helpful for mobile devices)
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('clear') || urlParams.has('reset')) {
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      const unregisterPromises = registrations.map(reg => reg.unregister());
+      Promise.all(unregisterPromises).then(() => {
+        if (window.caches) {
+          caches.keys().then((keys) => {
+            Promise.all(keys.map(key => caches.delete(key))).then(() => {
+              window.location.href = window.location.origin;
+            });
+          });
+        } else {
+          window.location.href = window.location.origin;
+        }
+      });
+    });
+  } else {
+    window.location.href = window.location.origin;
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
