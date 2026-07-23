@@ -8,35 +8,30 @@ on:
 jobs:
   k6-stress-test:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+    - name: Install dependencies
+      run: npm install
 
-      - name: Run server in background
-        run: npm run dev &
-        env:
-          NODE_ENV: development
-          MIDNIGHT_PASSWORD: testpassword # Required by your CLI
-          # Add other necessary env vars here
+    - name: Run server in background
+      run: npm run dev &
+      env:
+        NODE_ENV: development
+        MIDNIGHT_PASSWORD: testpassword
 
-      - name: Wait for server to be ready
-        run: sleep 10
+    - name: Wait for server to be ready
+      run: sleep 10
 
-      - name: Install k6
-        run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3644D50E775F482B6149D796
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install k6
+    - name: Setup k6
+      uses: grafana/setup-k6-action@v1
 
-      - name: Run k6 load test
-        run: k6 run stress-tests/load_test.ts
+    - name: Run k6 load test
+      run: k6 run stress-tests/load_test.ts
