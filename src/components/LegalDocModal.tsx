@@ -70,7 +70,7 @@ export function LegalDocModal({ docType, onClose }: LegalDocModalProps) {
 
   return (
     <div 
-      className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in"
+      className="fixed inset-0 z-[9999] bg-[#07070a]/95 flex items-center justify-center p-3 sm:p-6 animate-fade-in"
       onClick={onClose}
     >
       <div 

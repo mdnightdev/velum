@@ -425,7 +425,7 @@ export default function AdminUsersView({
                 displayName: selectedUser.displayName || selectedUser.username.replace('@', ''),
                 bio: selectedUser.bio || 'Secure Node Operator.',
                 location: selectedUser.location || 'Unknown location',
-                joinedDate: selectedUser.joined_date || 'May 2026',
+                joinedDate: selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'May 2026',
                 status: selectedUser.status || 'offline',
                 role: selectedUser.role,
                 avatarUrl: selectedUser.avatar,

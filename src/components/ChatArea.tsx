@@ -702,7 +702,7 @@ export default function ChatArea({
                          displayName: cleanName,
                          bio: "Secure Node Operator. Communication established via E2EE protocols.",
                          location: "Earth",
-                         joinedDate: "May 2026",
+                         joinedDate: "...",
                          isMuted: false,
                          isBlocked: false
                        });
@@ -741,7 +741,7 @@ export default function ChatArea({
                             displayName: popoverPeer.displayName || popoverPeer.username,
                             bio: popoverPeer.bio || "Secure Node Operator. Communication established via E2EE protocols.",
                             location: popoverPeer.location || "Earth",
-                            joinedDate: popoverPeer.joinedDate || "May 2026",
+                            joinedDate: popoverPeer.joinedDate || "...",
                             status: "Active now",
                             isMuted: !!popoverPeer.isMuted,
                             isBlocked: !!popoverPeer.isBlocked,

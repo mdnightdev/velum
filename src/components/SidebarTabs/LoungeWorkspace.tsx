@@ -1064,7 +1064,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 displayName: selectedMember.displayName || selectedMember.username.replace('@', ''),
                 bio: selectedMember.bio || 'Secure Node Operator.',
                 location: selectedMember.location || 'Unknown location',
-                joinedDate: selectedMember.joined_date || 'May 2026',
+                joinedDate: selectedMember.created_at ? new Date(selectedMember.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'May 2026',
                 status: selectedMember.status || 'offline',
                 role: selectedMember.role,
                 avatarUrl: selectedMember.avatar,

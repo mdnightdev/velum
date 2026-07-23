@@ -48,8 +48,10 @@ profileRouter.get('/user/:userId/profile', authenticateUser, (req, res) => {
     const isBlocked = (db.user_blocks || []).some(b => b.blocker_id === currentUserId && b.blocked_id === targetUserId);
     const isMuted = (db.user_mutes || []).some(m => m.muter_id === currentUserId && m.muted_id === targetUserId);
 
+    const userObj = db.users?.find(u => Number(u.user_id) === targetUserId);
     res.json({
       ...profile,
+      created_at: userObj ? userObj.created_at : undefined,
       isBlocked,
       isMuted
     });

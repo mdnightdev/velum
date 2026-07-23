@@ -1015,7 +1015,8 @@ export const getLoungeMembers = async (req: Request, res: Response) => {
         last_seen_at: u.last_seen_at || null,
         displayName: prof?.displayName || u.username,
         avatar: prof?.avatar || 'emerald',
-        location: prof?.location || 'Warsaw, Poland'
+        location: prof?.location || 'Warsaw, Poland',
+        created_at: u.created_at || null
       };
     });
 

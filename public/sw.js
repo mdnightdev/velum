@@ -1,4 +1,4 @@
-const CACHE_NAME = 'velum-cache-v2';
+const CACHE_NAME = 'velum-cache-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -41,6 +41,25 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/socket.io') ||
     url.protocol.startsWith('ws')
   ) {
+    return;
+  }
+
+  // Network-first strategy for index.html/navigation to prevent stale caching of the app shell
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse.status === 200) {
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, networkResponse.clone());
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match('/index.html');
+        })
+    );
     return;
   }
 
