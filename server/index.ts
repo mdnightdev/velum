@@ -106,10 +106,21 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 export async function startServer() {
-  // 1. Load SQLite tables into memory immediately so the UI populates instantly (sub-10ms)
-  loadDb();
-
   const instanceId = process.env.NODE_APP_INSTANCE || process.env.PM2_INSTANCE_ID || "0";
+  const disableCloudBackup = process.env.DISABLE_CLOUD_BACKUP === '1' || process.env.NODE_ENV === 'development';
+
+  // 1. Perform remote cloud restore synchronously on instance 0 before loading database
+  if (instanceId === "0" && !disableCloudBackup) {
+    writeServerLog('[SERVER] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
+    try {
+      await restoreDbFromCloud();
+    } catch (err) {
+      writeServerLog(`[SERVER] Error during cloud restore: ${err}`);
+    }
+  }
+
+  // 2. Load SQLite tables into memory
+  loadDb();
 
   // Ensure administrative base seed accounts, database migrations, and clearing workers
   // are only executed by Instance 0 to prevent 'database is locked' collisions on PM2 cluster startup.
@@ -137,36 +148,17 @@ export async function startServer() {
     } catch (err) {
       writeServerLog(`[SERVER] Error starting clearing worker: ${err}`);
     }
-  } else {
-    writeServerLog(`[SERVER] Replica Node [${instanceId}] online. Background clearing workers, seeding, and migrations bypassed.`);
-  }
 
-  // 2. Perform remote cloud restore check asynchronously in the background so it doesn't block server startup
-  if (process.env.NODE_ENV === 'development' || process.env.DISABLE_CLOUD_BACKUP === '1') {
-    writeServerLog('[SERVER] Development/cloud-backup-disabled mode: skipping cloud restore and realtime sync.');
-  } else {
-    (async () => {
-      writeServerLog('[SERVER] RESTORING DATABASE STATE FROM CLOUD... (Checking connection to Neon PostgreSQL)');
-      try {
-        await restoreDbFromCloud();
-        // Reload memory and SQLite mirrors if cloud restore successfully fetched and unlinked the local DB
-        if (!fs.existsSync(SQLITE_FILE)) {
-          loadDb(true);
-          await hardResetAndSeedDatabase(false);
-        }
-      } catch (err) {
-        writeServerLog(`[SERVER] Error during cloud restore: ${err}`);
-      }
-
-      // Initialize distributed cloud message replication observer
+    // Initialize distributed cloud message replication observer
+    if (!disableCloudBackup) {
       try {
         setupCloudMessageSync();
       } catch (err) {
         writeServerLog(`[SERVER] Distributed message listener error: ${err}`);
       }
-    })().catch(err => {
-      console.error('[SERVER] Background cloud restore unhandled rejection:', err);
-    });
+    }
+  } else {
+    writeServerLog(`[SERVER] Replica Node [${instanceId}] online. Background clearing workers, seeding, and migrations bypassed.`);
   }
 
   if (!isProduction) {
