@@ -187,6 +187,15 @@ export async function startServer() {
       }
     });
   } else {
+    app.get('/api/debug-log', (req, res) => {
+      const logPath = path.join(process.cwd(), 'data', 'server.log');
+      if (fs.existsSync(logPath)) {
+        res.type('text/plain').send(fs.readFileSync(logPath, 'utf8'));
+      } else {
+        res.send('No log file found.');
+      }
+    });
+
     writeServerLog('[SERVER] Serving pre-compiled production build from dist/ directory...');
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath, { 
