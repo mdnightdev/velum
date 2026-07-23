@@ -110,6 +110,10 @@ export async function startServer() {
   const disableCloudBackup = process.env.DISABLE_CLOUD_BACKUP === '1' || process.env.NODE_ENV === 'development';
 
   const { DB_CRYPTO_KEY } = await import('./services/cryptoService.js');
+  const key = process.env.DB_ENCRYPTION_KEY || '';
+  const salt = process.env.DB_ENCRYPTION_SALT || '';
+  writeServerLog(`[CRYPTO-VERIFY] Key length: ${key.length}, Salt length: ${salt.length}`);
+  writeServerLog(`[CRYPTO-VERIFY] Key start/end: [${key[0] || ''}]/[${key.slice(-1)}], Salt start/end: [${salt[0] || ''}]/[${salt.slice(-1)}]`);
   writeServerLog(`[CRYPTO-VERIFY] Derived key hash on Render: ${DB_CRYPTO_KEY.toString('hex')}`);
 
   // 1. Perform remote cloud restore synchronously on instance 0 before loading database
