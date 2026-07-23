@@ -2141,11 +2141,13 @@ export async function executeCliCommand(command: string, isSystem?: boolean): Pr
           if (!data || typeof data !== 'object') {
             return ` ERROR: Invalid backup format.`;
           }
-          if (data.lounges) db.lounges = data.lounges;
-          if (data.currencies) db.currencies = data.currencies;
-          if (data.exchange_rates) db.exchange_rates = data.exchange_rates;
-          executeSaveDb();
-          return ` SUCCESS: Relational database structural settings successfully restored from local backup: ${arg1}`;
+          // Clear current in-memory DB and replace with full backup data
+          for (const key in db) {
+            delete (db as any)[key];
+          }
+          Object.assign(db, data);
+          saveDb(true, true);
+          return ` SUCCESS: Full database successfully restored from local backup: ${arg1}`;
         }
 
         if (isCloudBackupDisabled) {
