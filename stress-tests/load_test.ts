@@ -27,7 +27,7 @@ const ENDPOINTS = {
   tickets:       '/api/tickets',
 };
 
-function computeClientHash(secret: string, salt: string): string {
+function computeClientHash(secret, salt) {
   return crypto.sha256(`${salt}${secret}`, 'hex');
 }
 
@@ -48,7 +48,7 @@ export default function () {
   // 1. Fetch pre-signup salt
   const saltRes = http.get(`${BASE_URL}${ENDPOINTS.preSignupSalt}`, { headers });
   if (saltRes.status !== 200) fail('Failed to fetch registration salt');
-  const salt = saltRes.json('salt') as string;
+  const salt = saltRes.json('salt');
 
   // Compute pre-hashes client-side
   const hashedPassword = computeClientHash(user.password, salt);
@@ -76,22 +76,19 @@ export default function () {
   // Request user-salt
   const userSaltRes = http.get(`${BASE_URL}${ENDPOINTS.userSalt}?username=${user.username}`, { headers });
   if (userSaltRes.status !== 200) return;
-  const userSalt = userSaltRes.json('salt') as string;
+  const userSalt = userSaltRes.json('salt');
 
   // Fetch challenge nonce
   const nonceRes = http.get(`${BASE_URL}${ENDPOINTS.nonceRequest}`, { headers });
   if (nonceRes.status !== 200) return;
-  const nonce = nonceRes.json('nonce') as string;
-
-  // Compute login challenge password hash
-  const loginPasswordHash = crypto.sha256(`${nonce}${hashedPassword}`, 'hex');
+  const nonce = nonceRes.json('nonce');
 
   // Login
   const loginRes = http.post(
     `${BASE_URL}${ENDPOINTS.login}`,
     JSON.stringify({
       username: user.username,
-      password: loginPasswordHash,
+      password: hashedPassword,
       nonce: nonce,
       fingerprint: 'Velum-Secure-Client-v3'
     }),
@@ -101,7 +98,7 @@ export default function () {
   const loginOk = check(loginRes, { 'Logged in': (r) => r.status === 200 });
   if (!loginOk) return;
 
-  const token = loginRes.json('token') as string;
+  const token = loginRes.json('sessionId');
   const authHeaders = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`
