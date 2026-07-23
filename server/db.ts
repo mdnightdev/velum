@@ -84,6 +84,18 @@ export {
 };
 
 export { getPgPool } from './config/database.js';
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('[DB] Neon connection failed:', err);
+  } else {
+    console.log('[DB] Successfully connected to Neon Postgres at:', res.rows[0].now);
+  }
+});
+
 
 function b(val: any): any {
   if (val === undefined || val === null) return '';
