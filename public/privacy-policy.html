@@ -8,24 +8,24 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { 
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-    background: #0a0a0f; 
-    color: #e0e0e0; 
+    background: #0b0f19; 
+    color: #cbd5e1; 
     line-height: 1.7;
     padding: 0;
   }
   .container { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
   header { 
-    border-bottom: 1px solid #1a1a2e; 
+    border-bottom: 1px solid #1e293b; 
     padding-bottom: 32px; 
     margin-bottom: 32px;
     text-align: center;
   }
-  header h1 { font-size: 2.5rem; color: #00e5a0; margin-bottom: 8px; letter-spacing: -0.5px; }
-  header p { color: #888; font-size: 0.95rem; }
+  header h1 { font-size: 2.2rem; color: #38bdf8; margin-bottom: 8px; letter-spacing: -0.5px; }
+  header p { color: #64748b; font-size: 0.95rem; }
   header .badge { 
     display: inline-block; 
-    background: #00e5a0; 
-    color: #0a0a0f; 
+    background: #38bdf8; 
+    color: #0b0f19; 
     padding: 4px 16px; 
     border-radius: 100px; 
     font-size: 0.75rem; 
@@ -34,42 +34,42 @@
     letter-spacing: 1px;
     margin-top: 12px;
   }
-  .last-updated { color: #666; font-size: 0.85rem; margin-top: 8px; }
+  .last-updated { color: #475569; font-size: 0.85rem; margin-top: 8px; }
   section { margin-bottom: 40px; }
   section h2 { 
-    font-size: 1.4rem; 
-    color: #00e5a0; 
+    font-size: 1.3rem; 
+    color: #38bdf8; 
     margin-bottom: 16px; 
     padding-bottom: 8px; 
-    border-bottom: 1px solid #1a1a2e;
+    border-bottom: 1px solid #1e293b;
   }
-  section h3 { font-size: 1.1rem; color: #ccc; margin-bottom: 10px; margin-top: 20px; }
-  section p { margin-bottom: 14px; color: #b0b0b0; }
+  section h3 { font-size: 1.05rem; color: #e2e8f0; margin-bottom: 10px; margin-top: 20px; }
+  section p { margin-bottom: 14px; color: #94a3b8; }
   section ul { margin: 12px 0 16px 24px; }
-  section ul li { margin-bottom: 8px; color: #b0b0b0; }
-  section ul li strong { color: #e0e0e0; }
+  section ul li { margin-bottom: 8px; color: #94a3b8; }
+  section ul li strong { color: #cbd5e1; }
   .highlight-box { 
-    background: #111122; 
-    border-left: 3px solid #00e5a0; 
+    background: #1e293b; 
+    border-left: 3px solid #38bdf8; 
     padding: 16px 20px; 
     border-radius: 8px;
     margin: 16px 0;
   }
-  .highlight-box p { margin: 0; color: #ccc; font-size: 0.9rem; }
+  .highlight-box p { margin: 0; color: #cbd5e1; font-size: 0.9rem; }
   .warning-box {
-    background: #221111;
-    border-left: 3px solid #ff4444;
+    background: #2d161a;
+    border-left: 3px solid #f87171;
     padding: 16px 20px;
     border-radius: 8px;
     margin: 16px 0;
   }
-  .warning-box p { margin: 0; color: #e0b0b0; font-size: 0.9rem; }
-  .divider { height: 1px; background: #1a1a2e; margin: 32px 0; }
-  footer { text-align: center; padding: 32px 0; color: #555; font-size: 0.85rem; border-top: 1px solid #1a1a2e; }
+  .warning-box p { margin: 0; color: #fca5a5; font-size: 0.9rem; }
+  .divider { height: 1px; background: #1e293b; margin: 32px 0; }
+  footer { text-align: center; padding: 32px 0; color: #475569; font-size: 0.85rem; border-top: 1px solid #1e293b; }
   table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-  table th, table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #1a1a2e; }
-  table th { color: #00e5a0; font-weight: 600; }
-  table td { color: #b0b0b0; }
+  table th, table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #1e293b; }
+  table th { color: #38bdf8; font-weight: 600; }
+  table td { color: #cbd5e1; }
   @media (max-width: 600px) { .container { padding: 24px 16px; } header h1 { font-size: 1.8rem; } table { font-size: 0.85rem; } }
 </style>
 </head>
@@ -83,179 +83,90 @@
 
   <section>
     <h2>Introduction</h2>
-    <p>Velum ("we," "us," "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our platform, including any associated services, websites, and applications (collectively, the "Platform").</p>
-    <p>Please read this Privacy Policy carefully. By accessing or using the Platform, you acknowledge you have read and understood this policy. If you do not agree with our practices, do not use the Platform.</p>
+    <p>Velum ("we," "us," "our") is dedicated to protecting user privacy. This Privacy Policy outlines the types of data we collect, how it is utilized, and the measures we employ to secure it when you access our Platform.</p>
+    <p>By using the Platform, you acknowledge that you have read and understood the terms of this Privacy Policy. If you do not agree with our data management practices, please terminate your account immediately.</p>
     <div class="highlight-box">
-      <p><strong>Our Commitment:</strong> Velum was built with a security-first architecture. We employ AES-256-GCM encryption at rest, Argon2id password hashing, and cryptographic nonce-based authentication. Your privacy is not an afterthought — it is the foundation of our platform.</p>
+      <p><strong>Security Model:</strong> Our storage utilizes AES-256-GCM symmetric encryption for high-risk attributes at rest, and credential verification utilizes Argon2id password-hashing with unique salts. No plaintext passwords or decryption keys are ever sent to or processed by the server database.</p>
     </div>
   </section>
 
   <section>
-    <h2>1. Information We Collect</h2>
+    <h2>1. Information Collection</h2>
     
-    <h3>1.1 Information You Provide</h3>
-    <p>When you create an account or use the Platform, we collect:</p>
+    <h3>1.1 User-Provided Information</h3>
+    <p>In operating your account, we handle:</p>
     <ul>
-      <li><strong>Account Credentials:</strong> Username, password hash (Argon2id, not plaintext), safe word hash, panic phrase hash, and recovery key hash. <strong>We never store plaintext passwords or recovery keys.</strong></li>
-      <li><strong>Profile Information:</strong> Display name, bio, avatar image, location (derived from IP).</li>
-      <li><strong>Communications:</strong> Messages you send through the Platform, including DM content, lounge messages, and support ticket correspondence.</li>
-      <li><strong>Marketplace Data:</strong> Listings you create, transactions you conduct, reviews you submit, and dispute records.</li>
-      <li><strong>Financial Information:</strong> Wallet balances, transaction history, payment methods (tokens, not full card numbers), and KYC verification documents (simulated).</li>
+      <li><strong>Cryptographic Digests:</strong> Zero-knowledge hashes of your password, Safe Word, lockdown phrase, and recovery key. <strong>We do not store plaintext credentials.</strong></li>
+      <li><strong>Profile Attributes:</strong> Optional avatar selections, display name, public biography, and derived location.</li>
+      <li><strong>Communications:</strong> Message contents, files, and ticket support conversations. Private communications are encrypted and isolated within active sessions.</li>
+      <li><strong>Transactions:</strong> Escrow transaction records, marketplace item descriptions, and user feedback ratings.</li>
     </ul>
 
-    <h3>1.2 Information Collected Automatically</h3>
+    <h3>1.2 Automatically Collected System Metadata</h3>
     <ul>
-      <li><strong>Device Information:</strong> Device fingerprint, user agent, screen resolution, browser type.</li>
-      <li><strong>IP Address:</strong> Used for geo-location, rate limiting, and security monitoring.</li>
-      <li><strong>Usage Data:</strong> Features accessed, rooms joined, messages sent, sessions duration.</li>
-      <li><strong>Session Data:</strong> Login timestamps, session duration, activity metrics, idle time.</li>
+      <li><strong>Hardware Information:</strong> Browser type, screen geometry, client user agent, and device fingerprints used for fraud prevention.</li>
+      <li><strong>IP Address Logs:</strong> Captured to enforce sliding-window rate limits, detect session hijacking, and block unauthorized access.</li>
+      <li><strong>Telemetry:</strong> Session duration, login attempts, activity timestamps, and message volumes.</li>
     </ul>
   </section>
 
   <section>
-    <h2>2. How We Use Your Information</h2>
-    <p>We use collected information for the following purposes:</p>
+    <h2>2. Data Utilization</h2>
+    <p>We process your data strictly under the following legal bases:</p>
     <table>
-      <tr><th>Purpose</th><th>Legal Basis</th><th>Data Used</th></tr>
-      <tr><td>Providing Platform Services</td><td>Contractual Necessity</td><td>Account data, messages, marketplace data</td></tr>
-      <tr><td>Security & Fraud Prevention</td><td>Legitimate Interest</td><td>IP address, device fingerprint, session data</td></tr>
-      <tr><td>Account Recovery</td><td>Contractual Necessity</td><td>Safe word hash, recovery key hash</td></tr>
-      <tr><td>Customer Support</td><td>Legitimate Interest</td><td>Ticket content, account data</td></tr>
-      <tr><td>Legal Compliance</td><td>Legal Obligation</td><td>Audit logs, transaction records</td></tr>
-      <tr><td>Platform Improvement</td><td>Legitimate Interest</td><td>Aggregated usage statistics</td></tr>
+      <tr><th>Purpose</th><th>Legal Basis</th><th>Data Utilized</th></tr>
+      <tr><td>Delivering Core Services</td><td>Contractual Necessity</td><td>Message payloads, account mappings, listing contents</td></tr>
+      <tr><td>Infrastructure Security</td><td>Legitimate Interest</td><td>Access IP addresses, hardware fingerprinting, rate-limiting counters</td></tr>
+      <tr><td>Account Recovery Validation</td><td>Contractual Necessity</td><td>Safe Word verify challenge</td></tr>
+      <tr><td>Support Mediation</td><td>Legitimate Interest</td><td>Dispute text, support communications, session meta</td></tr>
+      <tr><td>Compliance Reporting</td><td>Legal Obligation</td><td>Transaction auditing, database logs</td></tr>
     </table>
   </section>
 
   <section>
-    <h2>3. Data Storage & Security</h2>
+    <h2>3. Security Architecture & Retention</h2>
     
-    <h3>3.1 Encryption</h3>
-    <p>All sensitive data at rest is encrypted using <strong>AES-256-GCM</strong> (Galois/Counter Mode) with unique initialization vectors. Passwords and other credentials are hashed using <strong>Argon2id</strong>, the current industry standard for password hashing, with unique per-user salts.</p>
+    <h3>3.1 Encryption & Protection</h3>
+    <p>Data at rest is secured via <strong>AES-256-GCM</strong>. Sessions are authenticated using cryptographic challenges containing one-time nonces to prevent credential replay attacks. Brute-force attacks are thwarted using exponential rate-limiting backoffs.</p>
 
-    <h3>3.2 Storage Locations</h3>
-    <p>Data is stored in a local SQLite database with WAL (Write-Ahead Logging) mode for performance. An encrypted JSON backup file is maintained for redundancy. Cloud backups to PostgreSQL (Neon) may be enabled for disaster recovery.</p>
-
-    <h3>3.3 Retention Periods</h3>
+    <h3>3.2 Retention Schedule</h3>
     <table>
-      <tr><th>Data Type</th><th>Retention Period</th><th>Rationale</th></tr>
-      <tr><td>Account Data</td><td>Until account deletion + 30 days</td><td>Account recovery grace period</td></tr>
-      <tr><td>Messages</td><td>Until deleted by user or account deletion</td><td>User control over content</td></tr>
-      <tr><td>Session Data</td><td>7 days after session expiry</td><td>Security auditing</td></tr>
-      <tr><td>Audit Logs</td><td>90 days</td><td>Compliance & incident response</td></tr>
-      <tr><td>Transaction Records</td><td>7 years (where required by law)</td><td>Financial & tax compliance</td></tr>
-      <tr><td>IP Addresses</td><td>30 days</td><td>Security monitoring</td></tr>
+      <tr><th>Category</th><th>Retention Duration</th><th>Rationale</th></tr>
+      <tr><td>Account State</td><td>Until user deletion + 30 days</td><td>Irreversible deletion recovery buffer</td></tr>
+      <tr><td>Message Payload</td><td>Until deleted by sender or account purge</td><td>Active service data</td></tr>
+      <tr><td>Session Identifiers</td><td>7 days after expiry</td><td>Audit logging and security validation</td></tr>
+      <tr><td>Financial Log</td><td>7 years</td><td>Regulatory compliance and tax accounting</td></tr>
+      <tr><td>IP Logs</td><td>30 days</td><td>Rate-limit validation and threat detection</td></tr>
     </table>
+  </section>
 
-    <h3>3.4 Security Measures</h3>
+  <section>
+    <h2>4. Sharing & Disclosure</h2>
+    <p><strong>We do not sell user data.</strong> Information is disclosed only under the following strictly defined scenarios:</p>
     <ul>
-      <li><strong>Nonce-based Authentication:</strong> Each login requires a cryptographic nonce to prevent replay attacks.</li>
-      <li><strong>Rate Limiting:</strong> Exponential backoff on failed authentication attempts prevents brute force attacks.</li>
-      <li><strong>Idle Timeout:</strong> Sessions automatically expire after 30 minutes of inactivity.</li>
-      <li><strong>Panic Protocol:</strong> Users can trigger immediate session revocation and account quarantine.</li>
-      <li><strong>File Permissions:</strong> Database files are restricted to 0600 (owner read/write only).</li>
+      <li><strong>Legal Enforcement:</strong> Where legally mandated by Taiwanese regulatory authorities or courts.</li>
+      <li><strong>Escrow Resolution:</strong> To Platform mediators in the event of a transaction dispute.</li>
+      <li><strong>Technical Service Providers:</strong> Encrypted payloads transferred to database storage and cloud infrastructure providers under strict privacy agreements.</li>
     </ul>
   </section>
 
   <section>
-    <h2>4. Data Sharing & Disclosure</h2>
-    <p><strong>We do not sell your personal information.</strong> We may share data only in the following circumstances:</p>
-    <ul>
-      <li><strong>With Your Consent:</strong> When you explicitly direct us to share information.</li>
-      <li><strong>Service Providers:</strong> With third-party services that help us operate (e.g., cloud storage, CDN). These providers are contractually bound to protect your data.</li>
-      <li><strong>Legal Requirements:</strong> When required by law, court order, or governmental regulation. We will notify you when permitted by law.</li>
-      <li><strong>Protection of Rights:</strong> To protect the rights, property, or safety of Velum, our users, or others.</li>
-      <li><strong>Business Transfers:</strong> In connection with a merger, acquisition, or sale of assets. You will be notified of any change in ownership.</li>
-    </ul>
-    <div class="highlight-box">
-      <p><strong>No Data Selling:</strong> Velum does not and will never sell your personal data to third parties. Our business model is service-based, not data-driven advertising.</p>
-    </div>
+    <h2>5. Rights & User Control</h2>
+    <p>Users have the right to request access, correction, or permanent erasure of their account data. To request data deletion or export, please submit a support request or contact our data protection representative at the email below.</p>
   </section>
 
   <section>
-    <h2>5. Your Rights & Choices</h2>
-    <p>Depending on your jurisdiction, you may have the following rights:</p>
-    <ul>
-      <li><strong>Access:</strong> Request a copy of the personal data we hold about you.</li>
-      <li><strong>Rectification:</strong> Request correction of inaccurate data.</li>
-      <li><strong>Deletion:</strong> Request deletion of your account and associated data ("Right to be Forgotten").</li>
-      <li><strong>Portability:</strong> Request a machine-readable copy of your data.</li>
-      <li><strong>Objection:</strong> Object to processing based on legitimate interests.</li>
-      <li><strong>Restriction:</strong> Request restriction of processing in certain circumstances.</li>
-      <li><strong>Withdraw Consent:</strong> Withdraw consent at any time where processing is based on consent.</li>
-    </ul>
-    <p>To exercise any of these rights, contact us at <strong>mdnightdev@gmail.com</strong>. We will respond within 30 days.</p>
-  </section>
-
-  <section>
-    <h2>6. Cookies & Tracking</h2>
-    <p>Velum uses minimal cookies and tracking mechanisms:</p>
-    <ul>
-      <li><strong>Essential Cookies:</strong> Session management tokens stored in sessionStorage (not persistent cookies). These are cleared when the browser tab is closed.</li>
-      <li><strong>Local Storage:</strong> Cached user preferences and UI state. No tracking scripts are used.</li>
-      <li><strong>No Third-Party Trackers:</strong> We do not use Google Analytics, Facebook pixels, or any third-party analytics services.</li>
-    </ul>
-  </section>
-
-  <section>
-    <h2>7. Children's Privacy</h2>
-    <p>The Platform is not intended for individuals under the age of 18. We do not knowingly collect personal information from children. If we become aware that a child has provided us with personal data, we will take steps to delete it. If you believe a child has provided us with data, please contact us immediately.</p>
-  </section>
-
-  <section>
-    <h2>8. International Data Transfers</h2>
-    <p>Your data may be processed in countries other than your own. We ensure appropriate safeguards are in place through standard contractual clauses or similar mechanisms. By using the Platform, you consent to the transfer of your data to countries that may have different data protection laws than your jurisdiction.</p>
-  </section>
-
-  <section>
-    <h2>9. Data Breach Response</h2>
-    <p>In the event of a data breach that affects your personal data, we will:</p>
-    <ul>
-      <li>Notify you within 72 hours of becoming aware of the breach.</li>
-      <li>Provide details of the nature and extent of the breach.</li>
-      <li>Outline the measures taken to mitigate harm.</li>
-      <li>Notify relevant regulatory authorities as required by law.</li>
-    </ul>
-    <div class="warning-box">
-      <p><strong>Breach Notification:</strong> While we employ industry-leading security measures, no system is completely immune to compromise. We maintain incident response procedures and will act promptly in accordance with legal obligations.</p>
-    </div>
-  </section>
-
-  <section>
-    <h2>10. Changes to This Policy</h2>
-    <p>We may update this Privacy Policy from time to time. Material changes will be communicated via:</p>
-    <ul>
-      <li>In-platform notification.</li>
-      <li>Notice on the Platform.</li>
-      <li>Email notification (if provided).</li>
-    </ul>
-    <p>The "Last Updated" date at the top of this policy indicates when it was last revised. Continued use after changes constitutes acceptance of the updated policy.</p>
-  </section>
-
-  <section>
-    <h2>11. Contact Information</h2>
-    <p>For privacy-related inquiries, data subject requests, or concerns:</p>
-    <p><strong>Velum Data Protection Officer</strong><br>
-    Email: mdnightdev@gmail.com<br>
-    Response Time: Within 30 days</p>
-    <p><strong>For urgent security issues:</strong> mdnightdev@gmail.com</p>
-  </section>
-
-  <section>
-    <h2>12. Regulatory Compliance</h2>
-    <p>Velum complies with applicable data protection regulations, including:</p>
-    <ul>
-      <li><strong>GDPR (General Data Protection Regulation):</strong> For users in the European Economic Area.</li>
-      <li><strong>CCPA (California Consumer Privacy Act):</strong> For users in California, USA.</li>
-      <li><strong>PIPEDA:</strong> For users in Canada.</li>
-      <li><strong>LGPD:</strong> For users in Brazil.</li>
-    </ul>
-    <p>If you believe we have not complied with applicable data protection laws, you have the right to file a complaint with your local data protection authority.</p>
+    <h2>6. Contact & Escalations</h2>
+    <p>For inquiries regarding data protection or to report security vulnerabilities, please contact:</p>
+    <p><strong>Velum Legal & Compliance Division</strong><br>
+    Email: support@velum-secure.com<br>
+    Response Time: Within 5 business days</p>
   </section>
 
   <div class="divider"></div>
 
   <footer>
-    <p>&copy; 2026 Velum. All rights reserved. | Privacy Policy v3.0 | Effective July 22, 2026</p>
+    <p>&copy; 2026 Velum Network. All rights reserved. | Privacy Policy v3.0 | Effective July 22, 2026</p>
   </footer>
 </div>
 </body>

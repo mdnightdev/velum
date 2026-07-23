@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Shield, FileText, ExternalLink, Loader2 } from 'lucide-react';
+import { X, Shield, FileText, Loader2 } from 'lucide-react';
 
 export type LegalDocType = 'terms' | 'privacy';
 
@@ -151,23 +151,13 @@ export function LegalDocModal({ docType, onClose }: LegalDocModalProps) {
         {/* Footer */}
         <div className="px-6 py-3 border-t border-white-5 bg-velum-850 flex items-center justify-between text-[11px] text-text-secondary font-mono shrink-0">
           <span>Velum Encrypted Network Workspace</span>
-          <div className="flex items-center gap-4">
-            <button 
-              type="button" 
-              onClick={() => window.open(activeTab === 'terms' ? '/terms' : '/privacy', '_blank')}
-              className="hover:text-accent flex items-center gap-1 transition cursor-pointer"
-            >
-              <span>Open raw in new tab</span>
-              <ExternalLink className="w-3 h-3" />
-            </button>
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="px-4 py-1.5 rounded-lg bg-accent/10 text-accent font-bold hover:bg-accent/20 transition cursor-pointer"
-            >
-              Dismiss
-            </button>
-          </div>
+          <button 
+            type="button" 
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-lg bg-accent/10 text-accent font-bold hover:bg-accent/20 transition cursor-pointer"
+          >
+            Dismiss
+          </button>
         </div>
       </div>
     </div>
