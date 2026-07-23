@@ -3,10 +3,10 @@ import path from 'path';
 import zlib from 'zlib';
 import pg from 'pg';
 import dotenv from 'dotenv';
-import { decryptData } from '../server/services/cryptoService.js';
-
-// Load environment variables
+// Load environment variables before importing crypto service
 dotenv.config();
+
+import { decryptData } from '../server/services/cryptoService.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
