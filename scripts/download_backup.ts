@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 // Load environment variables before importing crypto service
 dotenv.config();
 
-import { decryptData } from '../server/services/cryptoService.js';
+const { decryptData } = await import('../server/services/cryptoService.js');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
