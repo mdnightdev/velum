@@ -16,3 +16,9 @@ data/
 *.sqlite-journal
 *.log
 bank-log.txt
+
+# Local analysis stats, screenshots, and downloaded backup files
+stats.html
+Check.png
+velum_backup_*.json
+databackup.md

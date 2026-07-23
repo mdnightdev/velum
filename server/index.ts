@@ -120,7 +120,7 @@ export async function startServer() {
   }
 
   // 2. Load SQLite tables into memory
-  loadDb();
+  loadDb(true);
 
   // Ensure administrative base seed accounts, database migrations, and clearing workers
   // are only executed by Instance 0 to prevent 'database is locked' collisions on PM2 cluster startup.
