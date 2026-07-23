@@ -130,8 +130,8 @@ export const authenticateUser = (req: Request, res: Response, next: NextFunction
       return res.status(401).json({ error: 'Unauthorized: Session idle timeout exceeded. Please log in again.' });
     }
 
-    // Slide activity window only if more than 30 seconds have elapsed to throttle DB writes
-    if (!lastPingTime || (now - lastPingTime > 30000)) {
+    // Slide activity window only if more than 5 minutes have elapsed to throttle DB writes and prevent lock contentions
+    if (!lastPingTime || (now - lastPingTime > 300000)) {
       if (!sess.activity_metrics) {
         sess.activity_metrics = { messagesSent: 0, lastPing: new Date().toISOString() };
       } else {

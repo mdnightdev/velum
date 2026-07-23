@@ -57,7 +57,19 @@ Welcome to Velum Secure OS v2.0 (GNU/Linux x86_64)
 `);
 }
 
-function bootstrap(): void {
+import { restoreDbFromCloud, isCloudBackupDisabled, loadDb } from '../server/db.js';
+
+async function bootstrap() {
+  if (!isCloudBackupDisabled) {
+    console.log('Connecting to Neon PostgreSQL and syncing live operations...');
+    try {
+      await restoreDbFromCloud();
+      loadDb(true);
+      console.log('Sync complete.');
+    } catch (err: any) {
+      console.warn('Failed to sync live database state:', err.message || err);
+    }
+  }
   printMotd();
 
   rl.question('velum login: ', (username) => {
