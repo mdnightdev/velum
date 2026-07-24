@@ -109,12 +109,6 @@ export async function startServer() {
   const instanceId = process.env.NODE_APP_INSTANCE || process.env.PM2_INSTANCE_ID || "0";
   const disableCloudBackup = process.env.DISABLE_CLOUD_BACKUP === '1' || process.env.NODE_ENV === 'development';
 
-  const { DB_CRYPTO_KEY } = await import('./services/cryptoService.js');
-  const key = process.env.DB_ENCRYPTION_KEY || '';
-  const salt = process.env.DB_ENCRYPTION_SALT || '';
-  writeServerLog(`[CRYPTO-VERIFY] Key length: ${key.length}, Salt length: ${salt.length}`);
-  writeServerLog(`[CRYPTO-VERIFY] Key start/end: [${key[0] || ''}]/[${key.slice(-1)}], Salt start/end: [${salt[0] || ''}]/[${salt.slice(-1)}]`);
-  writeServerLog(`[CRYPTO-VERIFY] Derived key hash on Render: ${DB_CRYPTO_KEY.toString('hex')}`);
 
   // 1. Perform remote cloud restore synchronously before loading database
   if (!disableCloudBackup) {
@@ -191,15 +185,6 @@ export async function startServer() {
       }
     });
   } else {
-    app.get('/api/debug-log', (req, res) => {
-      const logPath = path.join(process.cwd(), 'data', 'server.log');
-      if (fs.existsSync(logPath)) {
-        res.type('text/plain').send(fs.readFileSync(logPath, 'utf8'));
-      } else {
-        res.send('No log file found.');
-      }
-    });
-
     writeServerLog('[SERVER] Serving pre-compiled production build from dist/ directory...');
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath, { 
