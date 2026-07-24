@@ -61,7 +61,7 @@ export async function restoreDbFromCloud(): Promise<void> {
 
     const pool = getPgPool();
     const res = await pool.query(
-      'SELECT sqlite_base64, gzip, id FROM velum_backups WHERE LENGTH(sqlite_base64) > 5000 ORDER BY updated_at DESC LIMIT 1'
+      'SELECT sqlite_base64, gzip, id FROM velum_backups WHERE LENGTH(sqlite_base64) > 60000 ORDER BY updated_at DESC LIMIT 1'
     );
     const row = res.rows[0];
     if (!row) {
