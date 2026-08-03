@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785395024476,
+      "tag": "0000_redundant_songbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1722355200000,
+      "tag": "0001_message_status_tracking",
+      "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785448952026,
+      "tag": "0002_dusty_piledriver",
+      "breakpoints": true
+    }
+  ]
+}
