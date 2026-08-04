@@ -616,7 +616,7 @@ export default function ChatArea({
       />
       {/* Primary Message Log area */}
       <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 ${isDark ? 'bg-transparent' : 'bg-velum-900'}`}>
-        {conversationMessages.map((msg) => {
+        {conversationMessages.map((msg,index) => {
           const isMe = msg.user_id === currentUserId;
             const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg);
             
@@ -676,8 +676,8 @@ export default function ChatArea({
 
             return (
               <div
-                key={msg.message_id}
-                className={`flex max-w-[85%] group relative gap-2 ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
+              	 key={msg.message_id || msg.id || `msg-${index}`}
+                 className={`flex max-w-[85%] group relative gap-2 ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
               >
                 {/* Message Hover Actions Bar */}
                 {!msg.deleted && (

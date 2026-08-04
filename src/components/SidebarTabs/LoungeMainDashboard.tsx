@@ -290,27 +290,7 @@ export default function LoungeMainDashboard({
               )}
               <div className="min-w-0 flex-1">
                 <div className={`font-bold text-sm capitalize tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
-                {lounge.sublounges && lounge.sublounges.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {lounge.sublounges.map((sub: any) => (
-                      <span 
-                        key={sub.lounge_id || sub.id} 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onLoungeSelect(sub.lounge_id || sub.id, sub.name);
-                        }}
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
-                          isDark 
-                            ? 'bg-velum-800/80 border-white-10 text-text-secondary hover:text-accent hover:border-accent' 
-                            : 'bg-white-20 border-velum-500 text-velum-800 hover:text-accent'
-                        }`}
-                      >
-                        #{sub.name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+               </div>
               {unreadCounts && unreadCounts[lounge.lounge_id] > 0 && (
                 <div className="bg-accent text-velum-900 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
                   {unreadCounts[lounge.lounge_id]}
