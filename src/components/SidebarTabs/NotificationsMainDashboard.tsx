@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Mail, ShieldCheck, HelpCircle, Inbox, Bell, ShoppingCart } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mail, HelpCircle, Inbox, Bell, ShoppingCart } from 'lucide-react';
 import { FriendRequest } from '../../types';
 
 interface NotificationsMainDashboardProps {
@@ -7,7 +7,7 @@ interface NotificationsMainDashboardProps {
   currentUserId: number;
   isDark?: boolean;
   handleRespondFriendRequest: (requestId: string, action: 'accepted' | 'declined') => void;
-  notificationCounts?: { transactions: number; market: number; system: number };
+  notificationCounts?: { transactions: number; market: number; system?: number };
 }
 
 export default function NotificationsMainDashboard({
@@ -15,9 +15,9 @@ export default function NotificationsMainDashboard({
   currentUserId,
   isDark = true,
   handleRespondFriendRequest,
-  notificationCounts = { transactions: 0, market: 0, system: 0 }
+  notificationCounts = { transactions: 0, market: 0 }
 }: NotificationsMainDashboardProps) {
-  const [selectedCategory, setSelectedCategory] = useState<'transactions' | 'market' | 'system' | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<'transactions' | 'market' | null>(null);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -33,14 +33,13 @@ export default function NotificationsMainDashboard({
         return;
       }
       const headers = { 'Authorization': `******`, 'Content-Type': 'application/json' };
-      const res = await fetch(`/v2/notifications?category=${category}`, { headers });
+      const res = await fetch(`/v2/notifications?category=${encodeURIComponent(category)}`, { headers });
       if (!res.ok) {
         setItems([]);
         setLoading(false);
         return;
       }
       const data = await res.json();
-      // Expect array of notifications
       setItems(Array.isArray(data) ? data : (data.notifications || []));
     } catch (err) {
       console.warn('Failed to load notifications for', category, err);
@@ -50,42 +49,89 @@ export default function NotificationsMainDashboard({
     }
   };
 
-  React.useEffect(() => {
-    if (selectedCategory) {
-      loadCategoryItems(selectedCategory);
-    } else {
-      setItems([]);
-    }
+  useEffect(() => {
+    if (selectedCategory) loadCategoryItems(selectedCategory);
+    else setItems([]);
   }, [selectedCategory]);
 
-  const safeRequests = Array.isArray(friendRequests) ? friendRequests : [];
-
+  // simple placeholder when nothing selected
   return (
     <div id="notifications_dashboard" className="flex-1 bg-transparent p-6 lg:p-8 space-y-6 select-none">
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Recent Notifications */}
-        <div className="glass-card lg:col-span-6 p-5 space-y-4">
+
+        {/* Main list area */}
+        <div className="glass-card lg:col-span-8 p-5 space-y-4">
           <h3 className="text-[10px] uppercase tracking-wider font-bold text-accent font-mono flex items-center gap-1.5">
-            <Inbox className="w-3.5 h-3.5" />
-            <span>Recent Notifications</span>
+            <Bell className="w-3.5 h-3.5" />
+            <span>{selectedCategory === 'transactions' ? 'Transactions' : selectedCategory === 'market' ? 'Market Notifications' : 'Notifications'}</span>
           </h3>
 
-          <div className="text-center p-6 rounded bg-velum-900/20">
-            <div className="text-sm font-bold">No notifications</div>
-          </div>
+          {selectedCategory ? (
+            loading ? (
+              <div className="text-sm">Loading...</div>
+            ) : items.length === 0 ? (
+              <div className="text-sm">No notifications in this category.</div>
+            ) : (
+              <div className="space-y-2">
+                {items.map((n: any, idx: number) => {
+                  const txId = n.transaction_id || n.txid || n.tx_id || n.id;
+                  const rawAmount = n.amount ?? n.value ?? n.amount_cents ?? null;
+                  // Try to format cents -> decimal when obvious
+                  const amount = (typeof rawAmount === 'number' && Math.abs(rawAmount) > 1000 && String(rawAmount).length > 3 && rawAmount % 100 === 0)
+                    ? (rawAmount / 100).toFixed(2)
+                    : rawAmount;
+                  const currency = n.currency || n.currency_code || '';
+
+                  return (
+                    <div key={txId || idx} className="bg-velum-900 border border-white-5 p-3 rounded">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm">
+                            {selectedCategory === 'transactions'
+                              ? (n.title || (txId ? `Transaction ${txId}` : 'Transaction'))
+                              : (n.title || n.message || 'Notification')}
+                          </div>
+
+                          {selectedCategory === 'transactions' ? (
+                            <div className="text-[11px] text-text-secondary mt-1">
+                              <span className="font-medium">Amount:</span>{' '}
+                              {amount != null ? `${amount}${currency ? ' ' + currency : ''}` : '—'}
+                              {txId && (
+                                <span className="ml-3">• ID: <span className="font-mono">{txId}</span></span>
+                              )}
+                              {n.body && <div className="mt-1 text-[11px] text-text-secondary">{n.body}</div>}
+                            </div>
+                          ) : (
+                            n.body && <div className="text-[11px] text-text-secondary mt-1">{n.body}</div>
+                          )}
+                        </div>
+
+                        <div className="text-[10px] text-text-secondary">
+                          {n.timestamp ? new Date(n.timestamp).toLocaleString() : ''}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            <div className="text-center p-6 rounded bg-velum-900/20">
+              <div className="text-sm font-bold">Select Transactions or Market from the right</div>
+            </div>
+          )}
         </div>
 
-        {/* Notifications Overview */}
-        <div className="glass-card lg:col-span-6 p-5 space-y-4">
+        {/* Sidebar: categories */}
+        <div className="glass-card lg:col-span-4 p-5 space-y-4">
           <h3 className="text-[10px] uppercase tracking-wider font-bold text-text-secondary font-mono flex items-center gap-1.5">
-            <Bell className="w-3.5 h-3.5" />
-            <span>Notifications</span>
+            <Inbox className="w-3.5 h-3.5" />
+            <span>Categories</span>
           </h3>
 
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3">
-              <button type="button" onClick={() => setSelectedCategory('transactions')} className="w-full text-left bg-velum-900/40 border border-white-5 rounded p-3 flex items-center justify-between">
+              <button type="button" onClick={() => setSelectedCategory('transactions')} className={`w-full text-left bg-velum-900/40 border border-white-5 rounded p-3 flex items-center justify-between ${selectedCategory === 'transactions' ? 'ring-2 ring-accent' : ''}`}>
                 <div className="flex items-center gap-3">
                   <Mail className="w-4 h-4" />
                   <span className="text-sm font-semibold">Transactions</span>
@@ -93,74 +139,21 @@ export default function NotificationsMainDashboard({
                 <span className="text-[11px] bg-accent text-velum-900 px-2 py-0.5 rounded-full">{notificationCounts.transactions}</span>
               </button>
 
-              <button type="button" onClick={() => setSelectedCategory('market')} className="w-full text-left bg-velum-900/40 border border-white-5 rounded p-3 flex items-center justify-between">
+              <button type="button" onClick={() => setSelectedCategory('market')} className={`w-full text-left bg-velum-900/40 border border-white-5 rounded p-3 flex items-center justify-between ${selectedCategory === 'market' ? 'ring-2 ring-accent' : ''}`}>
                 <div className="flex items-center gap-3">
                   <ShoppingCart className="w-4 h-4" />
                   <span className="text-sm font-semibold">Market</span>
                 </div>
                 <span className="text-[11px] bg-accent text-velum-900 px-2 py-0.5 rounded-full">{notificationCounts.market}</span>
               </button>
-
-              <button type="button" onClick={() => setSelectedCategory('system')} className="w-full text-left bg-velum-900/40 border border-white-5 rounded p-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <HelpCircle className="w-4 h-4" />
-                  <span className="text-sm font-semibold">System</span>
-                </div>
-                <span className="text-[11px] bg-accent text-velum-900 px-2 py-0.5 rounded-full">{notificationCounts.system}</span>
-              </button>
             </div>
 
-            <p className="text-[10px] text-text-secondary">Filter notifications by category. Financial notifications include transaction IDs, amounts and timestamps. Tap a notification to view details.</p>
-
-            {selectedCategory && (
-              <div className="mt-3 bg-velum-900/30 border border-white-5 rounded p-3 text-[10.5px] text-text-secondary">
-                {loading ? (
-                  <div>Loading...</div>
-                ) : items.length === 0 ? (
-                  <div>No notifications in this category.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {items.map((n: any, idx: number) => {
-                      const txId = n.transaction_id || n.txid || n.tx_id || n.id;
-                      const amount = n.amount ?? n.value ?? n.amount_cents ?? null;
-                      const currency = n.currency || n.currency_code || '';
-                      return (
-                        <div key={txId || idx} className="bg-velum-900 border border-white-5 p-3 rounded">
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="flex-1">
-                              <div className="font-semibold text-sm">
-                                {selectedCategory === 'transactions'
-                                  ? (n.title || `Transaction ${txId || ''}`)
-                                  : (n.title || n.message || 'Notification')}
-                              </div>
-
-                              {selectedCategory === 'transactions' ? (
-                                <div className="text-[11px] text-text-secondary mt-1">
-                                  <span className="font-medium">Amount:</span>{' '}
-                                  {amount != null ? `${amount}${currency ? ' ' + currency : ''}` : '—'}
-                                  {txId && (
-                                    <span className="ml-3">• ID: <span className="font-mono">{txId}</span></span>
-                                  )}
-                                  {n.body && <div className="mt-1 text-[11px] text-text-secondary">{n.body}</div>}
-                                </div>
-                              ) : (
-                                n.body && <div className="text-[11px] text-text-secondary mt-1">{n.body}</div>
-                              )}
-                            </div>
-
-                            <div className="text-[10px] text-text-secondary">
-                              {n.timestamp ? new Date(n.timestamp).toLocaleString() : ''}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="mt-2">
+              <p className="text-[10px] text-text-secondary">Tap a category to view its notifications. Transaction items show amount and ID.</p>
+            </div>
           </div>
         </div>
+
       </div>
     </div>
   );
