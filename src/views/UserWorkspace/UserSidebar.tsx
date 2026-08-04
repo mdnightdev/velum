@@ -344,6 +344,7 @@ export default function UserSidebar({
             { id: 'directs', label: t('nav.directs', 'Directs'), icon: <MessageSquare className="w-4.5 h-4.5" /> },
             { id: 'lounge', label: t('nav.lounge', 'Lounge'), icon: <Globe className="w-4.5 h-4.5" /> },
             { id: 'market', label: t('nav.market', 'Market'), icon: <ShoppingCart className="w-4.5 h-4.5" /> },
+            { id: 'notifications', label: t('nav.notifications', 'Notifications'), icon: <Bell className="w-4.5 h-4.5" /> },
             { id: 'wallet', label: t('nav.wallet', 'Wallet'), icon: <Wallet className="w-4.5 h-4.5" /> },
             { id: 'tickets', label: t('nav.tickets', 'Tickets'), icon: <FileText className="w-4.5 h-4.5" /> },
             { id: 'friends', label: t('nav.friends', 'Friends'), icon: <Users className="w-4.5 h-4.5" /> },
