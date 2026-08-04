@@ -14,8 +14,8 @@ interface UserWorkspaceProps {
   onLogout: () => void;
   activeRoomId: string;
   onRoomSelect: (roomId: string) => void;
-  activeChatPeer?: { userId: number; username: string } | null;
-  onSelectPeer?: (peer: { userId: number; username: string }) => void;
+  activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
+  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
   onClearChatPeer?: () => void;
   onProfileUpdate?: (updatedUser: any) => void;
   wsConnected: boolean;

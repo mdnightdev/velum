@@ -459,7 +459,6 @@ export default function ProfileCard({
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-accent font-mono truncate">@{user.username}</div>
                 <div className="text-[10px] text-text-secondary mt-0.5">{user.status || 'Active now'}</div>
               </div>
               <button onClick={onClose} className="p-1.5 self-start text-text-secondary hover:text-white rounded-md hover:bg-text-primary/10">

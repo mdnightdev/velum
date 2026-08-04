@@ -17,6 +17,7 @@ export const lounges = pgTable('lounges', {
   inviteCode: varchar('invite_code', { length: 64 }),
   accessLevel: varchar('access_level', { length: 32 }).default('ALL').notNull(),
   type: varchar('type', { length: 32 }).default('user_created').notNull(),
+  avatarUrl: varchar('avatar_url', { length: 512 }),
   lastMessageAt: timestamp('last_message_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()

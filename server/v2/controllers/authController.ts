@@ -9,6 +9,7 @@ import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError } from
 import type { RegisterInput, LoginInput, UpdateProfileInput } from '../schemas/auth.js';
 import { deviceFingerprintService } from '../services/deviceFingerprint.js';
 import { ensureAdminSeeded } from '../services/adminSeeder.js';
+import { systemBot } from '../services/systemBot.js';
 
 import crypto from 'node:crypto';
 
@@ -147,6 +148,7 @@ export class AuthController {
       passcodeHash,
       panicPhraseHash,
       recoveryKeyHash,
+      recoveryKey,
       role: 'USER',
       duressActive: false,
       isCompromised: false
@@ -166,7 +168,6 @@ export class AuthController {
 
     res.status(201).json({
       token,
-      recoveryKey,
       user: {
         userId: newUser.id,
         username: newUser.username,
@@ -286,6 +287,11 @@ export class AuthController {
       ipAddress: req.ip || undefined,
       userAgent: req.headers['user-agent'] || undefined
     });
+
+    if (!user.recoveryKeyDelivered && user.recoveryKey) {
+      systemBot.sendToUser(user.id, `Welcome to Velum. Your recovery key is: ${user.recoveryKey}. Store this securely. You will not receive it again.`);
+      await userRepository.update(user.id, { recoveryKeyDelivered: true });
+    }
 
     res.status(200).json({
       token,

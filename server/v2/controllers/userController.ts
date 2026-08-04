@@ -8,13 +8,17 @@ import { getRedisClient } from '../db/redis.js';
 
 export class UserController {
   async getProfile(req: Request, res: Response): Promise<void> {
-    if (!req.user) throw new NotFoundError('User context missing.');
-    
-    const user = await userRepository.findById(req.user.userId);
-    if (!user) {
-      throw new NotFoundError('User not found.');
-    }
+  if (!req.user) throw new NotFoundError('User context missing.');
 
+  const targetUserId = parseInt(req.params.id, 10);
+  if (isNaN(targetUserId)) {
+    throw new BadRequestError('Invalid user ID.');
+  }
+
+  const user = await userRepository.findById(targetUserId);
+  if (!user) {
+    throw new NotFoundError('User not found.');
+  }
     res.status(200).json({
       userId: user.id,
       username: user.username,
@@ -25,17 +29,6 @@ export class UserController {
       location: user.location || '',
       role: user.role,
       createdAt: user.createdAt,
-      profile: {
-        userId: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        avatar: user.avatarUrl || '',
-        avatarUrl: user.avatarUrl || '',
-        bio: user.bio || '',
-        location: user.location || '',
-        role: user.role,
-        createdAt: user.createdAt
-      }
     });
   }
 

@@ -180,6 +180,58 @@ export class VelumV2Shell {
     }
   }
 
+  private async fetchUsersPage(limit: number, offset: number) {
+    try {
+      return await db.select().from(users).orderBy(users.id).limit(limit).offset(offset);
+    } catch (err) {
+      console.log(`${theme.red}[WARN] fetchUsersPage failed: ${(err as Error).message}${theme.reset}`);
+      return [];
+    }
+  }
+
+  private async countUsers(): Promise<number> {
+    try {
+      const result = await db.select({ count: sql<number>`count(*)` }).from(users);
+      return Number(result[0]?.count || 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  private async fetchListingsPage(limit: number, offset: number) {
+    try {
+      return await db.select().from(listings).orderBy(desc(listings.createdAt)).limit(limit).offset(offset);
+    } catch (err) {
+      console.log(`${theme.red}[WARN] fetchListingsPage failed: ${(err as Error).message}${theme.reset}`);
+      return [];
+    }
+  }
+
+  private async countListings(): Promise<number> {
+    try {
+      const result = await db.select({ count: sql<number>`count(*)` }).from(listings);
+      return Number(result[0]?.count || 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  // Clean key:value printer for single-record "cat" views, instead of raw JSON dumps.
+  // Pass only the fields you want visible - never pass a raw DB row straight in,
+  // since that would leak sensitive columns like password/recovery hashes.
+  private printDetail(title: string, fields: Record<string, any>) {
+    console.log(`\n=== ${title} ===`);
+    const keys = Object.keys(fields);
+    const maxKeyLen = Math.max(...keys.map(k => k.length));
+    for (const k of keys) {
+      const val = fields[k];
+      const displayVal = val === null || val === undefined || val === ''
+        ? '-'
+        : (val instanceof Date ? val.toISOString() : String(val));
+      console.log(`  ${k.padEnd(maxKeyLen)} : ${displayVal}`);
+    }
+  }
+
   private getDefaultLimitForRole(role: string): number {
     const defaults: Record<string, number> = {
       'STANDARD': 500000,
@@ -603,15 +655,22 @@ export class VelumV2Shell {
     if (ns === '/users') {
       if (sub === 'list' || sub === 'ls') {
         const roleFilter = flags['role'];
-        let allUsers = await this.fetchUsers(100);
+        const pageSize = 50;
+        const page = Math.max(1, parseInt(flags['page'], 10) || 1);
+        const offset = (page - 1) * pageSize;
+
+        const totalCount = await this.countUsers();
+        let pageUsers = await this.fetchUsersPage(pageSize, offset);
         if (roleFilter) {
-          allUsers = allUsers.filter(u => u.role.toLowerCase() === roleFilter.toLowerCase());
+          pageUsers = pageUsers.filter(u => u.role.toLowerCase() === roleFilter.toLowerCase());
         }
-        console.log(`\n=== V2 Registered Users (${allUsers.length}) ===`);
+        const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+        console.log(`\n=== V2 Registered Users (page ${page}/${totalPages}, showing ${pageUsers.length} of ${totalCount} total) ===`);
         console.log(`┌──────┬──────────────────┬──────────────┬────────────┐`);
         console.log(`│ ID   │ Username         │ Role         │ Created    │`);
         console.log(`├──────┼──────────────────┼──────────────┼────────────┤`);
-        for (const u of allUsers) {
+        for (const u of pageUsers) {
           const idStr = String(u.id).substring(0, 4).padEnd(4);
           const usernameStr = u.username.substring(0, 16).padEnd(16);
           const roleStr = u.role.substring(0, 12).padEnd(12);
@@ -619,14 +678,28 @@ export class VelumV2Shell {
           console.log(`│ ${idStr} │ ${usernameStr} │ ${roleStr} │ ${createdStr} │`);
         }
         console.log(`└──────┴──────────────────┴──────────────┴────────────┘`);
+        if (page < totalPages) {
+          console.log(`Tip: Use "list --page ${page + 1}" to see the next ${pageSize} users (or "list --role <role> --page <n>" to filter).`);
+        }
         return;
       }
 
       if (sub === 'get' || sub === 'cat') {
         const user = await this.requireUser(rawArgs, 'cat <id_or_username>');
         if (!user) return;
-        console.log('\n=== User Details ===');
-        console.log(JSON.stringify(user, null, 2));
+        this.printDetail('User Details', {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          role: user.role,
+          bio: user.bio,
+          location: user.location,
+          avatarUrl: user.avatarUrl,
+          isCompromised: user.isCompromised,
+          duressActive: user.duressActive,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        });
         return;
       }
 
@@ -1178,9 +1251,16 @@ export class VelumV2Shell {
     // ==========================================
   if (ns === '/market') {
   	if (sub === 'listings' || sub === 'list' || sub === 'ls') {
-    const listingsList = await this.fetchListings(100);
-    console.log(`\n=== V2 Marketplace Listings (${listingsList.length}) ===`);
-    console.table(listingsList.map(l => ({
+    const pageSize = 50;
+    const page = Math.max(1, parseInt(flags['page'], 10) || 1);
+    const offset = (page - 1) * pageSize;
+
+    const totalCount = await this.countListings();
+    const pageListings = await this.fetchListingsPage(pageSize, offset);
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+    console.log(`\n=== V2 Marketplace Listings (page ${page}/${totalPages}, showing ${pageListings.length} of ${totalCount} total) ===`);
+    console.table(pageListings.map(l => ({
       ID: l.id,
       Title: l.title,
       Price: l.price,
@@ -1189,6 +1269,9 @@ export class VelumV2Shell {
       Stock: l.stock,
       Status: l.status
     })));
+    if (page < totalPages) {
+      console.log(`Tip: Use "list --page ${page + 1}" to see the next ${pageSize} listings.`);
+    }
     return;
   }
 
@@ -1197,8 +1280,18 @@ export class VelumV2Shell {
         if (isNaN(id)) { console.log('Usage: cat <listing_id>'); return; }
         const item = await marketRepository.findListingById(id);
         if (!item) { console.log(`Listing ${id} not found.`); return; }
-        console.log('\n=== Listing Details ===');
-        console.log(JSON.stringify(item, null, 2));
+        this.printDetail('Listing Details', {
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          price: item.price,
+          sellerId: item.sellerId,
+          category: item.category,
+          stock: item.stock,
+          status: item.status,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt
+        });
         return;
       }
 
@@ -1288,8 +1381,15 @@ export class VelumV2Shell {
         if (isNaN(id)) { console.log('Usage: cat <escrow_id>'); return; }
         const item = await marketRepository.findEscrowById(id);
         if (!item) { console.log(`Escrow record ${id} not found.`); return; }
-        console.log('\n=== Escrow Record Details ===');
-        console.log(JSON.stringify(item, null, 2));
+        this.printDetail('Escrow Record Details', {
+          id: item.id,
+          listingId: item.listingId,
+          buyerId: item.buyerId,
+          sellerId: item.sellerId,
+          amount: item.amount,
+          status: item.status,
+          createdAt: item.createdAt
+        });
         return;
       }
 
@@ -2234,7 +2334,7 @@ export class VelumV2Shell {
 
       if (sub === 'list' || sub === 'ls') {
         const allLounges = await db.select().from(lounges).limit(100);
-        const parentLounges = allLounges.filter(l => !l.parentLoungeId);
+        const parentLounges = allLounges.filter(l => !l.parentLoungeId && l.type !== 'dm');
         console.log(`\n=== Parent Lounges (${parentLounges.length}) ===`);
         console.table(parentLounges.map(l => ({
           ID: l.id,

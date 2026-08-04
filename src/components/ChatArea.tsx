@@ -44,6 +44,18 @@ interface ChatAreaProps {
   roomName?: string;
   isPrivateSublounge?: boolean;
 }
+const SYSTEM_ROLES: Record<number, { name: string; style: string }> = {
+  1: { name: 'MIDNIGHT (executive)', style: 'bg-velum-700 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
+  2: { name: 'Lexie (Administrator)', style: 'bg-velum-750 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
+  999: { name: 'VELUM', style: 'bg-velum-800 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
+};
+
+function getSenderIdentity(msg: Message) {
+  if (SYSTEM_ROLES[msg.user_id]) {
+    return { cleanName: SYSTEM_ROLES[msg.user_id].name, isSpecialTheme: true, customBubbleClass: SYSTEM_ROLES[msg.user_id].style };
+  }
+  return { cleanName: stripAt(msg.username || 'Client'), isSpecialTheme: false, customBubbleClass: '' };
+}
 
 // formatLastSeen moved to ChatHeader.tsx
 
@@ -556,19 +568,18 @@ export default function ChatArea({
   useEffect(() => {
     if (!onMarkAsReadRef.current) return;
     
+    // Only mark as read for DMs, not lounges/group chats
+    if (!activeChatPeer) return;
+    
     const unreadMessages = messages.filter(m => {
       let isRelevant = false;
-      if (activeChatPeer) {
-        const otherId = activeChatPeer.userId;
-        if (otherId === 999) {
-          isRelevant = m.room_id === `dm_velum_${currentUserId}`;
-        } else {
-          const isPeerFromMe = m.user_id === currentUserId && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
-          const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
-          isRelevant = isPeerFromMe || isPeerToMe || !!(m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`));
-        }
+      const otherId = activeChatPeer.userId;
+      if (otherId === 999) {
+        isRelevant = m.room_id === `dm_velum_${currentUserId}`;
       } else {
-        isRelevant = m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);
+        const isPeerFromMe = m.user_id === currentUserId && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
+        const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
+        isRelevant = isPeerFromMe || isPeerToMe || !!(m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`));
       }
       return isRelevant && m.user_id !== currentUserId && m.status !== 'read' && !markedMessageIdsRef.current.has(m.message_id);
     });
@@ -607,26 +618,7 @@ export default function ChatArea({
       <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 ${isDark ? 'bg-transparent' : 'bg-velum-900'}`}>
         {conversationMessages.map((msg) => {
           const isMe = msg.user_id === currentUserId;
-            let cleanName = stripAt(msg.username || 'Client');
-            let isSpecialTheme = false;
-            let customBubbleClass = '';
-            
-            const lowerUsername = (msg.username || '').toLowerCase();
-            const msgUserId = msg.user_id;
-
-            if (msgUserId === 1 || lowerUsername.includes('midnight') || lowerUsername.includes('cli-exec') || lowerUsername.includes('cli_admin')) {
-              cleanName = 'MIDNIGHT (executive)';
-              isSpecialTheme = true;
-              customBubbleClass = 'bg-velum-700 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none';
-            } else if (msgUserId === 2 || lowerUsername.includes('lexie') || lowerUsername.includes('login-admin') || lowerUsername.includes('admin')) {
-              cleanName = 'Lexie (Administrator)';
-              isSpecialTheme = true;
-              customBubbleClass = 'bg-velum-750 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none';
-            } else if (msgUserId === 999 || lowerUsername.includes('velum') || lowerUsername.includes('system')) {
-              cleanName = 'VELUM';
-              isSpecialTheme = true;
-              customBubbleClass = 'bg-velum-800 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none';
-            }
+            const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg);
             
             // Decrypt E2EE content first before running any parsing on it
             const activeContent = decryptMessage(msg.content || '', msg.room_id || roomId, msg.is_encrypted || (msg as any).isEncrypted);
@@ -736,6 +728,7 @@ export default function ChatArea({
                          username: cleanName,
                          messageId: msg.message_id,
                          displayName: cleanName,
+                         avatar: msg.avatar || "", // <--- ADD THIS
                          bio: "",
                          location: "",
                          joinedDate: "",
@@ -753,7 +746,7 @@ export default function ChatArea({
                              if (prev && prev.userId === msg.user_id && prev.messageId === msg.message_id) {
                                return {
                                  ...prev,
-                                 displayName: data.displayName || cleanName,
+                                 displayName:cleanName,
                                  bio: data.bio || "",
                                  location: data.location || "",
                                  joinedDate: data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : "",
@@ -767,7 +760,11 @@ export default function ChatArea({
                          }
                        } catch (err) {}
                     }}>
-                      <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider">{cleanName.slice(0, 2).toUpperCase()}</span>
+{msg.avatar ? (
+  <img src={msg.avatar} alt={cleanName} className="w-full h-full object-cover" />
+) : (
+  <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider">{cleanName.slice(0, 2).toUpperCase()}</span>
+)}
                     </div>
                     {popoverPeer && popoverPeer.messageId === msg.message_id && (
                       <div className="absolute top-1/2 left-full -translate-y-1/2 ml-3" onClick={(e) => e.stopPropagation()}>

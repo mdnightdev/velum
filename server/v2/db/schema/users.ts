@@ -9,6 +9,8 @@ export const users = pgTable('users', {
   panicPhraseHash: text('panic_phrase_hash'),
   recoveryKeyHash: text('recovery_key_hash'),
   loginRecoveryKeyHash: text('login_recovery_key_hash'),
+  recoveryKey: text('recovery_key'),
+  recoveryKeyDelivered: boolean('recovery_key_delivered').default(false).notNull(),
   duressActive: boolean('duress_active').default(false).notNull(),
   isCompromised: boolean('is_compromised').default(false).notNull(),
   compromiseTicketId: varchar('compromise_ticket_id', { length: 32 }),

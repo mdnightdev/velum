@@ -67,6 +67,7 @@ loungeRouter.get('/', optionalAuth, async (req: Request, res: Response, next: Ne
         lounge_id: parent.slug || `lounge_${parent.id}`,
         is_official: parent.isOfficial,
         is_private: parent.isPrivate,
+        avatar_url: parent.avatarUrl,
         sublounges: visibleSublounges.map(sub => ({
           ...sub,
           lounge_id: sub.slug || `lounge_${sub.id}`,
@@ -137,6 +138,7 @@ loungeRouter.get('/:id', optionalAuth, async (req: Request, res: Response, next:
         lounge_id: target.slug || `lounge_${target.id}`,
         is_official: target.isOfficial,
         is_private: target.isPrivate,
+        avatar_url: target.avatarUrl,
         sublounges: visibleSublounges.map(s => ({
           ...s,
           lounge_id: s.slug || `lounge_${s.id}`,
@@ -236,7 +238,15 @@ loungeRouter.post('/join', auth, async (req: Request, res: Response, next: NextF
     const currentUserId = req.user!.userId;
 
     const all = await db.select().from(lounges);
-    const target = all.find(l => l.slug === lounge_id || l.id.toString() === lounge_id || (invite_code && l.inviteCode === invite_code));
+    let target;
+
+    // If invite code provided, find lounge by code (works for both private and public)
+    if (invite_code) {
+      target = all.find(l => l.inviteCode === invite_code);
+    } else {
+      // If no invite code, find by slug/ID but only if NOT private
+      target = all.find(l => (l.slug === lounge_id || l.id.toString() === lounge_id) && l.isPrivate !== true);
+    }
 
     if (!target) {
       return res.status(404).json({ error: 'Lounge not found.' });
@@ -263,22 +273,26 @@ loungeRouter.post('/join', auth, async (req: Request, res: Response, next: NextF
 // POST /v2/lounges - Create custom lounge
 loungeRouter.post('/', auth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, description, is_private } = req.body;
+    const { name, description, is_private, icon_url } = req.body;
     const currentUserId = req.user!.userId;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'Lounge name is required.' });
     }
 
+    const isPrivate = Boolean(is_private);
+    const inviteCode = isPrivate ? `VL/M-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
     const slug = `lounge_${Date.now()}`;
     const [created] = await db.insert(lounges).values({
       slug,
       name: name.trim(),
       description: typeof description === 'string' ? description : null,
       ownerId: currentUserId,
-      isPrivate: Boolean(is_private),
+      isPrivate,
       type: 'user_created',
-      accessLevel: 'ALL'
+      accessLevel: 'ALL',
+      inviteCode,
+      avatarUrl: typeof icon_url === 'string' ? icon_url : null
     }).returning();
 
     await db.insert(loungeMembers).values({
@@ -289,6 +303,112 @@ loungeRouter.post('/', auth, async (req: Request, res: Response, next: NextFunct
     });
 
     res.status(201).json({ lounge: created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /v2/lounges/:id/sublounges - Create sublounge under parent lounge
+loungeRouter.post('/:id/sublounges', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { name, description, is_private } = req.body;
+    const currentUserId = req.user!.userId;
+    const rawId = req.params.id;
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Sublounge name is required.' });
+    }
+
+    // Get parent lounge details - support both ID and slug
+    const allLounges = await db.select().from(lounges);
+    const parentLounge = allLounges.find(l => l.id.toString() === rawId || l.slug === rawId);
+
+    if (!parentLounge) {
+      return res.status(404).json({ error: 'Parent lounge not found.' });
+    }
+
+    const parentLoungeId = parentLounge.id;
+
+    // Check if parent is user-created (not Velum official)
+    if (parentLounge.isOfficial || parentLounge.isSystem) {
+      return res.status(403).json({ error: 'Cannot create sublounges under Velum official lounges.' });
+    }
+
+    // Permission checks
+    const isOwner = parentLounge.ownerId === currentUserId;
+    const parentMembers = await db.select().from(loungeMembers).where(eq(loungeMembers.loungeId, parentLoungeId));
+    const userMember = parentMembers.find(m => m.userId === currentUserId);
+
+    // Check if user already created a sublounge in this lounge (if not owner)
+    if (!isOwner) {
+      const existingSublounges = allLounges.filter(l => l.parentLoungeId === parentLoungeId && l.ownerId === currentUserId);
+      if (existingSublounges.length >= 1) {
+        return res.status(403).json({ error: 'You can only create one sublounge in lounges you do not own.' });
+      }
+    }
+
+    // Generate invite code only for private sublounges
+    const isPrivate = Boolean(is_private);
+    const inviteCode = isPrivate ? `VL/S-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
+    const slug = `sublounge_${Date.now()}`;
+
+    const [created] = await db.insert(lounges).values({
+      slug,
+      name: name.trim(),
+      description: typeof description === 'string' ? description : null,
+      ownerId: currentUserId,
+      parentLoungeId: parentLoungeId,
+      isPrivate,
+      type: 'user_created',
+      accessLevel: 'ALL',
+      inviteCode
+    }).returning();
+
+    // Add creator as owner of sublounge
+    await db.insert(loungeMembers).values({
+      loungeId: created.id,
+      userId: currentUserId,
+      role: 'owner',
+      status: 'active'
+    });
+
+    res.status(201).json({ sublounge: created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /v2/lounges/:id/avatar - Update parent lounge avatar
+loungeRouter.put('/:id/avatar', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { avatar_url } = req.body;
+    const currentUserId = req.user!.userId;
+    const rawId = req.params.id;
+
+    if (!avatar_url || typeof avatar_url !== 'string') {
+      return res.status(400).json({ error: 'Avatar URL is required.' });
+    }
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+
+    // Only allow owner to update avatar
+    if (target.ownerId !== currentUserId) {
+      return res.status(403).json({ error: 'Only lounge owner can update avatar.' });
+    }
+
+    // Don't allow avatar updates for sublounges
+    if (target.parentLoungeId) {
+      return res.status(403).json({ error: 'Avatar upload is only available for parent lounges.' });
+    }
+
+    await db.update(lounges).set({ avatarUrl: avatar_url }).where(eq(lounges.id, target.id));
+
+    res.json({ success: true, message: 'Lounge avatar updated successfully.' });
   } catch (err) {
     next(err);
   }
@@ -314,6 +434,7 @@ loungeRouter.get('/:id/messages', optionalAuth, async (req: Request, res: Respon
       senderId: messages.senderId,
       content: messages.content,
       createdAt: messages.createdAt,
+      avatar: users.avatarUrl,
       senderName: users.username,
       deliveredTo: messages.deliveredTo,
       readBy: messages.readBy

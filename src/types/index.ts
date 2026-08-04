@@ -101,6 +101,7 @@ export interface Message {
   expires_in?: string | number | null;
   edited_at?: string;
   db_message_id?: number;
+  avatar?: string;
 }
 
 export interface UserBlock {

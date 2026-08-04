@@ -138,7 +138,7 @@ export default function LoungeMainDashboard({
     setStatusMessage('');
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/v2/lounges/${targetLoungeId}/rooms`, {
+      const res = await fetch(`/v2/lounges/${targetLoungeId}/sublounges`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -146,7 +146,7 @@ export default function LoungeMainDashboard({
         },
         body: JSON.stringify({
           name: newRoomName.trim(),
-          is_locked: newRoomLocked
+          is_private: newRoomLocked
         })
       });
       if (res.ok) {
@@ -289,7 +289,7 @@ export default function LoungeMainDashboard({
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <div className={`font-bold text-sm uppercase tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
+                <div className={`font-bold text-sm capitalize tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
                 {lounge.sublounges && lounge.sublounges.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {lounge.sublounges.map((sub: any) => (
@@ -363,6 +363,7 @@ export default function LoungeMainDashboard({
                         ownerId: Number(selectedLounge.owner_id),
                         ownerUsername: 'Lounge Owner',
                         memberCount: 0,
+                        avatarUrl: selectedLounge.avatar_url,
                         createdAt: new Date(selectedLounge.created_at).toLocaleDateString(),
                         isPrivate: selectedLounge.is_private === 1,
                         visibility: selectedLounge.is_private === 1 ? 'private' : 'public',
@@ -413,9 +414,9 @@ export default function LoungeMainDashboard({
                   type="text"
                   value={newLoungeName}
                   onChange={(e) => setNewLoungeName(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border text-xs outline-none transition uppercase font-mono ${
-                    isDark 
-                      ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
+                  className={`w-full p-2.5 rounded-xl border text-xs outline-none transition font-mono ${
+                    isDark
+                      ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20'
                       : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
                   }`}
                   placeholder="e.g. general-lounge"
@@ -505,12 +506,12 @@ export default function LoungeMainDashboard({
               <button onClick={() => setShowCreateModal(false)} className="text-text-secondary hover:text-white"><X className="w-4 h-4" /></button>
             </div>
             
-            <input 
-              type="text" 
-              placeholder="ROOM NAME" 
+            <input
+              type="text"
+              placeholder="Room name"
               value={newRoomName}
               onChange={e => setNewRoomName(e.target.value)}
-              className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white uppercase focus:border-accent focus:outline-none"
+              className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white focus:border-accent focus:outline-none"
             />
             
             <div className="flex items-center gap-3">

@@ -25,8 +25,8 @@ interface DashboardLayoutProps {
   onLogout: () => void;
   activeRoomId: string;
   onRoomSelect: (roomId: string) => void;
-  activeChatPeer?: { userId: number; username: string } | null;
-  onSelectPeer?: (peer: { userId: number; username: string }) => void;
+  activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
+  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
   onClearChatPeer?: () => void;
   onProfileUpdate?: (u: any) => void;
   wsConnected?: boolean;
@@ -75,6 +75,7 @@ export default function DashboardLayout({
   
   // Handshake & peer networks
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
+  const [friendRelationships, setFriendRelationships] = useState<any[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [profileCardUser, setProfileCardUser] = useState<any | null>(null);
@@ -82,7 +83,7 @@ export default function DashboardLayout({
   const handleLoadProfileCard = async (profUser: any) => {
     try {
       const sId = fetchSessionId();
-      const res = await fetch(`/api/user/${profUser.userId}/profile`, {
+      const res = await fetch(`/v2/user/${profUser.userId}/profile`, {
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
@@ -149,13 +150,18 @@ export default function DashboardLayout({
         'Authorization': `Bearer ${sId}`,
         'Content-Type': 'application/json'
       };
-      const [reqRes, usersRes] = await Promise.all([
-        fetch('/api/friends/requests', { headers }),
-        fetch('/api/users', { headers })
+      const [reqRes, relRes, usersRes] = await Promise.all([
+        fetch('/v2/friends/requests', { headers }),
+        fetch('/v2/friends/relationships', { headers }),
+        fetch('/v2/user', { headers })
       ]);
       if (reqRes.ok) {
         const reqData = await reqRes.json();
-        setFriendRequests(reqData);
+        setFriendRequests(reqData.requests || reqData || []);
+      }
+      if (relRes.ok) {
+        const relData = await relRes.json();
+        setFriendRelationships(relData);
       }
       if (usersRes.ok) {
         const usersData = await usersRes.json();
@@ -187,7 +193,7 @@ export default function DashboardLayout({
     setProcessingRequests(prev => new Set(prev).add(requestId));
     try {
       const sId = fetchSessionId();
-      const res = await fetch(`/api/friends/requests/${requestId}/respond`, {
+      const res = await fetch(`/v2/friends/requests/${requestId}/respond`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sId}`,
@@ -219,7 +225,7 @@ export default function DashboardLayout({
   const handleSendFriendRequest = async (username: string) => {
     try {
       const sId = fetchSessionId();
-      const res = await fetch(`/api/friends/requests`, {
+      const res = await fetch(`/v2/friends/requests`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sId}`,
@@ -469,6 +475,7 @@ export default function DashboardLayout({
 
               <DirectMainDashboard
                 friendRequests={friendRequests}
+                friendRelationships={friendRelationships}
                 currentUserId={user?.userId || 0}
                 isDark={isDark}
                 onSelectPeer={(peer) => {
@@ -539,14 +546,14 @@ export default function DashboardLayout({
               variant={isMobile ? 'mobile' : 'expanded'}
               onClose={() => setProfileCardUser(null)}
               onMessage={() => {
-                if (onSelectPeer) onSelectPeer({ userId: profileCardUser.userId, username: profileCardUser.username });
+                if (onSelectPeer) onSelectPeer({ userId: profileCardUser.userId, username: profileCardUser.username, avatar: profileCardUser.avatar });
                 setActiveCategory('direct');
                 setProfileCardUser(null);
               }}
               onMute={async () => {
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch(`/api/user/${profileCardUser.userId}/mute`, {
+                  const res = await fetch(`/v2/user/${profileCardUser.userId}/mute`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
@@ -564,7 +571,7 @@ export default function DashboardLayout({
               onBlock={async () => {
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch(`/api/user/${profileCardUser.userId}/block`, {
+                  const res = await fetch(`/v2/user/${profileCardUser.userId}/block`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
@@ -585,7 +592,7 @@ export default function DashboardLayout({
               onDeleteChat={async () => {
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch(`/api/user/${profileCardUser.userId}/chat`, {
+                  const res = await fetch(`/v2/user/${profileCardUser.userId}/chat`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
@@ -601,7 +608,7 @@ export default function DashboardLayout({
               onReport={async () => {
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch(`/api/user/${profileCardUser.userId}/report`, {
+                  const res = await fetch(`/v2/user/${profileCardUser.userId}/report`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });

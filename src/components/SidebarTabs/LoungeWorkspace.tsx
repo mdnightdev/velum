@@ -143,7 +143,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     setSettingsSuccess('');
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -172,7 +172,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const fetchJoinRequests = async () => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/requests`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/requests`, {
         headers: { 'Authorization': `Bearer ${sid}` }
       });
       if (res.ok) {
@@ -187,7 +187,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const fetchInvites = async () => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/invites`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/invites`, {
         headers: { 'Authorization': `Bearer ${sid}` }
       });
       if (res.ok) {
@@ -202,7 +202,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const handleReviewRequest = async (requestId: string, approve: boolean) => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch('/api/lounges/apply/review', {
+      const res = await fetch('/v2/lounges/apply/review', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -213,7 +213,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       if (res.ok) {
         fetchJoinRequests();
         // Refetch members
-        const memRes = await fetch(`/api/lounges/${props.loungeId}/members`, {
+        const memRes = await fetch(`/v2/lounges/${props.loungeId}/members`, {
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
@@ -229,7 +229,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const handleUpdateRole = async (targetUserId: number, newRole: string) => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/members/${targetUserId}`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/members/${targetUserId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -238,7 +238,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         body: JSON.stringify({ role: newRole })
       });
       if (res.ok) {
-        const memRes = await fetch(`/api/lounges/${props.loungeId}/members`, {
+        const memRes = await fetch(`/v2/lounges/${props.loungeId}/members`, {
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
@@ -255,7 +255,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     if (!activeSanctionUserId || !showSanctionDialog) return;
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch('/api/lounges/sanction', {
+      const res = await fetch('/v2/lounges/sanction', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -272,7 +272,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         setShowSanctionDialog(null);
         setActiveSanctionUserId(null);
         setSanctionReason('');
-        const memRes = await fetch(`/api/lounges/${props.loungeId}/members`, {
+        const memRes = await fetch(`/v2/lounges/${props.loungeId}/members`, {
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
@@ -294,7 +294,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     setDirectAddSuccess('');
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/members/add`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/members/add`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -305,7 +305,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       if (res.ok) {
         setDirectAddSuccess(`Added @${directAddUsername} successfully!`);
         setDirectAddUsername('');
-        const memRes = await fetch(`/api/lounges/${props.loungeId}/members`, {
+        const memRes = await fetch(`/v2/lounges/${props.loungeId}/members`, {
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
@@ -325,7 +325,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const handleCreateInviteCode = async () => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/invites`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/invites`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -335,7 +335,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       });
       if (res.ok) {
         fetchInvites();
-        const detailsRes = await fetch(`/api/lounges/${props.loungeId}`, {
+        const detailsRes = await fetch(`/v2/lounges/${props.loungeId}`, {
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (detailsRes.ok) {
@@ -351,7 +351,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const handleRevokeInviteCode = async (inviteId: string) => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/invites/${inviteId}`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/invites/${inviteId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${sid}` }
       });
@@ -366,7 +366,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const fetchRooms = async () => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/rooms`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/rooms`, {
         headers: { 'Authorization': `Bearer ${sid}` }
       });
       if (res.ok) {
@@ -387,7 +387,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const fetchLoungeList = async () => {
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch('/api/lounges', {
+      const res = await fetch('/v2/lounges', {
         headers: { 'Authorization': `Bearer ${sid}` }
       });
       if (res.ok) {
@@ -406,7 +406,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     }
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/api/lounges/${props.loungeId}/rooms`, {
+      const res = await fetch(`/v2/lounges/${props.loungeId}/sublounges`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -414,7 +414,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         },
         body: JSON.stringify({
           name: newRoomName.trim(),
-          is_locked: newRoomLocked
+          is_private: newRoomLocked
         })
       });
       if (res.ok) {
@@ -461,10 +461,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         const headers = { 'Authorization': `Bearer ${sid}` };
 
         const [roomsRes, membersRes, detailsRes, listRes] = await Promise.allSettled([
-          fetch(`/api/lounges/${props.loungeId}/rooms`, { headers }),
-          fetch(`/api/lounges/${props.loungeId}/members`, { headers }),
-          fetch(`/api/lounges/${props.loungeId}`, { headers }),
-          fetch('/api/lounges', { headers })
+          fetch(`/v2/lounges/${props.loungeId}/rooms`, { headers }),
+          fetch(`/v2/lounges/${props.loungeId}/members`, { headers }),
+          fetch(`/v2/lounges/${props.loungeId}`, { headers }),
+          fetch('/v2/lounges', { headers })
         ]);
 
         if (!isMounted) return;
@@ -475,10 +475,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
         if (roomsRes.status === 'fulfilled' && roomsRes.value.ok) {
           const rData = await roomsRes.value.json();
-          fetchedRooms = rData;
-          setRooms(rData);
-          if (!isMobile && !props.activeRoomId && rData.length > 0) {
-            const firstRoomId = getRoomId(rData[0]);
+          fetchedRooms = rData.rooms || rData || [];
+          setRooms(fetchedRooms);
+          if (!isMobile && !props.activeRoomId && fetchedRooms.length > 0) {
+            const firstRoomId = getRoomId(fetchedRooms[0]);
             if (firstRoomId) props.onRoomSelect(firstRoomId);
           }
         }
@@ -526,9 +526,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     };
   }, [props.loungeId, isMobile, props.currentUserId]);
 
-  const displayRooms = rooms;
+  const displayRooms = Array.isArray(rooms) ? rooms : [];
 
   const isParentAdmin = members.some(m => String(m.user_id) === String(props.currentUserId) && (m.role === 'admin' || m.role === 'owner'));
+  const isSystemExecutive = ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN'].includes(props.currentUserRole);
 
   useEffect(() => {
     if (showManageModal && isParentAdmin) {
@@ -540,21 +541,33 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   // Section 16 Sidebar directory visibility check
   const visibleRooms = displayRooms.filter(room => {
     const isPrivate = room.is_locked || room.visibility === 'private' || room.is_private === 1;
-    if (!isPrivate) return true;
-
-    const isCreator = String(room.created_by || room.owner_id || room.owner_user_id) === String(props.currentUserId);
-    const isSubMember = members.some(m => String(m.user_id) === String(props.currentUserId) && m.status === 'active');
+    const isAnnounce = room.accessLevel === 'ANNOUNCE';
+    const isExecOnly = room.accessLevel === 'EXEC_ONLY';
     
-    if (isCreator || isSubMember || isParentAdmin) return true;
-    return false;
+    // System executives see all channels
+    if (isSystemExecutive) return true;
+    
+    // Regular users don't see ANNOUNCE or EXEC_ONLY channels
+    if (isAnnounce || isExecOnly) return false;
+    
+    // For regular private channels, check access
+    if (isPrivate) {
+      const isCreator = String(room.created_by || room.owner_id || room.owner_user_id) === String(props.currentUserId);
+      const isSubMember = members.some(m => String(m.user_id) === String(props.currentUserId) && m.status === 'active');
+      
+      if (isCreator || isSubMember || isParentAdmin) return true;
+      return false;
+    }
+    
+    return true;
   });
 
   const isMasterLounge = props.loungeId === 'velum_master_lounge';
   const publicRooms = isMasterLounge 
-    ? visibleRooms.filter(room => room.accessLevel !== 'EXEC_ONLY')
+    ? visibleRooms.filter(room => room.accessLevel !== 'EXEC_ONLY' && room.accessLevel !== 'ANNOUNCE')
     : visibleRooms.filter(room => !(room.is_locked || room.visibility === 'private' || room.is_private === 1));
   const privateRooms = isMasterLounge
-    ? visibleRooms.filter(room => room.accessLevel === 'EXEC_ONLY')
+    ? visibleRooms.filter(room => room.accessLevel === 'EXEC_ONLY' || room.accessLevel === 'ANNOUNCE')
     : visibleRooms.filter(room => room.is_locked || room.visibility === 'private' || room.is_private === 1);
 
   const renderRoomRow = (room: any, type: 'public' | 'private_owned' | 'private_locked' | 'exec') => {
@@ -697,14 +710,14 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           <div className="space-y-4">
             <div>
               <label className="block text-[9px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Room Name</label>
-              <input 
-                type="text" 
-                placeholder="e.g. general-chat" 
+              <input
+                type="text"
+                placeholder="e.g. general-chat"
                 value={newRoomName}
                 onChange={e => setNewRoomName(e.target.value)}
-                className={`w-full p-2.5 rounded-lg border text-xs outline-none transition uppercase ${
-                  props.isDark 
-                    ? 'bg-velum-900 border-white-5 text-white focus:border-accent/50' 
+                className={`w-full p-2.5 rounded-lg border text-xs outline-none transition ${
+                  props.isDark
+                    ? 'bg-velum-900 border-white-5 text-white focus:border-accent/50'
                     : 'bg-text-primary border-velum-600 text-velum-900 focus:border-accent'
                 }`}
               />

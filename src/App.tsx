@@ -14,7 +14,7 @@ function AppContent() {
   const { isAuthenticated, user, sessionId, deviceId, handleLoginSuccess, handleLogout, isLoadingSession } = useAuth();
   const [isDark, setIsDark] = useState<boolean>(true);
   const [activeRoomId, setActiveRoomId] = useState<string>('');
-  const [activeChatPeer, setActiveChatPeer] = useState<{ userId: number; username: string } | null>(null);
+  const [activeChatPeer, setActiveChatPeer] = useState<{ userId: number; username: string; avatar?: string } | null>(null);
   const [migrationUser, setMigrationUser] = useState<{ userId: number; username: string } | null>(null);
 
   // Set up visual viewport height tracking to handle mobile keyboard resizing properly

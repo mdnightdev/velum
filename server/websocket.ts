@@ -10,6 +10,7 @@ interface ClientConnection {
   ws: WebSocket;
   userId: number;
   username: string;
+  avatarUrl:string;
   sessionId: string;
   rooms: Set<string>;
 }
@@ -63,6 +64,7 @@ export function setupWebSocketServer(httpServer: Server) {
         ws,
         userId,
         username: sessionResult[0].user.username,
+        avatarUrl:sessionResult[0].user.avatarUrl ||'',
         sessionId,
         rooms: new Set()
       };
@@ -196,7 +198,8 @@ async function handleJoinRoom(client: ClientConnection, roomId: string) {
         delivered_to: dbMessages.deliveredTo,
         read_by: dbMessages.readBy,
         timestamp: dbMessages.createdAt,
-        username: users.username
+        username: users.username,
+        avatar: users.avatarUrl,
       })
       .from(dbMessages)
       .leftJoin(users, eq(dbMessages.senderId, users.id))
@@ -369,6 +372,7 @@ async function handleSendMessage(client: ClientConnection, message: any) {
     message_id: messageId,
     user_id: client.userId,
     username: client.username,
+    avatar: client.avatarUrl,
     timestamp: new Date().toISOString()
   };
 
@@ -420,6 +424,49 @@ async function handleSendMessage(client: ClientConnection, message: any) {
           enrichedMessage.status = 'delivered';
         } else {
           enrichedMessage.status = 'sent';
+        }
+      }
+
+      // Announcements bot broadcast - if message sent to Announcements lounge, broadcast to VELUM bot
+      if (roomId.includes('announce') || roomId.includes('ANNOUNCE')) {
+        const loungeList = await db.select().from(lounges);
+        const currentLounge = loungeList.find(l => l.id === targetLoungeId);
+        if (currentLounge && (currentLounge.accessLevel === 'ANNOUNCE' || currentLounge.name.toLowerCase().includes('announce'))) {
+          // Broadcast to VELUM bot (user 999) DMs for all users
+          // Decrypt if E2E encrypted for broadcast
+          let broadcastContent = message.content || '';
+          if (message.is_encrypted) {
+            // Simple XOR decryption for broadcast (same key as client encryption)
+            const roomIdKey = 'VELUM_E2EE_' + roomId;
+            try {
+              let decoded = '';
+              const cleanCipher = broadcastContent.startsWith('VEL_E2EE[') 
+                ? broadcastContent.substring(9, broadcastContent.length - 1) 
+                : broadcastContent;
+              const cipherBase64 = decodeURIComponent(escape(atob(cleanCipher)));
+              for (let i = 0; i < cipherBase64.length; i++) {
+                const charCode = cipherBase64.charCodeAt(i) ^ roomIdKey.charCodeAt(i % roomIdKey.length);
+                decoded += String.fromCharCode(charCode);
+              }
+              broadcastContent = decoded;
+            } catch (err) {
+              console.error('[WS Broadcast] Failed to decrypt message for broadcast:', err);
+              broadcastContent = message.content || '';
+            }
+          }
+
+          const allUsers = await db.select().from(users);
+          for (const user of allUsers) {
+            const botDMRoomId = `dm_velum_${user.id}`;
+            const botLoungeId = await getOrCreateDMLounge(botDMRoomId);
+            await db.insert(dbMessages).values({
+              loungeId: botLoungeId,
+              senderId: 999,
+              content: broadcastContent,
+              encrypted: false,
+              deliveredTo: ''
+            });
+          }
         }
       }
     }

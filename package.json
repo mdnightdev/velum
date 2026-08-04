@@ -9,7 +9,11 @@
     "lint": "tsc --noEmit",
     "dev:server": "tsx watch server/index.ts",
     "cli": "tsx cli/v2/index.ts",
-    "cli:v2": "tsx cli/v2/index.ts"
+    "cli:v2": "tsx cli/v2/index.ts",
+    "backup": "bash server/v2/scripts/backup.sh",
+    "restore": "bash server/v2/scripts/restore.sh",
+    "sync-to-cloud": "bash server/v2/scripts/sync-to-cloud.sh",
+    "sync-from-cloud": "bash server/v2/scripts/sync-from-cloud.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1090.0",

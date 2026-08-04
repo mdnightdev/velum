@@ -15,7 +15,7 @@ const ADMIN_USERS = [
     displayName: 'Midnight Operator'
   },
   {
-    username: 'lexie', 
+    username: 'lexie',
     passwordEnv: 'LEXIE_PASSWORD',
     role: 'LOGIN_ADMIN',
     displayName: 'Lexie Administrator'

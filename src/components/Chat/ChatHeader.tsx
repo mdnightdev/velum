@@ -49,7 +49,7 @@ export function ChatHeader({
             <div 
               className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
             >
-              {activeChatPeer.avatar && (activeChatPeer.avatar.startsWith('data:image/') || activeChatPeer.avatar.startsWith('http')) ? (
+              {activeChatPeer.avatar ? (
                 <img src={activeChatPeer.avatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
                 <span className="text-xs font-mono font-bold uppercase text-accent">{initials}</span>
@@ -64,7 +64,7 @@ export function ChatHeader({
           {/* Title & Status */}
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-white">{chatTitle}</span>
-            {activeChatPeer && (
+            {activeChatPeer && activeChatPeer.userId !== 999 && (
               <span className="text-[11px] text-text-secondary">
                 {formatLastSeen(peerPresence)}
               </span>

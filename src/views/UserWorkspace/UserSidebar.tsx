@@ -20,8 +20,8 @@ interface UserSidebarProps {
   onLogout: () => void;
   onSectionView: (view: any) => void;
   activeView: string;
-  activeChatPeer: { userId: number; username: string } | null;
-  onSelectPeer?: (peer: { userId: number; username: string }) => void;
+  activeChatPeer: { userId: number; username: string; avatar?: string } | null;
+  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
   onClearChatPeer?: () => void;
   onProfileUpdate?: (updatedUser: any) => void;
   isDark: boolean;
@@ -140,7 +140,7 @@ export default function UserSidebar({
     }
     try {
       const sId = fetchSessionId();
-      const res = await fetch('/api/lounges', {
+      const res = await fetch('/v2/lounges', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sId}`,
@@ -172,7 +172,7 @@ export default function UserSidebar({
     if (!loungeInviteCodeInput.trim()) return;
     try {
       const sId = fetchSessionId();
-      const res = await fetch(`/api/lounges/join`, {
+      const res = await fetch(`/v2/lounges/join`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sId}`,
@@ -201,9 +201,9 @@ export default function UserSidebar({
       if (!sId) return;
 
       const [usersRes, loungesRes, profileRes] = await Promise.all([
-        fetch('/api/users', { headers }),
-        fetch('/api/lounges', { headers }),
-        fetch(`/api/user/${currentUserId}/profile`, { headers })
+        fetch('/v2/user', { headers }),
+        fetch('/v2/lounges', { headers }),
+        fetch(`/v2/user/${currentUserId}/profile`, { headers })
       ]);
 
       const safeParseJson = async (res: Response) => {
@@ -292,7 +292,8 @@ export default function UserSidebar({
     .sort((a, b) => stripAt(a.username).localeCompare(stripAt(b.username)));
 
   // Calculate pending incoming friend requests count for People badge
-  const pendingRequestsCount = (friendRequests || []).filter(
+  const friendRequestsArray = Array.isArray(friendRequests) ? friendRequests : [];
+  const pendingRequestsCount = friendRequestsArray.filter(
     (r) => r && r.status === 'pending' && Number(r.receiver_id) === currentUserId
   ).length;
 

@@ -13,7 +13,7 @@ interface PeopleMainDashboardProps {
   handleRespondFriendRequest: (requestId: string, action: 'accepted' | 'declined') => void;
   handleSendFriendRequest: (username: string) => void;
   loadAndShowProfileCard: (user: any) => void;
-  onSelectPeer: (peer: { userId: number; username: string }) => void;
+  onSelectPeer: (peer: { userId: number; username: string; avatar?: string }) => void;
   onSectionView: (view: string) => void;
   getCountryOnly: (loc: string | null) => string;
 }
@@ -260,6 +260,7 @@ export default function PeopleMainDashboard({
               const username = isPending ? item.sender_name : item.username;
               const displayName = isPending ? (item.sender_display_name || item.sender_name) : (item.displayName || item.username || item.username);
               const userId = isPending ? item.sender_id : item.friendId;
+              const avatarUrl = isPending ? item.sender_avatar : item.avatarUrl;
               const handle = `@${stripAt(username)}`;
               const showHandle = displayName && username && displayName.toLowerCase() !== username.toLowerCase();
               const avatarLetter = displayName ? displayName.charAt(0).toUpperCase() : '?';
@@ -276,10 +277,14 @@ export default function PeopleMainDashboard({
                   }`}
                 >
                   <div className="flex items-center gap-4 min-w-0">
-                    <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold ${
+                    <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold overflow-hidden ${
                       isDark ? 'bg-velum-800 text-text-primary border border-white-10' : 'bg-gray-100 text-gray-600 border border-gray-200'
                     }`}>
-                      {avatarLetter}
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                      ) : (
+                        avatarLetter
+                      )}
                     </div>
                     <div className="flex flex-col min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -339,7 +344,7 @@ export default function PeopleMainDashboard({
                       <>
                         <button
                           onClick={() => {
-                            onSelectPeer({ userId: userId, username: displayName });
+                            onSelectPeer({ userId: userId, username: displayName, avatar: avatarUrl });
                             onSectionView('chat');
                           }}
                           className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
