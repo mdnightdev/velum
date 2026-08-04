@@ -271,6 +271,26 @@ export default function DashboardLayout({
     return counts;
   }, [messages, user?.userId]);
 
+  // Compute last message preview per room (DMs and lounges)
+  const computedLastMessages = React.useMemo(() => {
+    const map: Record<string, any> = {};
+    const msgs = (messages || []).slice();
+    // sort by timestamp/created_at if present
+    msgs.sort((a: any, b: any) => {
+      const ta = a.timestamp || a.created_at || 0;
+      const tb = b.timestamp || b.created_at || 0;
+      return (ta > tb) ? -1 : (ta < tb ? 1 : 0);
+    });
+    msgs.forEach((m: any) => {
+      const rId = m.room_id || m.lounge_id;
+      if (!rId) return;
+      if (!map[rId]) {
+        map[rId] = m;
+      }
+    });
+    return map;
+  }, [messages]);
+
   try {
     return (
       <div className={`flex w-screen h-dvh ${styles.root} ${isDark ? styles.dark : styles.light} overflow-hidden`}>
@@ -481,7 +501,9 @@ export default function DashboardLayout({
                 onSelectPeer={(peer) => {
                   if (onSelectPeer) onSelectPeer(peer);
                 }}
+                onMarkAsRead={onMarkAsRead}
                 unreadCounts={(computedUnreadCounts as any) || {}}
+                lastMessages={(computedLastMessages as any) || {}}
                 loadAndShowProfileCard={handleLoadProfileCard}
                 getCountryOnly={(loc) => {
                   if (!loc) return 'Poland';

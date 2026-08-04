@@ -92,16 +92,6 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     props.onMarkAsRead?.(messageId, roomId);
   };
 
-  const getUnreadCount = (roomId: string): number => {
-    if (!props.messages || props.messages.length === 0) return 0;
-    
-    return (props.messages || []).filter(msg => {
-      if (msg.room_id !== roomId) return false;
-      if (msg.user_id === props.currentUserId) return false;
-      return msg.status !== 'read' && !readMessages.has(msg.message_id);
-    }).length;
-  };
-
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomLocked, setNewRoomLocked] = useState(false);
@@ -511,7 +501,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         } catch {}
 
       } catch (err) {
-        console.error('Error loading lounge workspace:', err);
+        console.error('Error loading lounge workspace:', err, JSON.stringify(err, Object.getOwnPropertyNames(err)));
       } finally {
         if (isMounted) {
           setIsLoadingLounge(false);
@@ -573,7 +563,6 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const renderRoomRow = (room: any, type: 'public' | 'private_owned' | 'private_locked' | 'exec') => {
     const roomId = getRoomId(room);
     if (!roomId) return null;
-    const unread = getUnreadCount(roomId);
     const isActive = props.activeRoomId === roomId;
     const isLockedCard = type === 'private_locked';
     const cleanName = cleanRoomName(room.name);
@@ -612,11 +601,6 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
             room.description && <div className="text-[9px] opacity-60 truncate">{room.description}</div>
           )}
         </div>
-        {!isLockedCard && unread > 0 && (
-          <div className="px-2 py-0.5 rounded-full bg-accent text-velum-900 text-[9px] font-bold shadow-md shadow-accent-10 shrink-0">
-            {unread}
-          </div>
-        )}
       </div>
     );
   };

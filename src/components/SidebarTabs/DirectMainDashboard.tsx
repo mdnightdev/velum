@@ -1,5 +1,6 @@
 import React from 'react';
 import { MessageSquare, Bot } from 'lucide-react';
+import { decryptMessage } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
@@ -11,7 +12,9 @@ interface DirectMainDashboardProps {
   isDark: boolean;
   onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
   onSectionView?: (view: any) => void;
+  onMarkAsRead?: (messageId: string | undefined, roomId: string) => void;
   unreadCounts: Record<string, number>;
+  lastMessages?: Record<string, any>;
   loadAndShowProfileCard: (user: any) => void;
   getCountryOnly: (location: string) => string;
 }
@@ -24,6 +27,7 @@ export default function DirectMainDashboard({
   onSelectPeer,
   onSectionView,
   unreadCounts,
+  lastMessages = {},
   loadAndShowProfileCard,
   getCountryOnly
 }: DirectMainDashboardProps) {
@@ -110,9 +114,28 @@ export default function DirectMainDashboard({
             <div
               key={friendId}
               onClick={() => {
-                if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
-                if (onSectionView) onSectionView('chat');
-              }}
+              // Mark last message as read for this DM (if available)
+              try {
+                const lm = lastMessages || {};
+                const candidateKeys = [
+                  dmRoomId,
+                  `dm_${currentUserId}_${friendId}`,
+                  `dm_${friendId}_${currentUserId}`,
+                  `dm_velum_${currentUserId}`
+                ];
+                let last = null as any;
+                for (const k of candidateKeys) {
+                  if (k && lm[k]) { last = lm[k]; break; }
+                }
+                const lastId = last ? (last.message_id || last.id || last.messageId) : undefined;
+                if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
+              } catch (e) {
+                // ignore
+              }
+
+              if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
+              if (onSectionView) onSectionView('chat');
+            }}
               className={`w-full px-6 py-4 border-b flex items-center justify-between gap-4 cursor-pointer transition-colors ${
                 isDark ? 'border-white-5 hover:bg-text-primary/[0.02]' : 'border-gray-100 hover:bg-gray-50'
               }`}
@@ -126,8 +149,37 @@ export default function DirectMainDashboard({
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className={`text-sm font-bold capitalize truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  <p className={`text-sm ${unread > 0 ? 'font-bold' : 'font-medium'} capitalize truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     {friendName}
+                  </p>
+                  <p className={`text-[11px] mt-1 truncate ${unread > 0 ? (isDark ? 'text-white/90' : 'text-gray-900') : 'text-text-secondary'}`}>
+                    {(() => {
+                      const lm = lastMessages || {};
+                      const candidateKeys = [
+                        dmRoomId,
+                        `dm_${currentUserId}_${friendId}`,
+                        `dm_${friendId}_${currentUserId}`,
+                        `dm_velum_${currentUserId}`
+                      ];
+                      let last = null as any;
+                      for (const k of candidateKeys) {
+                        if (k && lm[k]) { last = lm[k]; break; }
+                      }
+
+                      let txt = '';
+                      if (last) {
+                        const raw = last.content || last.message || last.body || last.text || '';
+                        const isEnc = !!(last.is_encrypted || last.isEncrypted);
+                        try {
+                          txt = decryptMessage(raw, dmRoomId, isEnc) || raw || '';
+                        } catch (e) {
+                          txt = raw || '';
+                        }
+                      }
+
+                      if (!txt) return 'No messages yet.';
+                      return txt.length > 60 ? txt.slice(0, 60) + '…' : txt;
+                    })()}
                   </p>
                 </div>
               </div>
