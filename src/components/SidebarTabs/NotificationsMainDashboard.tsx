@@ -114,9 +114,49 @@ export default function NotificationsMainDashboard({
 
             {selectedCategory && (
               <div className="mt-3 bg-velum-900/30 border border-white-5 rounded p-3 text-[10.5px] text-text-secondary">
-                {selectedCategory === 'transactions' && <div>No transaction notifications yet.</div>}
-                {selectedCategory === 'market' && <div>No market notifications yet.</div>}
-                {selectedCategory === 'system' && <div>No system notifications yet.</div>}
+                {loading ? (
+                  <div>Loading...</div>
+                ) : items.length === 0 ? (
+                  <div>No notifications in this category.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {items.map((n: any, idx: number) => {
+                      const txId = n.transaction_id || n.txid || n.tx_id || n.id;
+                      const amount = n.amount ?? n.value ?? n.amount_cents ?? null;
+                      const currency = n.currency || n.currency_code || '';
+                      return (
+                        <div key={txId || idx} className="bg-velum-900 border border-white-5 p-3 rounded">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-sm">
+                                {selectedCategory === 'transactions'
+                                  ? (n.title || `Transaction ${txId || ''}`)
+                                  : (n.title || n.message || 'Notification')}
+                              </div>
+
+                              {selectedCategory === 'transactions' ? (
+                                <div className="text-[11px] text-text-secondary mt-1">
+                                  <span className="font-medium">Amount:</span>{' '}
+                                  {amount != null ? `${amount}${currency ? ' ' + currency : ''}` : '—'}
+                                  {txId && (
+                                    <span className="ml-3">• ID: <span className="font-mono">{txId}</span></span>
+                                  )}
+                                  {n.body && <div className="mt-1 text-[11px] text-text-secondary">{n.body}</div>}
+                                </div>
+                              ) : (
+                                n.body && <div className="text-[11px] text-text-secondary mt-1">{n.body}</div>
+                              )}
+                            </div>
+
+                            <div className="text-[10px] text-text-secondary">
+                              {n.timestamp ? new Date(n.timestamp).toLocaleString() : ''}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
