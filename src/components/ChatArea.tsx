@@ -215,14 +215,27 @@ export default function ChatArea({
     }
   };
 
-  // Auto scroll to bottom
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+      setIsScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
+    }
   };
 
+  // Auto scroll to bottom
+  const scrollToBottom = () => {
+    if (!isScrolledUp) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // Only scroll on messages length change, not all the time, and respect manual scroll up
   useEffect(() => {
     scrollToBottom();
-  }, [messages, typingPeer]);
+  }, [messages.length, typingPeer]);
 
 
   // Handle typing status broadcast with timeout
@@ -615,7 +628,11 @@ export default function ChatArea({
         conversationMessages={conversationMessages}
       />
       {/* Primary Message Log area */}
-      <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 ${isDark ? 'bg-transparent' : 'bg-velum-900'}`}>
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 ${isDark ? 'bg-transparent' : 'bg-velum-900'}`}
+      >
         {conversationMessages.map((msg,index) => {
           const isMe = msg.user_id === currentUserId;
             const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg);
@@ -676,7 +693,7 @@ export default function ChatArea({
 
             return (
               <div
-              	 key={msg.message_id || msg.id || `msg-${index}`}
+              	 key={msg.message_id || msg.id || msg.nonce || (msg.created_at ? `${msg.user_id}-${msg.created_at}` : undefined) || `msg-${index}`}
                  className={`flex max-w-[85%] group relative gap-2 ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
               >
                 {/* Message Hover Actions Bar */}
@@ -885,7 +902,16 @@ export default function ChatArea({
                       timestamp={new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     >
                       <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      <MessageStatusTicks status={msg.status} isMe={isMe} />
+                      <MessageStatusTicks 
+                        status={msg.status} 
+                        isMe={isMe} 
+                        onRetry={() => {
+                          if (msg.status === 'failed') {
+                            onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                            onDeleteMessage?.(msg.message_id, msg.room_id || roomId);
+                          }
+                        }}
+                      />
                     </SecureImageCard>
                   ) : (
                     <>
@@ -1026,7 +1052,16 @@ export default function ChatArea({
                 <div className={`flex items-center gap-1.5 mt-1 mb-2 text-[10px] font-medium text-text-secondary ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                   <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   
-                  <MessageStatusTicks status={msg.status} isMe={isMe} />
+                  <MessageStatusTicks 
+                    status={msg.status} 
+                    isMe={isMe} 
+                    onRetry={() => {
+                      if (msg.status === 'failed') {
+                        onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                        onDeleteMessage?.(msg.message_id, msg.room_id || roomId);
+                      }
+                    }}
+                  />
 
                   {!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
                     <div className="hidden group-hover:flex items-center gap-1 ml-2">

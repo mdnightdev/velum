@@ -18,12 +18,37 @@ export function useWebSocket({
   onMessageReceived
 }: UseWebSocketParams) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [lastMessages, setLastMessages] = useState<Record<string, Message>>({});
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const activeRoomIdRef = useRef(activeRoomId);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const reconnectTimeoutRef = useRef<any>(null);
   const reconnectAttemptsRef = useRef<number>(0);
+
+  const fetchConversationsSummary = async () => {
+    try {
+      const sessionToken = sessionStorage.getItem('velum-sessionId');
+      const headers: Record<string, string> = {};
+      if (sessionToken) {
+        headers['x-session-token'] = sessionToken;
+        headers['Authorization'] = `Bearer ${sessionToken}`;
+      }
+      const res = await fetch('/v2/lounges/conversations/summary', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.summary) {
+          setLastMessages(prev => ({ ...prev, ...data.summary }));
+        }
+        if (data.unreadCounts) {
+          setUnreadCounts(prev => ({ ...prev, ...data.unreadCounts }));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch conversations summary:', err);
+    }
+  };
 
   useEffect(() => {
     activeRoomIdRef.current = activeRoomId;
@@ -180,14 +205,41 @@ export function useWebSocket({
           if (data.room_id === activeRoomIdRef.current) {
             setMessages(data.messages || []);
           }
+          if (data.messages && data.messages.length > 0 && data.room_id) {
+            const latest = data.messages[data.messages.length - 1];
+            setLastMessages(prev => ({ ...prev, [data.room_id]: latest }));
+          }
         } else {
           window.dispatchEvent(new CustomEvent('velum-message-received', { detail: data }));
           
+          if (data.room_id) {
+            const newMessage = data as Message;
+            setLastMessages(prev => ({ ...prev, [data.room_id]: newMessage }));
+            if (data.room_id !== activeRoomIdRef.current && newMessage.user_id !== uid) {
+              setUnreadCounts(prev => ({
+                ...prev,
+                [data.room_id]: (prev[data.room_id] || 0) + 1
+              }));
+            }
+          }
+
           if (data.room_id === activeRoomIdRef.current) {
             setMessages(prev => {
+              const newMessage = data as Message;
+              // Check if we have an optimistic message to replace
+              if (newMessage.nonce) {
+                const optIdx = prev.findIndex(m => m.nonce === newMessage.nonce && m.status === 'sending');
+                if (optIdx !== -1) {
+                  const newArr = [...prev];
+                  newArr[optIdx] = newMessage;
+                  if (onMessageReceived) {
+                    onMessageReceived(newMessage);
+                  }
+                  return newArr;
+                }
+              }
               const exists = prev.some(m => m.message_id === data.message_id);
               if (exists) return prev;
-              const newMessage = data as Message;
               if (onMessageReceived) {
                 onMessageReceived(newMessage);
               }
@@ -253,14 +305,41 @@ export function useWebSocket({
     ].includes(activeRoomId);
     const shouldEncrypt = !isOfficialChannel;
     const finalContent = shouldEncrypt ? encryptMessage(text, activeRoomId) : text;
+    
+    const nonce = `nonce_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    const optMessage: Message = {
+      message_id: nonce,
+      nonce: nonce,
+      room_id: activeRoomId,
+      user_id: userId || 0, // Note: using userId from params
+      username: 'You', // This will be overwritten by server, just a placeholder
+      content: finalContent,
+      is_encrypted: shouldEncrypt,
+      status: 'sending',
+      timestamp: new Date().toISOString()
+    };
+    
+    setMessages(prev => [...prev, optMessage]);
+
     wsRef.current.send(JSON.stringify({
       type: 'send_message',
       room_id: activeRoomId,
       content: finalContent,
       is_encrypted: shouldEncrypt,
       expires_in: burnSeconds,
-      reply_to: null
+      reply_to: null,
+      nonce: nonce
     }));
+    
+    // Add a timeout to transition 'sending' to 'failed' if no ACK after 10s
+    setTimeout(() => {
+      setMessages(prev => prev.map(m => {
+        if (m.nonce === nonce && m.status === 'sending') {
+          return { ...m, status: 'failed' };
+        }
+        return m;
+      }));
+    }, 10000);
   };
 
   const sendTyping = (isTyping: boolean) => {
@@ -310,6 +389,9 @@ export function useWebSocket({
   };
 
   const markAsRead = (messageId: string, roomId: string, dbMessageId?: number) => {
+    if (roomId) {
+      setUnreadCounts(prev => ({ ...prev, [roomId]: 0 }));
+    }
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'mark_read',
@@ -347,6 +429,7 @@ export function useWebSocket({
 
   useEffect(() => {
     if (isAuthenticated && userId) {
+      fetchConversationsSummary();
       connectWebSocket(userId);
     }
     return () => {
@@ -368,6 +451,8 @@ export function useWebSocket({
   return {
     messages,
     setMessages,
+    lastMessages,
+    unreadCounts,
     wsConnected,
     sendMessage,
     sendTyping,
@@ -378,6 +463,7 @@ export function useWebSocket({
     markAsRead,
     markDelivered,
     disconnect,
-    connectWebSocket
+    connectWebSocket,
+    refetchSummary: fetchConversationsSummary
   };
 }

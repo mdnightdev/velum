@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle } from 'lucide-react';
+import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, Menu } from 'lucide-react';
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 
 interface TicketsMainDashboardProps {
   currentUserId: number;
   isDark?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export default function TicketsMainDashboard({
   currentUserId,
-  isDark = true
+  isDark = true,
+  onToggleSidebar
 }: TicketsMainDashboardProps) {
   const { t } = useLanguage();
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -200,7 +202,20 @@ export default function TicketsMainDashboard({
   };
 
   return (
-    <div id="tickets_dashboard" className="flex-1 bg-transparent p-6 lg:p-8 space-y-6 font-sans">
+    <div id="tickets_dashboard" className="flex-1 bg-transparent p-4 sm:p-6 lg:p-8 space-y-6 font-sans">
+      {onToggleSidebar && (
+        <div className="md:hidden pb-2 border-b border-white-5 flex items-center gap-2">
+          <button
+            onClick={onToggleSidebar}
+            className="p-2 rounded-xl border border-white-5 text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
+            aria-label="Open sidebar menu"
+            title="Open Navigation"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="text-xs font-bold uppercase tracking-widest text-text-secondary">Support Tickets</span>
+        </div>
+      )}
       {toastMessage && (
         <div className="bg-accent/15 border border-accent/40 text-accent px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-2">
           <span>{toastMessage}</span>

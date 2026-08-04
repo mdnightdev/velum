@@ -33,7 +33,7 @@ export default function AdminControlDesk({
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'tickets' | 'reports' | 'moderation' | 'system' | 'logs' | 'bank' | 'profile'>('overview');
 
   return (
-    <div id="admin_control_desk_view" className="w-full h-dvh bg-velum-900 flex flex-col overflow-hidden font-sans select-none">
+    <div id="admin_control_desk_view" className="w-full h-full min-h-0 bg-velum-900 flex flex-col overflow-hidden font-sans select-none">
       <AdminPanel
         adminId={Number(user.userId)}
         adminRole={user.role}

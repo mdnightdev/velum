@@ -56,12 +56,6 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 export const server = createHttpServer(app);
 
 export async function startServer() {
-  // Seed admin users from environment variables
-  await ensureAdminSeeded();
-  
-  // Load exchange rates from database into CurrencyConverter cache
-  await currencyConverter.loadRatesFromDb();
-  
   // Setup WebSocket server
   setupWebSocketServer(server);
   
@@ -115,6 +109,16 @@ export async function startServer() {
   const PORT = config.PORT || 3000;
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER] [Velum V2 Engine] Active on port: ${PORT}`);
+    
+    // Asynchronously initialize database seeding & exchange rates without blocking server start
+    (async () => {
+      try {
+        await ensureAdminSeeded();
+        await currencyConverter.loadRatesFromDb();
+      } catch (err) {
+        console.error('[SERVER V2] Background DB initialization warning:', err);
+      }
+    })();
   });
 }
 

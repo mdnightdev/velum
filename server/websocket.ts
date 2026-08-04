@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { db } from './v2/db/client.js';
+import { db, executeWithRetry } from './v2/db/client.js';
 import { sessions, users } from './v2/db/schema/index.js';
 import { lounges, messages as dbMessages } from './v2/db/schema/lounges.js';
 import { eq, desc } from 'drizzle-orm';
@@ -34,14 +34,21 @@ export function setupWebSocketServer(httpServer: Server) {
 
       // Verify session
       const sessionHash = hashSessionToken(sessionId);
-      const sessionResult = await db.select({
-        session: sessions,
-        user: users
-      })
-      .from(sessions)
-      .innerJoin(users, eq(sessions.userId, users.id))
-      .where(eq(sessions.tokenHash, sessionHash))
-      .limit(1);
+      let sessionResult: any[] = [];
+      try {
+        sessionResult = await executeWithRetry(() => db.select({
+          session: sessions,
+          user: users
+        })
+        .from(sessions)
+        .innerJoin(users, eq(sessions.userId, users.id))
+        .where(eq(sessions.tokenHash, sessionHash))
+        .limit(1));
+      } catch (dbErr: any) {
+        console.error('[WS] Session verification temporary connection error:', dbErr?.message || dbErr);
+        ws.close(1011, 'Database connection error');
+        return;
+      }
 
       if (sessionResult.length === 0) {
         ws.close(1008, 'Invalid session');
@@ -55,7 +62,7 @@ export function setupWebSocketServer(httpServer: Server) {
       }
       
       try {
-        await db.update(users).set({ updatedAt: new Date() }).where(eq(users.id, userId));
+        await executeWithRetry(() => db.update(users).set({ updatedAt: new Date() }).where(eq(users.id, userId)));
       } catch (dbErr) {
         console.error('[WS] Failed to update user last active timestamp:', dbErr);
       }
@@ -132,7 +139,30 @@ function handleClientMessage(client: ClientConnection, message: any) {
       break;
     case 'typing_start':
     case 'typing_stop':
+      message.userId = client.userId;
+      message.username = client.username;
       broadcastToRoom(message.room_id, message, client.ws);
+      
+      // Global DM broadcast for typing so sidebars update
+      if (message.room_id && message.room_id.startsWith('dm_')) {
+        const parts = message.room_id.replace('dm_', '').split('_');
+        if (parts.length >= 2) {
+          const uid1 = parseInt(parts[0], 10);
+          const uid2 = parseInt(parts[1], 10);
+          const targetId = client.userId === uid1 ? uid2 : uid1;
+          const members = roomMembers.get(message.room_id);
+          const broadcastStr = JSON.stringify(message);
+          
+          for (const c of connectedClients.keys()) {
+            const clientData = connectedClients.get(c);
+            if (clientData && clientData.userId === targetId && c.readyState === WebSocket.OPEN) {
+              if (!members || !members.has(c)) {
+                c.send(broadcastStr);
+              }
+            }
+          }
+        }
+      }
       break;
     default:
       console.log('Unknown message type:', message.type);
@@ -141,19 +171,21 @@ function handleClientMessage(client: ClientConnection, message: any) {
 
 export async function getOrCreateDMLounge(roomId: string): Promise<number | null> {
   try {
-    const [existing] = await db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1);
-    if (existing) {
-      return existing.id;
-    }
-    const [inserted] = await db.insert(lounges).values({
-      slug: roomId,
-      name: 'Direct Message',
-      type: 'dm',
-      isPrivate: true,
-      isOfficial: false,
-      isSystem: false
-    }).returning();
-    return inserted.id;
+    return await executeWithRetry(async () => {
+      const [existing] = await db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1);
+      if (existing) {
+        return existing.id;
+      }
+      const [inserted] = await db.insert(lounges).values({
+        slug: roomId,
+        name: 'Direct Message',
+        type: 'dm',
+        isPrivate: true,
+        isOfficial: false,
+        isSystem: false
+      }).returning();
+      return inserted.id;
+    });
   } catch (err) {
     console.error('getOrCreateDMLounge error:', err);
     return null;
@@ -179,7 +211,7 @@ async function handleJoinRoom(client: ClientConnection, roomId: string) {
       targetLoungeId = await getOrCreateDMLounge(roomId);
       isDM = true;
     } else {
-      const loungeList = await db.select().from(lounges);
+      const loungeList = await executeWithRetry(() => db.select().from(lounges));
       const targetLounge = loungeList.find(l => l.slug === roomId || l.id.toString() === roomId);
       if (targetLounge) {
         targetLoungeId = targetLounge.id;
@@ -188,7 +220,7 @@ async function handleJoinRoom(client: ClientConnection, roomId: string) {
     }
 
     if (targetLoungeId) {
-      const msgList = await db.select({
+      const msgList = await executeWithRetry(() => db.select({
         message_id: dbMessages.id,
         lounge_id: dbMessages.loungeId,
         room_id: dbMessages.loungeId,
@@ -205,7 +237,7 @@ async function handleJoinRoom(client: ClientConnection, roomId: string) {
       .leftJoin(users, eq(dbMessages.senderId, users.id))
       .where(eq(dbMessages.loungeId, targetLoungeId))
       .orderBy(desc(dbMessages.createdAt))
-      .limit(100);
+      .limit(100));
 
       client.ws.send(JSON.stringify({
         type: 'history',
@@ -273,7 +305,7 @@ async function handleMarkRead(client: ClientConnection, message: any) {
       targetLoungeId = await getOrCreateDMLounge(roomId);
       isDM = true;
     } else {
-      const loungeList = await db.select().from(lounges);
+      const loungeList = await executeWithRetry(() => db.select().from(lounges));
       const targetLounge = loungeList.find(l => l.slug === roomId || l.id.toString() === roomId);
       if (targetLounge) {
         targetLoungeId = targetLounge.id;
@@ -284,17 +316,17 @@ async function handleMarkRead(client: ClientConnection, message: any) {
     if (targetLoungeId && isDM) {
       const dbMessageId = message.db_message_id ? parseInt(message.db_message_id.toString()) : null;
       if (dbMessageId) {
-        const [existingMessage] = await db.select({
+        const [existingMessage] = await executeWithRetry(() => db.select({
           readBy: dbMessages.readBy
-        }).from(dbMessages).where(eq(dbMessages.id, dbMessageId)).limit(1);
+        }).from(dbMessages).where(eq(dbMessages.id, dbMessageId)).limit(1));
         
         if (existingMessage) {
           const readBy = existingMessage.readBy ? existingMessage.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
           if (!readBy.includes(client.userId)) {
             readBy.push(client.userId);
-            await db.update(dbMessages)
+            await executeWithRetry(() => db.update(dbMessages)
               .set({ readBy: readBy.join(',') })
-              .where(eq(dbMessages.id, dbMessageId));
+              .where(eq(dbMessages.id, dbMessageId)));
           }
         }
       }
@@ -321,7 +353,7 @@ async function handleMarkDelivered(client: ClientConnection, message: any) {
       targetLoungeId = await getOrCreateDMLounge(roomId);
       isDM = true;
     } else {
-      const loungeList = await db.select().from(lounges);
+      const loungeList = await executeWithRetry(() => db.select().from(lounges));
       const targetLounge = loungeList.find(l => l.slug === roomId || l.id.toString() === roomId);
       if (targetLounge) {
         targetLoungeId = targetLounge.id;
@@ -332,17 +364,17 @@ async function handleMarkDelivered(client: ClientConnection, message: any) {
     if (targetLoungeId && isDM) {
       const dbMessageId = message.db_message_id ? parseInt(message.db_message_id.toString()) : null;
       if (dbMessageId) {
-        const [existingMessage] = await db.select({
+        const [existingMessage] = await executeWithRetry(() => db.select({
           deliveredTo: dbMessages.deliveredTo
-        }).from(dbMessages).where(eq(dbMessages.id, dbMessageId)).limit(1);
+        }).from(dbMessages).where(eq(dbMessages.id, dbMessageId)).limit(1));
         
         if (existingMessage) {
           const deliveredTo = existingMessage.deliveredTo ? existingMessage.deliveredTo.split(',').map(Number).filter(id => !isNaN(id)) : [];
           if (!deliveredTo.includes(client.userId)) {
             deliveredTo.push(client.userId);
-            await db.update(dbMessages)
+            await executeWithRetry(() => db.update(dbMessages)
               .set({ deliveredTo: deliveredTo.join(',') })
-              .where(eq(dbMessages.id, dbMessageId));
+              .where(eq(dbMessages.id, dbMessageId)));
           }
         }
       }
@@ -383,7 +415,7 @@ async function handleSendMessage(client: ClientConnection, message: any) {
       targetLoungeId = await getOrCreateDMLounge(roomId);
       isDM = true;
     } else {
-      const loungeList = await db.select().from(lounges);
+      const loungeList = await executeWithRetry(() => db.select().from(lounges));
       const targetLounge = loungeList.find(l => l.slug === roomId || l.id.toString() === roomId);
       if (targetLounge) {
         targetLoungeId = targetLounge.id;
@@ -407,13 +439,28 @@ async function handleSendMessage(client: ClientConnection, message: any) {
         }
       }
 
-      const [insertedMessage] = await db.insert(dbMessages).values({
-        loungeId: targetLoungeId,
-        senderId: client.userId,
-        content: message.content || '',
-        encrypted: !!message.is_encrypted,
-        deliveredTo: deliveredTo.length > 0 ? deliveredTo.join(',') : ''
-      }).returning();
+      const [insertedMessage] = await executeWithRetry(async () => {
+        return await db.transaction(async (tx) => {
+          const [msg] = await tx.insert(dbMessages).values({
+            loungeId: targetLoungeId!,
+            senderId: client.userId,
+            content: message.content || '',
+            encrypted: !!message.is_encrypted,
+            deliveredTo: deliveredTo.length > 0 ? deliveredTo.join(',') : ''
+          }).returning();
+          
+          await tx.update(lounges)
+            .set({
+              lastMessageAt: msg.createdAt,
+              lastMessageText: msg.content,
+              lastMessageSenderId: msg.senderId,
+              updatedAt: msg.createdAt
+            })
+            .where(eq(lounges.id, targetLoungeId!));
+            
+          return [msg];
+        });
+      });
 
       // Include database ID in message for status tracking
       enrichedMessage.db_message_id = insertedMessage.id;
@@ -429,7 +476,7 @@ async function handleSendMessage(client: ClientConnection, message: any) {
 
       // Announcements bot broadcast - if message sent to Announcements lounge, broadcast to VELUM bot
       if (roomId.includes('announce') || roomId.includes('ANNOUNCE')) {
-        const loungeList = await db.select().from(lounges);
+        const loungeList = await executeWithRetry(() => db.select().from(lounges));
         const currentLounge = loungeList.find(l => l.id === targetLoungeId);
         if (currentLounge && (currentLounge.accessLevel === 'ANNOUNCE' || currentLounge.name.toLowerCase().includes('announce'))) {
           // Broadcast to VELUM bot (user 999) DMs for all users
@@ -455,17 +502,19 @@ async function handleSendMessage(client: ClientConnection, message: any) {
             }
           }
 
-          const allUsers = await db.select().from(users);
+          const allUsers = await executeWithRetry(() => db.select().from(users));
           for (const user of allUsers) {
             const botDMRoomId = `dm_velum_${user.id}`;
             const botLoungeId = await getOrCreateDMLounge(botDMRoomId);
-            await db.insert(dbMessages).values({
-              loungeId: botLoungeId,
-              senderId: 999,
-              content: broadcastContent,
-              encrypted: false,
-              deliveredTo: ''
-            });
+            if (botLoungeId) {
+              await executeWithRetry(() => db.insert(dbMessages).values({
+                loungeId: botLoungeId,
+                senderId: 999,
+                content: broadcastContent,
+                encrypted: false,
+                deliveredTo: ''
+              }));
+            }
           }
         }
       }
@@ -475,6 +524,28 @@ async function handleSendMessage(client: ClientConnection, message: any) {
   }
 
   broadcastToRoom(roomId, enrichedMessage);
+
+  // If this is a DM, we also need to deliver it to the other user globally
+  // so their sidebar can update (if they aren't actively in this DM room).
+  if (roomId.startsWith('dm_')) {
+    const parts = roomId.replace('dm_', '').split('_');
+    if (parts.length >= 2) {
+      const uid1 = parseInt(parts[0], 10);
+      const uid2 = parseInt(parts[1], 10);
+      const targetId = client.userId === uid1 ? uid2 : uid1;
+      
+      const members = roomMembers.get(roomId);
+      for (const c of connectedClients.keys()) {
+        const clientData = connectedClients.get(c);
+        if (clientData && clientData.userId === targetId && c.readyState === WebSocket.OPEN) {
+          // Only send if they aren't already in the room (prevent duplicate)
+          if (!members || !members.has(c)) {
+            c.send(JSON.stringify(enrichedMessage));
+          }
+        }
+      }
+    }
+  }
 }
 
 function broadcastToRoom(roomId: string, message: any, excludeWs?: WebSocket) {

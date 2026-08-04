@@ -1,4 +1,4 @@
-import { db } from '../db/client.js';
+import { db, executeWithRetry } from '../db/client.js';
 import { exchangeRates } from '../db/schema/exchange_rates.js';
 import { eq, and } from 'drizzle-orm';
 
@@ -67,7 +67,7 @@ export class CurrencyConverter {
 
   async loadRatesFromDb(): Promise<void> {
     try {
-      const dbRates = await db.select().from(exchangeRates);
+      const dbRates = await executeWithRetry(() => db.select().from(exchangeRates));
       dbRates.forEach(r => {
         const key = `${r.baseCurrency}/${r.quoteCurrency}`;
         this.rates.set(key, {
@@ -99,12 +99,14 @@ export class CurrencyConverter {
     // Persist rate change asynchronously to the Postgres database
     (async () => {
       try {
-        await db.delete(exchangeRates).where(and(eq(exchangeRates.baseCurrency, base), eq(exchangeRates.quoteCurrency, quote)));
-        await db.insert(exchangeRates).values({
-          baseCurrency: base,
-          quoteCurrency: quote,
-          rate: rate.toFixed(6),
-          effectiveAt: new Date()
+        await executeWithRetry(async () => {
+          await db.delete(exchangeRates).where(and(eq(exchangeRates.baseCurrency, base), eq(exchangeRates.quoteCurrency, quote)));
+          await db.insert(exchangeRates).values({
+            baseCurrency: base,
+            quoteCurrency: quote,
+            rate: rate.toFixed(6),
+            effectiveAt: new Date()
+          });
         });
       } catch (err) {
         console.error(`[CurrencyConverter] Failed to save rate ${key} to database:`, err);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Plus, X, Link } from 'lucide-react';
+import { Globe, Plus, X, Link, Menu } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
 import { useLanguage } from '../../i18n/LanguageContext';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -10,6 +10,35 @@ interface LoungeMainDashboardProps {
   onLoungeSelect: (loungeId: string, loungeName: string) => void;
   onSectionView?: (view: any) => void;
   unreadCounts?: Record<string, number>;
+  lastMessages?: Record<string, any>;
+  onToggleSidebar?: () => void;
+}
+
+function formatLoungeTime(timestamp: string | number | null | undefined): string {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return '';
+  const now = new Date();
+  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffTime = todayDate.getTime() - msgDate.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+  if (diffDays === 0) {
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours}:${minutes} ${ampm}`;
+  } else if (diffDays === 1) {
+    return 'Yesterday';
+  } else if (diffDays < 7 && diffDays > 0) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[date.getDay()];
+  } else {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${date.getDate()} ${months[date.getMonth()]}`;
+  }
 }
 
 export default function LoungeMainDashboard({
@@ -17,7 +46,9 @@ export default function LoungeMainDashboard({
   isDark,
   onLoungeSelect,
   onSectionView,
-  unreadCounts
+  unreadCounts,
+  lastMessages = {},
+  onToggleSidebar
 }: LoungeMainDashboardProps) {
   const { t } = useLanguage();
   const [lounges, setLounges] = useState<any[]>(() => {
@@ -244,8 +275,18 @@ export default function LoungeMainDashboard({
     <div className={`flex-1 flex flex-col w-full h-full select-none font-sans relative ${isDark ? 'bg-transparent' : 'bg-transparent'}`}>
       
       {/* Search Header Bar */}
-      <div className={`p-3 border-b flex-shrink-0 ${isDark ? 'border-white-5 bg-velum-850' : 'border-velum-600 bg-white-10'}`}>
-        <div className="relative flex items-center">
+      <div className={`p-3 border-b flex-shrink-0 flex items-center gap-2 ${isDark ? 'border-white-5 bg-velum-850' : 'border-velum-600 bg-white-10'}`}>
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer shrink-0"
+            aria-label="Open sidebar menu"
+            title="Open Navigation"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <div className="relative flex-1 flex items-center">
           <input
             type="text"
             placeholder={t('lounge.search', 'Search lounges...')}
@@ -267,7 +308,18 @@ export default function LoungeMainDashboard({
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {(() => {
           const loungesList = Array.isArray(lounges) ? lounges : [];
-          const filtered = loungesList.filter((lounge) => (lounge.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
+          const filtered = loungesList
+            .filter((lounge) => (lounge.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+            .sort((a, b) => {
+              const lm = lastMessages || {};
+              const keyA = a.slug || a.lounge_id;
+              const keyB = b.slug || b.lounge_id;
+              const lastA = lm[keyA] || lm[a.lounge_id];
+              const lastB = lm[keyB] || lm[b.lounge_id];
+              const timeA = lastA ? new Date(lastA.created_at || lastA.timestamp || lastA.createdAt).getTime() : 0;
+              const timeB = lastB ? new Date(lastB.created_at || lastB.timestamp || lastB.createdAt).getTime() : 0;
+              return timeB - timeA;
+            });
           if (filtered.length === 0) {
             return (
               <div className={`p-8 text-center font-mono text-[10px] uppercase tracking-widest ${isDark ? 'text-text-secondary/60' : 'text-text-disabled'}`}>
@@ -275,29 +327,54 @@ export default function LoungeMainDashboard({
               </div>
             );
           }
-          return filtered.map((lounge) => (
-            <div
-              key={lounge.lounge_id}
-              onClick={() => onLoungeSelect(lounge.lounge_id, lounge.name)}
-              className={`glass-card p-4 cursor-pointer transition-all duration-200 flex items-center gap-4 hover:-translate-y-0.5 group`}
-            >
-              {lounge.icon_url ? (
-                <img src={lounge.icon_url} alt={lounge.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white-10 group-hover:border-accent transition-colors" />
-              ) : (
-                <div className="w-10 h-10 rounded-xl bg-velum-800 border border-white-10 text-accent flex items-center justify-center shrink-0 group-hover:border-accent transition-colors font-bold text-xs font-mono uppercase tracking-wider">
-                  {lounge.name ? lounge.name.slice(0, 2).toUpperCase() : 'L'}
+          return filtered.map((lounge) => {
+            const loungeKey = lounge.slug || lounge.lounge_id;
+            const loungeLast = lastMessages ? (lastMessages[loungeKey] || lastMessages[lounge.lounge_id]) : null;
+            let lastTxt = '';
+            let lastTimeStr = '';
+            if (loungeLast) {
+              lastTxt = loungeLast.content || loungeLast.message || loungeLast.text || '';
+              const ts = loungeLast.created_at || loungeLast.timestamp || loungeLast.createdAt;
+              if (ts) lastTimeStr = formatLoungeTime(ts);
+            }
+            const unread = unreadCounts ? (unreadCounts[loungeKey] || unreadCounts[lounge.lounge_id] || 0) : 0;
+
+            return (
+              <div
+                key={lounge.lounge_id}
+                onClick={() => onLoungeSelect(lounge.lounge_id, lounge.name)}
+                className={`glass-card p-4 cursor-pointer transition-all duration-200 flex items-center gap-4 hover:-translate-y-0.5 group`}
+              >
+                {lounge.icon_url ? (
+                  <img src={lounge.icon_url} alt={lounge.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white-10 group-hover:border-accent transition-colors" />
+                ) : (
+                  <div className="w-10 h-10 rounded-xl bg-velum-800 border border-white-10 text-accent flex items-center justify-center shrink-0 group-hover:border-accent transition-colors font-bold text-xs font-mono uppercase tracking-wider">
+                    {lounge.name ? lounge.name.slice(0, 2).toUpperCase() : 'L'}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className={`font-bold text-sm capitalize tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
+                    {lastTimeStr && (
+                      <span className={`text-[11px] font-mono shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
+                        {lastTimeStr}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <p className={`text-xs truncate ${unread > 0 ? 'font-semibold text-white' : 'text-text-secondary'}`}>
+                      {lastTxt && <span>{lastTxt}</span>}
+                    </p>
+                    {unread > 0 && (
+                      <div className="bg-accent text-velum-900 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 min-w-[20px] text-center">
+                        {unread}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className={`font-bold text-sm capitalize tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
-               </div>
-              {unreadCounts && unreadCounts[lounge.lounge_id] > 0 && (
-                <div className="bg-accent text-velum-900 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
-                  {unreadCounts[lounge.lounge_id]}
-                </div>
-              )}
-            </div>
-          ));
+              </div>
+            );
+          });
         })()}
       </div>
 

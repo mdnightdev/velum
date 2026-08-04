@@ -19,6 +19,8 @@ export const lounges = pgTable('lounges', {
   type: varchar('type', { length: 32 }).default('user_created').notNull(),
   avatarUrl: varchar('avatar_url', { length: 512 }),
   lastMessageAt: timestamp('last_message_at'),
+  lastMessageText: text('last_message_text'),
+  lastMessageSenderId: integer('last_message_sender_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => [

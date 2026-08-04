@@ -3,11 +3,32 @@ import { z } from 'zod';
 
 dotenv.config();
 
+const cleanEnvStr = (val?: string) => {
+  if (!val) return '';
+  return val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '').replace(/(&|\?)channel_binding=[^&]+/g, '');
+};
+
+const isValidPgUrl = (str?: string) => {
+  if (!str) return false;
+  const cleaned = cleanEnvStr(str);
+  return (cleaned.startsWith('postgres://') || cleaned.startsWith('postgresql://'));
+};
+
+const defaultDbUrl = 'postgresql://neondb_owner:npg_7d1BLlsUWFRz@ep-silent-paper-azmc0w9y-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require';
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform((val) => parseInt(val, 10)).default(3000),
-  DATABASE_URL: z.string().optional().default(process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_7d1BLlsUWFRz@ep-silent-paper-azmc0w9y-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'),
-  CLOUD_DATABASE_URL: z.string().optional().default(''),
+  DATABASE_URL: z.string().optional().transform((val) => {
+    const raw = cleanEnvStr(val);
+    if (isValidPgUrl(raw)) return raw;
+    const envDb = cleanEnvStr(process.env.DATABASE_URL);
+    if (isValidPgUrl(envDb)) return envDb;
+    const cloudDb = cleanEnvStr(process.env.CLOUD_DATABASE_URL);
+    if (isValidPgUrl(cloudDb)) return cloudDb;
+    return defaultDbUrl;
+  }),
+  CLOUD_DATABASE_URL: z.string().optional().transform(cleanEnvStr).default(''),
   APP_URL: z.string().optional().default(''),
   DB_ENCRYPTION_KEY: z.string().optional().default(''),
   DB_ENCRYPTION_SALT: z.string().optional().default(''),
@@ -17,8 +38,10 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional().default(''),
   R2_BUCKET_NAME: z.string().optional().default(''),
   R2_PUBLIC_URL: z.string().optional().default(''),
-  REDIS_URL: z.string().optional().default(''),
-  CLOUD_REDIS_URL: z.string().optional().default('')
+  REDIS_URL: z.string().optional().transform((val) => {
+    return cleanEnvStr(val) || cleanEnvStr(process.env.REDIS_URL) || cleanEnvStr(process.env.CLOUD_REDIS_URL) || cleanEnvStr(process.env.UPSTASH_REDIS_URL) || '';
+  }),
+  CLOUD_REDIS_URL: z.string().optional().transform(cleanEnvStr).default('')
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

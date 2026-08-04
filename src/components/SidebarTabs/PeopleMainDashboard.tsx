@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Sliders, UserPlus, MessageSquare, MoreHorizontal, Unlock, UserCheck, Check, X, Shield, Globe } from 'lucide-react';
+import { Search, Sliders, UserPlus, MessageSquare, MoreHorizontal, Unlock, UserCheck, Check, X, Shield, Globe, Menu } from 'lucide-react';
 import { FriendRequest, stripAt } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -16,6 +16,7 @@ interface PeopleMainDashboardProps {
   onSelectPeer: (peer: { userId: number; username: string; avatar?: string }) => void;
   onSectionView: (view: string) => void;
   getCountryOnly: (loc: string | null) => string;
+  onToggleSidebar?: () => void;
 }
 
 import { formatLastSeen } from '../../utils/datetime';
@@ -32,7 +33,8 @@ export default function PeopleMainDashboard({
   loadAndShowProfileCard,
   onSelectPeer,
   onSectionView,
-  getCountryOnly
+  getCountryOnly,
+  onToggleSidebar
 }: PeopleMainDashboardProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'pending' | 'blocked'>('all');
@@ -172,6 +174,16 @@ export default function PeopleMainDashboard({
       {/* Search & Header Section */}
       <div className={`px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b ${isDark ? 'border-white-5' : 'border-gray-200'}`}>
           <div className="flex items-center justify-center md:justify-end gap-2 w-full md:w-auto">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="md:hidden p-2 rounded-full border border-white-5 text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer shrink-0"
+              aria-label="Open sidebar menu"
+              title="Open Navigation"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+          )}
           <div className={`relative flex items-center w-full md:w-64 h-9 px-3 rounded-full border ${isDark ? 'bg-velum-800 border-white-5 focus-within:border-accent' : 'bg-gray-100 border-gray-200 focus-within:border-accent'}`}>
             <Search className={`w-4 h-4 flex-shrink-0 ${isDark ? 'text-text-secondary' : 'text-gray-400'}`} />
             <input

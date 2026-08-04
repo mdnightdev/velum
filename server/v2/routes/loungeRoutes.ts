@@ -51,6 +51,99 @@ loungeRouter.use((_req: Request, _res: Response, next: NextFunction) => {
   next();
 });
 
+// GET /v2/lounges/conversations/summary - Get latest message & unread counts per lounge for current user
+loungeRouter.get('/conversations/summary', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const currentUserId = req.user?.userId;
+    if (!currentUserId) {
+      return res.json({ summary: {}, unreadCounts: {} });
+    }
+
+    const allLounges = await db.select().from(lounges);
+    const summary: Record<string, any> = {};
+    const unreadCounts: Record<string, number> = {};
+
+    for (const lounge of allLounges) {
+      const roomId = lounge.slug || `lounge_${lounge.id}`;
+
+      // Use cached last message details if available, otherwise fallback to finding the last message
+      let lastMsg: any = null;
+      if (lounge.lastMessageText !== null) {
+        lastMsg = {
+          content: lounge.lastMessageText,
+          user_id: lounge.lastMessageSenderId,
+          createdAt: lounge.lastMessageAt || new Date(),
+          deliveredTo: '',
+          readBy: '',
+        };
+      } else {
+        const [foundMsg] = await db
+          .select({
+            message_id: messages.id,
+            lounge_id: messages.loungeId,
+            user_id: messages.senderId,
+            content: messages.content,
+            is_encrypted: messages.encrypted,
+            deliveredTo: messages.deliveredTo,
+            readBy: messages.readBy,
+            createdAt: messages.createdAt,
+            username: users.username,
+            avatar: users.avatarUrl
+          })
+          .from(messages)
+          .leftJoin(users, eq(messages.senderId, users.id))
+          .where(eq(messages.loungeId, lounge.id))
+          .orderBy(desc(messages.createdAt))
+          .limit(1);
+        lastMsg = foundMsg;
+      }
+
+      const unreadMsgs = await db
+        .select({
+          id: messages.id,
+          readBy: messages.readBy,
+          senderId: messages.senderId
+        })
+        .from(messages)
+        .where(eq(messages.loungeId, lounge.id));
+
+      let unreadCount = 0;
+      for (const m of unreadMsgs) {
+        if (m.senderId !== currentUserId) {
+          const readByArr = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
+          if (!readByArr.includes(currentUserId)) {
+            unreadCount++;
+          }
+        }
+      }
+
+      if (unreadCount > 0) {
+        unreadCounts[roomId] = unreadCount;
+      }
+
+      if (lastMsg) {
+        summary[roomId] = {
+          message_id: lastMsg.message_id ? lastMsg.message_id.toString() : 'cached',
+          room_id: roomId,
+          lounge_id: lounge.id.toString(),
+          user_id: lastMsg.user_id,
+          username: lastMsg.username,
+          avatar: lastMsg.avatar,
+          content: lastMsg.content,
+          is_encrypted: !!lastMsg.is_encrypted,
+          deliveredTo: lastMsg.deliveredTo,
+          readBy: lastMsg.readBy,
+          created_at: lastMsg.createdAt ? new Date(lastMsg.createdAt).toISOString() : new Date().toISOString()
+        };
+      }
+    }
+
+    res.json({ summary, unreadCounts });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /v2/lounges - List all official lounges and top-level public lounges
 loungeRouter.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -505,11 +598,24 @@ loungeRouter.post('/:id/messages', auth, async (req: Request, res: Response, nex
       return res.status(403).json({ error: 'Executive Lounge access restricted to system staff.' });
     }
 
-    const [created] = await db.insert(messages).values({
-      loungeId: target.id,
-      senderId: currentUserId,
-      content: content.trim()
-    }).returning();
+    const [created] = await db.transaction(async (tx) => {
+      const [msg] = await tx.insert(messages).values({
+        loungeId: target.id,
+        senderId: currentUserId,
+        content: content.trim()
+      }).returning();
+      
+      await tx.update(lounges)
+        .set({
+          lastMessageAt: msg.createdAt,
+          lastMessageText: msg.content,
+          lastMessageSenderId: msg.senderId,
+          updatedAt: msg.createdAt
+        })
+        .where(eq(lounges.id, target.id));
+        
+      return [msg];
+    });
 
     res.status(201).json({ message: created });
   } catch (err) {

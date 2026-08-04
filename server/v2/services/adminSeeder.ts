@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { db } from '../db/client.js';
+import { db, executeWithRetry } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { exchangeRates } from '../db/schema/exchange_rates.js';
 import { reserves } from '../db/schema/reserves.js';
@@ -165,55 +165,57 @@ export async function ensureAdminSeeded() {
   if (isSeeded) return;
   
   try {
-    for (const adminUser of ADMIN_USERS) {
-      const password = process.env[adminUser.passwordEnv];
-      
-      if (!password) {
-        console.warn(`[AdminSeeder] Skipping ${adminUser.username}: ${adminUser.passwordEnv} not set in environment`);
-        continue;
-      }
+    await executeWithRetry(async () => {
+      for (const adminUser of ADMIN_USERS) {
+        const password = process.env[adminUser.passwordEnv];
+        
+        if (!password) {
+          console.warn(`[AdminSeeder] Skipping ${adminUser.username}: ${adminUser.passwordEnv} not set in environment`);
+          continue;
+        }
 
-      const existingUsers = await db.select().from(users).where(eq(users.username, adminUser.username)).limit(1);
-      const existing = existingUsers[0];
-      
-      if (!existing) {
-        const salt = crypto.randomBytes(16);
-        const saltHex = salt.toString('hex');
-        const passwordHash = await hashArgon2id(password, Buffer.from(saltHex, 'hex'));
+        const existingUsers = await db.select().from(users).where(eq(users.username, adminUser.username)).limit(1);
+        const existing = existingUsers[0];
         
-        await db.insert(users).values({
-          username: adminUser.username,
-          passwordHash,
-          salt: saltHex,
-          role: adminUser.role,
-          displayName: adminUser.displayName
-        });
-        
-        console.log(`[AdminSeeder] Created admin user: ${adminUser.username}`);
-      } else {
-        // Check if password needs update by re-hashing with existing salt
-        const passwordHash = await hashArgon2id(password, Buffer.from(existing.salt, 'hex'));
-        
-        if (passwordHash !== existing.passwordHash) {
-          await db.update(users).set({ passwordHash }).where(eq(users.id, existing.id));
-          console.log(`[AdminSeeder] Updated password for admin user: ${adminUser.username}`);
+        if (!existing) {
+          const salt = crypto.randomBytes(16);
+          const saltHex = salt.toString('hex');
+          const passwordHash = await hashArgon2id(password, Buffer.from(saltHex, 'hex'));
+          
+          await db.insert(users).values({
+            username: adminUser.username,
+            passwordHash,
+            salt: saltHex,
+            role: adminUser.role,
+            displayName: adminUser.displayName
+          });
+          
+          console.log(`[AdminSeeder] Created admin user: ${adminUser.username}`);
         } else {
-          console.log(`[AdminSeeder] Admin user already exists and password is current: ${adminUser.username}`);
+          // Check if password needs update by re-hashing with existing salt
+          const passwordHash = await hashArgon2id(password, Buffer.from(existing.salt, 'hex'));
+          
+          if (passwordHash !== existing.passwordHash) {
+            await db.update(users).set({ passwordHash }).where(eq(users.id, existing.id));
+            console.log(`[AdminSeeder] Updated password for admin user: ${adminUser.username}`);
+          } else {
+            console.log(`[AdminSeeder] Admin user already exists and password is current: ${adminUser.username}`);
+          }
+        }
+        const botUser = await db.select().from(users).where(eq(users.id, 999)).limit(1);
+        if (botUser.length === 0) {
+          await db.insert(users).values({
+            id: 999,
+            username: 'velum',
+            passwordHash: 'system_bot_no_login',
+            salt: 'system_bot_salt',
+            role: 'ADMIN',
+            displayName: 'Velum Bot'
+          });
+          console.log('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
         }
       }
-      const botUser = await db.select().from(users).where(eq(users.id, 999)).limit(1);
-      if (botUser.length === 0) {
-        await db.insert(users).values({
-          id: 999,
-          username: 'velum',
-          passwordHash: 'system_bot_no_login',
-          salt: 'system_bot_salt',
-          role: 'ADMIN',
-          displayName: 'Velum Bot'
-        });
-        console.log('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
-      }
-    }
+    });
     
     // Seed exchange rates table
     await ensureExchangeRatesSeeded();

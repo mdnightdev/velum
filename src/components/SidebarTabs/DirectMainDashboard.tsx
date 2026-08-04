@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Bot } from 'lucide-react';
+import { MessageSquare, Bot, Menu, Check, CheckCheck } from 'lucide-react';
 import { decryptMessage } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -17,6 +17,37 @@ interface DirectMainDashboardProps {
   lastMessages?: Record<string, any>;
   loadAndShowProfileCard: (user: any) => void;
   getCountryOnly: (location: string) => string;
+  onToggleSidebar?: () => void;
+}
+
+function formatMessageTime(timestamp: string | number | null | undefined): string {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return '';
+
+  const now = new Date();
+  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const diffTime = todayDate.getTime() - msgDate.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+
+  if (diffDays === 0) {
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours}:${minutes} ${ampm}`;
+  } else if (diffDays === 1) {
+    return 'Yesterday';
+  } else if (diffDays < 7 && diffDays > 0) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[date.getDay()];
+  } else {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${date.getDate()} ${months[date.getMonth()]}`;
+  }
 }
 
 export default function DirectMainDashboard({
@@ -26,10 +57,12 @@ export default function DirectMainDashboard({
   isDark,
   onSelectPeer,
   onSectionView,
+  onMarkAsRead,
   unreadCounts,
   lastMessages = {},
   loadAndShowProfileCard,
-  getCountryOnly
+  getCountryOnly,
+  onToggleSidebar
 }: DirectMainDashboardProps) {
   const { t } = useLanguage();
 
@@ -50,11 +83,53 @@ export default function DirectMainDashboard({
   });
   const velumUnread = unreadCounts[`dm_velum_${currentUserId}`] || 0;
 
+  const velumRoomId = `dm_velum_${currentUserId}`;
+  const velumLast = lastMessages[velumRoomId];
+  let velumTxt = '';
+  let velumTimeStr = '';
+  let velumMsgStatus = '';
+  let velumIsMe = false;
+  if (velumLast) {
+    velumIsMe = (velumLast.user_id === currentUserId) || (velumLast.senderId === currentUserId);
+    const raw = velumLast.content || velumLast.message || velumLast.body || velumLast.text || '';
+    try {
+      velumTxt = decryptMessage(raw, velumRoomId, !!(velumLast.is_encrypted || velumLast.isEncrypted)) || raw || '';
+    } catch (e) {
+      velumTxt = raw || '';
+    }
+    if (velumIsMe) {
+      if (velumLast.status) {
+        velumMsgStatus = velumLast.status;
+      } else {
+        velumMsgStatus = 'sent';
+        const readArr = velumLast.readBy ? velumLast.readBy.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
+        const delArr = velumLast.deliveredTo ? velumLast.deliveredTo.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
+        if (readArr.includes(999)) {
+          velumMsgStatus = 'read';
+        } else if (delArr.includes(999)) {
+          velumMsgStatus = 'delivered';
+        }
+      }
+    }
+    const ts = velumLast.created_at || velumLast.timestamp || velumLast.createdAt;
+    if (ts) velumTimeStr = formatMessageTime(ts);
+  }
+
   return (
     <div className="flex-1 flex flex-col w-full h-full select-none font-sans bg-transparent">
       {/* Header */}
-      <div className="px-6 py-3 border-b flex-shrink-0 border-white-5 bg-transparent">
-        <div className="relative flex items-center w-full h-9 px-3 rounded-full border bg-transparent border-white-5 focus-within:border-accent">
+      <div className="px-6 py-3 border-b flex-shrink-0 border-white-5 bg-transparent flex items-center gap-2">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer shrink-0"
+            aria-label="Open sidebar menu"
+            title="Open Navigation"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <div className="relative flex-1 flex items-center h-9 px-3 rounded-full border bg-transparent border-white-5 focus-within:border-accent">
           <input
             type="text"
             placeholder={t('chats.search', 'Search chats...')}
@@ -74,122 +149,168 @@ export default function DirectMainDashboard({
             if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
             if (onSectionView) onSectionView('chat');
           }}
-          className={`w-full px-6 py-4 border-b flex items-center justify-between gap-4 cursor-pointer transition-colors ${
-            isDark ? 'border-white-5 hover:bg-text-primary/[0.02]' : 'border-gray-100 hover:bg-gray-50'
+          className={`w-full px-5 py-3.5 border-b flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+            isDark ? 'border-white-5 hover:bg-text-primary/[0.03]' : 'border-gray-100 hover:bg-gray-50'
           }`}
         >
-          <div className="min-w-0 flex items-center gap-3">
+          <div className="min-w-0 flex items-center gap-3 flex-1">
             <div 
-              className="w-10 h-10 rounded-xl bg-velum-800 border border-accent/20 flex items-center justify-center font-black text-xs text-accent overflow-hidden flex-shrink-0 cursor-pointer hover:opacity-80"
+              className="w-11 h-11 rounded-full bg-velum-800 border border-accent/20 flex items-center justify-center font-black text-xs text-accent overflow-hidden flex-shrink-0 cursor-pointer hover:opacity-80"
               title="VELUM System"
             >
               <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
             </div>
-            <div className="min-w-0">
-              <p className={`text-sm font-bold capitalize truncate flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                Velum
-                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-accent/10 text-accent uppercase tracking-wider">System</span>
-              </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className={`text-sm font-bold capitalize flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Velum
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-accent/10 text-accent uppercase tracking-wider">System</span>
+                </p>
+                {velumTimeStr && (
+                  <span className={`text-[11px] font-mono shrink-0 ${velumUnread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
+                    {velumTimeStr}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-0.5">
+                <p className={`text-xs flex items-center gap-1 truncate ${velumUnread > 0 ? 'font-semibold text-white' : 'text-text-secondary'}`}>
+                  {velumIsMe && velumMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                  {velumIsMe && velumMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                  {velumIsMe && velumMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                  {velumTxt && <span className="truncate">{velumTxt}</span>}
+                </p>
+                {velumUnread > 0 && (
+                  <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-amber-500 text-black shadow-sm shrink-0 min-w-[20px] text-center">
+                    {velumUnread}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-
-          <div className="flex items-center flex-shrink-0">
-            {velumUnread > 0 && (
-              <span className="px-2 py-0.5 text-[10px] font-mono font-black rounded-full bg-red-600 text-white shadow-[0_0_10px_rgba(220,38,38,0.4)]">
-                {velumUnread}
-              </span>
-            )}
           </div>
         </div>
 
         {/* Other friends/contacts */}
-        {filteredFriends.map(r => {
+        {filteredFriends.sort((a, b) => {
+          const dmA = `dm_${Math.min(currentUserId, a.friendId)}_${Math.max(currentUserId, a.friendId)}`;
+          const dmB = `dm_${Math.min(currentUserId, b.friendId)}_${Math.max(currentUserId, b.friendId)}`;
+          const lm = lastMessages || {};
+          const lastA = lm[dmA] || lm[`dm_${currentUserId}_${a.friendId}`] || lm[`dm_${a.friendId}_${currentUserId}`];
+          const lastB = lm[dmB] || lm[`dm_${currentUserId}_${b.friendId}`] || lm[`dm_${b.friendId}_${currentUserId}`];
+          
+          const timeA = lastA ? new Date(lastA.created_at || lastA.timestamp || lastA.createdAt).getTime() : 0;
+          const timeB = lastB ? new Date(lastB.created_at || lastB.timestamp || lastB.createdAt).getTime() : 0;
+          
+          return timeB - timeA;
+        }).map(r => {
           const friendId = r.friendId;
           const friendName = stripAt(r.username || r.displayName);
           const friendAvatar = r.avatarUrl;
           const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
           const unread = unreadCounts[dmRoomId] || 0;
 
+          const lm = lastMessages || {};
+          const candidateKeys = [
+            dmRoomId,
+            `dm_${currentUserId}_${friendId}`,
+            `dm_${friendId}_${currentUserId}`
+          ];
+          let last = null as any;
+          for (const k of candidateKeys) {
+            if (k && lm[k]) { last = lm[k]; break; }
+          }
+
+          let lastTxt = '';
+          let lastTimeStr = '';
+          let isFailed = false;
+          let lastMsgStatus = '';
+          let isMe = false;
+
+          if (last) {
+            isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
+            const raw = last.content || last.message || last.body || last.text || '';
+            const isEnc = !!(last.is_encrypted || last.isEncrypted);
+            try {
+              lastTxt = decryptMessage(raw, dmRoomId, isEnc) || raw || '';
+            } catch (e) {
+              lastTxt = raw || '';
+            }
+            if (last.status === 'failed' || last.delivery_status === 'failed') {
+              isFailed = true;
+            } else if (isMe) {
+              if (last.status) {
+                lastMsgStatus = last.status;
+              } else {
+                lastMsgStatus = 'sent';
+                const readArr = last.readBy ? last.readBy.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
+                const delArr = last.deliveredTo ? last.deliveredTo.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
+                if (readArr.includes(friendId)) {
+                  lastMsgStatus = 'read';
+                } else if (delArr.includes(friendId)) {
+                  lastMsgStatus = 'delivered';
+                }
+              }
+            }
+            const ts = last.created_at || last.timestamp || last.createdAt;
+            if (ts) {
+              lastTimeStr = formatMessageTime(ts);
+            }
+          }
+
           return (
             <div
               key={friendId}
               onClick={() => {
-              // Mark last message as read for this DM (if available)
-              try {
-                const lm = lastMessages || {};
-                const candidateKeys = [
-                  dmRoomId,
-                  `dm_${currentUserId}_${friendId}`,
-                  `dm_${friendId}_${currentUserId}`,
-                  `dm_velum_${currentUserId}`
-                ];
-                let last = null as any;
-                for (const k of candidateKeys) {
-                  if (k && lm[k]) { last = lm[k]; break; }
-                }
-                const lastId = last ? (last.message_id || last.id || last.messageId) : undefined;
-                if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
-              } catch (e) {
-                // ignore
-              }
+                try {
+                  const lastId = last ? (last.message_id || last.id || last.messageId) : undefined;
+                  if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
+                } catch (e) {}
 
-              if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
-              if (onSectionView) onSectionView('chat');
-            }}
-              className={`w-full px-6 py-4 border-b flex items-center justify-between gap-4 cursor-pointer transition-colors ${
-                isDark ? 'border-white-5 hover:bg-text-primary/[0.02]' : 'border-gray-100 hover:bg-gray-50'
+                if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
+                if (onSectionView) onSectionView('chat');
+              }}
+              className={`w-full px-5 py-3.5 border-b flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                isDark ? 'border-white-5 hover:bg-text-primary/[0.03]' : 'border-gray-100 hover:bg-gray-50'
               }`}
             >
-              <div className="min-w-0 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-velum-800 border border-white-10 flex items-center justify-center font-black text-xs text-text-secondary overflow-hidden flex-shrink-0">
+              <div className="min-w-0 flex items-center gap-3 flex-1">
+                <div className="w-11 h-11 rounded-full bg-velum-800 border border-white-10 flex items-center justify-center font-black text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
                   {friendAvatar ? (
                     <img src={friendAvatar} alt={friendName} className="w-full h-full object-cover" />
                   ) : (
-                    <span className="uppercase">{friendName.slice(0, 2)}</span>
+                    <span className="uppercase text-xs font-bold text-white/80">{friendName.slice(0, 2)}</span>
                   )}
                 </div>
-                <div className="min-w-0">
-                  <p className={`text-sm ${unread > 0 ? 'font-bold' : 'font-medium'} capitalize truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {friendName}
-                  </p>
-                  <p className={`text-[11px] mt-1 truncate ${unread > 0 ? (isDark ? 'text-white/90' : 'text-gray-900') : 'text-text-secondary'}`}>
-                    {(() => {
-                      const lm = lastMessages || {};
-                      const candidateKeys = [
-                        dmRoomId,
-                        `dm_${currentUserId}_${friendId}`,
-                        `dm_${friendId}_${currentUserId}`,
-                        `dm_velum_${currentUserId}`
-                      ];
-                      let last = null as any;
-                      for (const k of candidateKeys) {
-                        if (k && lm[k]) { last = lm[k]; break; }
-                      }
-
-                      let txt = '';
-                      if (last) {
-                        const raw = last.content || last.message || last.body || last.text || '';
-                        const isEnc = !!(last.is_encrypted || last.isEncrypted);
-                        try {
-                          txt = decryptMessage(raw, dmRoomId, isEnc) || raw || '';
-                        } catch (e) {
-                          txt = raw || '';
-                        }
-                      }
-
-                      if (!txt) return 'No messages yet.';
-                      return txt.length > 60 ? txt.slice(0, 60) + '…' : txt;
-                    })()}
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={`text-sm ${unread > 0 ? 'font-bold text-white' : 'font-semibold text-white/90'} capitalize truncate`}>
+                      {friendName}
+                    </p>
+                    {lastTimeStr && (
+                      <span className={`text-[11px] font-mono shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
+                        {lastTimeStr}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <p className={`text-xs flex items-center gap-1 truncate ${unread > 0 ? 'font-semibold text-white' : 'text-text-secondary'}`}>
+                      {isMe && !isFailed && lastMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                      {isMe && !isFailed && lastMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                      {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                      {lastTxt && <span className="truncate">{lastTxt}</span>}
+                    </p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isFailed ? (
+                        <span className="text-[10px] font-mono font-bold text-red-500 uppercase tracking-wider">
+                          Failed
+                        </span>
+                      ) : unread > 0 ? (
+                        <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-amber-500 text-black shadow-sm shrink-0 min-w-[20px] text-center">
+                          {unread}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="flex items-center flex-shrink-0">
-                {unread > 0 && (
-                  <span className="px-2 py-0.5 text-[10px] font-mono font-black rounded-full bg-red-600 text-white shadow-[0_0_10px_rgba(220,38,38,0.4)]">
-                    {unread}
-                  </span>
-                )}
               </div>
             </div>
           );

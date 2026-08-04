@@ -181,6 +181,8 @@ function AppContent() {
       }}
       wsConnected={ws.wsConnected}
       messages={ws.messages}
+      lastMessages={ws.lastMessages}
+      unreadCounts={ws.unreadCounts}
       onSendMessage={ws.sendMessage}
       onSendTyping={ws.sendTyping}
       onRoomKick={ws.kickMember}

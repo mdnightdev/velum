@@ -13,10 +13,8 @@ import WalletMainDashboard from './SidebarTabs/WalletMainDashboard';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
 import ProfileCard from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
-import { useResponsive } from '../hooks/useResponsive';
+import { useResponsiveLayout } from '../hooks/useResponsive';
 import { BadgeCheck, Terminal, Radio, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
-// @ts-ignore
-import styles from './DashboardLayout.module.css';
 
 interface DashboardLayoutProps {
   user: any;
@@ -31,6 +29,8 @@ interface DashboardLayoutProps {
   onProfileUpdate?: (u: any) => void;
   wsConnected?: boolean;
   messages?: any[];
+  lastMessages?: Record<string, any>;
+  unreadCounts?: Record<string, number>;
   onSendMessage?: (text: string, burnSeconds: any, isEncrypted: boolean) => void;
   onSendTyping?: (isTyping: boolean) => void;
   onRoomKick: (targetUserId: number) => void;
@@ -53,6 +53,8 @@ export default function DashboardLayout({
   onProfileUpdate,
   wsConnected,
   messages,
+  lastMessages: externalLastMessages = {},
+  unreadCounts: externalUnreadCounts = {},
   onSendMessage = () => {},
   onSendTyping,
   onRoomKick,
@@ -61,11 +63,19 @@ export default function DashboardLayout({
   onDeleteMessage,
   onMarkAsRead
 }: DashboardLayoutProps) {
-  const { isMobile } = useResponsive();
+  const { isMobile, isTablet, isDesktop } = useResponsiveLayout();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(true);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(!isTablet);
   const toggleSidebarExpand = () => setIsSidebarExpanded(prev => !prev);
+
+  useEffect(() => {
+    if (isTablet) {
+      setIsSidebarExpanded(false);
+    } else if (isDesktop) {
+      setIsSidebarExpanded(true);
+    }
+  }, [isTablet, isDesktop]);
   
   const [activeLoungeId, setActiveLoungeId] = useState<string>('');
   const [activeLoungeName, setActiveLoungeName] = useState<string>('');
@@ -256,7 +266,7 @@ export default function DashboardLayout({
 
 
   const computedUnreadCounts = React.useMemo(() => {
-    const counts: Record<string, number> = {};
+    const counts: Record<string, number> = { ...(externalUnreadCounts || {}) };
     const msgs = messages || [];
     msgs.forEach((m) => {
       if (!m || m.user_id === user?.userId || m.status === 'read') return;
@@ -269,11 +279,11 @@ export default function DashboardLayout({
       }
     });
     return counts;
-  }, [messages, user?.userId]);
+  }, [messages, user?.userId, externalUnreadCounts]);
 
   // Compute last message preview per room (DMs and lounges)
   const computedLastMessages = React.useMemo(() => {
-    const map: Record<string, any> = {};
+    const map: Record<string, any> = { ...(externalLastMessages || {}) };
     const msgs = (messages || []).slice();
     // sort by timestamp/created_at if present
     msgs.sort((a: any, b: any) => {
@@ -289,11 +299,11 @@ export default function DashboardLayout({
       }
     });
     return map;
-  }, [messages]);
+  }, [messages, externalLastMessages]);
 
   try {
     return (
-      <div className={`flex w-screen h-dvh ${styles.root} ${isDark ? styles.dark : styles.light} overflow-hidden`}>
+      <div className="flex flex-col md:flex-row w-full h-[var(--viewport-height,100dvh)] bg-velum-900 text-text-primary overflow-hidden relative font-sans">
         <SettingsDrawer
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
@@ -304,65 +314,136 @@ export default function DashboardLayout({
           onToggleTheme={() => setIsDark(!isDark)}
           onProfileUpdate={onProfileUpdate}
         />
-        <aside className={`${styles.sidebar} bg-velum-850 border-r border-white-5 transition-all duration-300 relative z-30 shrink-0 ${
-          isSidebarExpanded ? 'w-64 min-w-[256px]' : 'w-20 min-w-[80px]'
-        }`}>
-          <UserSidebar
-            friendRequests={friendRequests}
-            currentUserId={user?.userId || 0}
-            currentUsername={user?.username || 'Guest'}
-            currentUserRole={user?.role || 'USER'}
-            activeRoomId={activeRoomId}
-            onRoomSelect={(rid) => { 
-              onRoomSelect(rid); 
-              if (rid) {
-                setActiveCategory('rooms');
-                if (onClearChatPeer) onClearChatPeer();
-              }
-              closeSidebar();
-            }}
-            onLogout={onLogout}
-            onSectionView={() => {}}
-            activeView="chat"
-            activeChatPeer={activeChatPeer || null}
-            onSelectPeer={(p) => { 
-              onSelectPeer?.(p); 
-              if (p) {
-                setActiveCategory('direct');
-              }
-              closeSidebar();
-            }}
-            onClearChatPeer={onClearChatPeer}
-            onProfileUpdate={onProfileUpdate}
-            isDark={isDark}
-            onToggleTheme={() => setIsDark(!isDark)}
-            wsConnected={!!wsConnected}
-            messages={messages || []}
-            onSendMessage={onSendMessage}
-            onSendTyping={onSendTyping}
-            isMobile={isMobile}
-            activePanel={activeCategory === 'rooms' || activeCategory === 'direct' ? 'workspace' : 'directory'}
-            onPanelChange={() => {}}
-            activeCategory={activeCategory as any}
-            onCategoryChange={(cat) => {
-              setActiveCategory(cat);
-              if (cat !== 'rooms' && cat !== 'direct') {
-                onRoomSelect('');
-                if (onClearChatPeer) onClearChatPeer();
-              }
-              closeSidebar();
-            }}
-            onOpenSettings={() => {
-              setIsSettingsOpen(true);
-              closeSidebar();
-            }}
-            onCloseSidebar={closeSidebar}
-            isSidebarExpanded={isSidebarExpanded}
-            onToggleExpand={toggleSidebarExpand}
-          />
-        </aside>
 
-        <main className={`${styles.main} glass-panel border-y-0 border-r-0 rounded-none`}>
+
+
+        {/* Mobile Slide-Over Off-Canvas Drawer */}
+        {isMobile && sidebarOpen && (
+          <div className="fixed inset-0 z-50 flex">
+            <div 
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+              onClick={closeSidebar}
+            />
+            <div className="relative z-10 w-64 max-w-[80vw] h-full bg-velum-850 border-r border-white-5 shadow-2xl flex flex-col animate-in slide-in-from-left duration-200">
+              <UserSidebar
+                friendRequests={friendRequests}
+                currentUserId={user?.userId || 0}
+                currentUsername={user?.username || 'Guest'}
+                currentUserRole={user?.role || 'USER'}
+                activeRoomId={activeRoomId}
+                onRoomSelect={(rid) => { 
+                  onRoomSelect(rid); 
+                  if (rid) {
+                    setActiveCategory('rooms');
+                    if (onClearChatPeer) onClearChatPeer();
+                  }
+                  closeSidebar();
+                }}
+                onLogout={onLogout}
+                onSectionView={() => {}}
+                activeView="chat"
+                activeChatPeer={activeChatPeer || null}
+                onSelectPeer={(p) => { 
+                  onSelectPeer?.(p); 
+                  if (p) {
+                    setActiveCategory('direct');
+                  }
+                  closeSidebar();
+                }}
+                onClearChatPeer={onClearChatPeer}
+                onProfileUpdate={onProfileUpdate}
+                isDark={isDark}
+                onToggleTheme={() => setIsDark(!isDark)}
+                wsConnected={!!wsConnected}
+                messages={messages || []}
+                onSendMessage={onSendMessage}
+                onSendTyping={onSendTyping}
+                isMobile={true}
+                activePanel={activeCategory === 'rooms' || activeCategory === 'direct' ? 'workspace' : 'directory'}
+                onPanelChange={() => {}}
+                activeCategory={activeCategory as any}
+                onCategoryChange={(cat) => {
+                  setActiveCategory(cat);
+                  if (cat !== 'rooms' && cat !== 'direct') {
+                    onRoomSelect('');
+                    if (onClearChatPeer) onClearChatPeer();
+                  }
+                  closeSidebar();
+                }}
+                onOpenSettings={() => {
+                  setIsSettingsOpen(true);
+                  closeSidebar();
+                }}
+                onCloseSidebar={closeSidebar}
+                isSidebarExpanded={true}
+                onToggleExpand={closeSidebar}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Desktop / Tablet Navigation Sidebar */}
+        {!isMobile && (
+          <aside className={`h-full flex flex-col transition-all duration-300 z-30 bg-velum-850 border-r border-white-5 relative shrink-0 ${
+            isSidebarExpanded ? 'w-60 min-w-[240px]' : 'w-14 min-w-[56px]'
+          }`}>
+            <UserSidebar
+              friendRequests={friendRequests}
+              currentUserId={user?.userId || 0}
+              currentUsername={user?.username || 'Guest'}
+              currentUserRole={user?.role || 'USER'}
+              activeRoomId={activeRoomId}
+              onRoomSelect={(rid) => { 
+                onRoomSelect(rid); 
+                if (rid) {
+                  setActiveCategory('rooms');
+                  if (onClearChatPeer) onClearChatPeer();
+                }
+                closeSidebar();
+              }}
+              onLogout={onLogout}
+              onSectionView={() => {}}
+              activeView="chat"
+              activeChatPeer={activeChatPeer || null}
+              onSelectPeer={(p) => { 
+                onSelectPeer?.(p); 
+                if (p) {
+                  setActiveCategory('direct');
+                }
+                closeSidebar();
+              }}
+              onClearChatPeer={onClearChatPeer}
+              onProfileUpdate={onProfileUpdate}
+              isDark={isDark}
+              onToggleTheme={() => setIsDark(!isDark)}
+              wsConnected={!!wsConnected}
+              messages={messages || []}
+              onSendMessage={onSendMessage}
+              onSendTyping={onSendTyping}
+              isMobile={false}
+              activePanel={activeCategory === 'rooms' || activeCategory === 'direct' ? 'workspace' : 'directory'}
+              onPanelChange={() => {}}
+              activeCategory={activeCategory as any}
+              onCategoryChange={(cat) => {
+                setActiveCategory(cat);
+                if (cat !== 'rooms' && cat !== 'direct') {
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }
+                closeSidebar();
+              }}
+              onOpenSettings={() => {
+                setIsSettingsOpen(true);
+                closeSidebar();
+              }}
+              onCloseSidebar={closeSidebar}
+              isSidebarExpanded={isSidebarExpanded}
+              onToggleExpand={toggleSidebarExpand}
+            />
+          </aside>
+        )}
+
+        <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden glass-panel border-y-0 border-r-0 rounded-none">
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
             <div className="flex-1 overflow-y-auto relative flex flex-col">
@@ -370,6 +451,7 @@ export default function DashboardLayout({
               <WalletMainDashboard
                 currentUserId={user ? user.userId : 0}
                 isDark={isDark}
+                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'market' ? (
@@ -379,6 +461,7 @@ export default function DashboardLayout({
                 currentUserId={user?.userId || 0}
                 currentUserRole={user?.role || 'USER'}
                 isDark={isDark}
+                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'tickets' ? (
@@ -387,6 +470,7 @@ export default function DashboardLayout({
               <TicketsMainDashboard
                 currentUserId={user?.userId || 0}
                 isDark={isDark}
+                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'saved' ? (
@@ -399,6 +483,7 @@ export default function DashboardLayout({
                 isDark={isDark}
                 onSaveNote={handleSaveNote}
                 onDeleteNote={handleDeleteNote}
+                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'people' ? (
@@ -428,6 +513,7 @@ export default function DashboardLayout({
                   const parts = loc.split(',');
                   return parts[parts.length - 1].trim();
                 }}
+                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'notifications' ? (
@@ -438,6 +524,7 @@ export default function DashboardLayout({
                 currentUserId={user?.userId || 0}
                 isDark={isDark}
                 handleRespondFriendRequest={handleRespondFriendRequest}
+                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'rooms' ? (
@@ -464,6 +551,8 @@ export default function DashboardLayout({
                   }}
                   isDark={isDark}
                   messages={messages || []}
+                  lastMessages={(computedLastMessages as any) || {}}
+                  unreadCounts={(computedUnreadCounts as any) || {}}
                   wsConnected={!!wsConnected}
                   onSendMessage={onSendMessage}
                   onSendTyping={onSendTyping}
@@ -473,7 +562,6 @@ export default function DashboardLayout({
                   onDeleteMessage={onDeleteMessage}
                   onMarkAsRead={onMarkAsRead}
                   onToggleSidebar={toggleSidebar}
-                  unreadCounts={(computedUnreadCounts as any) || {}}
                 />
               ) : (
                 <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col">
@@ -486,6 +574,8 @@ export default function DashboardLayout({
                       setActiveLoungeName(loungeName);
                     }}
                     unreadCounts={(computedUnreadCounts as any) || {}}
+                    lastMessages={(computedLastMessages as any) || {}}
+                    onToggleSidebar={toggleSidebar}
                   />
                 </div>
               )}
@@ -510,6 +600,7 @@ export default function DashboardLayout({
                   const parts = loc.split(',');
                   return parts[parts.length - 1].trim();
                 }}
+                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : (

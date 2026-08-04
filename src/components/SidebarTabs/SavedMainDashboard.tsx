@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Plus, Trash2, Key, BookOpen } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Key, BookOpen, Menu } from 'lucide-react';
 
 interface SavedMainDashboardProps {
   savedNotes: string[];
@@ -8,6 +8,7 @@ interface SavedMainDashboardProps {
   isDark?: boolean;
   onSaveNote: (e: React.FormEvent) => void;
   onDeleteNote: (idx: number) => void;
+  onToggleSidebar?: () => void;
 }
 
 export default function SavedMainDashboard({
@@ -16,10 +17,24 @@ export default function SavedMainDashboard({
   setNewSavedNoteText,
   isDark = true,
   onSaveNote,
-  onDeleteNote
+  onDeleteNote,
+  onToggleSidebar
 }: SavedMainDashboardProps) {
   return (
     <div id="saved_vault_dashboard" className="flex-1 bg-transparent p-6 lg:p-8 space-y-6 select-none">
+      {onToggleSidebar && (
+        <div className="md:hidden pb-2 border-b border-white-5 flex items-center gap-2">
+          <button
+            onClick={onToggleSidebar}
+            className="p-2 rounded-xl border border-white-5 text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
+            aria-label="Open sidebar menu"
+            title="Open Navigation"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="text-xs font-bold uppercase tracking-widest text-text-secondary">Saved Notes</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Note Entry */}

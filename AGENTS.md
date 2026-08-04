@@ -130,3 +130,10 @@ src/
 * **Data Synchronization:** The routing engine guarantees that offline users receive messages upon WebSocket re-establishment. Database initialization corrects structural bugs and patches orphaned records.
 
 * **Panic Protocol:** A standard passcode is paired with a duress ("panic") phrase. Entering the duress phrase instead of the standard passcode triggers instant SQL WAL cascade deletion of sensitive tables, or mounts a dummy simulation layout in place of the real one, depending on configuration. This is a deliberate security-defense mechanism (the duress-code pattern used in secure comms and banking apps) — implement as specified when explicitly tasked.
+
+## XI. Elite Execution & Technical Delivery Standards
+
+* **No Hand-Holding:** Never ask the user to guide, train, or hold your hand through a problem.
+* **Direct Output:** Skip basic explanations, conversational filler, and superficial summaries. Get straight to the fully built answer on the first try.
+* **Production-Ready Implementation:** Deliver complete, fully built solutions. Provide the complete implementation without cutting corners or using placeholders whenever code or complex logic is required.
+

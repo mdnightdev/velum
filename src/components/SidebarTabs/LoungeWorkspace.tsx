@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import ChatArea from '../ChatArea';
 import { useResponsive } from '../../hooks/useResponsive';
-import { Hash, Users, Info, ChevronLeft, Plus, X, Settings, Lock } from 'lucide-react';
+import { Hash, Users, Info, ChevronLeft, ChevronRight, Plus, X, Settings, Lock, Menu } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
+import { decryptMessage } from '../../services/encryptionService';
+import { stripAt } from '../../types';
 
 // Seal System Icons (Section 16)
 const OutlinedSeal = () => (
@@ -42,6 +44,8 @@ interface LoungeWorkspaceProps {
   isDark: boolean;
   messages: any[];
   wsConnected: boolean;
+  lastMessages?: Record<string, any>;
+  unreadCounts?: Record<string, number>;
   onSendMessage?: (text: string, burnSeconds: number | null, isEncrypted: boolean) => void;
   onSendTyping?: (isTyping: boolean) => void;
   onRoomKick?: (userId: number) => void;
@@ -50,11 +54,11 @@ interface LoungeWorkspaceProps {
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onMarkAsRead?: (messageId: string, roomId: string) => void;
   onToggleSidebar?: () => void;
-  unreadCounts?: Record<string, number>;
 }
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
-  const { isMobile } = useResponsive();
+  const { isMobile, isTablet } = useResponsive();
+  const [isSubloungeCollapsed, setIsSubloungeCollapsed] = useState<boolean>(false);
   
   // Read cache helper
   const getLoungeCache = (loungeId: string) => {
@@ -115,6 +119,36 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const [editIconUrl, setEditIconUrl] = useState('');
   const [settingsError, setSettingsError] = useState('');
   const [settingsSuccess, setSettingsSuccess] = useState('');
+  const [typingRooms, setTypingRooms] = useState<Record<string, Set<string>>>({});
+
+  useEffect(() => {
+    const handleStart = (e: any) => {
+      const { room_id, username, userId } = e.detail || {};
+      if (room_id && userId !== props.currentUserId) {
+        setTypingRooms(prev => {
+          const roomTypers = new Set(prev[room_id] || []);
+          roomTypers.add(username);
+          return { ...prev, [room_id]: roomTypers };
+        });
+      }
+    };
+    const handleStop = (e: any) => {
+      const { room_id, username, userId } = e.detail || {};
+      if (room_id && userId !== props.currentUserId) {
+        setTypingRooms(prev => {
+          const roomTypers = new Set(prev[room_id] || []);
+          roomTypers.delete(username);
+          return { ...prev, [room_id]: roomTypers };
+        });
+      }
+    };
+    window.addEventListener('velum-typing-start', handleStart);
+    window.addEventListener('velum-typing-stop', handleStop);
+    return () => {
+      window.removeEventListener('velum-typing-start', handleStart);
+      window.removeEventListener('velum-typing-stop', handleStop);
+    };
+  }, [props.currentUserId]);
 
   useEffect(() => {
     if (loungeDetails) {
@@ -440,8 +474,13 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     let isMounted = true;
     const cache = getLoungeCache(props.loungeId);
     
-    // If we don't have cache, show light loading state, otherwise keep cached content visible
-    if (!cache) {
+    // Instantly hydrate cached state on loungeId switch
+    if (cache) {
+      if (cache.rooms) setRooms(cache.rooms);
+      if (cache.members) setMembers(cache.members);
+      if (cache.details) setLoungeDetails(cache.details);
+      setIsLoadingLounge(false);
+    } else {
       setIsLoadingLounge(true);
     }
 
@@ -475,20 +514,22 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
         if (membersRes.status === 'fulfilled' && membersRes.value.ok) {
           const mData = await membersRes.value.json();
-          const realMembers = mData.filter((u: any) => u.user_id !== 999 && !(u.username.toLowerCase() === 'velum' || u.username.toLowerCase() === 'velum-msg'));
+          const rawMembers = Array.isArray(mData) ? mData : (mData.members || mData.users || []);
+          const realMembers = rawMembers.filter((u: any) => u && u.user_id !== 999 && !(u.username?.toLowerCase() === 'velum' || u.username?.toLowerCase() === 'velum-msg'));
           fetchedMembers = realMembers;
           setMembers(realMembers);
         }
 
         if (detailsRes.status === 'fulfilled' && detailsRes.value.ok) {
           const dData = await detailsRes.value.json();
-          fetchedDetails = dData;
-          setLoungeDetails(dData);
+          fetchedDetails = dData.lounge || dData;
+          setLoungeDetails(fetchedDetails);
         }
 
         if (listRes.status === 'fulfilled' && listRes.value.ok) {
           const lData = await listRes.value.json();
-          setLoungeList(lData);
+          const loungesArr = Array.isArray(lData) ? lData : (lData.lounges || []);
+          setLoungeList(loungesArr);
         }
 
         // Cache the newly fetched workspace data
@@ -553,12 +594,25 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   });
 
   const isMasterLounge = props.loungeId === 'velum_master_lounge';
+
+  const getRoomLastMessageTime = (room: any) => {
+    const roomId = getRoomId(room);
+    if (!roomId || !props.lastMessages || !props.lastMessages[roomId]) return 0;
+    const lm = props.lastMessages[roomId];
+    if (!lm) return 0;
+    const ts = lm.timestamp || lm.created_at || lm.createdAt;
+    if (!ts) return 0;
+    return new Date(ts).getTime();
+  };
+
+  const sortedVisibleRooms = visibleRooms.sort((a, b) => getRoomLastMessageTime(b) - getRoomLastMessageTime(a));
+
   const publicRooms = isMasterLounge 
-    ? visibleRooms.filter(room => room.accessLevel !== 'EXEC_ONLY' && room.accessLevel !== 'ANNOUNCE')
-    : visibleRooms.filter(room => !(room.is_locked || room.visibility === 'private' || room.is_private === 1));
+    ? sortedVisibleRooms.filter(room => room.accessLevel !== 'EXEC_ONLY' && room.accessLevel !== 'ANNOUNCE')
+    : sortedVisibleRooms.filter(room => !(room.is_locked || room.visibility === 'private' || room.is_private === 1));
   const privateRooms = isMasterLounge
-    ? visibleRooms.filter(room => room.accessLevel === 'EXEC_ONLY' || room.accessLevel === 'ANNOUNCE')
-    : visibleRooms.filter(room => room.is_locked || room.visibility === 'private' || room.is_private === 1);
+    ? sortedVisibleRooms.filter(room => room.accessLevel === 'EXEC_ONLY' || room.accessLevel === 'ANNOUNCE')
+    : sortedVisibleRooms.filter(room => room.is_locked || room.visibility === 'private' || room.is_private === 1);
 
   const renderRoomRow = (room: any, type: 'public' | 'private_owned' | 'private_locked' | 'exec') => {
     const roomId = getRoomId(room);
@@ -566,6 +620,40 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     const isActive = props.activeRoomId === roomId;
     const isLockedCard = type === 'private_locked';
     const cleanName = cleanRoomName(room.name);
+    const unread = props.unreadCounts?.[roomId] || 0;
+    const lm = props.lastMessages?.[roomId];
+    
+    let lastTxt = '';
+    let lastTimeStr = '';
+    let isFailed = false;
+    let isMe = false;
+    
+    if (lm) {
+      isMe = lm.user_id === props.currentUserId || lm.senderId === props.currentUserId;
+      const raw = lm.content || lm.message || lm.body || lm.text || '';
+      const isEnc = !!(lm.is_encrypted || lm.isEncrypted);
+      try {
+        lastTxt = decryptMessage(raw, roomId, isEnc) || raw || '';
+      } catch {
+        lastTxt = raw || '';
+      }
+      if (lm.status === 'failed' || lm.delivery_status === 'failed') isFailed = true;
+      if (lm.timestamp || lm.created_at || lm.createdAt) {
+        const d = new Date(lm.timestamp || lm.created_at || lm.createdAt);
+        if (!isNaN(d.getTime())) {
+          const now = new Date();
+          const isToday = d.toDateString() === now.toDateString();
+          if (isToday) {
+            lastTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } else {
+            const yday = new Date();
+            yday.setDate(yday.getDate() - 1);
+            if (d.toDateString() === yday.toDateString()) lastTimeStr = 'Yesterday';
+            else lastTimeStr = d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+          }
+        }
+      }
+    }
 
     return (
       <div
@@ -579,7 +667,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               : (props.isDark ? 'hover:bg-white-5 text-text-secondary hover:text-text-primary hover:scale-[1.01]' : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900 hover:scale-[1.01]')
         }`}
       >
-        <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-velum-900 border border-white-5 overflow-hidden shrink-0 text-text-secondary">
+        <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-velum-900 border border-white-5 overflow-hidden shrink-0 text-text-secondary relative">
           {isMasterLounge ? (
             room.accessLevel === 'ANNOUNCE' ? <div className="text-[14px]">📢</div> : 
             room.accessLevel === 'EXEC_ONLY' ? <div className="text-[14px]">🤫</div> : 
@@ -592,13 +680,37 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               {type === 'exec' && <Lock className="w-4 h-4" />}
             </>
           )}
+          {unread > 0 && !isActive && (
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-accent rounded-full animate-pulse border-2 border-velum-900" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-bold truncate uppercase tracking-wider">{cleanName}</div>
-          {isLockedCard ? (
-            <div className="text-[9px] text-text-disabled truncate uppercase tracking-wider">Locked Sublounge</div>
+          <div className="flex justify-between items-baseline gap-2">
+            <div className={`text-xs font-bold truncate uppercase tracking-wider ${unread > 0 && !isActive ? 'text-accent' : ''}`}>{cleanName}</div>
+            {lastTimeStr && !unread && <div className={`text-[9px] font-mono shrink-0 ${unread > 0 && !isActive ? 'text-accent' : 'text-text-secondary opacity-60'}`}>{lastTimeStr}</div>}
+          </div>
+          {typingRooms[roomId] && typingRooms[roomId].size > 0 ? (
+            <div className="text-[9px] text-accent font-semibold flex items-center gap-1 animate-pulse truncate uppercase tracking-wider mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block" /> 
+              {Array.from(typingRooms[roomId]).join(', ')} typing...
+            </div>
+          ) : isLockedCard ? (
+            <div className="text-[9px] text-text-disabled truncate uppercase tracking-wider mt-0.5">Locked Sublounge</div>
+          ) : lastTxt ? (
+            <div className="flex items-center gap-1 mt-0.5">
+              {isFailed && <span className="text-[9px] text-red-500 font-bold uppercase tracking-wider">Failed</span>}
+              <div className={`text-[10px] truncate flex-1 min-w-0 ${unread > 0 && !isActive ? 'text-white font-semibold' : 'opacity-60'}`}>
+                {isMe ? <span className="opacity-70 mr-1">You:</span> : (lm?.username && <span className="opacity-70 mr-1">{stripAt(lm.username)}:</span>)}
+                {lastTxt}
+              </div>
+              {unread > 0 && !isActive && (
+                <div className="ml-auto bg-accent text-black text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0">
+                  {unread}
+                </div>
+              )}
+            </div>
           ) : (
-            room.description && <div className="text-[9px] opacity-60 truncate">{room.description}</div>
+            room.description && <div className="text-[9px] opacity-60 truncate mt-0.5">{room.description}</div>
           )}
         </div>
       </div>
@@ -760,53 +872,69 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         <div className="flex-1 flex w-full h-full overflow-hidden min-h-0 bg-transparent">
           
           {/* Section 16 Persistent Sidebar Directory Column */}
-          <div className="w-64 flex-shrink-0 flex min-h-0 border-r border-white-5 bg-black/10">
-            {/* Right element: Sublounge rooms directory */}
-            <div className="flex-1 flex flex-col min-h-0 bg-transparent">
-              <div className="p-4 border-b border-white-5 flex items-center gap-2">
-                <button
-                  onClick={props.onBackToDirectory}
-                  className="p-1 rounded-lg text-text-secondary hover:text-white hover:bg-white-10 transition-colors cursor-pointer"
-                  title="Back to Directory"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <div className="flex-1 flex items-center justify-between min-w-0">
-                  <span 
-                    onClick={() => setShowLoungeProfile(true)}
-                    className={`text-xs font-bold uppercase tracking-wider truncate cursor-pointer hover:underline ${props.isDark ? 'text-white' : 'text-gray-900'}`}
+          <div className={`flex-shrink-0 flex flex-col h-full min-h-0 border-r border-white-5 bg-black/10 transition-all duration-300 ${
+            isSubloungeCollapsed ? 'w-14 min-w-[56px]' : 'w-64 min-w-[256px]'
+          }`}>
+            {/* Sublounge rooms directory */}
+            <div className="flex-1 flex flex-col h-full min-h-0 bg-transparent overflow-hidden">
+              <div className="p-3 border-b border-white-5 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <button
+                    onClick={props.onBackToDirectory}
+                    className="p-1 rounded-lg text-text-secondary hover:text-white hover:bg-white-10 transition-colors cursor-pointer shrink-0"
+                    title="Back to Directory"
                   >
-                    {props.loungeName}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {isParentAdmin && (
-                      <button
-                        onClick={() => setShowManageModal(true)}
-                        className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer shrink-0"
-                        title="Manage Lounge"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </button>
-                    )}
-                    {
-                      <button
-                        onClick={() => {
-                          setStatusMessage('');
-                          setShowCreateModal(true);
-                        }}
-                        className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer shrink-0"
-                        title="Create Room"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    }
-                  </div>
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  {!isSubloungeCollapsed && (
+                    <span 
+                      onClick={() => setShowLoungeProfile(true)}
+                      className={`text-xs font-bold uppercase tracking-wider truncate cursor-pointer hover:underline ${props.isDark ? 'text-white' : 'text-gray-900'}`}
+                    >
+                      {props.loungeName}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {!isSubloungeCollapsed && isParentAdmin && (
+                    <button
+                      onClick={() => setShowManageModal(true)}
+                      className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer"
+                      title="Manage Lounge"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                  )}
+                  {!isSubloungeCollapsed && (
+                    <button
+                      onClick={() => {
+                        setStatusMessage('');
+                        setShowCreateModal(true);
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer"
+                      title="Create Room"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsSubloungeCollapsed(prev => !prev)}
+                    className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer"
+                    title={isSubloungeCollapsed ? "Expand Directory" : "Collapse Directory"}
+                  >
+                    {isSubloungeCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto">
-                {renderRoomsList()}
-              </div>
-              {loungeDetails?.invite_code && (
+
+              {!isSubloungeCollapsed && (
+                <div className="flex-1 overflow-y-auto">
+                  {renderRoomsList()}
+                </div>
+              )}
+
+              {!isSubloungeCollapsed && loungeDetails?.invite_code && (
                 <div className="p-4 border-t border-white-5 bg-transparent">
                   <div className="p-3 bg-velum-800 border border-white-5 rounded-xl flex flex-col gap-1.5 shadow-lg shadow-black/20">
                     <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary select-none">Lounge Invite</div>
@@ -965,8 +1093,18 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       <div className="w-full h-full flex flex-col min-h-0 bg-transparent">
         <div className="p-4 border-b border-white-5 bg-black/20">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <button onClick={props.onBackToDirectory} className="p-2 rounded-full bg-white-5 text-text-secondary shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              {props.onToggleSidebar && (
+                <button 
+                  onClick={props.onToggleSidebar} 
+                  className="p-2 rounded-full bg-white-5 text-text-secondary hover:text-white shrink-0 cursor-pointer" 
+                  aria-label="Open sidebar menu"
+                  title="Open Navigation"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
+              )}
+              <button onClick={props.onBackToDirectory} className="p-2 rounded-full bg-white-5 text-text-secondary shrink-0" aria-label="Back to directory">
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <h1 

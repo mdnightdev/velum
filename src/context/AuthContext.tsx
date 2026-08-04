@@ -110,15 +110,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(timeoutId);
 
         if (res.ok) {
-          const data = await res.json();
-          const verifiedUser = data.user || data;
-          setUser(verifiedUser);
-          setSessionId(sId);
-          try {
-            sessionStorage.setItem('velum-user', JSON.stringify(verifiedUser));
-          } catch (_) {}
-          setIsLoadingSession(false);
-          return;
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await res.json();
+            const verifiedUser = data.user || data;
+            setUser(verifiedUser);
+            setSessionId(sId);
+            try {
+              sessionStorage.setItem('velum-user', JSON.stringify(verifiedUser));
+            } catch (_) {}
+            setIsLoadingSession(false);
+            return;
+          }
         } else if (res.status === 401 || res.status === 403) {
           handleLogout();
           setIsLoadingSession(false);

@@ -71,6 +71,27 @@ export const globalErrorHandler: ErrorRequestHandler = (
     return;
   }
 
+  const isDbConnError =
+    err?.message?.includes('getaddrinfo') ||
+    err?.message?.includes('EAI_AGAIN') ||
+    err?.message?.includes('ENOTFOUND') ||
+    err?.message?.includes('ECONNREFUSED') ||
+    (err as any)?.cause?.code === 'EAI_AGAIN' ||
+    (err as any)?.cause?.code === 'ENOTFOUND' ||
+    (err as any)?.cause?.code === 'ECONNREFUSED' ||
+    (err as any)?.code === 'EAI_AGAIN' ||
+    (err as any)?.code === 'ENOTFOUND' ||
+    (err as any)?.code === 'ECONNREFUSED';
+
+  if (isDbConnError) {
+    console.error('[DATABASE CONNECTIVITY ERROR]', err.message || err);
+    res.status(503).json({
+      error: 'Database connection is temporarily unavailable. Please try again shortly.',
+      code: 'DB_CONNECTIVITY_ERROR'
+    });
+    return;
+  }
+
   console.error('[SERVER UNHANDLED ERROR]', err);
   res.status(500).json({
     error: 'An internal server error occurred.'

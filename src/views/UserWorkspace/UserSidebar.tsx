@@ -338,7 +338,7 @@ export default function UserSidebar({
       </div>
 
       {/* Navigation - Mockup layout (Spacious and Premium) */}
-      <div className="px-4 pt-2 pb-2 flex-shrink-0">
+      <div className={`${isSidebarExpanded ? 'px-4' : 'px-1'} pt-2 pb-2 flex-shrink-0`}>
         <nav className="space-y-1.5">
           {[
             { id: 'directs', label: t('nav.directs', 'Directs'), icon: <MessageSquare className="w-4.5 h-4.5" /> },
@@ -348,6 +348,7 @@ export default function UserSidebar({
             { id: 'wallet', label: t('nav.wallet', 'Wallet'), icon: <Wallet className="w-4.5 h-4.5" /> },
             { id: 'tickets', label: t('nav.tickets', 'Tickets'), icon: <FileText className="w-4.5 h-4.5" /> },
             { id: 'friends', label: t('nav.friends', 'Friends'), icon: <Users className="w-4.5 h-4.5" /> },
+            { id: 'saved', label: t('nav.saved', 'Saved Notes'), icon: <Bookmark className="w-4.5 h-4.5" />, isCyan: true },
           ].map((it) => {
             let isSelected = false;
             if (it.id === 'directs') {
@@ -383,19 +384,21 @@ export default function UserSidebar({
                 className={`w-full text-left flex items-center transition duration-150 cursor-pointer select-none ${
                   isSidebarExpanded 
                     ? 'px-4 py-3 justify-between rounded-2xl' 
-                    : 'w-11 h-11 mx-auto justify-center rounded-xl'
+                    : 'w-10 h-10 mx-auto justify-center rounded-xl'
                 } ${
                   isSelected
-                    ? 'bg-white-10 text-white font-medium shadow-sm' 
-                    : 'text-text-secondary hover:bg-white-5 hover:text-white'
+                    ? it.isCyan ? 'bg-cyan-950/40 text-cyan-400 font-medium border border-cyan-500/30 shadow-sm' : 'bg-white-10 text-white font-medium shadow-sm' 
+                    : it.isCyan
+                      ? 'text-cyan-400 hover:bg-cyan-950/20 hover:text-cyan-300'
+                      : 'text-text-secondary hover:bg-white-5 hover:text-white'
                 }`}
                 title={!isSidebarExpanded ? it.label : undefined}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isSelected ? 'text-accent' : 'text-text-secondary'}`}>
+                  <div className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isSelected ? (it.isCyan ? 'text-cyan-400' : 'text-accent') : (it.isCyan ? 'text-cyan-400' : 'text-text-secondary')}`}>
                     {it.icon}
                   </div>
-                  {isSidebarExpanded && <span className="text-sm font-semibold">{it.label}</span>}
+                  {isSidebarExpanded && <span className={`text-sm font-semibold ${it.isCyan ? 'text-cyan-400' : ''}`}>{it.label}</span>}
                 </div>
 
                 {isSidebarExpanded && it.id === 'friends' && pendingRequestsCount > 0 && (
@@ -410,15 +413,15 @@ export default function UserSidebar({
       </div>
 
       {/* Main interactive scroll region */}
-      <div className="flex-1 overflow-y-auto px-4 py-2 scrollbar-none space-y-6">
+      <div className="flex-1 overflow-y-auto px-2 py-2 scrollbar-none space-y-6">
         
 
       </div>
 
       {/* Solid Minimalist Footer matching figma mockup layout */}
-      <div className={`p-4 bg-transparent flex-shrink-0 transition-all ${isSidebarExpanded ? 'px-4' : 'px-0 text-center flex justify-center'}`}>
-        <div className={`glass-card p-3 shadow-lg flex items-center justify-between transition-all ${
-          isSidebarExpanded ? 'rounded-3xl w-full' : 'rounded-2xl flex-col gap-3 justify-center w-12 mx-auto px-1'
+      <div className={`p-2 bg-transparent flex-shrink-0 transition-all ${isSidebarExpanded ? 'px-4 p-4' : 'px-1 text-center flex justify-center'}`}>
+        <div className={`glass-card shadow-lg flex items-center justify-between transition-all ${
+          isSidebarExpanded ? 'p-3 rounded-3xl w-full' : 'p-1 rounded-2xl flex-col gap-2 justify-center w-10 mx-auto'
         }`}>
           
           {/* Profile icon avatar bottom-left */}

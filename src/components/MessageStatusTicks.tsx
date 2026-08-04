@@ -1,25 +1,55 @@
 import React from 'react';
+import { Clock, AlertCircle } from 'lucide-react';
 
 interface MessageStatusTicksProps {
-  status?: 'sent' | 'delivered' | 'read' | string;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | string;
   isMe?: boolean;
+  onRetry?: () => void;
 }
 
-export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({ status = 'sent', isMe = true }) => {
+export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({ status = 'sent', isMe = true, onRetry }) => {
   if (!isMe) return null;
 
-  if (status === 'read') {
+  if (status === 'sending') {
     return (
-      <span className="text-accent text-xs ml-1" title="Read">
-        Read
+      <span title="Sending...">
+        <Clock className="w-3 h-3 text-text-secondary/60 animate-pulse ml-1" />
       </span>
     );
   }
 
+  if (status === 'failed') {
+    return (
+      <button 
+        onClick={onRetry}
+        className="flex items-center gap-1 text-red-500 hover:text-red-400 cursor-pointer text-[10px] ml-1 uppercase font-bold tracking-wider transition-colors" 
+        title="Failed to send. Tap to retry."
+      >
+        <AlertCircle className="w-3 h-3" /> Failed
+      </button>
+    );
+  }
+
+  if (status === 'read') {
+    return (
+      <span className="text-accent text-[10px] font-mono ml-1 uppercase" title="Read">
+        Read
+      </span>
+    );
+  }
+  
   if (status === 'delivered') {
     return (
-      <span className="text-text-secondary/80 text-xs ml-1" title="Delivered">
-        Delivered
+      <span className="text-text-secondary/80 text-[10px] font-mono ml-1 uppercase" title="Delivered">
+        Deliv
+      </span>
+    );
+  }
+  
+  if (status === 'sent') {
+    return (
+      <span className="text-text-secondary/50 text-[10px] font-mono ml-1 uppercase" title="Sent">
+        Sent
       </span>
     );
   }

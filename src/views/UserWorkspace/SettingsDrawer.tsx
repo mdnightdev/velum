@@ -624,7 +624,7 @@ export default function SettingsDrawer({
         className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
         onClick={onClose}
       />
-      <div className="glass-panel w-full h-full bg-velum-900 border-r border-accent/10 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none">
+      <div className="glass-panel w-full max-w-2xl ml-auto h-full bg-velum-900 border-l border-white-5 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none shadow-2xl animate-in slide-in-from-right duration-200">
         
         <div className="p-4 md:p-4 border-b border-white-5 flex items-center justify-between flex-shrink-0 bg-velum-850">
           <div>

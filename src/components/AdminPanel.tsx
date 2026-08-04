@@ -10,6 +10,7 @@ import AdminDiagnosticsView from './AdminDiagnosticsView';
 import AdminUsersView from './AdminUsersView';
 import AdminVerificationView from './AdminVerificationView';
 import PullToRefresh from './PullToRefresh';
+import { useResponsiveLayout } from '../hooks/useResponsive';
 
 // Modular Subcomponents
 import AdminOverview from './Admin/AdminOverview';
@@ -74,11 +75,16 @@ export default function AdminPanel({
   };
 
   // Sidebar controls
+  const { isMobile } = useResponsiveLayout();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   const selectTab = (tab: any) => {
     if (onTabChange) {
       onTabChange(tab);
+    }
+    if (isMobile) {
+      setIsMobileDrawerOpen(false);
     }
   };
 
@@ -337,208 +343,238 @@ export default function AdminPanel({
   const roleLabel = adminRole === 'SUPPORT_ADMIN' ? 'Support' : 'Executive';
   const avatarSrc = localAvatarUrl || adminProfile?.avatar || user?.avatar || '';
 
-  return (
-    <div className="flex h-screen bg-velum-900 text-text-primary overflow-hidden font-sans">
-      {/* Sidebar Navigation Panel */}
-      <aside
-        className={`bg-velum-850 border-r border-white-5 flex flex-col justify-between p-5 transition-all duration-300 relative z-30 shrink-0 ${isSidebarOpen ? 'w-64' : 'w-20'
-          }`}
-      >
-        <div className="space-y-6">
-          {/* Logo Brand Header with top Hamburger toggle */}
-          <div className="flex flex-col gap-4">
+  const renderSidebarContent = (expanded: boolean) => (
+    <div className="flex flex-col justify-between h-full p-4 space-y-6">
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4">
+          {!isMobile && (
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className={`text-text-secondary hover:text-accent transition cursor-pointer self-start p-1.5 ${isSidebarOpen ? '' : 'mx-auto'
-                }`}
-              title={isSidebarOpen ? 'Collapse menu' : 'Expand menu'}
+              className={`text-text-secondary hover:text-accent transition cursor-pointer self-start p-1.5 ${expanded ? '' : 'mx-auto'}`}
+              title={expanded ? 'Collapse menu' : 'Expand menu'}
             >
               <Menu className="w-5 h-5" />
             </button>
+          )}
 
-            {isSidebarOpen ? (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-                <div>
-                  <h2 className="font-display font-black text-sm uppercase tracking-wider text-text-primary leading-none">
-                    Velum
-                  </h2>
-                </div>
-              </div>
-            ) : (
-              <div className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full text-accent mx-auto" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-            )}
-          </div>
-
-          {/* Profile Card design */}
-          {isSidebarOpen ? (
-            <div className="p-3 bg-white/[0.03] border border-white-5 rounded-2xl flex items-center gap-3 select-none">
-              {avatarSrc ? (
-                <img
-                  src={avatarSrc}
-                  alt="Avatar"
-                  className="w-10 h-10 rounded-full object-cover border border-white-10"
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-accent-10 border border-white-10 text-accent flex items-center justify-center font-bold text-sm uppercase">
-                  {displayName.charAt(0)}
-                </div>
-              )}
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-text-primary truncate">
-                  {displayName}
-                </div>
-                <div className="text-[10px] text-text-secondary uppercase font-semibold font-mono tracking-wider">
-                  {roleLabel}
-                </div>
+          {expanded ? (
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+              <div>
+                <h2 className="font-display font-black text-sm uppercase tracking-wider text-text-primary leading-none">
+                  Velum
+                </h2>
               </div>
             </div>
           ) : (
-            <div className="flex justify-center select-none">
-              {avatarSrc ? (
-                <img
-                  src={avatarSrc}
-                  alt="Avatar"
-                  className="w-10 h-10 rounded-full object-cover border border-white-10"
-                  title={`${displayName} (${roleLabel})`}
-                />
-              ) : (
-                <div
-                  className="w-10 h-10 rounded-full bg-accent-10 border border-white-10 text-accent flex items-center justify-center font-bold text-sm uppercase"
-                  title={`${displayName} (${roleLabel})`}
-                >
-                  {displayName.charAt(0)}
-                </div>
-              )}
-            </div>
+            <div className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full text-accent mx-auto" dangerouslySetInnerHTML={{ __html: logoSvg }} />
           )}
+        </div>
 
-          {/* Navigation Links grouped by categories */}
-          <div className="space-y-4">
-            {/* 1. Core Commands */}
-            <div>
-              {isSidebarOpen && (
-                <span className="text-[9px] font-bold text-text-secondary/40 uppercase tracking-widest block px-3.5 mb-2 font-mono">
-                  Core Commands
-                </span>
-              )}
-              <nav className="space-y-1">
-                {coreCommands
-                  .filter((item) => !adminRole || item.roles.includes(adminRole) || adminRole === 'ADMIN' || adminRole === 'CLI_ADMIN' || adminRole === 'LOGIN_ADMIN' || adminRole === 'SUPPORT_ADMIN')
-                  .map((item) => {
-                    const isSelected = activeTab === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => selectTab(item.id)}
-                        className={`flex items-center rounded-xl transition duration-150 cursor-pointer ${isSidebarOpen ? 'w-full gap-3 px-3.5 py-2 text-left' : 'w-11 h-11 mx-auto justify-center'
-                          } ${isSelected
-                            ? 'bg-white-10 text-white font-medium shadow-sm'
-                            : 'text-text-secondary hover:bg-white-5 hover:text-white'
-                          }`}
-                        title={!isSidebarOpen ? item.label : undefined}
-                      >
-                        <span className={isSelected ? 'text-accent' : 'text-text-secondary'}>
-                          {item.icon}
-                        </span>
-                        {isSidebarOpen && <span className="text-xs font-semibold">{item.label}</span>}
-                      </button>
-                    );
-                  })}
-              </nav>
-            </div>
-
-            {/* Divider when collapsed */}
-            {!isSidebarOpen && <hr className="border-white-5 my-2" />}
-
-            {/* 2. System Gates */}
-            <div>
-              {isSidebarOpen && (
-                <span className="text-[9px] font-bold text-text-secondary/40 uppercase tracking-widest block px-3.5 mb-2 font-mono">
-                  System Gates
-                </span>
-              )}
-              <nav className="space-y-1">
-                {systemGates
-                  .filter((item) => !adminRole || item.roles.includes(adminRole) || adminRole === 'ADMIN' || adminRole === 'CLI_ADMIN' || adminRole === 'LOGIN_ADMIN' || adminRole === 'SUPPORT_ADMIN')
-                  .map((item) => {
-                    const isSelected = activeTab === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => selectTab(item.id)}
-                        className={`flex items-center rounded-xl transition duration-150 cursor-pointer ${isSidebarOpen ? 'w-full gap-3 px-3.5 py-2 text-left' : 'w-11 h-11 mx-auto justify-center'
-                          } ${isSelected
-                            ? 'bg-white-10 text-white font-medium shadow-sm'
-                            : 'text-text-secondary hover:bg-white-5 hover:text-white'
-                          }`}
-                        title={!isSidebarOpen ? item.label : undefined}
-                      >
-                        <span className={isSelected ? 'text-accent' : 'text-text-secondary'}>
-                          {item.icon}
-                        </span>
-                        {isSidebarOpen && <span className="text-xs font-semibold">{item.label}</span>}
-                      </button>
-                    );
-                  })}
-              </nav>
+        {expanded ? (
+          <div className="p-3 bg-white/[0.03] border border-white-5 rounded-2xl flex items-center gap-3 select-none">
+            {avatarSrc ? (
+              <img
+                src={avatarSrc}
+                alt="Avatar"
+                className="w-10 h-10 rounded-full object-cover border border-white-10"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-accent-10 border border-white-10 text-accent flex items-center justify-center font-bold text-sm uppercase">
+                {displayName.charAt(0)}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-text-primary truncate">
+                {displayName}
+              </div>
+              <div className="text-[10px] text-text-secondary uppercase font-semibold font-mono tracking-wider">
+                {roleLabel}
+              </div>
             </div>
           </div>
+        ) : (
+          <div className="flex justify-center select-none">
+            {avatarSrc ? (
+              <img
+                src={avatarSrc}
+                alt="Avatar"
+                className="w-10 h-10 rounded-full object-cover border border-white-10"
+                title={`${displayName} (${roleLabel})`}
+              />
+            ) : (
+              <div
+                className="w-10 h-10 rounded-full bg-accent-10 border border-white-10 text-accent flex items-center justify-center font-bold text-sm uppercase"
+                title={`${displayName} (${roleLabel})`}
+              >
+                {displayName.charAt(0)}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            {expanded && (
+              <span className="text-[9px] font-bold text-text-secondary/40 uppercase tracking-widest block px-3.5 mb-2 font-mono">
+                Core Commands
+              </span>
+            )}
+            <nav className="space-y-1">
+              {coreCommands
+                .filter((item) => !adminRole || item.roles.includes(adminRole) || adminRole === 'ADMIN' || adminRole === 'CLI_ADMIN' || adminRole === 'LOGIN_ADMIN' || adminRole === 'SUPPORT_ADMIN')
+                .map((item) => {
+                  const isSelected = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => selectTab(item.id)}
+                      className={`flex items-center rounded-xl transition duration-150 cursor-pointer min-h-[40px] ${expanded ? 'w-full gap-3 px-3.5 py-2 text-left' : 'w-10 h-10 mx-auto justify-center'
+                        } ${isSelected
+                          ? 'bg-white-10 text-white font-medium shadow-sm'
+                          : 'text-text-secondary hover:bg-white-5 hover:text-white'
+                        }`}
+                      title={!expanded ? item.label : undefined}
+                    >
+                      <span className={isSelected ? 'text-accent' : 'text-text-secondary'}>
+                        {item.icon}
+                      </span>
+                      {expanded && <span className="text-xs font-semibold">{item.label}</span>}
+                    </button>
+                  );
+                })}
+            </nav>
+          </div>
+
+          {!expanded && <hr className="border-white-5 my-2" />}
+
+          <div>
+            {expanded && (
+              <span className="text-[9px] font-bold text-text-secondary/40 uppercase tracking-widest block px-3.5 mb-2 font-mono">
+                System Gates
+              </span>
+            )}
+            <nav className="space-y-1">
+              {systemGates
+                .filter((item) => !adminRole || item.roles.includes(adminRole) || adminRole === 'ADMIN' || adminRole === 'CLI_ADMIN' || adminRole === 'LOGIN_ADMIN' || adminRole === 'SUPPORT_ADMIN')
+                .map((item) => {
+                  const isSelected = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => selectTab(item.id)}
+                      className={`flex items-center rounded-xl transition duration-150 cursor-pointer min-h-[40px] ${expanded ? 'w-full gap-3 px-3.5 py-2 text-left' : 'w-10 h-10 mx-auto justify-center'
+                        } ${isSelected
+                          ? 'bg-white-10 text-white font-medium shadow-sm'
+                          : 'text-text-secondary hover:bg-white-5 hover:text-white'
+                        }`}
+                      title={!expanded ? item.label : undefined}
+                    >
+                      <span className={isSelected ? 'text-accent' : 'text-text-secondary'}>
+                        {item.icon}
+                      </span>
+                      {expanded && <span className="text-xs font-semibold">{item.label}</span>}
+                    </button>
+                  );
+                })}
+            </nav>
+          </div>
         </div>
+      </div>
 
-        {/* Footer Area */}
-        <div className="space-y-3.5">
+      <div className="space-y-3.5 pt-2">
+        <button
+          onClick={onLogout}
+          className={`flex items-center text-status-dnd hover:text-white transition duration-150 cursor-pointer min-h-[40px] ${expanded ? 'w-full gap-3 px-3.5 py-2' : 'w-10 h-10 mx-auto justify-center rounded-xl hover:bg-white-5'
+            }`}
+          title={!expanded ? 'Exit Session' : undefined}
+        >
+          <LogOut className="w-4.5 h-4.5" />
+          {expanded && <span className="text-xs font-bold uppercase tracking-wider font-mono">Exit Session</span>}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col md:flex-row h-full w-full bg-velum-900 text-text-primary overflow-hidden font-sans">
 
 
-
-          <button
-            onClick={onLogout}
-            className={`flex items-center text-status-dnd hover:text-white transition duration-150 cursor-pointer ${isSidebarOpen ? 'w-full gap-3 px-3.5 py-2' : 'w-11 h-11 mx-auto justify-center rounded-xl hover:bg-white-5'
-              }`}
-            title={!isSidebarOpen ? 'Exit Session' : undefined}
-          >
-            <LogOut className="w-4.5 h-4.5" />
-            {isSidebarOpen && <span className="text-xs font-bold uppercase tracking-wider font-mono">Exit Session</span>}
-          </button>
+      {/* Mobile Slide-Over Off-Canvas Drawer */}
+      {isMobile && isMobileDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+            onClick={() => setIsMobileDrawerOpen(false)}
+          />
+          <div className="relative z-10 w-64 max-w-[80vw] h-full bg-velum-850 border-r border-white-5 shadow-2xl flex flex-col animate-in slide-in-from-left duration-200">
+            {renderSidebarContent(true)}
+          </div>
         </div>
-      </aside>
+      )}
+
+      {/* Desktop / Tablet Sidebar Navigation Panel */}
+      {!isMobile && (
+        <aside
+          className={`bg-velum-850 border-r border-white-5 flex flex-col transition-all duration-300 relative z-30 shrink-0 ${isSidebarOpen ? 'w-60 min-w-[240px]' : 'w-14 min-w-[56px]'
+            }`}
+        >
+          {renderSidebarContent(isSidebarOpen)}
+        </aside>
+      )}
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 min-w-0 min-h-0 bg-velum-900 flex flex-col overflow-hidden p-6 relative">
-        <PullToRefresh>
-          <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
-            {activeTab === 'overview' && (
-              <AdminOverview
-                adminRole={adminRole as any}
-                adminFetch={adminFetch}
-                onTabChange={selectTab}
-                c={c}
-              />
-            )}
+      <main className={`flex-1 min-w-0 min-h-0 h-full bg-velum-900 flex flex-col overflow-hidden relative ${activeTab === 'velum_lounge' ? 'p-0' : 'p-6'}`}>
+        {activeTab === 'velum_lounge' ? (
+          <LoungeWorkspace
+            currentUserId={user?.userId}
+            currentUsername={user?.username}
+            currentUserRole={adminRole}
+            loungeId="velum_master_lounge"
+            loungeName="Velum Lounge"
+            onLoungeSelect={() => { }}
+            onBackToDirectory={() => { }}
+            activeRoomId={activeRoomId || ''}
+            onRoomSelect={setActiveRoomId}
+            wsConnected={wsConnected || false}
+            messages={messages || []}
+            onSendMessage={onSendMessage}
+            onSendTyping={onSendTyping}
+            onRoomKick={onRoomKick}
+            onRoomMute={onRoomMute}
+            isDark={isDark}
+            unreadCounts={{}}
+            onToggleSidebar={() => setIsMobileDrawerOpen(true)}
+          />
+        ) : (
+          <PullToRefresh>
+            <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
+              <div className="md:hidden flex items-center justify-between pb-4 mb-4 border-b border-white-5 shrink-0">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setIsMobileDrawerOpen(true)}
+                    className="p-2 rounded-xl bg-white-5 text-text-secondary hover:text-white hover:bg-white-10 transition cursor-pointer"
+                    aria-label="Open admin sidebar menu"
+                    title="Open Navigation"
+                  >
+                    <Menu className="w-5 h-5" />
+                  </button>
+                  <span className="text-sm font-bold text-text-primary capitalize font-mono tracking-wider">
+                    {activeTab?.replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
 
-            {activeTab === 'velum_lounge' && (
-              <LoungeWorkspace
-                currentUserId={user?.userId}
-                currentUsername={user?.username}
-                currentUserRole={adminRole}
-                loungeId="velum_master_lounge"
-                loungeName="Velum Lounge"
-                onLoungeSelect={() => { }}
-                onBackToDirectory={() => { }}
-                activeRoomId={activeRoomId || ''}
-                onRoomSelect={setActiveRoomId}
-                wsConnected={wsConnected || false}
-                messages={messages || []}
-                onSendMessage={onSendMessage}
-                onSendTyping={onSendTyping}
-                onRoomKick={onRoomKick}
-                onRoomMute={onRoomMute}
-                isDark={isDark}
-                unreadCounts={{}}
-              />
-            )}
+              {activeTab === 'overview' && (
+                <AdminOverview
+                  adminRole={adminRole as any}
+                  adminFetch={adminFetch}
+                  onTabChange={selectTab}
+                  c={c}
+                />
+              )}
 
-            {activeTab === 'users' && (
+              {activeTab === 'users' && (
               <AdminUsers
                 userSearch={userSearch}
                 setUserSearch={setUserSearch}
@@ -649,6 +685,7 @@ export default function AdminPanel({
             )}
           </div>
         </PullToRefresh>
+        )}
       </main>
     </div>
   );

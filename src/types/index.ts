@@ -89,6 +89,8 @@ export interface Message {
   username?: string;
   content: string;
   timestamp: string | number;
+  created_at?: string | number;
+  nonce?: string;
   status?: 'sent' | 'delivered' | 'read' | string;
   deleted?: boolean;
   reactions?: Record<string, string[]>;

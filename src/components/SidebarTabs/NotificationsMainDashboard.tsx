@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, HelpCircle, Inbox, Bell, ShoppingCart } from 'lucide-react';
+import { Mail, HelpCircle, Inbox, Bell, ShoppingCart, Menu } from 'lucide-react';
 import { FriendRequest } from '../../types';
 
 interface NotificationsMainDashboardProps {
@@ -8,6 +8,7 @@ interface NotificationsMainDashboardProps {
   isDark?: boolean;
   handleRespondFriendRequest: (requestId: string, action: 'accepted' | 'declined') => void;
   notificationCounts?: { transactions: number; market: number; system?: number };
+  onToggleSidebar?: () => void;
 }
 
 export default function NotificationsMainDashboard({
@@ -15,7 +16,8 @@ export default function NotificationsMainDashboard({
   currentUserId,
   isDark = true,
   handleRespondFriendRequest,
-  notificationCounts = { transactions: 0, market: 0 }
+  notificationCounts = { transactions: 0, market: 0 },
+  onToggleSidebar
 }: NotificationsMainDashboardProps) {
   const [selectedCategory, setSelectedCategory] = useState<'transactions' | 'market' | null>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -56,7 +58,20 @@ export default function NotificationsMainDashboard({
 
   // simple placeholder when nothing selected
   return (
-    <div id="notifications_dashboard" className="flex-1 bg-transparent p-6 lg:p-8 space-y-6 select-none">
+    <div id="notifications_dashboard" className="flex-1 bg-transparent p-4 sm:p-6 lg:p-8 space-y-6 select-none">
+      {onToggleSidebar && (
+        <div className="md:hidden pb-2 border-b border-white-5 flex items-center gap-2">
+          <button
+            onClick={onToggleSidebar}
+            className="p-2 rounded-xl border border-white-5 text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
+            aria-label="Open sidebar menu"
+            title="Open Navigation"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="text-xs font-bold uppercase tracking-widest text-text-secondary">Notifications</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
         {/* Main list area */}

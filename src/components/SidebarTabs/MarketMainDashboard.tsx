@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MarketListing, EscrowTransaction } from '../../types';
-import { ShoppingBag, Search, SlidersHorizontal, Plus, Sparkles, Terminal, Code, ShieldCheck, Database, Cpu } from 'lucide-react';
+import { ShoppingBag, Search, SlidersHorizontal, Plus, Sparkles, Terminal, Code, ShieldCheck, Database, Cpu, Menu } from 'lucide-react';
 
 import { MarketListingsView } from '../Market/MarketListingsView';
 import { MarketEscrowsView } from '../Market/MarketEscrowsView';
@@ -16,6 +16,7 @@ interface MarketMainDashboardProps {
   currentUserId: number;
   currentUserRole: string;
   isDark?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 const TECH_CATEGORIES = [
@@ -30,7 +31,8 @@ const TECH_CATEGORIES = [
 export default function MarketMainDashboard({
   currentUserId,
   currentUserRole,
-  isDark = true
+  isDark = true,
+  onToggleSidebar
 }: MarketMainDashboardProps) {
   const { t } = useLanguage();
   const [listings, setListings] = useState<MarketListing[]>([]);
@@ -204,11 +206,22 @@ export default function MarketMainDashboard({
     });
 
   return (
-    <div id="market_dashboard" className="flex-1 bg-transparent p-6 lg:p-8 space-y-7 text-text-primary">
+    <div id="market_dashboard" className="flex-1 bg-transparent p-4 sm:p-6 lg:p-8 space-y-6 text-text-primary">
       {/* Top Header Segment: Workspace toggle mode, cart, and admin functions */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 border-b border-white-5 pb-5 shrink-0">
-        {/* Toggle Mode Switch */}
-        <div className="flex items-center gap-1.5 bg-black-40 p-1.5 rounded-2xl border border-white-5 self-start">
+        <div className="flex items-center gap-3">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="md:hidden p-2 rounded-xl border border-white-5 text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer shrink-0"
+              aria-label="Open sidebar menu"
+              title="Open Navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+          {/* Toggle Mode Switch */}
+          <div className="flex items-center gap-1.5 bg-black-40 p-1.5 rounded-2xl border border-white-5 self-start">
           <button
             onClick={() => {
               setMode('buyer');
@@ -234,6 +247,7 @@ export default function MarketMainDashboard({
           >
             {t('market.seller_mode', 'Seller Mode')}
           </button>
+        </div>
         </div>
 
         {/* Action Controls */}
