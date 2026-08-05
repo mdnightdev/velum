@@ -7,7 +7,7 @@ dist/
 data/server.log
 data/velum_state_v3.bin
 server/services/ws.log
-docs/
+
 /scripts/
 
 # Ignore local databases, keys, and logs
@@ -22,3 +22,5 @@ stats.html
 Check.png
 velum_backup_*.json
 databackup.md
+uploads/
+dump.rdb

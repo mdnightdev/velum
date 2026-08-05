@@ -20,6 +20,8 @@ interface PeopleMainDashboardProps {
 }
 
 import { formatLastSeen } from '../../utils/datetime';
+import { parsePresence } from '../../utils/presence';
+import { getSessionId } from '../../utils/auth';
 
 export default function PeopleMainDashboard({
   friendRequests,
@@ -47,7 +49,7 @@ export default function PeopleMainDashboard({
   useEffect(() => {
     const fetchRelationships = async () => {
       try {
-        const sId = sessionStorage.getItem('velum-sessionId') || '';
+        const sId = getSessionId();
         const res = await fetch('/v2/friends/relationships', {
           headers: { 'Authorization': `Bearer ${sId}` }
         });
@@ -75,7 +77,7 @@ export default function PeopleMainDashboard({
     if (activeTab === 'directory') {
       const fetchDirectory = async () => {
         try {
-          const sId = sessionStorage.getItem('velum-sessionId') || '';
+          const sId = getSessionId();
           const res = await fetch(`/v2/user/directory/search?q=${encodeURIComponent(userSearchTerm)}`, {
             headers: { 'Authorization': `Bearer ${sId}` }
           });
@@ -95,7 +97,7 @@ export default function PeopleMainDashboard({
 
   const handleUnblock = async (targetId: number) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       await fetch('/v2/friends/unblock', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
@@ -108,50 +110,27 @@ export default function PeopleMainDashboard({
   };
 
   const getStatusNode = (lastSeen: string | null, activeLounge?: string) => {
-     if (activeLounge) {
-        return (
-          <div className="flex items-center gap-1.5 mt-1">
-             <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
-             <span className="text-[10px] font-bold text-status-away bg-amber-500/10 px-1.5 py-0.5 rounded-sm border border-amber-500/20">
-               {activeLounge}
-             </span>
-          </div>
-        );
-     }
-     
-     if (lastSeen === 'online') {
-        return (
-          <div className="flex items-center gap-1.5 mt-1">
-             <span className="w-2.5 h-2.5 rounded-full bg-status-online" />
-             <span className="text-[11px] font-medium text-text-secondary">Online</span>
-          </div>
-        );
-     }
-
-     if (lastSeen === 'dnd') {
-        return (
-          <div className="flex items-center gap-1.5 mt-1">
-             <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-             <span className="text-[11px] font-medium text-text-secondary">Do Not Disturb</span>
-          </div>
-        );
-     }
-
-     if (lastSeen === 'idle') {
-        return (
-          <div className="flex items-center gap-1.5 mt-1">
-             <span className="w-2.5 h-2.5 rounded-full border-[2.5px] border-amber-500 bg-transparent" />
-             <span className="text-[11px] font-medium text-text-secondary">Idle</span>
-          </div>
-        );
-     }
-
-     return (
+    if (activeLounge) {
+      return (
         <div className="flex items-center gap-1.5 mt-1">
-           <span className="w-2.5 h-2.5 rounded-full border-[2.5px] border-velum-600 bg-transparent" />
-           <span className="text-[11px] font-medium text-text-secondary">Offline • {formatLastSeen(lastSeen)}</span>
+          <span className="w-2.5 h-2.5 rounded-full bg-bank-accent" />
+          <span className="text-[10px] font-bold text-status-away bg-amber-500/10 px-1.5 py-0.5 rounded-sm border border-amber-500/20">
+            {activeLounge}
+          </span>
         </div>
-     );
+      );
+    }
+
+    const presence = parsePresence(lastSeen);
+    const isRing = presence.dotStyle === 'ring';
+    const label = presence.status === 'offline' ? `Offline • ${formatLastSeen(lastSeen)}` : presence.label;
+
+    return (
+      <div className="flex items-center gap-1.5 mt-1">
+        <span className={`w-2.5 h-2.5 rounded-full ${isRing ? 'border-[2.5px] bg-transparent' : ''} ${presence.colorClass}`} />
+        <span className="text-[11px] font-medium text-text-secondary">{label}</span>
+      </div>
+    );
   };
 
   const safeRequests = Array.isArray(friendRequests) ? friendRequests : [];

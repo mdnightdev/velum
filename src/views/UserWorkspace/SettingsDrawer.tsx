@@ -13,6 +13,7 @@ import TicketsMainDashboard from '../../components/SidebarTabs/TicketsMainDashbo
 import { useResponsive } from '../../hooks/useResponsive';
 import { useBuildVersion } from '../../hooks/useBuildVersion';
 import logoSvg from '../../assets/logo.svg?raw';
+import { getSessionId } from '../../utils/auth';
 import { computeClientHash } from '../../services/encryptionService';
 import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
 import { submitDiagnosticLogs, collectClientDiagnosticsPayload } from '../../utils/diagnostics';
@@ -122,7 +123,7 @@ export default function SettingsDrawer({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || '';
+  const fetchSessionId = () => getSessionId();
   const headers = {
     'Authorization': `Bearer ${fetchSessionId()}`,
     'Content-Type': 'application/json'
@@ -148,7 +149,7 @@ export default function SettingsDrawer({
         }
       }).catch(() => {});
 
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const requestHeaders = {
         'Authorization': `Bearer ${sId}`,
         'Content-Type': 'application/json'
@@ -379,7 +380,7 @@ export default function SettingsDrawer({
     let finalAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
 
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const requestHeaders = {
         'Authorization': `Bearer ${sId}`,
         'Content-Type': 'application/json'

@@ -4,9 +4,11 @@ import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { relationships } from '../db/schema/relationships.js';
-import { eq, and, or, inArray } from 'drizzle-orm';
+import { lounges, messages } from '../db/schema/lounges.js';
+import { eq, and, or, inArray, desc } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { connectedClients } from '../../websocket.js';
+import { getRedisClient } from '../db/redis.js';
 
 export const friendRouter = Router();
 
@@ -73,7 +75,7 @@ friendRouter.get('/requests', async (req: Request, res: Response) => {
   }
 });
 
-// GET /v2/friends/relationships - Get active friendships
+// GET /v2/friends/relationships - Get active friendships with unified last message and unread count
 friendRouter.get('/relationships', async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
@@ -94,11 +96,75 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
 
     const peerUsers = await db.select().from(users).where(inArray(users.id, peerIds));
     const isUserOnline = (uid: number) => Array.from(connectedClients.values()).some(c => c.userId === uid);
+    const redis = await getRedisClient();
 
-    const mapped = relations.map(r => {
+    const mapped = await Promise.all(relations.map(async r => {
       const peerId = r.userId === currentUserId ? r.friendId : r.userId;
       const peer = peerUsers.find(u => u.id === peerId);
       const lastSeen = isUserOnline(peerId) ? 'online' : (peer?.updatedAt?.toISOString() || 'offline');
+
+      // DM lounge lookup
+      const dmSlug = `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`;
+      const dmLounge = await db.select().from(lounges).where(eq(lounges.slug, dmSlug)).limit(1);
+
+      let lastMessage: any = null;
+      let unreadCount = 0;
+
+      if (dmLounge.length > 0) {
+        const loungeId = dmLounge[0].id;
+
+        // Redis Fast Path
+        if (redis) {
+          try {
+            const cached = await redis.get(`dm:last_msg:${loungeId}`);
+            if (typeof cached === 'string') {
+              lastMessage = JSON.parse(cached);
+            }
+          } catch (e) {}
+        }
+
+        // Cache miss: Fallback to PostgreSQL
+        if (!lastMessage) {
+          const lastMsgRes = await db.select().from(messages)
+            .where(eq(messages.loungeId, loungeId))
+            .orderBy(desc(messages.createdAt))
+            .limit(1);
+
+          if (lastMsgRes.length > 0) {
+            const lm = lastMsgRes[0];
+            lastMessage = {
+              id: String(lm.id),
+              message_id: String(lm.id),
+              content: lm.content,
+              senderId: lm.senderId,
+              user_id: lm.senderId,
+              is_encrypted: lm.encrypted,
+              readBy: lm.readBy,
+              deliveredTo: lm.deliveredTo,
+              createdAt: lm.createdAt?.toISOString() || new Date().toISOString()
+            };
+            if (redis) {
+              try {
+                await redis.set(`dm:last_msg:${loungeId}`, JSON.stringify(lastMessage));
+              } catch (e) {}
+            }
+          }
+        }
+
+        // Count unread incoming messages from peer
+        const unreadMsgs = await db.select().from(messages).where(
+          and(
+            eq(messages.loungeId, loungeId),
+            eq(messages.senderId, peerId)
+          )
+        );
+
+        unreadCount = unreadMsgs.filter(m => {
+          if (!m.readBy) return true;
+          const readIds = m.readBy.split(',').map(Number);
+          return !readIds.includes(currentUserId);
+        }).length;
+      }
 
       return {
         friendId: peerId,
@@ -107,9 +173,12 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
         avatarUrl: peer?.avatarUrl || null,
         status: 'accepted',
         last_seen_at: lastSeen,
-        active_lounge: null
+        active_lounge: null,
+        dm_room_id: dmSlug,
+        unread_count: unreadCount,
+        last_message: lastMessage
       };
-    });
+    }));
 
     res.json({ relationships: mapped });
   } catch (err) {

@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, varchar, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, serial, integer, varchar, timestamp, index } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export const relationships = pgTable('relationships', {
@@ -8,7 +8,10 @@ export const relationships = pgTable('relationships', {
   status: varchar('status', { length: 32 }).default('pending').notNull(), // 'pending', 'accepted', 'blocked'
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
-});
+}, (table) => [
+  index('idx_relationships_user_friend').on(table.userId, table.friendId),
+  index('idx_relationships_status').on(table.status)
+]);
 
 export type Relationship = typeof relationships.$inferSelect;
 export type NewRelationship = typeof relationships.$inferInsert;

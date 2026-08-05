@@ -1,0 +1,39 @@
+Production-Grade Audit Complete
+
+**Overall Grade:** B+
+Core architecture is solid. Production readiness is blocked by type safety debt, dead files, and inconsistent error UX.
+
+**Critical Issues**
+1. Dead code: Deleted `TelegramImageCard.tsx` and `TelegramVoiceNotePlayer.tsx`. Import references in ChatArea already migrated to SecureImageCard/AudioMessagePlayer.
+2. AuthContext.tsx: Broad `catch` blocks swallow AbortError silently; failed auth leaves app in indeterminate state.
+3. New mock routes (friendRoutes, adminRoutes, ticketRoutes, userPublicRoutes) return generic success/error without structured error codes.
+
+**High Priority**
+4. Excessive `any` types (~100+ instances). Blocking true type safety and refactoring confidence.
+5. Console logging scattered across 15+ components. No centralized logger; noisy in production.
+6. PullToRefresh.tsx: Already fixed via refs + useCallback. Verify mobile behavior in production builds.
+7. WebSocket.ts: Exponential backoff without jitter; repeated failures can th herd.
+8. AdminControlDesk.tsx: `onTabChange={(tab: any)` should use explicit union type.
+
+**Medium Priority**
+9. Notifications.ts: requests permission on every chat mount. Dedupe with ref guard.
+10. WalletMainDashboard.tsx: partial fetch failures can leave UI state inconsistent.
+11. Several routes parse JSON without `res.ok` guards on all paths.
+12. `SafeImageCard` and `AudioMessagePlayer` are good additions but need unit tests.
+
+**Security**
+13. No CSRF tokens; frontend relies solely on Bearer. Confirm backend enforces content-type or add nonce.
+14. Client-side attachment MIME types are trusted; server must validate.
+15. `window.confirm` on deletes is acceptable but should be styled modals in production.
+
+**Recommended Actions**
+- Remove remaining dead imports/files
+- Introduce `src/utils/logger.ts` and replace raw console calls
+- Tighten `any` prop contracts in Admin and Market modules
+- Add structured error responses in new route controllers
+- Add WebSocket reconnect jitter and circuit breaker
+- Add unit tests for new routes and AudioMessagePlayer/SecureImageCard
+
+Remaining items from bugs.md that are deferred:
+- Voice notes: component implemented but requires browser format testing
+- WebSocket stability: needs network/env audit beyond code

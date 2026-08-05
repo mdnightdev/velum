@@ -60,7 +60,8 @@ export const messages = pgTable('messages', {
 }, (table) => [
   index('idx_messages_lounge_id').on(table.loungeId),
   index('idx_messages_sender_id').on(table.senderId),
-  index('idx_messages_created_at').on(table.createdAt)
+  index('idx_messages_created_at').on(table.createdAt),
+  index('idx_messages_lounge_created').on(table.loungeId, table.createdAt)
 ]);
 
 export type Lounge = typeof lounges.$inferSelect;

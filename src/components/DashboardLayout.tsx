@@ -15,6 +15,8 @@ import ProfileCard from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
 import { useResponsiveLayout } from '../hooks/useResponsive';
 import { BadgeCheck, Terminal, Radio, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
+import { doubleRatchetService } from '../services/doubleRatchetService';
+import { getSessionId } from '../utils/auth';
 
 interface DashboardLayoutProps {
   user: any;
@@ -150,7 +152,7 @@ export default function DashboardLayout({
     setSavedNotes(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || '';
+  const fetchSessionId = () => getSessionId();
 
   const loadPeopleAndRequests = async () => {
     try {
@@ -189,6 +191,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (user?.userId) {
+      doubleRatchetService.initializeLocalKeys().catch(console.error);
       loadPeopleAndRequests();
       const interval = setInterval(loadPeopleAndRequests, 12000);
       return () => clearInterval(interval);
@@ -266,20 +269,8 @@ export default function DashboardLayout({
 
 
   const computedUnreadCounts = React.useMemo(() => {
-    const counts: Record<string, number> = { ...(externalUnreadCounts || {}) };
-    const msgs = messages || [];
-    msgs.forEach((m) => {
-      if (!m || m.user_id === user?.userId || m.status === 'read') return;
-      const rId = m.room_id || m.lounge_id;
-      if (rId) {
-        counts[rId] = (counts[rId] || 0) + 1;
-      }
-      if (m.lounge_id && m.lounge_id !== rId) {
-        counts[m.lounge_id] = (counts[m.lounge_id] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [messages, user?.userId, externalUnreadCounts]);
+    return { ...(externalUnreadCounts || {}) };
+  }, [externalUnreadCounts]);
 
   // Compute last message preview per room (DMs and lounges)
   const computedLastMessages = React.useMemo(() => {

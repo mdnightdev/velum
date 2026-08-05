@@ -3,6 +3,7 @@ import { Globe, Plus, X, Link, Menu } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
 import { useLanguage } from '../../i18n/LanguageContext';
 import logoSvg from '../../assets/logo.svg?raw';
+import { formatMessageTimestamp } from '../../utils/time';
 
 interface LoungeMainDashboardProps {
   currentUserId: number;
@@ -14,32 +15,7 @@ interface LoungeMainDashboardProps {
   onToggleSidebar?: () => void;
 }
 
-function formatLoungeTime(timestamp: string | number | null | undefined): string {
-  if (!timestamp) return '';
-  const date = new Date(timestamp);
-  if (isNaN(date.getTime())) return '';
-  const now = new Date();
-  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diffTime = todayDate.getTime() - msgDate.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
-  if (diffDays === 0) {
-    let hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'pm' : 'am';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${hours}:${minutes} ${ampm}`;
-  } else if (diffDays === 1) {
-    return 'Yesterday';
-  } else if (diffDays < 7 && diffDays > 0) {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return days[date.getDay()];
-  } else {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${date.getDate()} ${months[date.getMonth()]}`;
-  }
-}
+
 
 export default function LoungeMainDashboard({
   currentUserId,
@@ -335,7 +311,7 @@ export default function LoungeMainDashboard({
             if (loungeLast) {
               lastTxt = loungeLast.content || loungeLast.message || loungeLast.text || '';
               const ts = loungeLast.created_at || loungeLast.timestamp || loungeLast.createdAt;
-              if (ts) lastTimeStr = formatLoungeTime(ts);
+              if (ts) lastTimeStr = formatMessageTimestamp(ts);
             }
             const unread = unreadCounts ? (unreadCounts[loungeKey] || unreadCounts[lounge.lounge_id] || 0) : 0;
 
@@ -355,21 +331,6 @@ export default function LoungeMainDashboard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <div className={`font-bold text-sm capitalize tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
-                    {lastTimeStr && (
-                      <span className={`text-[11px] font-mono shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
-                        {lastTimeStr}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <p className={`text-xs truncate ${unread > 0 ? 'font-semibold text-white' : 'text-text-secondary'}`}>
-                      {lastTxt && <span>{lastTxt}</span>}
-                    </p>
-                    {unread > 0 && (
-                      <div className="bg-accent text-velum-900 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 min-w-[20px] text-center">
-                        {unread}
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
