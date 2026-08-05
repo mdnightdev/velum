@@ -41,7 +41,10 @@ const envSchema = z.object({
   REDIS_URL: z.string().optional().transform((val) => {
     return cleanEnvStr(val) || cleanEnvStr(process.env.REDIS_URL) || cleanEnvStr(process.env.CLOUD_REDIS_URL) || cleanEnvStr(process.env.UPSTASH_REDIS_URL) || '';
   }),
-  CLOUD_REDIS_URL: z.string().optional().transform(cleanEnvStr).default('')
+  CLOUD_REDIS_URL: z.string().optional().transform(cleanEnvStr).default(''),
+  MESSAGE_BATCH_INTERVAL: z.string().optional().transform((val) => {
+    return val ? parseInt(val, 10) : 100;
+  }).default(() => 100)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

@@ -26,7 +26,8 @@ export const lounges = pgTable('lounges', {
 }, (table) => [
   index('idx_lounges_owner_id').on(table.ownerId),
   index('idx_lounges_parent_lounge_id').on(table.parentLoungeId),
-  index('idx_lounges_slug').on(table.slug)
+  index('idx_lounges_slug').on(table.slug),
+  index('idx_lounges_last_message_at').on(table.lastMessageAt)
 ]);
 
 export const loungeMembers = pgTable('lounge_members', {

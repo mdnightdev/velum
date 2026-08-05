@@ -1,4 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import { SystemBot } from './v2/services/systemBot.js';
+export { SystemBot };
 import { db, executeWithRetry } from './v2/db/client.js';
 import { sessions, users } from './v2/db/schema/index.js';
 import { lounges, messages as dbMessages } from './v2/db/schema/lounges.js';
@@ -6,6 +8,7 @@ import { eq, desc } from 'drizzle-orm';
 import type { Server } from 'http';
 import { hashSessionToken } from './v2/middleware/auth.js';
 import { getRedisClient } from './v2/db/redis.js';
+import { config } from './v2/config.js';
 
 interface ClientConnection {
   ws: WebSocket;
@@ -18,6 +21,47 @@ interface ClientConnection {
 
 const connectedClients = new Map<WebSocket, ClientConnection>();
 const roomMembers = new Map<string, Set<WebSocket>>();
+
+// Message batching for performance
+const messageQueues = new Map<number, any[]>(); // userId -> messages
+const batchTimers = new Map<number, NodeJS.Timeout>();
+
+function startMessageBatching(userId: number, message: any) {
+  if (!messageQueues.has(userId)) {
+    messageQueues.set(userId, []);
+  }
+  messageQueues.get(userId)!.push(message);
+
+  // Clear existing timer if any
+  if (batchTimers.has(userId)) {
+    clearTimeout(batchTimers.get(userId)!);
+  }
+
+  // Set new timer to flush batch
+  const timer = setTimeout(() => {
+    flushMessageBatch(userId);
+  }, config.MESSAGE_BATCH_INTERVAL);
+  batchTimers.set(userId, timer);
+}
+
+async function flushMessageBatch(userId: number) {
+  const messages = messageQueues.get(userId);
+  if (!messages || messages.length === 0) return;
+
+  messageQueues.delete(userId);
+  batchTimers.delete(userId);
+
+  // Process messages in batch
+  for (const message of messages) {
+    // Find the client for this user
+    for (const [ws, client] of connectedClients.entries()) {
+      if (client.userId === userId) {
+        await handleSendMessage(client, message);
+        break;
+      }
+    }
+  }
+}
 
 // Redis-based unread counter functions
 async function incrementUnread(userId: number, roomId: string) {
@@ -146,6 +190,13 @@ export function setupWebSocketServer(httpServer: Server) {
           }
         });
         connectedClients.delete(ws);
+
+        // Clean up message batching for this user
+        if (batchTimers.has(client.userId)) {
+          clearTimeout(batchTimers.get(client.userId)!);
+          batchTimers.delete(client.userId);
+        }
+        messageQueues.delete(client.userId);
       });
 
       ws.on('error', (error) => {
@@ -173,7 +224,8 @@ function handleClientMessage(client: ClientConnection, message: any) {
       handleLeaveRoom(client, message.room_id);
       break;
     case 'send_message':
-      handleSendMessage(client, message);
+      // Use message batching for better performance
+      startMessageBatching(client.userId, message);
       break;
     case 'mark_read':
       handleMarkRead(client, message);
