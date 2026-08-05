@@ -38,8 +38,10 @@ interface DashboardLayoutProps {
   onRoomKick: (targetUserId: number) => void;
   onRoomMute: (targetUserId: number, mute: boolean) => void;
   onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
+  onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onMarkAsRead?: (messageId: string, roomId: string) => void;
+  onMarkAllAsRead?: (roomId: string) => void;
 }
 
 export default function DashboardLayout({
@@ -62,8 +64,10 @@ export default function DashboardLayout({
   onRoomKick,
   onRoomMute,
   onSendReaction,
+  onEditMessage,
   onDeleteMessage,
-  onMarkAsRead
+  onMarkAsRead,
+  onMarkAllAsRead
 }: DashboardLayoutProps) {
   const { isMobile, isTablet, isDesktop } = useResponsiveLayout();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
@@ -550,8 +554,10 @@ export default function DashboardLayout({
                   onRoomKick={onRoomKick}
                   onRoomMute={onRoomMute}
                   onSendReaction={onSendReaction}
+                  onEditMessage={onEditMessage}
                   onDeleteMessage={onDeleteMessage}
                   onMarkAsRead={onMarkAsRead}
+                  onMarkAllAsRead={onMarkAllAsRead}
                   onToggleSidebar={toggleSidebar}
                 />
               ) : (
@@ -608,8 +614,10 @@ export default function DashboardLayout({
               onRoomKick={onRoomKick}
               onRoomMute={onRoomMute}
               onSendReaction={onSendReaction}
+              onEditMessage={onEditMessage}
               onDeleteMessage={onDeleteMessage}
               onMarkAsRead={onMarkAsRead}
+              onMarkAllAsRead={onMarkAllAsRead}
               isDark={isDark}
               activeChatPeer={activeChatPeer}
               onToggleSidebar={toggleSidebar}

@@ -16,6 +16,7 @@
   --color-accent-20:     rgba(200, 155, 138, 0.2);
   --color-accent-40:     rgba(200, 155, 138, 0.4);
   --color-accent-hover:  #D9AFA0;   /* brighter variant for hover */
+  --color-unread-badge:  #B76E79;   /* Rose gold */
 
   /* ---- Premium Institutional Bank Palette (Steel Sapphire / Platinum Cobalt) ---- */
   --color-bank-accent:        #5585E2;

@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, varchar, text, boolean, timestamp, index, AnyPgColumn, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, serial, integer, varchar, text, boolean, timestamp, index, AnyPgColumn, primaryKey, unique } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export const lounges = pgTable('lounges', {
@@ -57,6 +57,8 @@ export const messages = pgTable('messages', {
   encrypted: boolean('encrypted').default(false).notNull(),
   deliveredTo: text('delivered_to').default(''),
   readBy: text('read_by').default(''),
+  isEdited: boolean('is_edited').default(false).notNull(),
+  editedAt: timestamp('edited_at'),
   createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => [
   index('idx_messages_lounge_id').on(table.loungeId),
@@ -80,6 +82,21 @@ export const userUnreadCounts = pgTable('user_unread_counts', {
   index('idx_user_unread_counts_lounge').on(table.loungeId)
 ]);
 
+export const messageReactions = pgTable('message_reactions', {
+  id: serial('id').primaryKey(),
+  messageId: integer('message_id')
+    .references(() => messages.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  emoji: varchar('emoji', { length: 32 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => [
+  unique('unique_message_user_emoji').on(table.messageId, table.userId, table.emoji),
+  index('idx_message_reactions_message').on(table.messageId)
+]);
+
 export type Lounge = typeof lounges.$inferSelect;
 export type NewLounge = typeof lounges.$inferInsert;
 export type LoungeMember = typeof loungeMembers.$inferSelect;
@@ -88,3 +105,5 @@ export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
 export type UserUnreadCount = typeof userUnreadCounts.$inferSelect;
 export type NewUserUnreadCount = typeof userUnreadCounts.$inferInsert;
+export type MessageReaction = typeof messageReactions.$inferSelect;
+export type NewMessageReaction = typeof messageReactions.$inferInsert;

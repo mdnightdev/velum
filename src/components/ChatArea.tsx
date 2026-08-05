@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Trash2, ArrowLeft, ChevronLeft, ShieldAlert, Smile, AlertCircle, 
-  Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag, Bell, Lock
+  Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag, Bell, Lock, Pencil
 } from 'lucide-react';
 import { Message, stripAt } from '../types';
 import { encryptMessage, decryptMessage, EncryptionContext } from '../services/encryptionService';
@@ -33,8 +33,10 @@ interface ChatAreaProps {
   onRoomKick: (targetUserId: number) => void;
   onRoomMute: (targetUserId: number, mute: boolean) => void;
   onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
+  onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number) => void;
+  onMarkAllAsRead?: (roomId: string) => void;
   onMarkDelivered?: (messageId: string, roomId: string) => void;
   activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
   isDark?: boolean;
@@ -73,8 +75,10 @@ export default function ChatArea({
   onRoomKick,
   onRoomMute,
   onSendReaction,
+  onEditMessage,
   onDeleteMessage,
   onMarkAsRead,
+  onMarkAllAsRead,
   activeChatPeer,
   isDark,
   onBackToDeck,
@@ -86,6 +90,8 @@ export default function ChatArea({
 }: ChatAreaProps) {
   const { t } = useLanguage();
   const [inputText, setInputText] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const rawContentsMap = useRef<Map<string, string>>(new Map());
   
   // Attachment states
   const [selectedAttachment, setSelectedAttachment] = useState<{ name: string; size: string; type: string; data: string } | null>(null);
@@ -465,9 +471,48 @@ export default function ChatArea({
     cancelRecording();
   };
 
+  const handleStartEdit = (msg: Message) => {
+    const timestampMs = typeof msg.timestamp === 'number' ? msg.timestamp : new Date(msg.timestamp).getTime();
+    const timeDiffMinutes = (Date.now() - timestampMs) / (1000 * 60);
+    if (timeDiffMinutes > 15) {
+      alert('Message editing window (15 minutes) has expired.');
+      return;
+    }
+    setEditingMessageId(msg.message_id);
+    const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
+    const activeContent = decryptedContents.get(msg.message_id) || rawContent;
+    const attachment = activeContent.includes('[Attachment:') ? parseAttachment(activeContent) : null;
+    const plainText = attachment ? (attachment.caption || '') : activeContent;
+    setInputText(plainText);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setInputText('');
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() && !selectedAttachment) return;
+
+    if (editingMessageId) {
+      if (onEditMessage) {
+        const originalMsg = messages.find(m => m.message_id === editingMessageId);
+        let finalEditContent = inputText.trim();
+        if (originalMsg) {
+          const rawContent = decryptedMap[editingMessageId] || originalMsg.content || '';
+          const activeContent = decryptedContents.get(editingMessageId) || rawContent;
+          if (activeContent.includes('[Attachment:')) {
+            const attachmentPart = activeContent.split(']')[0] + ']';
+            finalEditContent = `${attachmentPart} ${inputText.trim()}`.trim();
+          }
+        }
+        onEditMessage(editingMessageId, roomId, finalEditContent);
+      }
+      setEditingMessageId(null);
+      setInputText('');
+      return;
+    }
     
     let textToSend = inputText.trim();
     if (selectedAttachment) {
@@ -641,13 +686,16 @@ export default function ChatArea({
     requestNotificationPermission();
   }, []);
 
-  // Decrypt messages when conversation changes
+  // Decrypt messages when conversation changes (and re-decrypt if edited)
   useEffect(() => {
     const decryptMessages = async () => {
       const updates = new Map<string, string>();
       for (const msg of conversationMessages) {
         const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-        if (!decryptedContents.has(msg.message_id) && rawContent) {
+        const hasDecrypted = decryptedContents.has(msg.message_id);
+        const prevRaw = rawContentsMap.current.get(msg.message_id);
+        
+        if (rawContent && (!hasDecrypted || prevRaw !== rawContent)) {
           try {
             const context: EncryptionContext = {
               type: activeChatPeer ? 'direct' : 'lounge',
@@ -657,6 +705,7 @@ export default function ChatArea({
             };
             const decrypted = await decryptMessage(rawContent, context);
             updates.set(msg.message_id, decrypted);
+            rawContentsMap.current.set(msg.message_id, rawContent);
           } catch (err) {
             console.error('[ChatArea] Decryption error for message', msg.message_id, err);
           }
@@ -684,9 +733,17 @@ export default function ChatArea({
 
   // Mark messages as read when chat becomes visible
   const onMarkAsReadRef = useRef(onMarkAsRead);
+  const markAllAsReadRef = useRef(onMarkAllAsRead);
   useEffect(() => {
     onMarkAsReadRef.current = onMarkAsRead;
-  }, [onMarkAsRead]);
+    markAllAsReadRef.current = onMarkAllAsRead;
+  }, [onMarkAsRead, onMarkAllAsRead]);
+
+  useEffect(() => {
+    if (!roomId) return;
+    // When entering the chat, mark all messages as read
+    markAllAsReadRef.current?.(roomId);
+  }, [roomId]);
 
   useEffect(() => {
     if (!onMarkAsReadRef.current) return;
@@ -1033,7 +1090,14 @@ export default function ChatArea({
                       )}
                       {parsedMsgContent && (
                         <div>
-                          <p className="whitespace-pre-wrap">{parsedMsgContent}</p>
+                          <p className="whitespace-pre-wrap">
+                            {parsedMsgContent}
+                            {msg.is_edited && (
+                              <span className="text-[10px] opacity-45 ml-1.5 select-none font-sans lowercase" title={msg.edited_at ? `Edited at ${new Date(msg.edited_at).toLocaleTimeString()}` : 'Edited'}>
+                                (edited)
+                              </span>
+                            )}
+                          </p>
                           {(() => {
                             const keyMatch = parsedMsgContent.match(/`([a-f0-9A-F\-_\:]{12,})`/);
                             const keyString = keyMatch ? keyMatch[1] : null;
@@ -1092,18 +1156,29 @@ export default function ChatArea({
                   {/* Absolute positioning inline toolbox on hover */}
                   {!msg.deleted && (
                     <div className={`absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 p-1 bg-velum-750 border border-white-10 rounded-lg shadow-xl z-20 ${
-                      isMe ? '-left-20' : '-right-20'
+                      isMe ? '-left-28' : '-right-28'
                     }`}>
                       <button
                         onClick={() => setShowEmojisForMsg(showEmojisForMsg === msg.message_id ? null : msg.message_id)}
                         className="text-text-secondary hover:text-white p-1 rounded"
+                        title="Add reaction"
                       >
                         <Smile className="w-3.5 h-3.5" />
                       </button>
+                      {isMe && onEditMessage && (
+                        <button
+                          onClick={() => handleStartEdit(msg)}
+                          className="text-text-secondary hover:text-white p-1 rounded"
+                          title="Edit message"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {isMe && onDeleteMessage && (
                         <button
                           onClick={() => onDeleteMessage(msg.message_id, msg.room_id || roomId)}
                           className="text-red-400 hover:text-red-350 p-1 rounded"
+                          title="Delete message"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1308,6 +1383,21 @@ export default function ChatArea({
           </div>
         ) : (
           <>
+          {editingMessageId && (
+            <div className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 mb-2.5 flex justify-between items-center text-[10px] text-text-secondary select-none font-mono tracking-wider">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
+                <span>EDITING MESSAGE</span>
+              </div>
+              <button 
+                type="button"
+                onClick={handleCancelEdit}
+                className="text-rose-400 hover:text-rose-300 font-bold uppercase text-[9px] cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           {roomAccessLevel === 'ANNOUNCE' && !['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(currentUserRole) ? (
             <div className="w-full bg-velum-800 border border-white-5 rounded-xl p-3 text-center text-[11px] text-text-secondary font-mono tracking-widest uppercase">
               🔒 Admins Only

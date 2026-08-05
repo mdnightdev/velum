@@ -188,8 +188,10 @@ function AppContent() {
       onRoomKick={ws.kickMember}
       onRoomMute={ws.muteMember}
       onSendReaction={ws.sendReaction}
+      onEditMessage={ws.editMessage}
       onDeleteMessage={ws.deleteMessage}
       onMarkAsRead={ws.markAsRead}
+      onMarkAllAsRead={ws.markAllAsRead}
     />
   );
 }

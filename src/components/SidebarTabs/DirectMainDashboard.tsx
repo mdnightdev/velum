@@ -186,7 +186,7 @@ export default function DirectMainDashboard({
                   {velumTxt && <span className="truncate">{velumTxt}</span>}
                 </p>
                 {velumUnread > 0 && (
-                  <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-amber-500 text-black shadow-sm shrink-0 min-w-[20px] text-center">
+                  <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-unread-badge text-white shadow-sm shrink-0 min-w-[20px] text-center">
                     {velumUnread}
                   </span>
                 )}
@@ -322,7 +322,7 @@ export default function DirectMainDashboard({
                           Failed
                         </span>
                       ) : unread > 0 ? (
-                        <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-amber-500 text-black shadow-sm shrink-0 min-w-[20px] text-center">
+                        <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-unread-badge text-white shadow-sm shrink-0 min-w-[20px] text-center">
                           {unread}
                         </span>
                       ) : null}

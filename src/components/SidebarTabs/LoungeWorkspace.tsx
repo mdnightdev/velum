@@ -51,8 +51,10 @@ interface LoungeWorkspaceProps {
   onRoomKick?: (userId: number) => void;
   onRoomMute?: (userId: number, mute: boolean) => void;
   onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
+  onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onMarkAsRead?: (messageId: string, roomId: string) => void;
+  onMarkAllAsRead?: (roomId: string) => void;
   onToggleSidebar?: () => void;
 }
 
@@ -94,6 +96,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       return updated;
     });
     props.onMarkAsRead?.(messageId, roomId);
+  };
+
+  const handleMarkAllAsRead = (roomId: string) => {
+    props.onMarkAllAsRead?.(roomId);
   };
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -952,8 +958,11 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 onRoomKick={props.onRoomKick || (() => {})}
                 onRoomMute={props.onRoomMute || (() => {})}
                 onSendReaction={props.onSendReaction}
+                onEditMessage={props.onEditMessage}
                 onDeleteMessage={props.onDeleteMessage}
                 onMarkAsRead={handleMarkAsRead}
+                onMarkAllAsRead={handleMarkAllAsRead}
+
                 isDark={props.isDark}
                 isMobile={false}
                 onToggleSidebar={props.onToggleSidebar}
@@ -1057,8 +1066,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           onRoomKick={props.onRoomKick || (() => {})}
           onRoomMute={props.onRoomMute || (() => {})}
           onSendReaction={props.onSendReaction}
+          onEditMessage={props.onEditMessage}
           onDeleteMessage={props.onDeleteMessage}
           onMarkAsRead={handleMarkAsRead}
+          onMarkAllAsRead={handleMarkAllAsRead}
           isDark={props.isDark}
           isMobile={true}
           onBackToDeck={() => props.onRoomSelect('')}

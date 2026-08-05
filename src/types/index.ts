@@ -101,6 +101,7 @@ export interface Message {
   lounge_id?: string;
   reply_to?: string | null;
   expires_in?: string | number | null;
+  is_edited?: boolean;
   edited_at?: string;
   db_message_id?: number;
   avatar?: string;

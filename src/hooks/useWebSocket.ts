@@ -202,6 +202,18 @@ export function useWebSocket({
             }
             return m;
           }));
+        } else if (data.type === 'message_edit') {
+          setMessages(prev => prev.map(m => {
+            if (m.message_id === data.message_id) {
+              return {
+                ...m,
+                content: data.content,
+                is_edited: true,
+                edited_at: data.edited_at
+              };
+            }
+            return m;
+          }));
         } else if (data.type === 'message_deleted') {
           setMessages(prev => prev.filter(m => m.message_id !== data.message_id));
         } else if (data.type === 'message_read') {
@@ -402,6 +414,16 @@ export function useWebSocket({
     }));
   };
 
+  const editMessage = (messageId: string, roomId: string, content: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      type: 'edit_message',
+      message_id: messageId,
+      room_id: roomId,
+      content: content
+    }));
+  };
+
   const deleteMessage = (messageId: string, roomId: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
@@ -419,6 +441,14 @@ export function useWebSocket({
       message_id: messageId,
       room_id: roomId,
       db_message_id: dbMessageId
+    }));
+  };
+
+  const markAllAsRead = (roomId: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      type: 'mark_all_read',
+      room_id: roomId
     }));
   };
 
@@ -462,15 +492,15 @@ export function useWebSocket({
   }, [isAuthenticated, userId]);
 
   useEffect(() => {
-    if (activeRoomId) {
+    if (activeRoomId && wsConnected) {
       joinRoom(activeRoomId);
     }
     return () => {
-      if (activeRoomId) {
+      if (activeRoomId && wsConnected) {
         leaveRoom(activeRoomId);
       }
     };
-  }, [activeRoomId]);
+  }, [activeRoomId, wsConnected]);
 
   return {
     messages,
@@ -483,8 +513,10 @@ export function useWebSocket({
     kickMember,
     muteMember,
     sendReaction,
+    editMessage,
     deleteMessage,
     markAsRead,
+    markAllAsRead,
     markDelivered,
     disconnect,
     connectWebSocket,
