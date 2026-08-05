@@ -8,7 +8,7 @@ data/server.log
 data/velum_state_v3.bin
 server/services/ws.log
 docs/
-scripts/
+/scripts/
 
 # Ignore local databases, keys, and logs
 data/

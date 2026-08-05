@@ -100,14 +100,14 @@ export default function DashboardLayout({
         const data = await res.json();
         setProfileCardUser({
           ...profUser,
-          displayName: data.displayName,
+          displayName: data.displayName || profUser.displayName || profUser.username,
           bio: data.bio || '',
-          location: data.location || 'Earth',
-          status: 'Online',
+          location: data.location || '',
+          status: data.status || 'Active',
           isMuted: !!data.isMuted,
           isBlocked: !!data.isBlocked,
-          created_at: data.created_at || null,
-          stats: { loungesCount: 0, connectionsCount: 0 }
+          joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '',
+          stats: data.stats || { loungesCount: 0, connectionsCount: 0 }
         });
       } else {
         setProfileCardUser(profUser);

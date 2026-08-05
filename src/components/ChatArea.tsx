@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Trash2, ArrowLeft, ChevronLeft, ShieldAlert, Smile, AlertCircle, 
-  Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag, Bell
+  Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag, Bell, Lock
 } from 'lucide-react';
 import { Message, stripAt } from '../types';
 import { decryptMessage } from '../services/encryptionService';
+import { doubleRatchetService } from '../services/doubleRatchetService';
 import ProfileCard from './ProfileCard';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { ChatHeader } from './Chat/ChatHeader';
@@ -138,7 +139,8 @@ export default function ChatArea({
   // Visual audio waveform playing states
   const [playingWaveforms, setPlayingWaveforms] = useState<Record<string, boolean>>({});
   const [waveformAudioProg, setWaveformAudioProg] = useState<Record<string, number>>({});
-  const [popoverPeer, setPopoverPeer] = useState<{userId: number, username: string, messageId: string, displayName?: string, bio?: string, location?: string, joinedDate?: string, isMuted?: boolean, isBlocked?: boolean, avatar?: string} | null>(null);
+  const [popoverPeer, setPopoverPeer] = useState<{userId: number, username: string, messageId: string, displayName?: string, bio?: string, location?: string, joinedDate?: string, status?: string, isMuted?: boolean, isBlocked?: boolean, avatar?: string, stats?: { loungesCount: number, connectionsCount: number }} | null>(null);
+  const [decryptedMap, setDecryptedMap] = useState<Record<string, string>>({});
 
   // Active playing audio ref
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -151,6 +153,28 @@ export default function ChatArea({
   useEffect(() => {
     markedMessageIdsRef.current.clear();
   }, [roomId, activeChatPeer?.userId]);
+
+  // Double Ratchet asynchronous decryption effect
+  useEffect(() => {
+    let isMounted = true;
+    const processDecryption = async () => {
+      for (const m of messages) {
+        if (m.content?.startsWith('ratchet:v1:') && m.message_id && !decryptedMap[m.message_id]) {
+          const peerId = activeChatPeer?.userId || m.user_id;
+          try {
+            const decrypted = await doubleRatchetService.decryptDirectMessage(m.content, peerId);
+            if (isMounted) {
+              setDecryptedMap(prev => ({ ...prev, [m.message_id]: decrypted }));
+            }
+          } catch (err) {
+            console.error('[ChatArea] Double Ratchet decryption error:', err);
+          }
+        }
+      }
+    };
+    processDecryption();
+    return () => { isMounted = false; };
+  }, [messages, activeChatPeer?.userId]);
 
   useEffect(() => {
     if (!activeChatPeer) return;
@@ -406,7 +430,16 @@ export default function ChatArea({
       }
     }
 
-    onSendMessage(textToSend, null, false);
+    if (activeChatPeer && activeChatPeer.userId !== 999) {
+      try {
+        const encryptedEnvelope = await doubleRatchetService.encryptDirectMessage(textToSend, activeChatPeer.userId);
+        onSendMessage(encryptedEnvelope, null, true);
+      } catch (err) {
+        onSendMessage(textToSend, null, false);
+      }
+    } else {
+      onSendMessage(textToSend, null, false);
+    }
     setInputText('');
     setSelectedAttachment(null);
     if (fileInputRef.current) {
@@ -637,8 +670,9 @@ export default function ChatArea({
           const isMe = msg.user_id === currentUserId;
             const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg);
             
-            // Decrypt E2EE content first before running any parsing on it
-            const activeContent = decryptMessage(msg.content || '', msg.room_id || roomId, msg.is_encrypted || (msg as any).isEncrypted);
+            const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
+            const activeContent = decryptMessage(rawContent, msg.room_id || roomId, msg.is_encrypted || (msg as any).isEncrypted);
+            const isRatchetE2EE = !!(msg.content?.startsWith('ratchet:v1:') || msg.is_encrypted || (msg as any).isEncrypted);
             
             // Check for voice note payload
             const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
@@ -763,13 +797,15 @@ export default function ChatArea({
                              if (prev && prev.userId === msg.user_id && prev.messageId === msg.message_id) {
                                return {
                                  ...prev,
-                                 displayName:cleanName,
+                                 displayName: data.displayName || cleanName,
                                  bio: data.bio || "",
                                  location: data.location || "",
                                  joinedDate: data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : "",
+                                 status: data.status || "Active",
                                  isMuted: !!data.isMuted,
                                  isBlocked: !!data.isBlocked,
-                                 avatar: data.avatar || ""
+                                 avatar: data.avatar || "",
+                                 stats: data.stats || { loungesCount: 0, connectionsCount: 0 }
                                };
                              }
                              return prev;
@@ -794,12 +830,12 @@ export default function ChatArea({
                             bio: popoverPeer.bio || "",
                             location: popoverPeer.location || "",
                             joinedDate: popoverPeer.joinedDate || "",
-                            status: "Active",
+                            status: popoverPeer.status || "Active",
                             isMuted: !!popoverPeer.isMuted,
                             isBlocked: !!popoverPeer.isBlocked,
-                            stats: {
-                              loungesCount: 12,
-                              connectionsCount: 45
+                            stats: popoverPeer.stats || {
+                              loungesCount: 0,
+                              connectionsCount: 0
                             }
                           }}
                           variant="popover"

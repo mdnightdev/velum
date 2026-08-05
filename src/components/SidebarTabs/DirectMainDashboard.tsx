@@ -92,8 +92,9 @@ export default function DirectMainDashboard({
   if (velumLast) {
     velumIsMe = (velumLast.user_id === currentUserId) || (velumLast.senderId === currentUserId);
     const raw = velumLast.content || velumLast.message || velumLast.body || velumLast.text || '';
+    const actualRoomId = velumLast.room_id || velumRoomId;
     try {
-      velumTxt = decryptMessage(raw, velumRoomId, !!(velumLast.is_encrypted || velumLast.isEncrypted)) || raw || '';
+      velumTxt = decryptMessage(raw, actualRoomId, !!(velumLast.is_encrypted || velumLast.isEncrypted)) || raw || '';
     } catch (e) {
       velumTxt = raw || '';
     }
@@ -148,6 +149,7 @@ export default function DirectMainDashboard({
           onClick={() => {
             if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
             if (onSectionView) onSectionView('chat');
+            if (onMarkAsRead) onMarkAsRead('', velumRoomId);
           }}
           className={`w-full px-5 py-3.5 border-b flex items-center justify-between gap-3 cursor-pointer transition-colors ${
             isDark ? 'border-white-5 hover:bg-text-primary/[0.03]' : 'border-gray-100 hover:bg-gray-50'
@@ -229,8 +231,9 @@ export default function DirectMainDashboard({
             isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
             const raw = last.content || last.message || last.body || last.text || '';
             const isEnc = !!(last.is_encrypted || last.isEncrypted);
+            const actualRoomId = last.room_id || dmRoomId;
             try {
-              lastTxt = decryptMessage(raw, dmRoomId, isEnc) || raw || '';
+              lastTxt = decryptMessage(raw, actualRoomId, isEnc) || raw || '';
             } catch (e) {
               lastTxt = raw || '';
             }

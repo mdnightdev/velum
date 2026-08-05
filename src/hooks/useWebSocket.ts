@@ -215,12 +215,6 @@ export function useWebSocket({
           if (data.room_id) {
             const newMessage = data as Message;
             setLastMessages(prev => ({ ...prev, [data.room_id]: newMessage }));
-            if (data.room_id !== activeRoomIdRef.current && newMessage.user_id !== uid) {
-              setUnreadCounts(prev => ({
-                ...prev,
-                [data.room_id]: (prev[data.room_id] || 0) + 1
-              }));
-            }
           }
 
           if (data.room_id === activeRoomIdRef.current) {

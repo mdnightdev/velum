@@ -37,8 +37,9 @@ export default function PeopleMainDashboard({
   onToggleSidebar
 }: PeopleMainDashboardProps) {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'all' | 'online' | 'pending' | 'blocked'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'online' | 'directory' | 'pending' | 'blocked'>('all');
   const [relationships, setRelationships] = useState<any[]>([]);
+  const [directoryUsers, setDirectoryUsers] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addUsernameInput, setAddUsernameInput] = useState('');
   const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
@@ -69,6 +70,28 @@ export default function PeopleMainDashboard({
     const intv = setInterval(fetchRelationships, 15000);
     return () => clearInterval(intv);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'directory') {
+      const fetchDirectory = async () => {
+        try {
+          const sId = sessionStorage.getItem('velum-sessionId') || '';
+          const res = await fetch(`/v2/user/directory/search?q=${encodeURIComponent(userSearchTerm)}`, {
+            headers: { 'Authorization': `Bearer ${sId}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setDirectoryUsers(data.users || []);
+          } else {
+            setDirectoryUsers([]);
+          }
+        } catch (err) {
+          setDirectoryUsers([]);
+        }
+      };
+      fetchDirectory();
+    }
+  }, [activeTab, userSearchTerm]);
 
   const handleUnblock = async (targetId: number) => {
     try {
@@ -162,6 +185,8 @@ export default function PeopleMainDashboard({
     displayData = activeFriends.filter(f => !userSearchTerm || f.username.toLowerCase().includes(userSearchTerm.toLowerCase()));
   } else if (activeTab === 'online') {
     displayData = onlineFriends.filter(f => !userSearchTerm || f.username.toLowerCase().includes(userSearchTerm.toLowerCase()));
+  } else if (activeTab === 'directory') {
+    displayData = directoryUsers;
   } else if (activeTab === 'pending') {
     displayData = pendingIncoming.filter(f => !userSearchTerm || (f.sender_name && f.sender_name.toLowerCase().includes(userSearchTerm.toLowerCase())));
   } else if (activeTab === 'blocked') {
@@ -188,7 +213,7 @@ export default function PeopleMainDashboard({
             <Search className={`w-4 h-4 flex-shrink-0 ${isDark ? 'text-text-secondary' : 'text-gray-400'}`} />
             <input
               type="text"
-              placeholder={t('people.search', 'Search friends...')}
+              placeholder={t('people.search', 'Search users...')}
               value={userSearchTerm}
               onChange={(e) => setUserSearchTerm(e.target.value)}
               className="w-full bg-transparent border-none outline-none text-xs ml-2 text-inherit"
@@ -207,11 +232,12 @@ export default function PeopleMainDashboard({
 
       {/* Tabs */}
       <div className={`px-6 flex items-center gap-6 border-b ${isDark ? 'border-white-5' : 'border-gray-200'}`}>
-        {(['all', 'online', 'pending', 'blocked'] as const).map(tab => {
-          let label = tab === 'all' ? t('people.tab_all', 'All Friends') : tab === 'online' ? t('people.tab_online', 'Online') : tab === 'pending' ? t('people.tab_pending', 'Pending') : t('people.tab_blocked', 'Blocked');
+        {(['all', 'online', 'directory', 'pending', 'blocked'] as const).map(tab => {
+          let label = tab === 'all' ? t('people.tab_all', 'All Friends') : tab === 'online' ? t('people.tab_online', 'Online') : tab === 'directory' ? t('people.tab_directory', 'User Directory') : tab === 'pending' ? t('people.tab_pending', 'Pending') : t('people.tab_blocked', 'Blocked');
           let count = 0;
           if (tab === 'all') count = activeFriends.length;
           if (tab === 'online') count = onlineFriends.length;
+          if (tab === 'directory') count = directoryUsers.length;
           if (tab === 'pending') count = pendingIncoming.length;
           if (tab === 'blocked') count = blockedUsers.length;
           
@@ -268,10 +294,11 @@ export default function PeopleMainDashboard({
             {displayData.map((item, idx) => {
               const isPending = activeTab === 'pending';
               const isBlocked = activeTab === 'blocked';
+              const isDirectory = activeTab === 'directory';
               
               const username = isPending ? item.sender_name : item.username;
-              const displayName = isPending ? (item.sender_display_name || item.sender_name) : (item.displayName || item.username || item.username);
-              const userId = isPending ? item.sender_id : item.friendId;
+              const displayName = isPending ? (item.sender_display_name || item.sender_name) : (item.displayName || item.username);
+              const userId = isPending ? item.sender_id : (isDirectory ? item.id : item.friendId);
               const avatarUrl = isPending ? item.sender_avatar : item.avatarUrl;
               const handle = `@${stripAt(username)}`;
               const showHandle = displayName && username && displayName.toLowerCase() !== username.toLowerCase();

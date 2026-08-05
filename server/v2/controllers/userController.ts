@@ -3,32 +3,60 @@ import { userRepository } from '../repositories/userRepository.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { db } from '../db/client.js';
 import { users, sessions } from '../db/schema/index.js';
-import { eq, desc } from 'drizzle-orm';
+import { eq, or, and, count, desc } from 'drizzle-orm';
+import { loungeMembers } from '../db/schema/lounges.js';
+import { relationships } from '../db/schema/relationships.js';
 import { getRedisClient } from '../db/redis.js';
 
 export class UserController {
   async getProfile(req: Request, res: Response): Promise<void> {
-  if (!req.user) throw new NotFoundError('User context missing.');
+    if (!req.user) throw new NotFoundError('User context missing.');
 
-  const targetUserId = parseInt(req.params.id, 10);
-  if (isNaN(targetUserId)) {
-    throw new BadRequestError('Invalid user ID.');
-  }
+    const targetUserId = req.params.id === 'me' ? req.user.userId : parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      throw new BadRequestError('Invalid user ID.');
+    }
 
-  const user = await userRepository.findById(targetUserId);
-  if (!user) {
-    throw new NotFoundError('User not found.');
-  }
+    const user = await userRepository.findById(targetUserId);
+    if (!user) {
+      throw new NotFoundError('User not found.');
+    }
+
+    const userLounges = await db
+      .select({ value: count() })
+      .from(loungeMembers)
+      .where(eq(loungeMembers.userId, targetUserId));
+    const loungesCount = Number(userLounges[0]?.value || 0);
+
+    const userConnections = await db
+      .select({ value: count() })
+      .from(relationships)
+      .where(
+        and(
+          or(eq(relationships.userId, targetUserId), eq(relationships.friendId, targetUserId)),
+          eq(relationships.status, 'accepted')
+        )
+      );
+    const connectionsCount = Number(userConnections[0]?.value || 0);
+
+    const isRecentlyActive = user.updatedAt && (Date.now() - new Date(user.updatedAt).getTime() < 300000);
+    const resolvedStatus = isRecentlyActive ? 'Online' : 'Offline';
+
     res.status(200).json({
       userId: user.id,
       username: user.username,
-      displayName: user.displayName,
+      displayName: user.displayName || user.username,
       avatar: user.avatarUrl || '',
       avatarUrl: user.avatarUrl || '',
       bio: user.bio || '',
       location: user.location || '',
       role: user.role,
       createdAt: user.createdAt,
+      status: resolvedStatus,
+      stats: {
+        loungesCount,
+        connectionsCount
+      }
     });
   }
 

@@ -6,7 +6,8 @@ import { userRepository } from '../repositories/userRepository.js';
 import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
-import { eq } from 'drizzle-orm';
+import { userPrekeys } from '../db/schema/keys.js';
+import { eq, or, ilike, desc } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 
 export const userRouter = Router();
@@ -25,6 +26,116 @@ const authMiddleware = createAuthMiddleware(async (tokenHash) => {
     },
     expiresAt: result.session.expiresAt
   };
+});
+
+userRouter.post('/keys/prekey-bundle', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { identityKey, signedPrekey, signedPrekeySignature, oneTimePrekeys } = req.body;
+
+    if (!identityKey || !signedPrekey || !signedPrekeySignature) {
+      return res.status(400).json({ error: 'Missing required prekey parameters.' });
+    }
+
+    const existing = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, userId)).limit(1);
+    const oneTimeStr = typeof oneTimePrekeys === 'string' ? oneTimePrekeys : JSON.stringify(oneTimePrekeys || []);
+
+    if (existing.length === 0) {
+      await db.insert(userPrekeys).values({
+        userId,
+        identityKey,
+        signedPrekey,
+        signedPrekeySignature,
+        oneTimePrekeys: oneTimeStr,
+        updatedAt: new Date()
+      });
+    } else {
+      await db.update(userPrekeys).set({
+        identityKey,
+        signedPrekey,
+        signedPrekeySignature,
+        oneTimePrekeys: oneTimeStr,
+        updatedAt: new Date()
+      }).where(eq(userPrekeys.userId, userId));
+    }
+
+    res.json({ message: 'Prekey bundle uploaded successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to upload prekey bundle.' });
+  }
+});
+
+userRouter.get('/:id/prekey-bundle', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const targetUserId = req.params.id === 'me' ? req.user!.userId : parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+
+    const prekeyRecord = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, targetUserId)).limit(1);
+    if (prekeyRecord.length === 0) {
+      return res.status(404).json({ error: 'Prekey bundle not found for user.' });
+    }
+
+    let parsedOneTime = [];
+    try {
+      parsedOneTime = JSON.parse(prekeyRecord[0].oneTimePrekeys || '[]');
+    } catch (e) {
+      parsedOneTime = [];
+    }
+
+    res.json({
+      userId: prekeyRecord[0].userId,
+      identityKey: prekeyRecord[0].identityKey,
+      signedPrekey: prekeyRecord[0].signedPrekey,
+      signedPrekeySignature: prekeyRecord[0].signedPrekeySignature,
+      oneTimePrekeys: parsedOneTime,
+      updatedAt: prekeyRecord[0].updatedAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch prekey bundle.' });
+  }
+});
+
+userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    let dbUsers;
+    if (query) {
+      dbUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        bio: users.bio,
+        location: users.location,
+        role: users.role,
+        createdAt: users.createdAt
+      }).from(users)
+      .where(or(
+        ilike(users.username, `%${query}%`),
+        ilike(users.displayName, `%${query}%`)
+      ))
+      .limit(50);
+    } else {
+      dbUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        bio: users.bio,
+        location: users.location,
+        role: users.role,
+        createdAt: users.createdAt
+      }).from(users)
+      .orderBy(desc(users.createdAt))
+      .limit(50);
+    }
+
+    res.json({ users: dbUsers });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to search directory.' });
+  }
 });
 
 userRouter.get('/:id/profile', authMiddleware, (req, res, next) => {

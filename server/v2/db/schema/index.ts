@@ -11,3 +11,4 @@ export * from './reserves.js';
 export * from './devices.js';
 export * from './exchange_rates.js';
 export * from './relationships.js';
+export * from './keys.js';
