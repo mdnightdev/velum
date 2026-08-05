@@ -3,7 +3,7 @@ import ChatArea from '../ChatArea';
 import { useResponsive } from '../../hooks/useResponsive';
 import { Hash, Users, Info, ChevronLeft, ChevronRight, Plus, X, Settings, Lock, Menu } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
-import { decryptMessage } from '../../services/encryptionService';
+import { decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 
 // Seal System Icons (Section 16)
@@ -622,18 +622,18 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     const cleanName = cleanRoomName(room.name);
     const unread = props.unreadCounts?.[roomId] || 0;
     const lm = props.lastMessages?.[roomId];
-    
+
     let lastTxt = '';
     let lastTimeStr = '';
     let isFailed = false;
     let isMe = false;
-    
+
     if (lm) {
       isMe = lm.user_id === props.currentUserId || lm.senderId === props.currentUserId;
       const raw = lm.content || lm.message || lm.body || lm.text || '';
       const isEnc = !!(lm.is_encrypted || lm.isEncrypted);
       try {
-        lastTxt = decryptMessage(raw, roomId, isEnc) || raw || '';
+        lastTxt = decryptMessageSync(raw, roomId, isEnc) || raw || '';
       } catch {
         lastTxt = raw || '';
       }
@@ -680,14 +680,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               {type === 'exec' && <Lock className="w-4 h-4" />}
             </>
           )}
-          {unread > 0 && !isActive && (
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-accent rounded-full animate-pulse border-2 border-velum-900" />
-          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline gap-2">
-            <div className={`text-xs font-bold truncate uppercase tracking-wider ${unread > 0 && !isActive ? 'text-accent' : ''}`}>{cleanName}</div>
-            {lastTimeStr && !unread && <div className={`text-[9px] font-mono shrink-0 ${unread > 0 && !isActive ? 'text-accent' : 'text-text-secondary opacity-60'}`}>{lastTimeStr}</div>}
+            <div className="text-xs font-bold truncate uppercase tracking-wider">{cleanName}</div>
           </div>
           {typingRooms[roomId] && typingRooms[roomId].size > 0 ? (
             <div className="text-[9px] text-accent font-semibold flex items-center gap-1 animate-pulse truncate uppercase tracking-wider mt-0.5">
@@ -696,19 +692,6 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
             </div>
           ) : isLockedCard ? (
             <div className="text-[9px] text-text-disabled truncate uppercase tracking-wider mt-0.5">Locked Sublounge</div>
-          ) : lastTxt ? (
-            <div className="flex items-center gap-1 mt-0.5">
-              {isFailed && <span className="text-[9px] text-red-500 font-bold uppercase tracking-wider">Failed</span>}
-              <div className={`text-[10px] truncate flex-1 min-w-0 ${unread > 0 && !isActive ? 'text-white font-semibold' : 'opacity-60'}`}>
-                {isMe ? <span className="opacity-70 mr-1">You:</span> : (lm?.username && <span className="opacity-70 mr-1">{stripAt(lm.username)}:</span>)}
-                {lastTxt}
-              </div>
-              {unread > 0 && !isActive && (
-                <div className="ml-auto bg-accent text-black text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0">
-                  {unread}
-                </div>
-              )}
-            </div>
           ) : (
             room.description && <div className="text-[9px] opacity-60 truncate mt-0.5">{room.description}</div>
           )}

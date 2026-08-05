@@ -5,6 +5,7 @@ import { lounges, messages as dbMessages } from './v2/db/schema/lounges.js';
 import { eq, desc } from 'drizzle-orm';
 import type { Server } from 'http';
 import { hashSessionToken } from './v2/middleware/auth.js';
+import { getRedisClient } from './v2/db/redis.js';
 
 interface ClientConnection {
   ws: WebSocket;
@@ -17,6 +18,52 @@ interface ClientConnection {
 
 const connectedClients = new Map<WebSocket, ClientConnection>();
 const roomMembers = new Map<string, Set<WebSocket>>();
+
+// Redis-based unread counter functions
+async function incrementUnread(userId: number, roomId: string) {
+  const redis = await getRedisClient();
+  if (!redis) return;
+
+  const key = `unread:${userId}:${roomId}`;
+  await redis.incr(key);
+  await redis.expire(key, 86400); // Expire after 24 hours
+}
+
+async function resetUnread(userId: number, roomId: string) {
+  const redis = await getRedisClient();
+  if (!redis) return;
+
+  const key = `unread:${userId}:${roomId}`;
+  await redis.del(key);
+}
+
+async function getUnreadCount(userId: number, roomId: string): Promise<number> {
+  const redis = await getRedisClient();
+  if (!redis) return 0;
+
+  const key = `unread:${userId}:${roomId}`;
+  const count = await redis.get(key);
+  return count && typeof count === 'string' ? parseInt(count, 10) : 0;
+}
+
+async function getAllUnreadCounts(userId: number): Promise<Record<string, number>> {
+  const redis = await getRedisClient();
+  if (!redis) return {};
+
+  const pattern = `unread:${userId}:*`;
+  const keys = await redis.keys(pattern);
+  const counts: Record<string, number> = {};
+
+  for (const key of keys) {
+    const roomId = key.split(':')[2];
+    const count = await redis.get(key);
+    if (count && typeof count === 'string') {
+      counts[roomId] = parseInt(count, 10);
+    }
+  }
+
+  return counts;
+}
 
 export function setupWebSocketServer(httpServer: Server) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
@@ -297,7 +344,10 @@ function handleLeaveRoom(client: ClientConnection, roomId: string) {
 
 async function handleMarkRead(client: ClientConnection, message: any) {
   const roomId = message.room_id ? message.room_id.toString() : '';
-  
+
+  // Reset unread counter for this user and room
+  await resetUnread(client.userId, roomId);
+
   try {
     let targetLoungeId: number | null = null;
     let isDM = false;
@@ -319,7 +369,7 @@ async function handleMarkRead(client: ClientConnection, message: any) {
         const [existingMessage] = await executeWithRetry(() => db.select({
           readBy: dbMessages.readBy
         }).from(dbMessages).where(eq(dbMessages.id, dbMessageId)).limit(1));
-        
+
         if (existingMessage) {
           const readBy = existingMessage.readBy ? existingMessage.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
           if (!readBy.includes(client.userId)) {
@@ -334,7 +384,7 @@ async function handleMarkRead(client: ClientConnection, message: any) {
   } catch (err) {
     console.error('Failed to mark message as read:', err);
   }
-  
+
   // Broadcast to others in the room that this message was read
   broadcastToRoom(roomId, {
     type: 'message_read',
@@ -465,12 +515,40 @@ async function handleSendMessage(client: ClientConnection, message: any) {
       // Include database ID in message for status tracking
       enrichedMessage.db_message_id = insertedMessage.id;
 
+      if (isDM && targetLoungeId) {
+        try {
+          const redis = await getRedisClient();
+          if (redis) {
+            const lastMsgPayload = {
+              id: String(insertedMessage.id),
+              message_id: String(insertedMessage.id),
+              content: insertedMessage.content,
+              senderId: insertedMessage.senderId,
+              user_id: insertedMessage.senderId,
+              is_encrypted: insertedMessage.encrypted,
+              deliveredTo: insertedMessage.deliveredTo,
+              createdAt: insertedMessage.createdAt?.toISOString() || new Date().toISOString()
+            };
+            await redis.set(`dm:last_msg:${targetLoungeId}`, JSON.stringify(lastMsgPayload));
+          }
+        } catch (e) {}
+      }
+
       // Set initial status for message
       if (isDM) {
         if (deliveredTo.length > 0) {
           enrichedMessage.status = 'delivered';
         } else {
           enrichedMessage.status = 'sent';
+        }
+
+        // Increment unread counter for recipient
+        const parts = roomId.replace('dm_', '').split('_');
+        if (parts.length >= 2) {
+          const uid1 = parseInt(parts[0], 10);
+          const uid2 = parseInt(parts[1], 10);
+          const recipientId = client.userId === uid1 ? uid2 : uid1;
+          await incrementUnread(recipientId, roomId);
         }
       }
 

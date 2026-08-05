@@ -61,6 +61,12 @@ bash server/v2/scripts/sync-from-cloud.sh
 ```
 Syncs cloud database to local. Useful for pulling down cloud data.
 
+### Clear Legacy Messages
+```bash
+bash server/v2/scripts/clear-legacy-messages.sh
+```
+Removes legacy encrypted messages (ratchet:v1 format) from the database to clean up chat history.
+
 ## Features
 
 - **Automated backups**: Timestamped backups stored locally and in R2
@@ -69,6 +75,7 @@ Syncs cloud database to local. Useful for pulling down cloud data.
 - **Cleanup**: Automatically removes backups older than 7 days
 - **Safety**: Creates local backups before overwriting
 - **R2 integration**: Uploads backups to Cloudflare R2 for cloud storage
+- **Legacy cleanup**: Removes old encryption format messages
 
 ## Requirements
 

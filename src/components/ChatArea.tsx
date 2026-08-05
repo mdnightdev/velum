@@ -4,8 +4,7 @@ import {
   Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag, Bell, Lock
 } from 'lucide-react';
 import { Message, stripAt } from '../types';
-import { decryptMessage } from '../services/encryptionService';
-import { doubleRatchetService } from '../services/doubleRatchetService';
+import { encryptMessage, decryptMessage, EncryptionContext } from '../services/encryptionService';
 import ProfileCard from './ProfileCard';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { ChatHeader } from './Chat/ChatHeader';
@@ -14,6 +13,8 @@ import logoSvg from '../assets/logo.svg?raw';
 import { useLanguage } from '../i18n/LanguageContext';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
 import { SecureImageCard } from './SecureImageCard';
+import { parseAttachment, parseVoiceNote } from '../utils/messageParser';
+import { getSessionId } from '../utils/auth';
 import { MessageStatusTicks } from './MessageStatusTicks';
 import { requestNotificationPermission, sendDesktopNotification } from '../utils/notifications';
 import { createLogger } from '../utils/logger';
@@ -124,6 +125,7 @@ export default function ChatArea({
   const [peerPresence, setPeerPresence] = useState<string>('offline');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [decryptedContents, setDecryptedContents] = useState<Map<string, string>>(new Map());
 
   // Audio recording hook
   const {
@@ -154,33 +156,39 @@ export default function ChatArea({
     markedMessageIdsRef.current.clear();
   }, [roomId, activeChatPeer?.userId]);
 
-  // Double Ratchet asynchronous decryption effect
+  // Asynchronous decryption effect for incoming messages
   useEffect(() => {
     let isMounted = true;
     const processDecryption = async () => {
       for (const m of messages) {
-        if (m.content?.startsWith('ratchet:v1:') && m.message_id && !decryptedMap[m.message_id]) {
+        if (m.content && m.message_id && !decryptedMap[m.message_id]) {
           const peerId = activeChatPeer?.userId || m.user_id;
           try {
-            const decrypted = await doubleRatchetService.decryptDirectMessage(m.content, peerId);
-            if (isMounted) {
+            const context: EncryptionContext = {
+              type: activeChatPeer ? 'direct' : 'lounge',
+              roomId: m.room_id || roomId,
+              peerUserId: peerId,
+              isEncrypted: !!(m.is_encrypted || (m as any).isEncrypted)
+            };
+            const decrypted = await decryptMessage(m.content, context);
+            if (isMounted && decrypted && decrypted !== m.content) {
               setDecryptedMap(prev => ({ ...prev, [m.message_id]: decrypted }));
             }
           } catch (err) {
-            console.error('[ChatArea] Double Ratchet decryption error:', err);
+            console.error('[ChatArea] Decryption error:', err);
           }
         }
       }
     };
     processDecryption();
     return () => { isMounted = false; };
-  }, [messages, activeChatPeer?.userId]);
+  }, [messages, activeChatPeer?.userId, roomId]);
 
   useEffect(() => {
     if (!activeChatPeer) return;
 
     // Fetch user status initially
-    const sessionId = sessionStorage.getItem('velum-sessionId') || sessionStorage.getItem('velum_sessionId') || '';
+    const sessionId = getSessionId();
     fetch(`/v2/user/${activeChatPeer.userId}/status`, {
       headers: {
         'Authorization': `Bearer ${sessionId}`,
@@ -217,7 +225,7 @@ export default function ChatArea({
     if (!window.confirm("Are you sure you want to delete all chat logs and history with this peer? This action cannot be undone.")) return;
     
     const otherId = activeChatPeer.userId;
-    const sId = sessionStorage.getItem('velum-sessionId') || sessionStorage.getItem('velum_sessionId');
+    const sId = getSessionId();
     const headers = {
       'Authorization': `Bearer ${sId}`,
       'Content-Type': 'application/json'
@@ -432,7 +440,8 @@ export default function ChatArea({
 
     if (activeChatPeer && activeChatPeer.userId !== 999) {
       try {
-        const encryptedEnvelope = await doubleRatchetService.encryptDirectMessage(textToSend, activeChatPeer.userId);
+        const context: EncryptionContext = { type: 'direct', peerUserId: activeChatPeer.userId };
+        const encryptedEnvelope = await encryptMessage(textToSend, context);
         onSendMessage(encryptedEnvelope, null, true);
       } catch (err) {
         onSendMessage(textToSend, null, false);
@@ -586,6 +595,34 @@ export default function ChatArea({
     requestNotificationPermission();
   }, []);
 
+  // Decrypt messages when conversation changes
+  useEffect(() => {
+    const decryptMessages = async () => {
+      const updates = new Map<string, string>();
+      for (const msg of conversationMessages) {
+        const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
+        if (!decryptedContents.has(msg.message_id) && rawContent) {
+          try {
+            const context: EncryptionContext = {
+              type: activeChatPeer ? 'direct' : 'lounge',
+              roomId: msg.room_id || roomId,
+              peerUserId: activeChatPeer?.userId,
+              isEncrypted: msg.is_encrypted || (msg as any).isEncrypted
+            };
+            const decrypted = await decryptMessage(rawContent, context);
+            updates.set(msg.message_id, decrypted);
+          } catch (err) {
+            console.error('[ChatArea] Decryption error for message', msg.message_id, err);
+          }
+        }
+      }
+      if (updates.size > 0) {
+        setDecryptedContents(prev => new Map([...prev, ...updates]));
+      }
+    };
+    decryptMessages();
+  }, [conversationMessages, activeChatPeer?.userId, roomId]);
+
   // Dispatch desktop notification when new message arrives from peer
   const prevMessagesLengthRef = useRef(messages.length);
   useEffect(() => {
@@ -593,13 +630,7 @@ export default function ChatArea({
       const lastMsg = messages[messages.length - 1];
       if (lastMsg && lastMsg.user_id !== currentUserId) {
         const senderName = lastMsg.username || activeChatPeer?.username || 'Velum Member';
-        let bodyText = lastMsg.content || '';
-        if (bodyText.startsWith('[Voice Note')) {
-          bodyText = '🎙️ Voice Note';
-        } else if (bodyText.includes('[Attachment')) {
-          bodyText = '📷 Media Attachment';
-        }
-        sendDesktopNotification(`New message from ${senderName}`, { body: bodyText });
+        sendDesktopNotification(`New message from ${senderName}`, { body: 'New message' });
       }
     }
     prevMessagesLengthRef.current = messages.length;
@@ -669,61 +700,32 @@ export default function ChatArea({
         {conversationMessages.map((msg,index) => {
           const isMe = msg.user_id === currentUserId;
             const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg);
-            
-            const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-            const activeContent = decryptMessage(rawContent, msg.room_id || roomId, msg.is_encrypted || (msg as any).isEncrypted);
-            const isRatchetE2EE = !!(msg.content?.startsWith('ratchet:v1:') || msg.is_encrypted || (msg as any).isEncrypted);
-            
-            // Check for voice note payload
-            const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
-            
-            // Check for attachments
-            const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment:');
-            
-            // Parse attachment details: [Attachment: name size:12KB type:image/jpeg data:base64...]
-            let parsedAttachmentName = '';
-            let parsedAttachmentSize = '';
-            let parsedAttachmentType = '';
-            let parsedAttachmentData = '';
-            let parsedMsgContent = activeContent;
-            
-            if (isAttachment) {
-              const match = activeContent.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\s+type:(.*?)\s+(data|url):(.*?)\](?:\s*(.*))?/s);
-              if (match) {
-                parsedAttachmentName = match[1].trim();
-                parsedAttachmentSize = match[2].trim();
-                parsedAttachmentType = match[3].trim();
-                let rawVal = match[5].trim();
-                if (match[4] === 'data' && !rawVal.startsWith('data:') && !rawVal.startsWith('http')) {
-                  rawVal = 'data:' + rawVal;
-                }
-                parsedAttachmentData = rawVal;
-                parsedMsgContent = match[6] || '';
-              } else {
-                const oldMatch = activeContent.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\](?:\s*(.*))?/s);
-                if (oldMatch) {
-                  parsedAttachmentName = oldMatch[1].trim();
-                  parsedAttachmentSize = oldMatch[2].trim();
-                  parsedMsgContent = oldMatch[3] || '';
-                }
-              }
 
-              // Auto infer image type if missing or if filename/url has image extension
-              const ext = parsedAttachmentName.toLowerCase().split('.').pop() || '';
-              if (!parsedAttachmentType || !parsedAttachmentType.startsWith('image/')) {
-                if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || (parsedAttachmentData && parsedAttachmentData.startsWith('data:image/')) || /\.(jpg|jpeg|png|webp|gif)$/i.test(parsedAttachmentData)) {
-                  parsedAttachmentType = 'image/' + (ext || 'jpeg');
-                }
-              }
-            }
+          const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
 
-            const isImageCard = isAttachment && !!parsedAttachmentData && (
-              parsedAttachmentType.startsWith('image/') ||
-              parsedAttachmentData.startsWith('data:image/') ||
-              parsedAttachmentData.startsWith('http') ||
-              /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(parsedAttachmentName) ||
-              /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(parsedAttachmentData)
-            );
+          // Use decrypted content from state, fall back to raw content
+          const activeContent = decryptedContents.get(msg.message_id) || rawContent;
+
+          // Check for voice note payload
+          const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
+
+          // Check for attachments
+          const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment:');
+            
+          const attachment = isAttachment ? parseAttachment(activeContent) : null;
+          const parsedAttachmentName = attachment?.name || '';
+          const parsedAttachmentSize = attachment?.size || '';
+          const parsedAttachmentType = attachment?.type || '';
+          const parsedAttachmentData = attachment?.data || '';
+          const parsedMsgContent = attachment ? (attachment.caption || '') : activeContent;
+
+          const isImageCard = isAttachment && !!parsedAttachmentData && (
+            parsedAttachmentType.startsWith('image/') ||
+            parsedAttachmentData.startsWith('data:image/') ||
+            parsedAttachmentData.startsWith('http') ||
+            /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(parsedAttachmentName) ||
+            /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(parsedAttachmentData)
+          );
 
             return (
               <div
@@ -744,7 +746,7 @@ export default function ChatArea({
                           return;
                         }
                         try {
-                          const sId = sessionStorage.getItem('velum-sessionId') || '';
+                          const sId = getSessionId();
                           const res = await fetch(`/v2/user/${msg.user_id}/report`, {
                             method: 'POST',
                             headers: {
@@ -786,8 +788,8 @@ export default function ChatArea({
                          isMuted: false,
                          isBlocked: false
                        });
-                       try {
-                         const sId = sessionStorage.getItem('velum-sessionId') || '';
+                        try {
+                          const sId = getSessionId();
                          const res = await fetch(`/v2/user/${msg.user_id}/profile`, {
                            headers: { 'Authorization': `Bearer ${sId}` }
                          });
@@ -845,7 +847,7 @@ export default function ChatArea({
                           }}
                           onMute={async () => {
                             try {
-                              const sId = sessionStorage.getItem('velum-sessionId') || '';
+                              const sId = getSessionId();
                               const res = await fetch(`/v2/user/${popoverPeer.userId}/mute`, {
                                 method: 'POST',
                                 headers: { 'Authorization': `Bearer ${sId}` }
@@ -863,7 +865,7 @@ export default function ChatArea({
                           }}
                           onBlock={async () => {
                             try {
-                              const sId = sessionStorage.getItem('velum-sessionId') || '';
+                              const sId = getSessionId();
                               const res = await fetch(`/v2/user/${popoverPeer.userId}/block`, {
                                 method: 'POST',
                                 headers: { 'Authorization': `Bearer ${sId}` }
@@ -882,7 +884,7 @@ export default function ChatArea({
                           }}
                           onDeleteChat={async () => {
                             try {
-                              const sId = sessionStorage.getItem('velum-sessionId') || '';
+                              const sId = getSessionId();
                               const res = await fetch(`/v2/user/${popoverPeer.userId}/chat`, {
                                 method: 'DELETE',
                                 headers: { 'Authorization': `Bearer ${sId}` }
@@ -896,7 +898,7 @@ export default function ChatArea({
                           }}
                           onReport={async () => {
                             try {
-                              const sId = sessionStorage.getItem('velum-sessionId') || '';
+                              const sId = getSessionId();
                               const res = await fetch(`/v2/user/${popoverPeer.userId}/report`, {
                                 method: 'POST',
                                 headers: { 'Authorization': `Bearer ${sId}` }

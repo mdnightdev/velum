@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
-import { encryptMessage } from '../services/encryptionService';
+import { encryptMessage, EncryptionContext } from '../services/encryptionService';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -47,6 +47,25 @@ export function useWebSocket({
       }
     } catch (err) {
       console.error('Failed to fetch conversations summary:', err);
+    }
+
+    // Fetch Redis-based unread counts
+    try {
+      const sessionToken = sessionStorage.getItem('velum-sessionId');
+      const headers: Record<string, string> = {};
+      if (sessionToken) {
+        headers['x-session-token'] = sessionToken;
+        headers['Authorization'] = `Bearer ${sessionToken}`;
+      }
+      const res = await fetch('/v2/user/unread-counts', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.unreadCounts) {
+          setUnreadCounts(prev => ({ ...prev, ...data.unreadCounts }));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch Redis unread counts:', err);
     }
   };
 
@@ -241,6 +260,13 @@ export function useWebSocket({
               if (newMessage.message_id && newMessage.user_id !== uid) {
                 markDelivered(newMessage.message_id, newMessage.room_id);
               }
+              // Increment unread counter for incoming messages not in active room
+              if (newMessage.user_id !== uid && newMessage.room_id && newMessage.room_id !== activeRoomIdRef.current) {
+                setUnreadCounts(prev => ({
+                  ...prev,
+                  [newMessage.room_id]: (prev[newMessage.room_id] || 0) + 1
+                }));
+              }
               return [...prev, newMessage];
             });
           }
@@ -283,7 +309,7 @@ export function useWebSocket({
     };
   };
 
-  const sendMessage = (text: string, burnSeconds: number | null, isEncrypted: boolean) => {
+  const sendMessage = async (text: string, burnSeconds: number | null, isEncrypted: boolean) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     const isOfficialChannel = [
       'general',
@@ -298,7 +324,8 @@ export function useWebSocket({
       'feedback'
     ].includes(activeRoomId);
     const shouldEncrypt = !isOfficialChannel;
-    const finalContent = shouldEncrypt ? encryptMessage(text, activeRoomId) : text;
+    const context: EncryptionContext = { type: 'lounge', roomId: activeRoomId, isEncrypted: shouldEncrypt };
+    const finalContent = shouldEncrypt ? await encryptMessage(text, context) : text;
     
     const nonce = `nonce_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     const optMessage: Message = {
@@ -383,9 +410,7 @@ export function useWebSocket({
   };
 
   const markAsRead = (messageId: string, roomId: string, dbMessageId?: number) => {
-    if (roomId) {
-      setUnreadCounts(prev => ({ ...prev, [roomId]: 0 }));
-    }
+    // Note: Counter reset is now handled server-side in handleMarkRead
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'mark_read',
@@ -408,6 +433,9 @@ export function useWebSocket({
   const joinRoom = (roomId: string, inviteCode?: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({ type: 'join_room', room_id: roomId, invite_code: inviteCode }));
+
+    // Reset unread counter when joining a room
+    setUnreadCounts(prev => ({ ...prev, [roomId]: 0 }));
   };
 
   const leaveRoom = (roomId: string) => {

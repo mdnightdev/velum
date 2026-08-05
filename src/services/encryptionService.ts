@@ -1,7 +1,20 @@
+import { doubleRatchetService } from './doubleRatchetService';
+
+export type EncryptionContext = {
+  type: 'direct' | 'lounge';
+  roomId?: string;
+  peerUserId?: number;
+  isEncrypted?: boolean;
+};
+
 /**
- * Low-level cryptographic functions (encapsulated inside encryptionService)
+ * Centralized encryption service - single source of truth for all encryption/decryption
  */
-export function encryptE2E(content: string, key: string): string {
+
+/**
+ * Low-level XOR encryption (for lounge/room messages)
+ */
+function encryptXOR(content: string, key: string): string {
   if (!content) return '';
   let result = '';
   for (let i = 0; i < content.length; i++) {
@@ -11,7 +24,10 @@ export function encryptE2E(content: string, key: string): string {
   return btoa(unescape(encodeURIComponent(result)));
 }
 
-export function decryptE2E(cipher: string, key: string): string {
+/**
+ * Low-level XOR decryption (for lounge/room messages)
+ */
+function decryptXOR(cipher: string, key: string): string {
   if (!cipher) return '';
   try {
     const decoded = decodeURIComponent(escape(atob(cipher)));
@@ -27,17 +43,77 @@ export function decryptE2E(cipher: string, key: string): string {
 }
 
 /**
- * Encrypt a text message with the room-specific symmetric key pattern.
+ * Encrypt message based on context
+ * - Direct messages: Double Ratchet E2EE
+ * - Lounge messages: XOR encryption with room key
  */
-export function encryptMessage(content: string, roomId: string): string {
+export async function encryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
-  return encryptE2E(content, 'VELUM_E2EE_' + roomId);
+
+  if (context.type === 'direct' && context.peerUserId) {
+    try {
+      return await doubleRatchetService.encryptDirectMessage(content, context.peerUserId);
+    } catch (err) {
+      console.error('[encryptionService] Direct message encryption failed:', err);
+      return content; // Fallback to plaintext on error
+    }
+  }
+
+  if (context.type === 'lounge' && context.roomId) {
+    return `VEL_E2EE[${encryptXOR(content, 'VELUM_E2EE_' + context.roomId)}]`;
+  }
+
+  return content; // Default to plaintext
 }
 
 /**
- * Decrypt a message if it is encrypted, using the room-specific key.
+ * Decrypt message based on content format and context
+ * Handles: Double Ratchet (ratchet:v2), Legacy Ratchet (ratchet:v1), Room XOR (VEL_E2EE), Plain text
  */
-export function decryptMessage(content: string, roomId: string, isEncryptedHeader?: boolean): string {
+export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
+  if (!content) return '';
+
+  // Double Ratchet v2 (current direct messages)
+  if (content.startsWith('ratchet:v2:')) {
+    if (context.peerUserId) {
+      try {
+        return await doubleRatchetService.decryptDirectMessage(content, context.peerUserId);
+      } catch (err) {
+        console.error('[encryptionService] Double Ratchet decryption error:', err);
+        return '[Encrypted Message]';
+      }
+    }
+    return '[Encrypted Message - No Peer]';
+  }
+
+  // Legacy Double Ratchet v1
+  if (content.startsWith('ratchet:v1:')) {
+    return '[Legacy Encrypted Message]';
+  }
+
+  // Room XOR encryption (lounge messages)
+  if (content.startsWith('VEL_E2EE[')) {
+    if (context.roomId) {
+      try {
+        const cleanCipher = content.substring(9, content.length - 1);
+        return decryptXOR(cleanCipher, 'VELUM_E2EE_' + context.roomId);
+      } catch (err) {
+        console.error('[encryptionService] Room XOR decryption error:', err);
+        return '[Encrypted Message]';
+      }
+    }
+    return '[Encrypted Message - No Room]';
+  }
+
+  // Plain text (no encryption)
+  return content;
+}
+
+/**
+ * Legacy synchronous decryption for backward compatibility
+ * @deprecated Use decryptMessage instead
+ */
+export function decryptMessageSync(content: string, roomId: string, isEncryptedHeader?: boolean): string {
   if (!content) return '';
   const isEncrypted = !!(isEncryptedHeader || content.startsWith('VEL_E2EE['));
   if (!isEncrypted) return content;
@@ -46,7 +122,7 @@ export function decryptMessage(content: string, roomId: string, isEncryptedHeade
   if (cleanCipher.startsWith('VEL_E2EE[')) {
     cleanCipher = cleanCipher.substring(9, cleanCipher.length - 1);
   }
-  return decryptE2E(cleanCipher, 'VELUM_E2EE_' + roomId);
+  return decryptXOR(cleanCipher, 'VELUM_E2EE_' + roomId);
 }
 
 /**

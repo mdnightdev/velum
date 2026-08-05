@@ -1,9 +1,11 @@
 import React from 'react';
 import { MessageSquare, Bot, Menu, Check, CheckCheck } from 'lucide-react';
-import { decryptMessage } from '../../services/encryptionService';
+import { decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { getCleanPreview } from '../../utils/messageParser';
+import { formatMessageTimestamp } from '../../utils/time';
 
 interface DirectMainDashboardProps {
   friendRequests: any[];
@@ -20,35 +22,7 @@ interface DirectMainDashboardProps {
   onToggleSidebar?: () => void;
 }
 
-function formatMessageTime(timestamp: string | number | null | undefined): string {
-  if (!timestamp) return '';
-  const date = new Date(timestamp);
-  if (isNaN(date.getTime())) return '';
 
-  const now = new Date();
-  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-  const diffTime = todayDate.getTime() - msgDate.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
-
-  if (diffDays === 0) {
-    let hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'pm' : 'am';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${hours}:${minutes} ${ampm}`;
-  } else if (diffDays === 1) {
-    return 'Yesterday';
-  } else if (diffDays < 7 && diffDays > 0) {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return days[date.getDay()];
-  } else {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${date.getDate()} ${months[date.getMonth()]}`;
-  }
-}
 
 export default function DirectMainDashboard({
   friendRequests,
@@ -76,6 +50,36 @@ export default function DirectMainDashboard({
     return [];
   })();
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [decryptedPreviews, setDecryptedPreviews] = React.useState<Record<number, string>>({});
+
+  React.useEffect(() => {
+    let isMounted = true;
+    const processPreviews = async () => {
+      for (const r of relationshipsArray) {
+        const friendId = r.friendId;
+        const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
+        const lm = lastMessages || {};
+        const candidateKeys = [dmRoomId, `dm_${friendId}`, `dm_${currentUserId}_${friendId}`, `dm_${friendId}_${currentUserId}`];
+        let last = r.last_message || null;
+        for (const k of candidateKeys) {
+          if (k && lm[k]) { last = lm[k]; break; }
+        }
+        if (last) {
+          const raw = last.content || last.message || last.body || last.text || '';
+          if (raw) {
+            try {
+              const decrypted = decryptMessageSync(raw, dmRoomId, !!(last.is_encrypted || last.isEncrypted));
+              if (isMounted && decrypted) {
+                setDecryptedPreviews(prev => ({ ...prev, [friendId]: decrypted }));
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    };
+    processPreviews();
+    return () => { isMounted = false; };
+  }, [relationshipsArray, lastMessages, currentUserId]);
 
   const filteredFriends = relationshipsArray.filter(r => {
     const name = r.username || r.displayName;
@@ -94,7 +98,7 @@ export default function DirectMainDashboard({
     const raw = velumLast.content || velumLast.message || velumLast.body || velumLast.text || '';
     const actualRoomId = velumLast.room_id || velumRoomId;
     try {
-      velumTxt = decryptMessage(raw, actualRoomId, !!(velumLast.is_encrypted || velumLast.isEncrypted)) || raw || '';
+      velumTxt = decryptMessageSync(raw, actualRoomId, !!(velumLast.is_encrypted || velumLast.isEncrypted)) || raw || '';
     } catch (e) {
       velumTxt = raw || '';
     }
@@ -113,7 +117,7 @@ export default function DirectMainDashboard({
       }
     }
     const ts = velumLast.created_at || velumLast.timestamp || velumLast.createdAt;
-    if (ts) velumTimeStr = formatMessageTime(ts);
+    if (ts) velumTimeStr = formatMessageTimestamp(ts);
   }
 
   return (
@@ -196,11 +200,11 @@ export default function DirectMainDashboard({
           const dmA = `dm_${Math.min(currentUserId, a.friendId)}_${Math.max(currentUserId, a.friendId)}`;
           const dmB = `dm_${Math.min(currentUserId, b.friendId)}_${Math.max(currentUserId, b.friendId)}`;
           const lm = lastMessages || {};
-          const lastA = lm[dmA] || lm[`dm_${currentUserId}_${a.friendId}`] || lm[`dm_${a.friendId}_${currentUserId}`];
-          const lastB = lm[dmB] || lm[`dm_${currentUserId}_${b.friendId}`] || lm[`dm_${b.friendId}_${currentUserId}`];
+          const lastA = lm[dmA] || a.last_message;
+          const lastB = lm[dmB] || b.last_message;
           
-          const timeA = lastA ? new Date(lastA.created_at || lastA.timestamp || lastA.createdAt).getTime() : 0;
-          const timeB = lastB ? new Date(lastB.created_at || lastB.timestamp || lastB.createdAt).getTime() : 0;
+          const timeA = lastA ? new Date(lastA.createdAt || lastA.created_at || lastA.timestamp || 0).getTime() : 0;
+          const timeB = lastB ? new Date(lastB.createdAt || lastB.created_at || lastB.timestamp || 0).getTime() : 0;
           
           return timeB - timeA;
         }).map(r => {
@@ -208,15 +212,23 @@ export default function DirectMainDashboard({
           const friendName = stripAt(r.username || r.displayName);
           const friendAvatar = r.avatarUrl;
           const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
-          const unread = unreadCounts[dmRoomId] || 0;
-
-          const lm = lastMessages || {};
           const candidateKeys = [
             dmRoomId,
+            `dm_${friendId}`,
             `dm_${currentUserId}_${friendId}`,
             `dm_${friendId}_${currentUserId}`
           ];
-          let last = null as any;
+
+          let unread = typeof r.unread_count === 'number' ? r.unread_count : 0;
+          for (const k of candidateKeys) {
+            if (k && unreadCounts && typeof unreadCounts[k] === 'number') {
+              unread = unreadCounts[k];
+              break;
+            }
+          }
+
+          const lm = lastMessages || {};
+          let last = r.last_message || null as any;
           for (const k of candidateKeys) {
             if (k && lm[k]) { last = lm[k]; break; }
           }
@@ -232,11 +244,14 @@ export default function DirectMainDashboard({
             const raw = last.content || last.message || last.body || last.text || '';
             const isEnc = !!(last.is_encrypted || last.isEncrypted);
             const actualRoomId = last.room_id || dmRoomId;
-            try {
-              lastTxt = decryptMessage(raw, actualRoomId, isEnc) || raw || '';
-            } catch (e) {
-              lastTxt = raw || '';
-            }
+            const displayTxt = decryptedPreviews[friendId] || (function() {
+              try {
+                return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
+              } catch (e) {
+                return raw || '';
+              }
+            })();
+            lastTxt = getCleanPreview(displayTxt);
             if (last.status === 'failed' || last.delivery_status === 'failed') {
               isFailed = true;
             } else if (isMe) {
@@ -255,7 +270,7 @@ export default function DirectMainDashboard({
             }
             const ts = last.created_at || last.timestamp || last.createdAt;
             if (ts) {
-              lastTimeStr = formatMessageTime(ts);
+              lastTimeStr = formatMessageTimestamp(ts);
             }
           }
 

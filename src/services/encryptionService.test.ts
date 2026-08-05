@@ -1,21 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { encryptMessage, decryptMessage, computeClientHash } from './encryptionService';
+import { encryptMessage, decryptMessage, computeClientHash, EncryptionContext } from './encryptionService';
 
 describe('encryptionService tests', () => {
-  it('should encrypt and decrypt a message correctly', () => {
+  it('should encrypt and decrypt a lounge message correctly', async () => {
     const plain = 'Hello world, secure E2EE!';
-    const roomId = 'lounge-123';
-    const encrypted = encryptMessage(plain, roomId);
+    const context: EncryptionContext = { type: 'lounge', roomId: 'lounge-123', isEncrypted: true };
+    const encrypted = await encryptMessage(plain, context);
     expect(encrypted).not.toBe(plain);
 
-    const decrypted = decryptMessage(encrypted, roomId, true);
+    const decrypted = await decryptMessage(encrypted, context);
     expect(decrypted).toBe(plain);
   });
 
-  it('should pass through unencrypted content', () => {
+  it('should pass through unencrypted content', async () => {
     const plain = 'Standard message';
-    const roomId = 'lounge-123';
-    const result = decryptMessage(plain, roomId, false);
+    const context: EncryptionContext = { type: 'lounge', roomId: 'lounge-123', isEncrypted: false };
+    const result = await decryptMessage(plain, context);
     expect(result).toBe(plain);
   });
 
@@ -25,7 +25,7 @@ describe('encryptionService tests', () => {
     const hash = await computeClientHash(secret, salt);
     expect(hash).toBeDefined();
     expect(hash).toHaveLength(64); // SHA-256 is 64 hex characters
-    
+
     // Verifying same inputs produce same hash
     const secondHash = await computeClientHash(secret, salt);
     expect(secondHash).toBe(hash);

@@ -7,6 +7,8 @@ import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { userPrekeys } from '../db/schema/keys.js';
+import { messages as dbMessages } from '../db/schema/lounges.js';
+import { getRedisClient } from '../db/redis.js';
 import { eq, or, ilike, desc } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 
@@ -263,12 +265,12 @@ userRouter.post('/upload-media', authMiddleware, (req, res, next) => {
       if (buffer.length === 0) {
         return res.status(400).json({ error: 'Empty file payload' });
       }
-      
+
       const uploadsDir = path.join(process.cwd(), 'uploads');
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
-      
+
       const contentType = req.headers['content-type'] || '';
       let extension = 'webp';
       if (contentType.includes('audio/webm') || contentType.includes('video/webm')) {
@@ -282,14 +284,42 @@ userRouter.post('/upload-media', authMiddleware, (req, res, next) => {
       } else if (contentType.includes('image/gif')) {
         extension = 'gif';
       }
-      
+
       const filename = `media-${req.user!.userId}-${Date.now()}.${extension}`;
       const filepath = path.join(uploadsDir, filename);
       fs.writeFileSync(filepath, buffer);
-      
+
       res.status(200).json({ url: `/uploads/${filename}` });
     } catch (err) {
       next(err);
     }
   });
+});
+
+// Get unread counts from Redis
+userRouter.get('/unread-counts', authMiddleware, async (req, res) => {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) {
+      return res.json({ unreadCounts: {} });
+    }
+
+    const userId = req.user!.userId;
+    const pattern = `unread:${userId}:*`;
+    const keys = await redis.keys(pattern);
+    const counts: Record<string, number> = {};
+
+    for (const key of keys) {
+      const roomId = key.split(':')[2];
+      const count = await redis.get(key);
+      if (count && typeof count === 'string') {
+        counts[roomId] = parseInt(count, 10);
+      }
+    }
+
+    res.json({ unreadCounts: counts });
+  } catch (err) {
+    console.error('Failed to get unread counts:', err);
+    res.status(500).json({ error: 'Failed to get unread counts' });
+  }
 });
