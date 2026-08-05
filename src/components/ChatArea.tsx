@@ -126,6 +126,24 @@ export default function ChatArea({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [decryptedContents, setDecryptedContents] = useState<Map<string, string>>(new Map());
+  const [hasPendingNomination, setHasPendingNomination] = useState(false);
+  const [isSubmittingNominationAction, setIsSubmittingNominationAction] = useState(false);
+
+  useEffect(() => {
+    if (activeChatPeer?.userId === 999) {
+      const sessionId = getSessionId();
+      fetch('/v2/user/nomination/pending', {
+        headers: { 'Authorization': `Bearer ${sessionId}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          setHasPendingNomination(!!data.hasPending);
+        })
+        .catch(() => {});
+    } else {
+      setHasPendingNomination(false);
+    }
+  }, [activeChatPeer]);
 
   // Audio recording hook
   const {
@@ -244,6 +262,34 @@ export default function ChatArea({
       }
     } catch {
       alert("Network handshake failure during delete.");
+    }
+  };
+
+  const handleNominationAction = async (action: 'accept' | 'decline') => {
+    if (isSubmittingNominationAction) return;
+    setIsSubmittingNominationAction(true);
+    
+    try {
+      const sessionId = getSessionId();
+      const res = await fetch(`/v2/user/nomination/${action}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sessionId}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (res.ok) {
+        alert(`Successfully ${action === 'accept' ? 'accepted' : 'declined'} support admin nomination.`);
+        setHasPendingNomination(false);
+      } else {
+        const data = await res.json();
+        alert(data.error || `Failed to ${action} nomination.`);
+      }
+    } catch {
+      alert("Network error.");
+    } finally {
+      setIsSubmittingNominationAction(false);
     }
   };
 
@@ -1234,8 +1280,31 @@ export default function ChatArea({
             </div>
           </div>
         ) : roomId === `dm_velum_${currentUserId}` || activeChatPeer?.userId === 999 ? (
-          <div className="w-full bg-white-5 border border-white-10 rounded-xl p-3.5 text-center text-xs font-sans text-text-secondary select-none">
-            This is a one-way system broadcast channel.
+          <div className="w-full flex flex-col gap-3">
+            <div className="w-full bg-white-5 border border-white-10 rounded-xl p-3.5 text-center text-xs font-sans text-text-secondary select-none">
+              This is a one-way system broadcast channel.
+            </div>
+            {hasPendingNomination && (
+              <div className="flex gap-3 justify-center items-center p-3 bg-velum-850 border border-white-5 rounded-xl">
+                <span className="text-[10px] text-text-secondary font-mono uppercase tracking-wider">Nomination pending:</span>
+                <button
+                  type="button"
+                  onClick={() => handleNominationAction('accept')}
+                  disabled={isSubmittingNominationAction}
+                  className="px-3.5 py-1.5 bg-bank-accent text-white hover:bg-bank-accent/80 font-bold rounded-lg uppercase text-[9px] cursor-pointer transition disabled:opacity-50"
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNominationAction('decline')}
+                  disabled={isSubmittingNominationAction}
+                  className="px-3.5 py-1.5 bg-rose-500/20 border border-rose-500/40 text-rose-400 hover:bg-rose-500/30 font-bold rounded-lg uppercase text-[9px] cursor-pointer transition disabled:opacity-50"
+                >
+                  Decline
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <>

@@ -109,6 +109,8 @@ export function useWebSocket({
         window.velumDebug.wsConnected = true;
       }
       
+      ws.send(JSON.stringify({ type: 'join_room', room_id: `dm_velum_${uid}` }));
+      
       if (activeRoomIdRef.current) {
         ws.send(JSON.stringify({ type: 'join_room', room_id: activeRoomIdRef.current }));
       }

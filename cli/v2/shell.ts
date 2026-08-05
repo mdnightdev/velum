@@ -9,9 +9,11 @@ import { ticketRepository } from '../../server/v2/repositories/ticketRepository.
 import { reserveRepository } from '../../server/v2/repositories/reserveRepository.js';
 import { marketRepository } from '../../server/v2/repositories/marketRepository.js';
 import { db, pool } from '../../server/v2/db/client.js';
-import { users } from '../../server/v2/db/schema/users.js';
+import { users, supportAdminNominations } from '../../server/v2/db/schema/users.js';
 import { lounges, messages } from '../../server/v2/db/schema/lounges.js';
 import { ensureVelumLoungeSeeded } from '../../server/v2/services/loungeSeeder.js';
+import { SystemBot } from '../../server/v2/services/systemBot.js';
+import { and, or, inArray } from 'drizzle-orm';
 import { wallets, transactions } from '../../server/v2/db/schema/wallets.js';
 import { listings, escrows } from '../../server/v2/db/schema/marketplace.js';
 import { sessions } from '../../server/v2/db/schema/sessions.js';
@@ -853,6 +855,217 @@ export class VelumV2Shell {
           } else {
             console.log('No security flags currently active on user accounts.');
           }
+        }
+        return;
+      }
+
+      if (sub === 'nominations') {
+        try {
+          const noms = await db.select().from(supportAdminNominations).orderBy(desc(supportAdminNominations.createdAt));
+          console.log(`\n=== Support Admin Nominations (${noms.length}) ===`);
+          if (noms.length === 0) {
+            console.log('No nominations found.');
+            return;
+          }
+          console.log(`┌─────┬─────────┬─────────┬──────────┬───────────┐`);
+          console.log(`│ ID  │ Target  │ Nom. By │ Status   │ Created   │`);
+          console.log(`├─────┼─────────┼─────────┼──────────┼───────────┤`);
+          for (const n of noms) {
+            const idStr = String(n.id).padEnd(3);
+            const targetStr = String(n.nominatedUserId).padEnd(7);
+            const byStr = String(n.nominatedBy).padEnd(7);
+            const statusStr = n.status.padEnd(8);
+            const createdStr = (n.createdAt ? new Date(n.createdAt).toISOString().split('T')[0] : '-').padEnd(9);
+            console.log(`│ ${idStr} │ ${targetStr} │ ${byStr} │ ${statusStr} │ ${createdStr} │`);
+          }
+          console.log(`└─────┴─────────┴─────────┴──────────┴───────────┘`);
+        } catch (err) {
+          console.log(`Error listing nominations: ${(err as Error).message}`);
+        }
+        return;
+      }
+
+      if (sub === 'approve') {
+        const [nomIdStr] = rawArgs;
+        if (!nomIdStr) {
+          console.log('Usage: approve <nomination_id>');
+          return;
+        }
+        const nomId = parseInt(nomIdStr, 10);
+        if (isNaN(nomId)) {
+          console.log('Invalid nomination ID.');
+          return;
+        }
+        
+        try {
+          const [nomination] = await db.select().from(supportAdminNominations).where(eq(supportAdminNominations.id, nomId)).limit(1);
+          if (!nomination) {
+            console.log('Nomination not found.');
+            return;
+          }
+          if (nomination.status !== 'pending') {
+            console.log(`Nomination cannot be approved. Current status: ${nomination.status}`);
+            return;
+          }
+          
+          const [targetUser] = await db.select().from(users).where(eq(users.id, nomination.nominatedUserId)).limit(1);
+          if (!targetUser) {
+            console.log('Nominated user not found.');
+            return;
+          }
+          
+          const adminUsername = `Sa-${targetUser.username}`;
+          const adminPassword = `Sa-Vel-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+          const adminSalt = crypto.randomBytes(16).toString('hex');
+          const adminPasswordHash = await hashArgon2id(adminPassword, Buffer.from(adminSalt, 'hex'));
+          const adminRecoveryKey = `Sa-Vel-Sup-${Math.floor(10000 + Math.random() * 90000)}`;
+          const adminRecoveryKeyHash = await hashArgon2id(adminRecoveryKey, Buffer.from(adminSalt, 'hex'));
+          const adminPanicPhrase = `Sa-P-${Math.floor(100000 + Math.random() * 900000)}`;
+          const adminPanicPhraseHash = await hashArgon2id(adminPanicPhrase, Buffer.from(adminSalt, 'hex'));
+          
+          const [newAdmin] = await db.insert(users).values({
+            username: adminUsername,
+            passwordHash: adminPasswordHash,
+            salt: adminSalt,
+            role: 'SUPPORT_ADMIN',
+            displayName: `${targetUser.displayName || targetUser.username} (Support)`,
+            recoveryKeyHash: adminRecoveryKeyHash,
+            panicPhraseHash: adminPanicPhraseHash,
+            duressActive: true
+          }).returning();
+          
+          const credentialsData = JSON.stringify({
+            username: adminUsername,
+            password: adminPassword,
+            recoveryKey: adminRecoveryKey,
+            panicPhrase: adminPanicPhrase
+          });
+          
+          await db.update(supportAdminNominations)
+            .set({ 
+              status: 'approved',
+              adminAccountId: newAdmin.id,
+              credentials: credentialsData,
+              updatedAt: new Date()
+            })
+            .where(eq(supportAdminNominations.id, nomId));
+            
+          const systemBot = SystemBot.getInstance();
+          await systemBot.sendToUser(nomination.nominatedUserId,
+            `You have been nominated and APPROVED for the Velum Support Administrator role.\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `NEXT STEPS:\n` +
+            `• Your support admin credentials have been generated\n` +
+            `• You must ACCEPT this role to activate your credentials\n` +
+            `• If you DECLINE, the credentials will be purged\n\n` +
+            `Please check the Bot DM screen in the client interface to accept or decline the role.\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          );
+          
+          console.log(`[OK] Nomination approved. User support admin account support_${targetUser.username} created (inactive).`);
+          await this.logAudit('/users/approve', String(nomId), `Approved support admin nomination`);
+        } catch (err) {
+          console.log(`Failed to approve nomination: ${(err as Error).message}`);
+        }
+        return;
+      }
+
+      if (sub === 'reject') {
+        const [nomIdStr, ...reasonParts] = rawArgs;
+        if (!nomIdStr) {
+          console.log('Usage: reject <nomination_id> [reason]');
+          return;
+        }
+        const nomId = parseInt(nomIdStr, 10);
+        if (isNaN(nomId)) {
+          console.log('Invalid nomination ID.');
+          return;
+        }
+        const reason = reasonParts.join(' ') || 'Rejected via admin CLI';
+        
+        try {
+          const [nomination] = await db.select().from(supportAdminNominations).where(eq(supportAdminNominations.id, nomId)).limit(1);
+          if (!nomination) {
+            console.log('Nomination not found.');
+            return;
+          }
+          if (nomination.status !== 'pending') {
+            console.log(`Nomination cannot be rejected. Current status: ${nomination.status}`);
+            return;
+          }
+          
+          await db.update(supportAdminNominations)
+            .set({ 
+              status: 'rejected',
+              updatedAt: new Date()
+            })
+            .where(eq(supportAdminNominations.id, nomId));
+            
+          const systemBot = SystemBot.getInstance();
+          await systemBot.sendToUser(nomination.nominatedUserId,
+            `Your nomination for the Velum Support Administrator role has been declined.\n\n` +
+            `Reason: ${reason}\n\n` +
+            `Your regular user account remains unchanged.`
+          );
+          
+          console.log(`[OK] Nomination ${nomId} rejected. Target user notified.`);
+          await this.logAudit('/users/reject', String(nomId), `Rejected support admin nomination`);
+        } catch (err) {
+          console.log(`Failed to reject nomination: ${(err as Error).message}`);
+        }
+        return;
+      }
+
+      if (sub === 'demote') {
+        const [targetStr] = rawArgs;
+        if (!targetStr) {
+          console.log('Usage: demote <uid/username>');
+          return;
+        }
+        
+        try {
+          let targetUser = await db.select().from(users).where(eq(users.username, targetStr)).limit(1).then(r => r[0]);
+          if (!targetUser) {
+            const uid = parseInt(targetStr, 10);
+            if (!isNaN(uid)) {
+              targetUser = await db.select().from(users).where(eq(users.id, uid)).limit(1).then(r => r[0]);
+            }
+          }
+          if (!targetUser) {
+            console.log('User not found.');
+            return;
+          }
+          
+          const adminUsername = `support_${targetUser.username}`;
+          const deletedAdmin = await db.delete(users).where(
+            and(
+              eq(users.username, adminUsername),
+              eq(users.role, 'SUPPORT_ADMIN')
+            )
+          ).returning();
+          
+          if (deletedAdmin.length === 0) {
+            console.log(`No active support admin account found for support_${targetUser.username}.`);
+            return;
+          }
+          
+          await db.update(supportAdminNominations)
+            .set({ 
+              status: 'revoked',
+              updatedAt: new Date()
+            })
+            .where(eq(supportAdminNominations.nominatedUserId, targetUser.id));
+            
+          const systemBot = SystemBot.getInstance();
+          await systemBot.sendToUser(targetUser.id,
+            `Your Support Administrator access has been revoked by CLI_ADMIN.\n\n` +
+            `Your regular user account remains unchanged.`
+          );
+          
+          console.log(`[OK] Support admin account support_${targetUser.username} demoted and deleted.`);
+          await this.logAudit('/users/demote', String(targetUser.id), `Demoted support admin`);
+        } catch (err) {
+          console.log(`Failed to demote user: ${(err as Error).message}`);
         }
         return;
       }

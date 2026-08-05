@@ -72,6 +72,25 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       desc: 'Query security flags and audit log markers for user accounts',
       risk: 'LOW',
       args: ['[uid/username]']
+    },
+    nominations: {
+      desc: 'List pending or active support admin nominations',
+      risk: 'LOW'
+    },
+    approve: {
+      desc: 'Approve a support admin nomination by ID',
+      risk: 'HIGH',
+      args: ['<nomination_id>']
+    },
+    reject: {
+      desc: 'Reject a support admin nomination by ID',
+      risk: 'HIGH',
+      args: ['<nomination_id>', '[reason]']
+    },
+    demote: {
+      desc: 'Revoke support admin role from a user',
+      risk: 'HIGH',
+      args: ['<uid/username>']
     }
   },
   '/sanctions': {

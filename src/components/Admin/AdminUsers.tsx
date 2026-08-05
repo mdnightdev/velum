@@ -101,6 +101,8 @@ export default function AdminUsers({
           <tbody className="divide-y divide-white/[0.02]">
             {[...(Array.isArray(users) ? users : [])]
               .sort((a, b) => {
+                if (a.id === 999) return -1;
+                if (b.id === 999) return 1;
                 const roleOrder: Record<string, number> = {
                   CLI_ADMIN: 1,
                   LOGIN_ADMIN: 2,
@@ -112,7 +114,7 @@ export default function AdminUsers({
                 const orderA = roleOrder[a.role] || 99;
                 const orderB = roleOrder[b.role] || 99;
                 if (orderA !== orderB) return orderA - orderB;
-                return a.user_id - b.user_id;
+                return a.id - b.id;
               })
               .filter((u) => {
                 if (!u) return false;
@@ -135,6 +137,7 @@ export default function AdminUsers({
               })
               .map((u) => {
                 const isSystemProtected =
+                  u.id === 999 ||
                   u.role === 'CLI_ADMIN' ||
                   u.role === 'LOGIN_ADMIN' ||
                   u.role?.toUpperCase() === 'SYSTEM' ||
@@ -150,6 +153,7 @@ export default function AdminUsers({
                     (!s.expiresAt || new Date(s.expiresAt).getTime() > Date.now())
                 );
                 const isExecutive =
+                  u.id === 999 ||
                   u.role === 'CLI_ADMIN' ||
                   u.role === 'LOGIN_ADMIN' ||
                   u.role === 'SUPPORT_ADMIN' ||
@@ -207,7 +211,12 @@ export default function AdminUsers({
                     name: 'System Service',
                   },
                 };
-                const rConf = roleColors[u.role] || roleColors[u.role?.toUpperCase()] || roleColors['USER'];
+                const rConf = u.id === 999 ? {
+                  bg: 'bg-emerald-500/10',
+                  border: 'border-emerald-500/20',
+                  text: 'bg-emerald-400',
+                  name: 'System Bot',
+                } : (roleColors[u.role] || roleColors[u.role?.toUpperCase()] || roleColors['USER']);
 
                 return (
                   <tr
@@ -343,25 +352,23 @@ export default function AdminUsers({
                             </button>
                           )}
 
-                          {/* Promote (only for standard members) */}
+                          {/* Promote/Nominate for Support Admin (only for standard members and only visible to LOGIN_ADMIN) */}
                           {(u.role === 'member' ||
                             u.role === 'USER' ||
                             u.role === 'user') &&
-                            u.status === 'active' &&
-                            adminRole !== 'SUPPORT_ADMIN' && (
+                            adminRole === 'LOGIN_ADMIN' && (
                               <button
                                 onClick={async () => {
                                   try {
-                                    const res = await adminFetch(`/v2/admin/nominate`, {
+                                    const res = await adminFetch(`/v2/admin/nominate-support`, {
                                       method: 'POST',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({
-                                        username: u.username,
-                                        targetUsername: u.username,
+                                        targetUserId: u.id
                                       }),
                                     });
                                     if (res.ok) {
-                                      alert(`Nominated @${u.username} to Operator!`);
+                                      alert(`Nominated @${u.username} for Support Admin!`);
                                       fetchData();
                                     } else {
                                       const errData = await res.json();
@@ -372,7 +379,7 @@ export default function AdminUsers({
                                   }
                                 }}
                                 className="p-1.5 rounded-lg border border-accent-20 bg-accent-10 hover:bg-accent text-accent hover:text-text-primary transition cursor-pointer"
-                                title="Promote User"
+                                title="Nominate Support Admin"
                               >
                                 <UserCheck className="w-4 h-4" />
                               </button>

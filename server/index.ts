@@ -16,6 +16,7 @@ import { config } from './v2/config.js';
 import { ensureAdminSeeded } from './v2/services/adminSeeder.js';
 import { setupWebSocketServer } from './websocket.js';
 import { currencyConverter } from './v2/services/currencyConverter.js';
+import { SystemBot } from './v2/services/systemBot.js';
 
 export const app = express();
 
@@ -114,6 +115,8 @@ export async function startServer() {
     (async () => {
       try {
         await ensureAdminSeeded();
+        SystemBot.getInstance();
+        console.log('[Server] Velum Bot system activated');
         await currencyConverter.loadRatesFromDb();
       } catch (err) {
         console.error('[SERVER V2] Background DB initialization warning:', err);

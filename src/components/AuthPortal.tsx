@@ -268,10 +268,7 @@ export default function AuthPortal({ isDark, setIsDark, onLoginSuccess, onMigrat
 
       const data = await res.json();
       if (res.ok) {
-        const keyMsg = data.recoveryKey 
-          ? `Registration complete. Save your recovery key securely: ${data.recoveryKey}`
-          : 'Registration complete. Proceed to sign in.';
-        setRecoverySuccessMessage(keyMsg);
+        setRecoverySuccessMessage('Registration complete. Check your Velum Bot DM for your recovery key.');
         setUsername('');
         setPassword('');
         setSafeWord('');

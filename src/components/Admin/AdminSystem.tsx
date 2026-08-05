@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserPlus, Unlock, Sliders } from 'lucide-react';
+import { UserPlus, Unlock, Sliders, Megaphone } from 'lucide-react';
 
 interface AdminSystemProps {
   adminId: number;
@@ -23,6 +23,11 @@ export default function AdminSystem({
   const [newCodeInfo, setNewCodeInfo] = useState<string | null>(null);
   const [isGatewayLocked, setIsGatewayLocked] = useState(false);
   const [quarantineTargetId, setQuarantineTargetId] = useState('');
+  const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'room' | 'user'>('all');
+  const [broadcastRoomId, setBroadcastRoomId] = useState('');
+  const [broadcastUserId, setBroadcastUserId] = useState('');
+
 
   const generateNewInvite = async () => {
     setNewCodeInfo(null);
@@ -47,9 +52,38 @@ export default function AdminSystem({
     }
   };
 
+  const handleSendBroadcast = async () => {
+    if (!broadcastMsg.trim()) {
+      alert('Broadcast message cannot be empty.');
+      return;
+    }
+    try {
+      const res = await adminFetch('/v2/admin/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: broadcastMsg,
+          target: broadcastTarget === 'user' ? parseInt(broadcastUserId, 10) : broadcastTarget,
+          roomId: broadcastTarget === 'room' ? broadcastRoomId : undefined
+        })
+      });
+      if (res.ok) {
+        alert('Broadcast sent successfully.');
+        setBroadcastMsg('');
+        setBroadcastRoomId('');
+        setBroadcastUserId('');
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to send broadcast.');
+      }
+    } catch {
+      alert('Connection error.');
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
         {/* Entry code creation layout */}
         <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
           <div>
@@ -200,6 +234,91 @@ export default function AdminSystem({
             )}
           </div>
         </div>
+
+        {/* System Broadcast Panel */}
+        <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
+              <Megaphone className="w-4.5 h-4.5 text-accent-hover" />
+              <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
+                System Broadcast Console
+              </h4>
+            </div>
+            <div className="space-y-4 font-sans text-xs">
+              <div>
+                <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
+                  Broadcast Message
+                </label>
+                <textarea
+                  value={broadcastMsg}
+                  onChange={(e) => setBroadcastMsg(e.target.value)}
+                  placeholder="Enter message content..."
+                  className={`w-full p-2.5 rounded-xl outline-none font-sans min-h-[60px] ${c.bgInput}`}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
+                    Target Scope
+                  </label>
+                  <select
+                    value={broadcastTarget}
+                    onChange={(e) => setBroadcastTarget(e.target.value as any)}
+                    className={`w-full p-2.5 rounded-xl outline-none font-sans ${c.bgInput}`}
+                  >
+                    <option value="all">All Users</option>
+                    <option value="room">Specific Room</option>
+                    <option value="user">Specific User</option>
+                  </select>
+                </div>
+                {broadcastTarget === 'room' && (
+                  <div>
+                    <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
+                      Room ID
+                    </label>
+                    <input
+                      type="text"
+                      value={broadcastRoomId}
+                      onChange={(e) => setBroadcastRoomId(e.target.value)}
+                      placeholder="e.g. general"
+                      className={`w-full p-2.5 rounded-xl outline-none font-mono ${c.bgInput}`}
+                    />
+                  </div>
+                )}
+                {broadcastTarget === 'user' && (
+                  <div>
+                    <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
+                      User ID
+                    </label>
+                    <input
+                      type="number"
+                      value={broadcastUserId}
+                      onChange={(e) => setBroadcastUserId(e.target.value)}
+                      placeholder="e.g. 1"
+                      className={`w-full p-2.5 rounded-xl outline-none font-mono ${c.bgInput}`}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
+              <div className="bg-orange-500/10 text-orange-400 p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal border border-orange-500/20">
+                ACCESS LOCKED: SYSTEM BROADCAST PRIVILEGES GATE TO EXECUTIVE OVERWATCH LEVEL.
+              </div>
+            ) : (
+              <button
+                onClick={handleSendBroadcast}
+                className="w-full bg-accent-hover hover:bg-accent text-black font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
+              >
+                Transmit System Broadcast
+              </button>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );

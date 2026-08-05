@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, text, boolean, timestamp, integer, index } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -23,5 +23,26 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
 
+export const supportAdminNominations = pgTable('support_admin_nominations', {
+  id: serial('id').primaryKey(),
+  nominatedUserId: integer('nominated_user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  nominatedBy: integer('nominated_by')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  status: varchar('status', { length: 32 }).default('pending').notNull(), // pending, approved, rejected, accepted, declined
+  adminAccountId: integer('admin_account_id'), // Reference to created admin account
+  credentials: text('credentials'), // Encrypted credentials storage
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => [
+  index('idx_nominations_user').on(table.nominatedUserId),
+  index('idx_nominations_status').on(table.status)
+]);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type SupportAdminNomination = typeof supportAdminNominations.$inferSelect;
+export type NewSupportAdminNomination = typeof supportAdminNominations.$inferInsert;
+

@@ -166,6 +166,22 @@ export class AuthController {
       userAgent: req.headers['user-agent'] || undefined
     });
 
+    await systemBot.sendToUser(newUser.id,
+      `Welcome to Velum, ${username}! 🎉\n\n` +
+      `Your recovery key is: ${recoveryKey}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `GETTING STARTED:\n` +
+      `• Join lounges to connect with communities\n` +
+      `• Send direct messages to other users\n` +
+      `• Check your Velum Bot DM for system notifications\n\n` +
+      `SECURITY:\n` +
+      `• Save your recovery key securely\n` +
+      `• Never share your credentials\n` +
+      `• Use panic phrase if compromised\n\n` +
+      `Need help? Contact an administrator.\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+    );
+
     res.status(201).json({
       token,
       user: {

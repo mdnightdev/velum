@@ -5,12 +5,13 @@ import { createAuthMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
-import { users } from '../db/schema/users.js';
+import { users, supportAdminNominations } from '../db/schema/users.js';
 import { userPrekeys } from '../db/schema/keys.js';
 import { messages as dbMessages } from '../db/schema/lounges.js';
 import { getRedisClient } from '../db/redis.js';
-import { eq, or, ilike, desc } from 'drizzle-orm';
+import { eq, or, and, desc, inArray, ilike } from 'drizzle-orm';
 import type { Request, Response } from 'express';
+import { SystemBot } from '../services/systemBot.js';
 
 export const userRouter = Router();
 
@@ -321,5 +322,163 @@ userRouter.get('/unread-counts', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Failed to get unread counts:', err);
     res.status(500).json({ error: 'Failed to get unread counts' });
+  }
+});
+
+// GET /v2/user/nomination/pending - Check if user has a pending approved nomination
+userRouter.get('/nomination/pending', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const [nomination] = await db.select().from(supportAdminNominations).where(
+      and(
+        eq(supportAdminNominations.nominatedUserId, userId),
+        eq(supportAdminNominations.status, 'approved')
+      )
+    ).limit(1);
+    
+    if (!nomination) {
+      return res.json({ hasPending: false });
+    }
+    
+    res.json({ hasPending: true, nominationId: nomination.id });
+  } catch (err) {
+    console.error('Failed to check pending nomination:', err);
+    res.status(500).json({ error: 'Failed to check pending nomination.' });
+  }
+});
+
+// POST /v2/user/nomination/accept - User accepts the nomination
+userRouter.post('/nomination/accept', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const [nomination] = await db.select().from(supportAdminNominations).where(
+      and(
+        eq(supportAdminNominations.nominatedUserId, userId),
+        eq(supportAdminNominations.status, 'approved')
+      )
+    ).limit(1);
+    
+    if (!nomination) {
+      return res.status(404).json({ error: 'No approved support admin nomination found.' });
+    }
+    
+    // Activate the support admin account
+    if (nomination.adminAccountId) {
+      await db.update(users)
+        .set({ duressActive: false })
+        .where(eq(users.id, nomination.adminAccountId));
+    }
+    
+    // Mark nomination as accepted
+    await db.update(supportAdminNominations)
+      .set({ 
+        status: 'accepted',
+        updatedAt: new Date()
+      })
+      .where(eq(supportAdminNominations.id, nomination.id));
+    
+    const systemBot = SystemBot.getInstance();
+    const credentials = JSON.parse(nomination.credentials || '{}');
+    
+    // Deliver credentials via bot
+    await systemBot.sendToUser(userId,
+      `You have ACCEPTED the Velum Support Administrator role.\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `YOUR SUPPORT ADMIN CREDENTIALS:\n` +
+      `Username: ${credentials.username}\n` +
+      `Password: ${credentials.password}\n` +
+      `Recovery Key: ${credentials.recoveryKey}\n` +
+      `Panic Phrase: ${credentials.panicPhrase || 'N/A'}\n\n` +
+      `IMPORTANT:\n` +
+      `• This is a SEPARATE account from your regular user account\n` +
+      `• Use these credentials to access the Support Admin Panel\n` +
+      `• Your regular user account remains unchanged\n` +
+      `• Keep these credentials secure\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+    );
+    
+    // Notify other admins
+    const [userObj] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const admins = await db.select().from(users).where(
+      or(
+        eq(users.role, 'CLI_ADMIN'),
+        eq(users.id, nomination.nominatedBy)
+      )
+    );
+    for (const admin of admins) {
+      await systemBot.sendToUser(admin.id,
+        `Support Role ACCEPTED\n\n` +
+        `User: ${userObj?.username} (ID: ${userId})\n` +
+        `Status: Active support admin account initialized\n` +
+        `Time: ${new Date().toISOString()}`
+      );
+    }
+    
+    res.json({ success: true, message: 'Nomination accepted successfully.' });
+  } catch (err) {
+    console.error('Failed to accept nomination:', err);
+    res.status(500).json({ error: 'Failed to accept nomination.' });
+  }
+});
+
+// POST /v2/user/nomination/decline - User declines the nomination
+userRouter.post('/nomination/decline', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const [nomination] = await db.select().from(supportAdminNominations).where(
+      and(
+        eq(supportAdminNominations.nominatedUserId, userId),
+        eq(supportAdminNominations.status, 'approved')
+      )
+    ).limit(1);
+    
+    if (!nomination) {
+      return res.status(404).json({ error: 'No approved support admin nomination found.' });
+    }
+    
+    // Delete the support admin account
+    if (nomination.adminAccountId) {
+      await db.delete(users).where(eq(users.id, nomination.adminAccountId));
+    }
+    
+    // Mark nomination as declined
+    await db.update(supportAdminNominations)
+      .set({ 
+        status: 'declined',
+        credentials: '',
+        updatedAt: new Date()
+      })
+      .where(eq(supportAdminNominations.id, nomination.id));
+    
+    const systemBot = SystemBot.getInstance();
+    
+    // Notify user via bot
+    await systemBot.sendToUser(userId,
+      `You have DECLINED the Velum Support Administrator role.\n\n` +
+      `The support admin credentials have been purged from the system.\n\n` +
+      `Your regular user account remains unchanged and unaffected.`
+    );
+    
+    // Notify other admins
+    const [userObj] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const admins = await db.select().from(users).where(
+      or(
+        eq(users.role, 'CLI_ADMIN'),
+        eq(users.id, nomination.nominatedBy)
+      )
+    );
+    for (const admin of admins) {
+      await systemBot.sendToUser(admin.id,
+        `Support Role DECLINED\n\n` +
+        `User: ${userObj?.username} (ID: ${userId})\n` +
+        `Status: Nominated credentials purged\n` +
+        `Time: ${new Date().toISOString()}`
+      );
+    }
+    
+    res.json({ success: true, message: 'Nomination declined successfully.' });
+  } catch (err) {
+    console.error('Failed to decline nomination:', err);
+    res.status(500).json({ error: 'Failed to decline nomination.' });
   }
 });

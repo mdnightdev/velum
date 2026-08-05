@@ -501,3 +501,28 @@ For technical support or questions about the codebase, refer to:
 - API documentation
 - Database schema documentation
 - Security guidelines
+
+## Support Admin & Bot Activation Updates (Implemented)
+
+### 1. Velum Bot (SystemBot) Service
+- Instantiated on startup and registered globally.
+- Automatically handles new registration greetings and double ratchet recovery key delivery to the user's Bot DM.
+- Mirrors announcements posted in official Lounges to all users' Bot DMs.
+- Enforced as a strictly read-only, one-way system channel (typing disabled in the client).
+
+### 2. Support Admin Nomination System
+- **Nomination**: `LOGIN_ADMIN` (Lexie) can nominate any active user in the frontend's Users tab via a custom nomination action.
+- **Approval & Account Creation**: `CLI_ADMIN` can approve or reject pending nominations using the CLI (`/users approve <id>` / `/users reject <id>`). On approval, generates separate credentials in an inactive state (`duressActive: true`).
+- **Interactive Acceptance**: Target user accepts or declines the nomination using interactive Accept/Decline action buttons rendered inside their Bot DM chat area.
+- **Role Activation**: Accepting the role flips `duressActive` to `false` (activating the `SUPPORT_ADMIN` account) and securely transmits the generated username, password, recovery key, and panic phrase.
+- **Demotion**: `CLI_ADMIN` can revoke support admin access via the CLI (`/users demote <uid/username>`) which purges the credentials.
+
+### 3. Balanced Credentials Format
+- **Username**: `Sa-<username>`
+- **Password**: `Sa-Vel-<random>`
+- **Recovery Key**: `Sa-Vel-Sup-<random>`
+- **Panic Phrase**: `Sa-P-<random>`
+
+### 4. System Broadcast Console
+- Integrated inside the Admin System configuration workspace.
+- Allows sending system broadcasts to all users, specific rooms, or individual user IDs.
