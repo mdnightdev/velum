@@ -7,9 +7,9 @@ import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
 import { users, supportAdminNominations } from '../db/schema/users.js';
 import { userPrekeys } from '../db/schema/keys.js';
-import { messages as dbMessages } from '../db/schema/lounges.js';
+import { messages as dbMessages, lounges, userUnreadCounts } from '../db/schema/lounges.js';
 import { getRedisClient } from '../db/redis.js';
-import { eq, or, and, desc, inArray, ilike } from 'drizzle-orm';
+import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { SystemBot } from '../services/systemBot.js';
 
@@ -182,11 +182,18 @@ userRouter.get('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found.' });
     }
     
+    // Check if user is online in Redis cache
+    const redis = await getRedisClient();
+    let isOnline = false;
+    if (redis) {
+      isOnline = (await redis.exists(`user:${userId}:active`)) === 1;
+    }
+    
     res.json({
       user_id: user[0].id,
       username: user[0].username,
-      last_seen_at: user[0].updatedAt?.toISOString() || new Date().toISOString(),
-      status: 'online'
+      last_seen_at: isOnline ? 'online' : (user[0].updatedAt?.toISOString() || 'offline'),
+      status: isOnline ? 'online' : 'offline'
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch user status.' });
@@ -297,24 +304,48 @@ userRouter.post('/upload-media', authMiddleware, (req, res, next) => {
   });
 });
 
-// Get unread counts from Redis
-userRouter.get('/unread-counts', authMiddleware, async (req, res) => {
+// Get unread counts from Redis (with persistent Postgres fallback)
+userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Response) => {
   try {
     const redis = await getRedisClient();
-    if (!redis) {
-      return res.json({ unreadCounts: {} });
-    }
-
     const userId = req.user!.userId;
-    const pattern = `unread:${userId}:*`;
-    const keys = await redis.keys(pattern);
     const counts: Record<string, number> = {};
 
-    for (const key of keys) {
-      const roomId = key.split(':')[2];
-      const count = await redis.get(key);
-      if (count && typeof count === 'string') {
-        counts[roomId] = parseInt(count, 10);
+    let hasCachedKeys = false;
+    if (redis) {
+      const pattern = `unread:${userId}:*`;
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) {
+        hasCachedKeys = true;
+        for (const key of keys) {
+          const roomId = key.split(':')[2];
+          const count = await redis.get(key);
+          if (count && typeof count === 'string') {
+            counts[roomId] = parseInt(count, 10);
+          }
+        }
+      }
+    }
+
+    if (!hasCachedKeys) {
+      // Cache-aside: recover unread counts from database user_unread_counts table
+      const dbCounts = await db.select({
+        loungeId: userUnreadCounts.loungeId,
+        unreadCount: userUnreadCounts.unreadCount,
+        slug: lounges.slug
+      })
+      .from(userUnreadCounts)
+      .innerJoin(lounges, eq(userUnreadCounts.loungeId, lounges.id))
+      .where(and(eq(userUnreadCounts.userId, userId), sql`${userUnreadCounts.unreadCount} > 0`));
+
+      for (const row of dbCounts) {
+        const roomId = row.slug || String(row.loungeId);
+        counts[roomId] = row.unreadCount;
+        if (redis) {
+          const key = `unread:${userId}:${roomId}`;
+          await redis.set(key, String(row.unreadCount));
+          await redis.expire(key, 86400); // 24 hours cache TTL
+        }
       }
     }
 

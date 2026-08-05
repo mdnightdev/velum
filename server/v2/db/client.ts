@@ -30,9 +30,10 @@ export function getPgPool(): pg.Pool {
     pgPool = new pg.Pool({
       connectionString: databaseUrl || undefined,
       ssl: useSsl ? { rejectUnauthorized: false } : false,
-      max: Number(process.env.PG_MAX_POOL) || 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      max: Number(process.env.PG_MAX_POOL) || 50,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 2000,
+      maxUses: 7500,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000
     });

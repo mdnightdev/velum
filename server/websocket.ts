@@ -2,9 +2,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { SystemBot } from './v2/services/systemBot.js';
 export { SystemBot };
 import { db, executeWithRetry } from './v2/db/client.js';
-import { sessions, users } from './v2/db/schema/index.js';
+import { sessions, users, userUnreadCounts } from './v2/db/schema/index.js';
 import { lounges, messages as dbMessages } from './v2/db/schema/lounges.js';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 import type { Server } from 'http';
 import { hashSessionToken } from './v2/middleware/auth.js';
 import { getRedisClient } from './v2/db/redis.js';
@@ -63,49 +63,148 @@ async function flushMessageBatch(userId: number) {
   }
 }
 
-// Redis-based unread counter functions
-async function incrementUnread(userId: number, roomId: string) {
-  const redis = await getRedisClient();
-  if (!redis) return;
+async function getLoungeIdFromRoomId(roomId: string): Promise<number | null> {
+  if (roomId.startsWith('dm_')) {
+    return await getOrCreateDMLounge(roomId);
+  }
+  const [targetLounge] = await executeWithRetry(() => 
+    db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1)
+  );
+  if (targetLounge) {
+    return targetLounge.id;
+  }
+  const numericId = parseInt(roomId, 10);
+  if (!isNaN(numericId)) {
+    const [loungeById] = await executeWithRetry(() =>
+      db.select().from(lounges).where(eq(lounges.id, numericId)).limit(1)
+    );
+    if (loungeById) return loungeById.id;
+  }
+  return null;
+}
 
-  const key = `unread:${userId}:${roomId}`;
-  await redis.incr(key);
-  await redis.expire(key, 86400); // Expire after 24 hours
+// PostgreSQL + Redis durable unread counter functions
+async function incrementUnread(userId: number, roomId: string) {
+  try {
+    const redis = await getRedisClient();
+    if (redis) {
+      const key = `unread:${userId}:${roomId}`;
+      await redis.incr(key);
+      await redis.expire(key, 86400); // Expire after 24 hours
+    }
+
+    const loungeId = await getLoungeIdFromRoomId(roomId);
+    if (loungeId !== null) {
+      await db.insert(userUnreadCounts)
+        .values({ userId, loungeId, unreadCount: 1 })
+        .onConflictDoUpdate({
+          target: [userUnreadCounts.userId, userUnreadCounts.loungeId],
+          set: { 
+            unreadCount: sql`${userUnreadCounts.unreadCount} + 1`,
+            updatedAt: new Date()
+          }
+        });
+    }
+  } catch (err) {
+    console.error('[WS] Failed to increment unread count:', err);
+  }
 }
 
 async function resetUnread(userId: number, roomId: string) {
-  const redis = await getRedisClient();
-  if (!redis) return;
+  try {
+    const redis = await getRedisClient();
+    if (redis) {
+      const key = `unread:${userId}:${roomId}`;
+      await redis.del(key);
+    }
 
-  const key = `unread:${userId}:${roomId}`;
-  await redis.del(key);
+    const loungeId = await getLoungeIdFromRoomId(roomId);
+    if (loungeId !== null) {
+      await db.insert(userUnreadCounts)
+        .values({ userId, loungeId, unreadCount: 0 })
+        .onConflictDoUpdate({
+          target: [userUnreadCounts.userId, userUnreadCounts.loungeId],
+          set: { 
+            unreadCount: 0,
+            updatedAt: new Date()
+          }
+        });
+    }
+  } catch (err) {
+    console.error('[WS] Failed to reset unread count:', err);
+  }
 }
 
 async function getUnreadCount(userId: number, roomId: string): Promise<number> {
-  const redis = await getRedisClient();
-  if (!redis) return 0;
+  try {
+    const redis = await getRedisClient();
+    if (redis) {
+      const key = `unread:${userId}:${roomId}`;
+      const count = await redis.get(key);
+      if (count && typeof count === 'string') {
+        return parseInt(count, 10);
+      }
+    }
 
-  const key = `unread:${userId}:${roomId}`;
-  const count = await redis.get(key);
-  return count && typeof count === 'string' ? parseInt(count, 10) : 0;
+    const loungeId = await getLoungeIdFromRoomId(roomId);
+    if (loungeId !== null) {
+      const [dbCount] = await executeWithRetry(() =>
+        db.select()
+          .from(userUnreadCounts)
+          .where(and(eq(userUnreadCounts.userId, userId), eq(userUnreadCounts.loungeId, loungeId)))
+          .limit(1)
+      );
+      return dbCount ? dbCount.unreadCount : 0;
+    }
+  } catch (err) {
+    console.error('[WS] Failed to get unread count:', err);
+  }
+  return 0;
 }
 
 async function getAllUnreadCounts(userId: number): Promise<Record<string, number>> {
-  const redis = await getRedisClient();
-  if (!redis) return {};
-
-  const pattern = `unread:${userId}:*`;
-  const keys = await redis.keys(pattern);
   const counts: Record<string, number> = {};
-
-  for (const key of keys) {
-    const roomId = key.split(':')[2];
-    const count = await redis.get(key);
-    if (count && typeof count === 'string') {
-      counts[roomId] = parseInt(count, 10);
+  try {
+    const redis = await getRedisClient();
+    if (redis) {
+      const pattern = `unread:${userId}:*`;
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) {
+        for (const key of keys) {
+          const roomId = key.split(':')[2];
+          const count = await redis.get(key);
+          if (count && typeof count === 'string') {
+            counts[roomId] = parseInt(count, 10);
+          }
+        }
+        return counts;
+      }
     }
-  }
 
+    // Cache-aside: Recover from Postgres if Redis cache is cold
+    const dbCounts = await executeWithRetry(() =>
+      db.select({
+        loungeId: userUnreadCounts.loungeId,
+        unreadCount: userUnreadCounts.unreadCount,
+        slug: lounges.slug
+      })
+      .from(userUnreadCounts)
+      .innerJoin(lounges, eq(userUnreadCounts.loungeId, lounges.id))
+      .where(and(eq(userUnreadCounts.userId, userId), sql`${userUnreadCounts.unreadCount} > 0`))
+    );
+
+    for (const row of dbCounts) {
+      const roomId = row.slug || String(row.loungeId);
+      counts[roomId] = row.unreadCount;
+      if (redis) {
+        const key = `unread:${userId}:${roomId}`;
+        await redis.set(key, String(row.unreadCount));
+        await redis.expire(key, 86400);
+      }
+    }
+  } catch (err) {
+    console.error('[WS] Failed to get all unread counts:', err);
+  }
   return counts;
 }
 
@@ -151,6 +250,14 @@ export function setupWebSocketServer(httpServer: Server) {
         ws.close(1008, 'Session expired');
         return;
       }
+
+      // Enforce connection limit per user (max 5)
+      const existingConnsCount = Array.from(connectedClients.values())
+        .filter(c => c.userId === userId).length;
+      if (existingConnsCount >= 5) {
+        ws.close(1008, 'Connection limit exceeded (max 5 concurrent sessions)');
+        return;
+      }
       
       try {
         await executeWithRetry(() => db.update(users).set({ updatedAt: new Date() }).where(eq(users.id, userId)));
@@ -168,6 +275,13 @@ export function setupWebSocketServer(httpServer: Server) {
       };
 
       connectedClients.set(ws, client);
+
+      // Cache active user session in Redis
+      getRedisClient().then(redis => {
+        if (redis) {
+          redis.set(`user:${userId}:active`, sessionId, { EX: 300 }).catch(() => {});
+        }
+      });
 
       ws.on('message', (data) => {
         try {
@@ -190,6 +304,13 @@ export function setupWebSocketServer(httpServer: Server) {
           }
         });
         connectedClients.delete(ws);
+
+        // Remove active user session from Redis
+        getRedisClient().then(redis => {
+          if (redis) {
+            redis.del(`user:${client.userId}:active`).catch(() => {});
+          }
+        });
 
         // Clean up message batching for this user
         if (batchTimers.has(client.userId)) {
@@ -215,7 +336,30 @@ export function setupWebSocketServer(httpServer: Server) {
   return wss;
 }
 
+async function checkRateLimit(userId: number): Promise<boolean> {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) return true; // Fail-open if Redis is not available
+    const key = `ratelimit:${userId}`;
+    const count = await redis.incr(key);
+    if (count === 1) {
+      await redis.expire(key, 60); // 1 minute window
+    }
+    return count <= 30; // Max 30 messages per minute
+  } catch (err) {
+    console.error('[WS] Rate limit check error:', err);
+    return true;
+  }
+}
+
 function handleClientMessage(client: ClientConnection, message: any) {
+  // Refresh active user session TTL in Redis
+  getRedisClient().then(redis => {
+    if (redis) {
+      redis.expire(`user:${client.userId}:active`, 300).catch(() => {});
+    }
+  });
+
   switch (message.type) {
     case 'join_room':
       handleJoinRoom(client, message.room_id);
@@ -224,8 +368,20 @@ function handleClientMessage(client: ClientConnection, message: any) {
       handleLeaveRoom(client, message.room_id);
       break;
     case 'send_message':
-      // Use message batching for better performance
-      startMessageBatching(client.userId, message);
+      // Rate limiting: max 30 messages per minute
+      checkRateLimit(client.userId).then(isAllowed => {
+        if (!isAllowed) {
+          client.ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Rate limit exceeded. Max 30 messages per minute.'
+          }));
+          return;
+        }
+        startMessageBatching(client.userId, message);
+      }).catch(err => {
+        console.error('Rate limit error:', err);
+        startMessageBatching(client.userId, message);
+      });
       break;
     case 'mark_read':
       handleMarkRead(client, message);
@@ -319,24 +475,47 @@ async function handleJoinRoom(client: ClientConnection, roomId: string) {
     }
 
     if (targetLoungeId) {
-      const msgList = await executeWithRetry(() => db.select({
-        message_id: dbMessages.id,
-        lounge_id: dbMessages.loungeId,
-        room_id: dbMessages.loungeId,
-        user_id: dbMessages.senderId,
-        content: dbMessages.content,
-        is_encrypted: dbMessages.encrypted,
-        delivered_to: dbMessages.deliveredTo,
-        read_by: dbMessages.readBy,
-        timestamp: dbMessages.createdAt,
-        username: users.username,
-        avatar: users.avatarUrl,
-      })
-      .from(dbMessages)
-      .leftJoin(users, eq(dbMessages.senderId, users.id))
-      .where(eq(dbMessages.loungeId, targetLoungeId))
-      .orderBy(desc(dbMessages.createdAt))
-      .limit(100));
+      const cacheKey = `room:${targetLoungeId}:messages`;
+      const redis = await getRedisClient();
+      let msgList: any[] = [];
+      let isCached = false;
+      if (redis) {
+        const cached = await redis.get(cacheKey);
+        if (cached && typeof cached === 'string') {
+          try {
+            msgList = JSON.parse(cached);
+            isCached = true;
+          } catch (e) {
+            console.error('[WS] Failed to parse cached room messages:', e);
+          }
+        }
+      }
+
+      if (!isCached) {
+        msgList = await executeWithRetry(() => db.select({
+          message_id: dbMessages.id,
+          lounge_id: dbMessages.loungeId,
+          room_id: dbMessages.loungeId,
+          user_id: dbMessages.senderId,
+          content: dbMessages.content,
+          is_encrypted: dbMessages.encrypted,
+          delivered_to: dbMessages.deliveredTo,
+          read_by: dbMessages.readBy,
+          timestamp: dbMessages.createdAt,
+          username: users.username,
+          avatar: users.avatarUrl,
+        })
+        .from(dbMessages)
+        .leftJoin(users, eq(dbMessages.senderId, users.id))
+        .where(eq(dbMessages.loungeId, targetLoungeId))
+        .orderBy(desc(dbMessages.createdAt))
+        .limit(100));
+
+        if (redis && msgList.length > 0) {
+          // Store stringified timestamps correctly
+          await redis.set(cacheKey, JSON.stringify(msgList), { EX: 300 });
+        }
+      }
 
       client.ws.send(JSON.stringify({
         type: 'history',
@@ -562,6 +741,13 @@ async function handleSendMessage(client: ClientConnection, message: any) {
             
           return [msg];
         });
+      });
+
+      // Invalidate message history cache
+      getRedisClient().then(redis => {
+        if (redis) {
+          redis.del(`room:${targetLoungeId}:messages`).catch(() => {});
+        }
       });
 
       // Include database ID in message for status tracking

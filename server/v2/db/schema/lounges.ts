@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, varchar, text, boolean, timestamp, index, AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, serial, integer, varchar, text, boolean, timestamp, index, AnyPgColumn, primaryKey } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export const lounges = pgTable('lounges', {
@@ -65,9 +65,26 @@ export const messages = pgTable('messages', {
   index('idx_messages_lounge_created').on(table.loungeId, table.createdAt)
 ]);
 
+export const userUnreadCounts = pgTable('user_unread_counts', {
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  loungeId: integer('lounge_id')
+    .references(() => lounges.id, { onDelete: 'cascade' })
+    .notNull(),
+  unreadCount: integer('unread_count').default(0).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.loungeId] }),
+  index('idx_user_unread_counts_user').on(table.userId),
+  index('idx_user_unread_counts_lounge').on(table.loungeId)
+]);
+
 export type Lounge = typeof lounges.$inferSelect;
 export type NewLounge = typeof lounges.$inferInsert;
 export type LoungeMember = typeof loungeMembers.$inferSelect;
 export type NewLoungeMember = typeof loungeMembers.$inferInsert;
 export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
+export type UserUnreadCount = typeof userUnreadCounts.$inferSelect;
+export type NewUserUnreadCount = typeof userUnreadCounts.$inferInsert;
