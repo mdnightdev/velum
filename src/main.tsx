@@ -3,6 +3,39 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
+// Sync sessionStorage with localStorage for velum- keys to prevent PWA/tab hibernate logout
+const velumKeys = ['velum-user', 'velum-sessionId', 'velum-deviceId'];
+for (const key of velumKeys) {
+  try {
+    const localVal = localStorage.getItem(key);
+    const sessionVal = sessionStorage.getItem(key);
+    if (localVal && !sessionVal) {
+      sessionStorage.setItem(key, localVal);
+    } else if (sessionVal && !localVal) {
+      localStorage.setItem(key, sessionVal);
+    }
+  } catch (_) {}
+}
+
+try {
+  const originalSetItem = sessionStorage.setItem;
+  sessionStorage.setItem = function(key, value) {
+    originalSetItem.call(sessionStorage, key, value);
+    if (velumKeys.includes(key)) {
+      localStorage.setItem(key, value);
+    }
+  };
+
+  const originalRemoveItem = sessionStorage.removeItem;
+  sessionStorage.removeItem = function(key) {
+    originalRemoveItem.call(sessionStorage, key);
+    if (velumKeys.includes(key)) {
+      localStorage.removeItem(key);
+    }
+  };
+} catch (_) {}
+
+
 // Programmatic site cache reset handler (very helpful for mobile devices)
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.has('clear') || urlParams.has('reset')) {

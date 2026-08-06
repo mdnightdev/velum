@@ -11,16 +11,21 @@ export interface VoiceNotePayload {
   url: string;
 }
 
-export function parseAttachment(content: string): AttachmentPayload | null {
-  if (!content || !content.includes('[Attachment:')) return null;
-  
-  const match = content.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\s+type:(.*?)\s+(data|url):(.*?)\](?:\s*(.*))?/s);
-  if (match) {
-    let rawVal = match[5].trim();
+export function parseAttachment(content: string): AttachmentPayload[] {
+  if (!content || !content.includes('[Attachment:')) return [];
+
+  const results: AttachmentPayload[] = [];
+  const regex = /\[Attachment:\s*(.*?)\s+size:(.*?)\s+type:(.*?)\s+(data|url):(.*?)(?:\](?:\s*(.*?))?(?=\[Attachment:|$)|\])/g;
+
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    let rawVal = match[5] ? match[5].trim() : '';
+    if (rawVal.endsWith(']')) rawVal = rawVal.slice(0, -1).trim();
+
     if (match[4] === 'data' && !rawVal.startsWith('data:') && !rawVal.startsWith('http')) {
       rawVal = 'data:' + rawVal;
     }
-    
+
     let parsedType = match[3].trim();
     const parsedName = match[1].trim();
     const ext = parsedName.toLowerCase().split('.').pop() || '';
@@ -30,33 +35,16 @@ export function parseAttachment(content: string): AttachmentPayload | null {
       }
     }
 
-    return {
+    results.push({
       name: parsedName,
       size: match[2].trim(),
       type: parsedType,
       data: rawVal,
-      caption: match[6] || ''
-    };
+      caption: match[6] ? match[6].trim() : ''
+    });
   }
 
-  const oldMatch = content.match(/\[Attachment:\s*(.*?)\s+size:(.*?)\](?:\s*(.*))?/s);
-  if (oldMatch) {
-    const parsedName = oldMatch[1].trim();
-    const ext = parsedName.toLowerCase().split('.').pop() || '';
-    let parsedType = 'application/octet-stream';
-    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) {
-      parsedType = 'image/' + ext;
-    }
-    return {
-      name: parsedName,
-      size: oldMatch[2].trim(),
-      type: parsedType,
-      data: '',
-      caption: oldMatch[3] || ''
-    };
-  }
-
-  return null;
+  return results;
 }
 
 export function parseVoiceNote(content: string): VoiceNotePayload | null {
@@ -82,20 +70,34 @@ export function parseVoiceNote(content: string): VoiceNotePayload | null {
   return { duration, url };
 }
 
+export function formatVoiceNotePreview(content: string): string {
+  const durationMatch = content.match(/duration:([\d.]+)/);
+  if (durationMatch) {
+    const totalSecs = Math.round(parseFloat(durationMatch[1]));
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `Voice message (${timeStr})`;
+  }
+  return 'Voice message';
+}
+
 export function getCleanPreview(content: string): string {
   if (!content) return '';
   if (content.startsWith('[Voice Note')) {
-    return '[Voice Note]';
+    return formatVoiceNotePreview(content);
   }
   if (content.includes('[Attachment:')) {
-    const attachment = parseAttachment(content);
-    if (attachment) {
-      if (attachment.type.startsWith('image/')) {
-        return `[Photo] ${attachment.caption}`.trim();
+    const attachments = parseAttachment(content);
+    if (attachments.length > 0) {
+      if (attachments.length > 1) {
+        return `${attachments.length} photos`;
       }
-      return `[File: ${attachment.name}] ${attachment.caption}`.trim();
+      return attachments[0].type.startsWith('image/')
+        ? `Photo${attachments[0].caption ? ' ' + attachments[0].caption : ''}`
+        : `${attachments[0].name}${attachments[0].caption ? ' ' + attachments[0].caption : ''}`;
     }
-    return '[Attachment]';
+    return 'Attachment';
   }
   return content;
 }

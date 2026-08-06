@@ -100,9 +100,11 @@ export interface Message {
   encrypted_content?: string;
   lounge_id?: string;
   reply_to?: string | null;
+  reply_preview?: { username: string; content: string } | null;
   expires_in?: string | number | null;
   is_edited?: boolean;
   edited_at?: string;
+  is_pinned?: boolean;
   db_message_id?: number;
   avatar?: string;
 }

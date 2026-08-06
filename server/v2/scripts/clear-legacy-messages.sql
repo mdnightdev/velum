@@ -6,9 +6,16 @@ DELETE FROM messages
 WHERE content LIKE 'ratchet:v1:%';
 
 -- Optionally delete messages with other legacy patterns
--- Uncomment if you want to clear lounge messages too
--- DELETE FROM messages WHERE content LIKE 'VEL_E2EE[%';
+-- Delete lounge messages
+DELETE FROM messages WHERE content LIKE 'VEL_E2EE[%';
 
--- Optionally delete all encrypted messages for a fresh start
--- Uncomment to delete ALL encrypted messages
--- DELETE FROM messages WHERE is_encrypted = true;
+-- Delete ALL encrypted messages
+DELETE FROM messages WHERE encrypted = true;
+
+--Delete All Attachments
+DELETE FROM messages WHERE content LIKE '%[Attachment:%';
+
+--Delete Message history
+DELETE FROM messages;
+
+UPDATE lounges SET last_message_text = NULL, last_message_at = NULL, last_message_sender_id = NULL;

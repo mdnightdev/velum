@@ -216,6 +216,13 @@ export function useWebSocket({
           }));
         } else if (data.type === 'message_deleted') {
           setMessages(prev => prev.filter(m => m.message_id !== data.message_id));
+        } else if (data.type === 'message_pinned') {
+          setMessages(prev => prev.map(m => {
+            if (m.message_id === data.message_id) {
+              return { ...m, is_pinned: !!data.is_pinned };
+            }
+            return m;
+          }));
         } else if (data.type === 'message_read') {
           setMessages(prev => prev.map(m => {
             if (m.message_id === data.message_id) {
@@ -323,8 +330,9 @@ export function useWebSocket({
     };
   };
 
-  const sendMessage = async (text: string, burnSeconds: number | null, isEncrypted: boolean) => {
+  const sendMessage = async (text: string, burnSeconds: number | null, isEncrypted: boolean, targetRoomId?: string, replyTo?: string | number) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const destRoomId = targetRoomId || activeRoomId;
     const isOfficialChannel = [
       'general',
       'off-topic',
@@ -336,33 +344,36 @@ export function useWebSocket({
       'voice-room',
       'support',
       'feedback'
-    ].includes(activeRoomId);
+    ].includes(destRoomId);
     const shouldEncrypt = !isOfficialChannel;
-    const context: EncryptionContext = { type: 'lounge', roomId: activeRoomId, isEncrypted: shouldEncrypt };
+    const context: EncryptionContext = { type: 'lounge', roomId: destRoomId, isEncrypted: shouldEncrypt };
     const finalContent = shouldEncrypt ? await encryptMessage(text, context) : text;
     
     const nonce = `nonce_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     const optMessage: Message = {
       message_id: nonce,
       nonce: nonce,
-      room_id: activeRoomId,
+      room_id: destRoomId,
       user_id: userId || 0, // Note: using userId from params
       username: 'You', // This will be overwritten by server, just a placeholder
       content: finalContent,
       is_encrypted: shouldEncrypt,
       status: 'sending',
+      reply_to: replyTo ? String(replyTo) : null,
       timestamp: new Date().toISOString()
     };
     
-    setMessages(prev => [...prev, optMessage]);
-
+    if (destRoomId === activeRoomId) {
+      setMessages(prev => [...prev, optMessage]);
+    }
+ 
     wsRef.current.send(JSON.stringify({
       type: 'send_message',
-      room_id: activeRoomId,
+      room_id: destRoomId,
       content: finalContent,
       is_encrypted: shouldEncrypt,
       expires_in: burnSeconds,
-      reply_to: null,
+      reply_to: replyTo || null,
       nonce: nonce
     }));
     
@@ -430,6 +441,16 @@ export function useWebSocket({
       type: 'delete_message',
       message_id: messageId,
       room_id: roomId
+    }));
+  };
+
+  const pinMessage = (messageId: string, roomId: string, pin: boolean) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      type: 'pin_message',
+      message_id: messageId,
+      room_id: roomId,
+      pin
     }));
   };
 
@@ -515,6 +536,7 @@ export function useWebSocket({
     sendReaction,
     editMessage,
     deleteMessage,
+    pinMessage,
     markAsRead,
     markAllAsRead,
     markDelivered,

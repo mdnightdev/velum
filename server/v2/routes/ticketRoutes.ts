@@ -188,6 +188,19 @@ ticketRouter.post('/admin/tickets/:ticketId/reply', authMiddleware, async (req: 
   }
 });
 
+ticketRouter.post('/admin/tickets/:ticketId/delete', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== 'CLI_ADMIN' && req.user!.role !== 'SUPPORT_ADMIN' && req.user!.role !== 'LOGIN_ADMIN') {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+    const ticketId = parseInt(req.params.ticketId, 10);
+    await db.delete(tickets).where(eq(tickets.id, ticketId));
+    res.json({ success: true, message: 'Ticket deleted successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete ticket.' });
+  }
+});
+
 export const clientDiagnosticsList: any[] = [];
 
 ticketRouter.post('/support/diagnostics', authMiddleware, async (req: Request, res: Response) => {

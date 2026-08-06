@@ -6,6 +6,7 @@ import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
+import { Mic, Image as ImageIcon } from 'lucide-react';
 
 interface DirectMainDashboardProps {
   friendRequests: any[];
@@ -314,7 +315,17 @@ export default function DirectMainDashboard({
                       {isMe && !isFailed && lastMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                       {isMe && !isFailed && lastMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                       {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                      {lastTxt && <span className="truncate">{lastTxt}</span>}
+                    {lastTxt && (
+                        <span className="truncate inline-flex items-center gap-1">
+                          {lastTxt.startsWith('Voice message') && <Mic className="w-3.5 h-3.5 text-accent shrink-0" />}
+                          {(lastTxt.toLowerCase().includes('photo') || lastTxt.toLowerCase().includes('attachment')) && (
+                            <ImageIcon className="w-3.5 h-3.5 text-text-secondary shrink-0" />
+                          )}
+                          <span>{lastTxt}</span>
+                        </span>
+                      )}
+                      
+                      
                     </p>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isFailed ? (

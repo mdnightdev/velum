@@ -59,6 +59,8 @@ export const messages = pgTable('messages', {
   readBy: text('read_by').default(''),
   isEdited: boolean('is_edited').default(false).notNull(),
   editedAt: timestamp('edited_at'),
+  isPinned: boolean('is_pinned').default(false).notNull(),
+  replyTo: integer('reply_to'),
   createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => [
   index('idx_messages_lounge_id').on(table.loungeId),

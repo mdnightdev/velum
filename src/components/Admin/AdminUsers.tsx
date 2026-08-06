@@ -282,8 +282,8 @@ export default function AdminUsers({
                                 if (!confirm(`Are you sure you want to delete ${u.username}? This action cannot be undone.`)) return;
                                 
                                 try {
-                                  const res = await adminFetch(`/v2/user/admin/${u.id}`, {
-                                    method: 'DELETE',
+                                  const res = await adminFetch(`/v2/admin/users/${u.id}/delete`, {
+                                    method: 'POST',
                                   });
                                   if (res.ok) {
                                     alert(`User ${u.username} deleted successfully.`);

@@ -190,6 +190,7 @@ function AppContent() {
       onSendReaction={ws.sendReaction}
       onEditMessage={ws.editMessage}
       onDeleteMessage={ws.deleteMessage}
+      onPinMessage={ws.pinMessage}
       onMarkAsRead={ws.markAsRead}
       onMarkAllAsRead={ws.markAllAsRead}
     />

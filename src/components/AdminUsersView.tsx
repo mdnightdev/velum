@@ -33,6 +33,61 @@ export default function AdminUsersView({
   const [sanctionMinutes, setSanctionMinutes] = useState<number | ''>('');
   const [sanctionReason, setSanctionReason] = useState('');
   const [sanctionResult, setSanctionResult] = useState<string | null>(null);
+
+  const handleProfileMute = async (u: any) => {
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const targetId = u.user_id || u.userId;
+      const res = await fetch(`/v2/user/${targetId}/mute`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}` }
+      });
+      if (res.ok) alert(`Muted user.`);
+    } catch(e) {}
+    setSelectedUser(null);
+  };
+
+  const handleProfileBlock = async (u: any) => {
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const targetId = u.user_id || u.userId;
+      const res = await fetch(`/v2/user/${targetId}/block`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}` }
+      });
+      if (res.ok) alert(`Blocked user.`);
+    } catch(e) {}
+    setSelectedUser(null);
+  };
+
+  const handleProfileDeleteChat = async (u: any) => {
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const targetId = u.user_id || u.userId;
+      const res = await fetch(`/v2/user/${targetId}/chat`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${sId}` }
+      });
+      if (res.ok) alert(`Chat deleted.`);
+    } catch(e) {}
+    setSelectedUser(null);
+  };
+
+  const handleProfileReport = async (u: any) => {
+    const targetId = u.user_id || u.userId;
+    const reason = prompt(`Reason for reporting:`);
+    if (!reason || !reason.trim()) return;
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const res = await fetch('/v2/user/report', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: targetId, reason: reason.trim() })
+      });
+      if (res.ok) alert(`Report submitted.`);
+    } catch(e) {}
+    setSelectedUser(null);
+  };
   const [sanctionError, setSanctionError] = useState<string | null>(null);
 
   const handleSanctionSubmit = async (e: React.FormEvent) => {
@@ -436,6 +491,10 @@ export default function AdminUsersView({
               }}
               variant="popover"
               onClose={() => setSelectedUser(null)}
+              onMute={() => handleProfileMute(selectedUser)}
+              onBlock={() => handleProfileBlock(selectedUser)}
+              onDeleteChat={() => handleProfileDeleteChat(selectedUser)}
+              onReport={() => handleProfileReport(selectedUser)}
             />
           </div>
         </div>

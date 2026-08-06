@@ -46,13 +46,14 @@ interface LoungeWorkspaceProps {
   wsConnected: boolean;
   lastMessages?: Record<string, any>;
   unreadCounts?: Record<string, number>;
-  onSendMessage?: (text: string, burnSeconds: number | null, isEncrypted: boolean) => void;
+  onSendMessage?: (text: string, burnSeconds: number | null, isEncrypted: boolean, targetRoomId?: string, replyTo?: string | number) => void;
   onSendTyping?: (isTyping: boolean) => void;
   onRoomKick?: (userId: number) => void;
   onRoomMute?: (userId: number, mute: boolean) => void;
   onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
   onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
+  onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
   onMarkAsRead?: (messageId: string, roomId: string) => void;
   onMarkAllAsRead?: (roomId: string) => void;
   onToggleSidebar?: () => void;
@@ -83,6 +84,71 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const [showLoungeProfile, setShowLoungeProfile] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [isLoadingLounge, setIsLoadingLounge] = useState<boolean>(!initialCache);
+
+  const handleProfileMessage = (member: any) => {
+    const currentUserId = props.currentUserId;
+    const targetUserId = member.userId || member.user_id;
+    if (currentUserId && targetUserId) {
+      const dmRoomId = `dm_${Math.min(currentUserId, targetUserId)}_${Math.max(currentUserId, targetUserId)}`;
+      props.onRoomSelect(dmRoomId);
+      setSelectedMember(null);
+    }
+  };
+
+  const handleProfileMute = async (member: any) => {
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const targetId = member.userId || member.user_id;
+      const res = await fetch(`/v2/user/${targetId}/mute`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}` }
+      });
+      if (res.ok) alert(`Muted user.`);
+    } catch(e) {}
+    setSelectedMember(null);
+  };
+
+  const handleProfileBlock = async (member: any) => {
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const targetId = member.userId || member.user_id;
+      const res = await fetch(`/v2/user/${targetId}/block`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}` }
+      });
+      if (res.ok) alert(`Blocked user.`);
+    } catch(e) {}
+    setSelectedMember(null);
+  };
+
+  const handleProfileDeleteChat = async (member: any) => {
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const targetId = member.userId || member.user_id;
+      const res = await fetch(`/v2/user/${targetId}/chat`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${sId}` }
+      });
+      if (res.ok) alert(`Chat deleted.`);
+    } catch(e) {}
+    setSelectedMember(null);
+  };
+
+  const handleProfileReport = async (member: any) => {
+    const targetId = member.userId || member.user_id;
+    const reason = prompt(`Reason for reporting:`);
+    if (!reason || !reason.trim()) return;
+    try {
+      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const res = await fetch('/v2/user/report', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: targetId, reason: reason.trim() })
+      });
+      if (res.ok) alert(`Report submitted.`);
+    } catch(e) {}
+    setSelectedMember(null);
+  };
 
   const getRoomId = (room: any): string | null => {
     if (!room) return null;
@@ -960,6 +1026,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 onSendReaction={props.onSendReaction}
                 onEditMessage={props.onEditMessage}
                 onDeleteMessage={props.onDeleteMessage}
+                onPinMessage={props.onPinMessage}
                 onMarkAsRead={handleMarkAsRead}
                 onMarkAllAsRead={handleMarkAllAsRead}
 
@@ -1032,9 +1099,29 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         {/* Selected Member Profile Card Overlay */}
         {selectedMember && (
           <ProfileCard
-            user={{ userId: selectedMember.user_id, username: selectedMember.username }}
-            onClose={() => setSelectedMember(null)}
+            type={selectedMember.role === 'LOGIN_ADMIN' || selectedMember.role === 'SUPPORT_OPERATOR' ? 'admin' : 'user'}
+            user={{
+              userId: selectedMember.user_id,
+              username: selectedMember.username,
+              displayName: selectedMember.displayName || selectedMember.username.replace('@', ''),
+              bio: selectedMember.bio || 'Secure Node Operator.',
+              location: selectedMember.location || 'Unknown location',
+              joinedDate: selectedMember.created_at ? new Date(selectedMember.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'May 2026',
+              status: selectedMember.status || 'offline',
+              role: selectedMember.role,
+              avatarUrl: selectedMember.avatar,
+              stats: {
+                loungesCount: 4,
+                connectionsCount: 18
+              }
+            }}
             variant={isMobile ? 'mobile' : 'popover'}
+            onClose={() => setSelectedMember(null)}
+            onMessage={() => handleProfileMessage(selectedMember)}
+            onMute={() => handleProfileMute(selectedMember)}
+            onBlock={() => handleProfileBlock(selectedMember)}
+            onDeleteChat={() => handleProfileDeleteChat(selectedMember)}
+            onReport={() => handleProfileReport(selectedMember)}
           />
         )}
       </>
@@ -1068,6 +1155,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           onSendReaction={props.onSendReaction}
           onEditMessage={props.onEditMessage}
           onDeleteMessage={props.onDeleteMessage}
+          onPinMessage={props.onPinMessage}
           onMarkAsRead={handleMarkAsRead}
           onMarkAllAsRead={handleMarkAllAsRead}
           isDark={props.isDark}
@@ -1204,6 +1292,11 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               }}
               variant={isMobile ? 'mobile' : 'popover'}
               onClose={() => setSelectedMember(null)}
+              onMessage={() => handleProfileMessage(selectedMember)}
+              onMute={() => handleProfileMute(selectedMember)}
+              onBlock={() => handleProfileBlock(selectedMember)}
+              onDeleteChat={() => handleProfileDeleteChat(selectedMember)}
+              onReport={() => handleProfileReport(selectedMember)}
             />
           </div>
         </div>

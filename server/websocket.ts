@@ -237,7 +237,7 @@ async function getAllUnreadCounts(userId: number): Promise<Record<string, number
 }
 
 export function setupWebSocketServer(httpServer: Server) {
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+const wss = new WebSocketServer({ server: httpServer, path: '/ws', maxPayload: 50 * 1024 * 1024 });
 
   wss.on('connection', async (ws, req) => {
     try {
@@ -279,12 +279,18 @@ export function setupWebSocketServer(httpServer: Server) {
         return;
       }
 
-      // Enforce connection limit per user (max 5)
-      const existingConnsCount = Array.from(connectedClients.values())
-        .filter(c => c.userId === userId).length;
-      if (existingConnsCount >= 5) {
-        ws.close(1008, 'Connection limit exceeded (max 5 concurrent sessions)');
-        return;
+      // Enforce connection limit per user (max 50) and prune oldest if exceeded
+      const userConns = Array.from(connectedClients.entries())
+        .filter(([_, c]) => c.userId === userId);
+      if (userConns.length >= 50) {
+        const toRemoveCount = userConns.length - 49;
+        for (let i = 0; i < toRemoveCount; i++) {
+          const [id, conn] = userConns[i];
+          try {
+            conn.ws.close(1000, 'Session superseded by newer connection');
+          } catch (e) {}
+          connectedClients.delete(id);
+        }
       }
       
       try {
@@ -521,6 +527,92 @@ async function handleEditMessage(client: ClientConnection, message: any) {
   }
 }
 
+async function handleDeleteMessage(client: ClientConnection, message: any) {
+  try {
+    const messageId = parseInt(message.message_id, 10);
+    const roomId = message.room_id;
+    if (isNaN(messageId) || !roomId) return;
+
+    // Fetch the original message to verify ownership
+    const [originalMsg] = await executeWithRetry(() =>
+      db.select()
+        .from(dbMessages)
+        .where(eq(dbMessages.id, messageId))
+        .limit(1)
+    );
+
+    if (!originalMsg) {
+      client.ws.send(JSON.stringify({ type: 'error', message: 'Message not found.' }));
+      return;
+    }
+
+    if (originalMsg.senderId !== client.userId) {
+      client.ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized. You can only delete your own messages.' }));
+      return;
+    }
+
+    // Delete message from PostgreSQL
+    await executeWithRetry(() =>
+      db.delete(dbMessages)
+        .where(eq(dbMessages.id, messageId))
+    );
+
+    // Evict messages cache for this room
+    const loungeId = await getLoungeIdFromRoomId(roomId);
+    if (loungeId) {
+      const redis = await getRedisClient();
+      if (redis) {
+        await redis.del(`room:${loungeId}:messages`);
+      }
+    }
+
+    // Broadcast deletion update to the room
+    broadcastToRoom(roomId, {
+      type: 'message_deleted',
+      message_id: String(messageId),
+      room_id: roomId
+    });
+  } catch (err) {
+    console.error('[WS] Failed to delete message:', err);
+  }
+}
+
+async function handlePinMessage(client: ClientConnection, message: any) {
+  try {
+    const messageId = parseInt(message.message_id, 10);
+    const roomId = message.room_id;
+    const pin = !!message.pin;
+    if (isNaN(messageId) || !roomId) return;
+
+    // Verify room access
+    const loungeId = await getLoungeIdFromRoomId(roomId);
+    if (!loungeId) return;
+
+    // Update message in PostgreSQL
+    await executeWithRetry(() =>
+      db.update(dbMessages)
+        .set({ isPinned: pin })
+        .where(eq(dbMessages.id, messageId))
+    );
+
+    // Evict messages cache for this room
+    const redis = await getRedisClient();
+    if (redis) {
+      await redis.del(`room:${loungeId}:messages`);
+    }
+
+    // Broadcast pinned status to room
+    broadcastToRoom(roomId, {
+      type: 'message_pinned',
+      message_id: String(messageId),
+      room_id: roomId,
+      is_pinned: pin
+    });
+  } catch (err) {
+    console.error('[WS] Failed to pin message:', err);
+  }
+}
+
 async function handleClientMessage(client: ClientConnection, message: any) {
   // Refresh active user session TTL in Redis
   getRedisClient().then(redis => {
@@ -557,6 +649,12 @@ async function handleClientMessage(client: ClientConnection, message: any) {
       break;
     case 'edit_message':
       handleEditMessage(client, message);
+      break;
+    case 'delete_message':
+      await handleDeleteMessage(client, message);
+      break;
+    case 'pin_message':
+      await handlePinMessage(client, message);
       break;
     case 'mark_read':
       handleMarkRead(client, message);
@@ -686,6 +784,8 @@ async function handleJoinRoom(client: ClientConnection, roomId: string) {
           read_by: dbMessages.readBy,
           is_edited: dbMessages.isEdited,
           edited_at: dbMessages.editedAt,
+          is_pinned: dbMessages.isPinned,
+          reply_to: dbMessages.replyTo,
           timestamp: dbMessages.createdAt,
           username: users.username,
           avatar: users.avatarUrl,
@@ -891,10 +991,18 @@ async function handleMarkDelivered(client: ClientConnection, message: any) {
 
 async function handleSendMessage(client: ClientConnection, message: any) {
   const roomId = message.room_id ? message.room_id.toString() : '';
-  // Relax check for DMs to ensure messages can still be sent
-  if (!client.rooms.has(roomId) && !roomId.startsWith('dm_')) {
-    console.warn('[WS] User is not in room:', roomId, 'User rooms:', Array.from(client.rooms));
-    return;
+  // Relax check for DMs or auto-subscribe to prevent message blocking
+  const loungeId = await getLoungeIdFromRoomId(roomId);
+  const canonicalRoomId = loungeId ? String(loungeId) : roomId;
+  if (!client.rooms.has(roomId) && !client.rooms.has(canonicalRoomId) && !roomId.startsWith('dm_')) {
+    client.rooms.add(roomId);
+    if (loungeId) client.rooms.add(String(loungeId));
+    let members = roomMembers.get(roomId);
+    if (!members) {
+      members = new Set();
+      roomMembers.set(roomId, members);
+    }
+    members.add(client.ws);
   }
 
   const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -938,6 +1046,30 @@ async function handleSendMessage(client: ClientConnection, message: any) {
         }
       }
 
+      const replyToVal = message.reply_to ? parseInt(message.reply_to.toString(), 10) : null;
+      const validReplyTo = (replyToVal !== null && !isNaN(replyToVal)) ? replyToVal : null;
+
+      let replyPreview: { username: string; content: string } | null = null;
+      if (validReplyTo) {
+        try {
+          const [repliedMsg] = await executeWithRetry(() =>
+            db.select({ content: dbMessages.content, username: users.username })
+              .from(dbMessages)
+              .leftJoin(users, eq(dbMessages.senderId, users.id))
+              .where(eq(dbMessages.id, validReplyTo))
+              .limit(1)
+          );
+          if (repliedMsg) {
+            replyPreview = {
+              username: repliedMsg.username || 'User',
+              content: repliedMsg.content
+            };
+          }
+        } catch (e) {
+          console.error('[WS] Failed to fetch reply preview:', e);
+        }
+      }
+
       const [insertedMessage] = await executeWithRetry(async () => {
         return await db.transaction(async (tx) => {
           const [msg] = await tx.insert(dbMessages).values({
@@ -945,7 +1077,8 @@ async function handleSendMessage(client: ClientConnection, message: any) {
             senderId: client.userId,
             content: message.content || '',
             encrypted: !!message.is_encrypted,
-            deliveredTo: deliveredTo.length > 0 ? deliveredTo.join(',') : ''
+            deliveredTo: deliveredTo.length > 0 ? deliveredTo.join(',') : '',
+            replyTo: validReplyTo
           }).returning();
           
           await tx.update(lounges)
@@ -970,6 +1103,8 @@ async function handleSendMessage(client: ClientConnection, message: any) {
 
       // Include database ID in message for status tracking
       enrichedMessage.db_message_id = insertedMessage.id;
+      enrichedMessage.reply_to = validReplyTo;
+      enrichedMessage.reply_preview = replyPreview;
 
       if (isDM && targetLoungeId) {
         try {

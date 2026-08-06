@@ -63,7 +63,7 @@ export const captureAndCompressPhoto = (inputEvent: any): Promise<Blob> => {
 let nativeRecorder: MediaRecorder | null = null;
 let collectedAudioBuffers: Blob[] = [];
 
-export const initiateMicrophoneStream = async (): Promise<void> => {
+export const initiateMicrophoneStream = async (): Promise<MediaStream> => {
   // Triggers the native permission popup on the screen
   const liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   collectedAudioBuffers = [];
@@ -81,6 +81,7 @@ export const initiateMicrophoneStream = async (): Promise<void> => {
     if (event.data.size > 0) collectedAudioBuffers.push(event.data);
   };
   nativeRecorder.start();
+  return liveStream;
 };
 
 export const terminateMicrophoneStream = (): Promise<Blob> => {

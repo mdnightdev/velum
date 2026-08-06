@@ -33,13 +33,14 @@ interface DashboardLayoutProps {
   messages?: any[];
   lastMessages?: Record<string, any>;
   unreadCounts?: Record<string, number>;
-  onSendMessage?: (text: string, burnSeconds: any, isEncrypted: boolean) => void;
+  onSendMessage?: (text: string, burnSeconds: any, isEncrypted: boolean, targetRoomId?: string, replyTo?: string | number) => void;
   onSendTyping?: (isTyping: boolean) => void;
   onRoomKick: (targetUserId: number) => void;
   onRoomMute: (targetUserId: number, mute: boolean) => void;
   onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
   onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
+  onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
   onMarkAsRead?: (messageId: string, roomId: string) => void;
   onMarkAllAsRead?: (roomId: string) => void;
 }
@@ -66,6 +67,7 @@ export default function DashboardLayout({
   onSendReaction,
   onEditMessage,
   onDeleteMessage,
+  onPinMessage,
   onMarkAsRead,
   onMarkAllAsRead
 }: DashboardLayoutProps) {
@@ -141,7 +143,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (user?.userId) {
-      localStorage.setItem(`velum-noteis-${user.userId}`, JSON.stringify(savedNotes));
+      localStorage.setItem(`velum-notes-${user.userId}`, JSON.stringify(savedNotes));
     }
   }, [savedNotes, user?.userId]);
 
@@ -556,6 +558,7 @@ export default function DashboardLayout({
                   onSendReaction={onSendReaction}
                   onEditMessage={onEditMessage}
                   onDeleteMessage={onDeleteMessage}
+                  onPinMessage={onPinMessage}
                   onMarkAsRead={onMarkAsRead}
                   onMarkAllAsRead={onMarkAllAsRead}
                   onToggleSidebar={toggleSidebar}
@@ -616,6 +619,7 @@ export default function DashboardLayout({
               onSendReaction={onSendReaction}
               onEditMessage={onEditMessage}
               onDeleteMessage={onDeleteMessage}
+              onPinMessage={onPinMessage}
               onMarkAsRead={onMarkAsRead}
               onMarkAllAsRead={onMarkAllAsRead}
               isDark={isDark}
@@ -718,14 +722,19 @@ export default function DashboardLayout({
                 setProfileCardUser(null);
               }}
               onReport={async () => {
+                const reason = prompt(`Reason for reporting ${profileCardUser.username}:`);
+                if (!reason || !reason.trim()) return;
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch(`/v2/user/${profileCardUser.userId}/report`, {
+                  const res = await fetch('/v2/user/report', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sId}` }
+                    headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ targetUserId: profileCardUser.userId, reason: reason.trim() })
                   });
-                  if (res.ok) alert(`Dossier submitted. ${profileCardUser.username} reported to network security.`);
-                } catch(e) {}
+                  if (res.ok) alert(`Report submitted for ${profileCardUser.username}.`);
+                } catch(e) {
+                  alert("Failed to report user.");
+                }
                 setProfileCardUser(null);
               }}
             />

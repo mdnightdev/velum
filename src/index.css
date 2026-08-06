@@ -260,3 +260,13 @@ body:has(input:focus, textarea:focus) .bottom-nav {
     font-size: 16px !important;
   }
 }
+
+/* For elements with a custom long-press interaction (e.g. chat message
+   reaction/edit toolbox) — stops long-press from triggering native
+   text-selection/callout so the custom touch handler gets the gesture
+   instead. Do NOT apply globally; this disables text selection/copy. */
+.touch-interactive {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

@@ -3,7 +3,7 @@ import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
 import { users } from '../db/schema/users.js';
 import { ensureVelumLoungeSeeded } from '../services/loungeSeeder.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, like } from 'drizzle-orm';
 import { createAuthMiddleware, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 
@@ -141,6 +141,70 @@ loungeRouter.get('/conversations/summary', optionalAuth, async (req: Request, re
     res.json({ summary, unreadCounts });
   } catch (err) {
     next(err);
+  }
+});
+
+// GET /v2/lounges/link-preview - Scrape OpenGraph metadata for link preview cards
+loungeRouter.get('/link-preview', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const targetUrl = req.query.url ? String(req.query.url).trim() : '';
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      return res.status(400).json({ error: 'Invalid URL. Only http and https protocols are supported.' });
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(targetUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+      }
+    });
+    
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Failed to fetch target URL. Status: ${response.status}` });
+    }
+
+    const html = await response.text();
+
+    const getMetaTag = (htmlText: string, name: string): string => {
+      const regex = new RegExp(`<meta[^>]*(?:property|name)=["']${name}["'][^>]*content=["']([^"']*)["']`, 'i');
+      const match = htmlText.match(regex);
+      if (match) return match[1];
+
+      const altRegex = new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*(?:property|name)=["']${name}["']`, 'i');
+      const altMatch = htmlText.match(altRegex);
+      if (altMatch) return altMatch[1];
+
+      return '';
+    };
+
+    const getTitle = (htmlText: string): string => {
+      const match = htmlText.match(/<title[^>]*>([^<]*)<\/title>/i);
+      return match ? match[1] : '';
+    };
+
+    const title = getMetaTag(html, 'og:title') || getTitle(html) || new URL(targetUrl).hostname;
+    const description = getMetaTag(html, 'og:description') || getMetaTag(html, 'description') || '';
+    const image = getMetaTag(html, 'og:image') || '';
+
+    res.json({
+      url: targetUrl,
+      title: title.trim(),
+      description: description.trim(),
+      image: image.trim()
+    });
+  } catch (err) {
+    res.json({
+      url: req.query.url ? String(req.query.url).trim() : '',
+      title: req.query.url ? new URL(String(req.query.url)).hostname : 'Link',
+      description: '',
+      image: ''
+    });
   }
 });
 
@@ -507,6 +571,59 @@ loungeRouter.put('/:id/avatar', auth, async (req: Request, res: Response, next: 
   }
 });
 
+// GET /v2/lounges/:id/search - Search messages in lounge or DM
+loungeRouter.get('/:id/search', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const query = req.query.q ? String(req.query.q).trim() : '';
+    if (!query) {
+      return res.json({ messages: [] });
+    }
+
+    let targetLoungeId: number | null = null;
+    if (rawId.startsWith('dm_')) {
+      const [dmLounge] = await db.select().from(lounges).where(eq(lounges.slug, rawId)).limit(1);
+      if (dmLounge) {
+        targetLoungeId = dmLounge.id;
+      }
+    } else {
+      const all = await db.select().from(lounges);
+      const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+      if (target) {
+        targetLoungeId = target.id;
+      }
+    }
+
+    if (!targetLoungeId) {
+      return res.json({ messages: [] });
+    }
+
+    const msgList = await db.select({
+      id: messages.id,
+      loungeId: messages.loungeId,
+      senderId: messages.senderId,
+      content: messages.content,
+      createdAt: messages.createdAt,
+      avatar: users.avatarUrl,
+      senderName: users.username,
+      is_pinned: messages.isPinned,
+      reply_to: messages.replyTo
+    })
+    .from(messages)
+    .leftJoin(users, eq(messages.senderId, users.id))
+    .where(and(
+      eq(messages.loungeId, targetLoungeId),
+      like(messages.content, `%${query}%`)
+    ))
+    .orderBy(desc(messages.createdAt))
+    .limit(50);
+
+    res.json({ messages: msgList });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /v2/lounges/:id/messages - Get lounge chat messages
 loungeRouter.get('/:id/messages', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -618,6 +735,42 @@ loungeRouter.post('/:id/messages', auth, async (req: Request, res: Response, nex
     });
 
     res.status(201).json({ message: created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+loungeRouter.get('/:loungeId/invites', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const loungeId = parseInt(req.params.loungeId, 10);
+    if (isNaN(loungeId)) {
+      return res.status(400).json({ error: 'Invalid lounge ID.' });
+    }
+    const [lounge] = await db.select().from(lounges).where(eq(lounges.id, loungeId)).limit(1);
+    if (!lounge) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+    if (lounge.inviteCode) {
+      return res.json([{
+        invite_id: 'code',
+        invite_code: lounge.inviteCode,
+        created_at: lounge.createdAt.toISOString()
+      }]);
+    }
+    res.json([]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+loungeRouter.delete('/:loungeId/invites/:inviteId', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const loungeId = parseInt(req.params.loungeId, 10);
+    if (isNaN(loungeId)) {
+      return res.status(400).json({ error: 'Invalid lounge ID.' });
+    }
+    await db.update(lounges).set({ inviteCode: null }).where(eq(lounges.id, loungeId));
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
