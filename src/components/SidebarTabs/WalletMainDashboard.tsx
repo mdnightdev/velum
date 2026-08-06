@@ -559,10 +559,10 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
                 const isBank = m.method_type === 'BANK_ACCOUNT';
                 
                 return (
-                  <div key={m.payment_method_id} className={`p-6 rounded-2xl relative overflow-hidden group border ${isVelum ? 'bg-gradient-to-br from-velum-800 to-velum-900 border-accent/30' : isBank ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-white-10' : 'bg-gradient-to-br from-zinc-800 to-zinc-900 border-white-10'}`}>
+                  <div key={m.payment_method_id} className={`p-6 rounded-2xl relative overflow-hidden group border ${isVelum ? 'bg-gradient-to-br from-velum-800 to-velum-900 border-accent/30' : isBank ? 'bg-gradient-to-br from-card-bank-start to-card-bank-end border-white-10' : 'bg-gradient-to-br from-card-credit-start to-card-credit-end border-white-10'}`}>
                     {/* Decorative Elements */}
                     <div className="absolute top-0 right-0 p-4 z-10">
-                      <button onClick={() => handleRemoveMethod(m.payment_method_id)} className="p-2 bg-black/40 hover:bg-red-500/80 text-white rounded-full transition-colors opacity-0 group-hover:opacity-100">
+                      <button onClick={() => handleRemoveMethod(m.payment_method_id)} className="p-2 bg-black/40 hover:bg-alert-error/80 text-white rounded-full transition-colors opacity-0 group-hover:opacity-100">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -600,8 +600,8 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
             </button>
             <h3 className="text-xl font-medium mb-6 text-white">Exchange Currency</h3>
             
-            {exchangeError && <div className="p-3 mb-5 text-sm text-red-400 bg-red-400/10 rounded-lg border border-red-400/20">{exchangeError}</div>}
-            {exchangeSuccess && <div className="p-3 mb-5 text-sm text-emerald-400 bg-emerald-400/10 rounded-lg border border-emerald-400/20">{exchangeSuccess}</div>}
+            {exchangeError && <div className="p-3 mb-5 text-sm text-alert-error bg-alert-error-bg rounded-lg border border-alert-error-border">{exchangeError}</div>}
+            {exchangeSuccess && <div className="p-3 mb-5 text-sm text-alert-success bg-alert-success-bg rounded-lg border border-alert-success-border">{exchangeSuccess}</div>}
             
             <form onSubmit={handleExchange} className="space-y-4">
               <div className="p-4 glass-card rounded-xl">
@@ -658,7 +658,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
             <h3 className="text-xl font-medium mb-6 text-white">{fundingType === 'RECHARGE' ? 'Add Money' : 'Withdraw Funds'}</h3>
             
             {fundingMsg && (
-              <div className={`p-3 mb-5 text-sm font-medium rounded-lg border ${fundingMsg.includes('Success') ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20' : 'bg-red-400/10 text-red-400 border-red-400/20'}`}>
+              <div className={`p-3 mb-5 text-sm font-medium rounded-lg border ${fundingMsg.includes('Success') ? 'bg-alert-success-bg text-alert-success border-alert-success-border' : 'bg-alert-error-bg text-alert-error border-alert-error-border'}`}>
                 {fundingMsg}
               </div>
             )}
@@ -746,7 +746,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
               </div>
 
               {addMethodError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-500 text-sm">
+                <div className="p-3 bg-alert-error-bg border border-alert-error-border rounded-xl text-alert-error text-sm">
                   {addMethodError}
                 </div>
               )}
