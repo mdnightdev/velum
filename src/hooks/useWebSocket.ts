@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
+import { getLocalMessages, saveLocalMessages } from '../utils/indexedDb';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -18,9 +19,64 @@ export function useWebSocket({
   onMessageReceived
 }: UseWebSocketParams) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [wsConnected, setWsConnected] = useState(false);
+
+  // 1. Instantly render cached messages when switching rooms or reconnecting
+  useEffect(() => {
+    if (!activeRoomId) return;
+
+    // Clear old room state immediately so rooms don't bleed into each other
+    setMessages([]);
+
+    const syncRoom = async () => {
+      // a. Load cached messages for active room
+      const cached = await getLocalMessages(activeRoomId);
+      let lastTimestamp = '';
+
+      if (cached && cached.length > 0) {
+        setMessages(cached);
+        const lastMsg = cached[cached.length - 1];
+        if (lastMsg?.createdAt) {
+          lastTimestamp = new Date(lastMsg.createdAt).toISOString();
+        }
+      }
+
+      // b. Fetch missing (delta) messages from backend
+      try {
+        const sessionToken = sessionStorage.getItem('velum-sessionId') || '';
+        const url = lastTimestamp
+          ? `/v2/lounges/${activeRoomId}/messages?since=${encodeURIComponent(lastTimestamp)}`
+          : `/v2/lounges/${activeRoomId}/messages`;
+
+        const res = await fetch(url, {
+          headers: { 'x-session-token': sessionToken }
+        });
+        const data = await res.json();
+
+        if (data.messages && data.messages.length > 0) {
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m: any) => m.id || m.message_id));
+            const fresh = data.messages.filter((m: any) => !existingIds.has(m.id || m.message_id));
+            return [...prev, ...fresh];
+          });
+        }
+      } catch (err) {
+        console.warn('[Sync] Failed to fetch delta messages:', err);
+      }
+    };
+
+    syncRoom();
+  }, [activeRoomId, wsConnected]);
+
+  // 2. Persist message state changes to local storage
+  useEffect(() => {
+    if (activeRoomId && messages.length > 0) {
+      saveLocalMessages(activeRoomId, messages);
+    }
+  }, [activeRoomId, messages]);
+  
   const [lastMessages, setLastMessages] = useState<Record<string, Message>>({});
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
-  const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const activeRoomIdRef = useRef(activeRoomId);
   const isAuthenticatedRef = useRef(isAuthenticated);

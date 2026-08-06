@@ -1125,7 +1125,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
         onSearchToggle={() => setShowSearch(!showSearch)}
       />
       {showSearch && (
-        <div className="bg-velum-800/90 border-b border-white-5 p-3 px-4 flex flex-col md:flex-row items-center gap-3 backdrop-blur-md relative z-30 select-none">
+        <div className="bg-bg-search-bar border-b border-white-5 p-3 px-4 flex flex-col md:flex-row items-center gap-3 backdrop-blur-[var(--blur-backdrop-md)] relative z-30 select-none">
           <form onSubmit={handleSearch} className="flex items-center gap-2 flex-1 w-full">
             <Search className="w-4 h-4 text-text-secondary shrink-0" />
             <input
@@ -1174,7 +1174,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
             </div>
           )}
           {searchQuery && searchResults.length === 0 && !isSearching && (
-            <span className="text-[11px] text-rose-400 font-mono tracking-wide uppercase shrink-0">
+            <span className="text-[11px] text-alert-error font-mono tracking-wide uppercase shrink-0">
               No matches found
             </span>
           )}
@@ -1198,7 +1198,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
         </div>
       )}
       {pinnedMessages.length > 0 && activePinnedMsg && (
-        <div className="bg-velum-800/80 border-b border-white-5 p-2.5 px-4 flex items-center justify-between gap-3 text-xs backdrop-blur-md relative z-30 select-none">
+        <div className="bg-bg-pinned-bar border-b border-white-5 p-2.5 px-4 flex items-center justify-between gap-3 text-xs backdrop-blur-[var(--blur-backdrop-md)] relative z-30 select-none">
           <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => handleScrollToMessage(activePinnedMsg.message_id)}>
             <Pin className="w-4 h-4 text-accent shrink-0" />
             <div className="min-w-0 flex-1">
@@ -1223,7 +1223,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
             {onPinMessage && (
               <button 
                 onClick={() => onPinMessage(activePinnedMsg.db_message_id ? String(activePinnedMsg.db_message_id) : activePinnedMsg.message_id, activePinnedMsg.room_id || roomId, false)}
-                className="p-1.5 rounded-lg hover:bg-rose-500/10 text-text-secondary hover:text-rose-400 transition"
+                className="p-1.5 rounded-lg hover:bg-alert-error-bg text-text-secondary hover:text-alert-error transition"
                 title="Unpin message"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1281,7 +1281,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
               >
                 {/* Message Hover Actions Bar */}
                 {!msg.deleted && (
-                  <div className={`absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1.5 z-45 bg-velum-850/90 border border-white-5 p-1 rounded-lg backdrop-blur-sm ${
+                  <div className={`absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1.5 z-45 bg-bg-hover-actions border border-white-5 p-1 rounded-lg backdrop-blur-[var(--blur-backdrop-sm)] ${
                     longPressedMsgId === msg.message_id ? 'opacity-100' : ''
                   } ${
                     isMe ? 'right-full mr-2' : 'left-full ml-2'
@@ -1314,7 +1314,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                           alert("Error reporting message.");
                         }
                       }}
-                      className="p-1 rounded hover:bg-white-5 text-text-secondary hover:text-red-400 transition cursor-pointer"
+                      className="p-1 rounded hover:bg-white-5 text-text-secondary hover:text-alert-error transition cursor-pointer"
                       title="Report Message"
                     >
                       <Flag className="w-3.5 h-3.5" />
@@ -1620,16 +1620,16 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                                         setCopiedMessageId(msg.message_id);
                                         setTimeout(() => setCopiedMessageId(null), 2000);
                                       }}
-                                      className="mt-3.5 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-status-online/30 bg-status-online/20 text-[10px] font-sans font-bold text-status-online hover:bg-status-online/20 hover:text-text-primary transition cursor-pointer uppercase tracking-wider"
+                                      className="mt-3.5 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-status-online-bg text-[10px] font-sans font-bold text-status-online hover:bg-status-online-bg hover:text-text-primary transition cursor-pointer uppercase tracking-wider"
                                     >
                                       {isCopied ? (
                                         <>
-                                          <Check className="w-3 h-3 text-emerald-400" />
+                                          <Check className="w-3 h-3 text-alert-success" />
                                           <span>Copied Secure Key</span>
                                         </>
                                       ) : (
                                         <>
-                                          <Copy className="w-3 h-3 text-emerald-400 font-bold" />
+                                          <Copy className="w-3 h-3 text-alert-success font-bold" />
                                           <span>Copy Recovery Key</span>
                                         </>
                                       )}
@@ -1717,7 +1717,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                       {isMe && onDeleteMessage && (
                         <button
                           onClick={() => onDeleteMessage(msg.message_id, msg.room_id || roomId)}
-                          className="text-red-400 hover:text-red-350 p-1 rounded"
+                          className="text-alert-error hover:text-alert-error p-1 rounded"
                           title="Delete message"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1770,13 +1770,13 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                     <div className="hidden group-hover:flex items-center gap-1 ml-2">
                       <button
                         onClick={() => onRoomMute?.(msg.user_id, true)}
-                        className="text-red-400 hover:text-red-300 px-1 hover:underline text-[9px]"
+                        className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px]"
                       >
                         Mute
                       </button>
                       <button
                         onClick={() => onRoomKick?.(msg.user_id)}
-                        className="text-red-400 hover:text-red-300 px-1 hover:underline text-[9px]"
+                        className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px]"
                       >
                         Kick
                       </button>
@@ -1814,7 +1814,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
       >
         {micError && (
-          <div className="mb-3 p-3 rounded-xl border border-red-500/20 bg-red-950/10 flex items-start justify-between gap-4 font-mono text-[10px] text-red-400">
+          <div className="mb-3 p-3 rounded-xl bg-alert-error-bg flex items-start justify-between gap-4 font-mono text-[10px] text-alert-error">
             <span className="whitespace-normal break-words flex-1 leading-relaxed">{micError}</span>
             <button 
               type="button" 
@@ -1845,7 +1845,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
               <button
                 type="button"
                 onClick={handleDismissAttachment}
-                className="absolute -top-1.5 -right-1.5 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full transition shadow-md cursor-pointer border border-velum-800 z-10 flex items-center justify-center"
+                className="absolute -top-1.5 -right-1.5 p-1 bg-alert-error text-white rounded-full transition shadow-md cursor-pointer border border-velum-800 z-10 flex items-center justify-center"
                 title="Remove image"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1860,7 +1860,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
               </div>
               <button
                 onClick={handleDismissAttachment}
-                className="text-text-secondary hover:text-red-400 transition p-1 cursor-pointer"
+                className="text-text-secondary hover:text-alert-error transition p-1 cursor-pointer"
                 title="Remove Attachment"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1880,7 +1880,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
             {/* Live Audio Track / Waveform preview */}
             <div className="flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-2 font-mono text-xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="w-2.5 h-2.5 rounded-full bg-alert-error animate-pulse" />
                 <span className="text-white font-semibold">
                   {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
                 </span>
@@ -1904,7 +1904,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
             <button
               type="button"
               onClick={cancelRecording}
-              className="w-11 h-11 rounded-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition cursor-pointer"
+              className="w-11 h-11 rounded-full bg-status-dnd-bg hover:bg-status-dnd-bg/85 text-status-dnd flex items-center justify-center transition cursor-pointer"
               title="Discard recording"
             >
               <Trash2 className="w-5 h-5" />
@@ -1972,7 +1972,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                   type="button"
                   onClick={() => handleNominationAction('decline')}
                   disabled={isSubmittingNominationAction}
-                  className="px-3.5 py-1.5 bg-rose-500/20 border border-rose-500/40 text-rose-400 hover:bg-rose-500/30 font-bold rounded-lg uppercase text-[9px] cursor-pointer transition disabled:opacity-50"
+                  className="px-3.5 py-1.5 bg-status-dnd-bg text-status-dnd hover:bg-status-dnd-bg/80 font-bold rounded-lg uppercase text-[9px] cursor-pointer transition disabled:opacity-50"
                 >
                   Decline
                 </button>
@@ -1990,7 +1990,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
               <button 
                 type="button"
                 onClick={handleCancelEdit}
-                className="text-rose-400 hover:text-rose-300 font-bold uppercase text-[9px] cursor-pointer"
+                className="text-status-dnd hover:text-status-dnd/80 font-bold uppercase text-[9px] cursor-pointer"
               >
                 Cancel
               </button>
@@ -2008,7 +2008,7 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
               <button 
                 type="button"
                 onClick={() => setReplyingToMessage(null)}
-                className="text-rose-400 hover:text-rose-305 font-bold uppercase text-[9px] cursor-pointer shrink-0 ml-2"
+                className="text-status-dnd hover:text-status-dnd/80 font-bold uppercase text-[9px] cursor-pointer shrink-0 ml-2"
               >
                 Cancel
               </button>

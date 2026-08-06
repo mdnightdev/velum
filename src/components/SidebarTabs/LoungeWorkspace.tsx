@@ -846,7 +846,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const renderCreateModal = () => {
     if (!showCreateModal) return null;
     return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black-60 backdrop-blur-sm p-4 animate-fade-in">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center modal-backdrop p-4 animate-fade-in">
         <div className={`w-full max-w-sm rounded-2xl p-6 border shadow-2xl ${props.isDark ? 'bg-velum-850 border-white-10 text-white' : 'bg-text-primary border-velum-600 text-velum-900'}`}>
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xs font-bold uppercase tracking-wider">Create Lounge Room</h3>
@@ -1269,7 +1269,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       {/* Selected Member Profile Card Overlay */}
       {selectedMember && (
         <div 
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center modal-backdrop p-4"
           onClick={() => setSelectedMember(null)}
         >
           <div onClick={e => e.stopPropagation()} className="relative">
@@ -1305,7 +1305,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       {/* Lounge Profile Card Overlay */}
       {showLoungeProfile && (
         <div 
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center modal-backdrop p-4"
           onClick={() => setShowLoungeProfile(false)}
         >
           <div onClick={e => e.stopPropagation()} className="relative">
@@ -1336,9 +1336,9 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
       {/* Glassmorphic Lounge Management Modal */}
       {showManageModal && (
-        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center modal-backdrop p-4 animate-fade-in">
           <div 
-            className={`w-full max-w-2xl h-[550px] flex flex-col rounded-3xl border shadow-2xl overflow-hidden backdrop-blur-2xl transition-all duration-300 ${
+            className={`w-full max-w-2xl h-[550px] flex flex-col rounded-3xl border shadow-2xl overflow-hidden backdrop-blur-[var(--blur-glass-panel)] transition-all duration-300 ${
               props.isDark 
                 ? 'bg-velum-900 border-white-10 text-white shadow-black-60' 
                 : 'bg-white-10 border-velum-600 text-velum-900 shadow-xl'
@@ -1400,12 +1400,12 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                   </div>
 
                   {settingsError && (
-                    <p className="text-red-500 text-[10.5px] font-mono bg-red-500/10 p-2.5 rounded-xl border border-red-500/20 uppercase tracking-wide">
+                    <p className="text-alert-error text-[10.5px] font-mono bg-alert-error-bg p-2.5 rounded-xl uppercase tracking-wide">
                       {settingsError}
                     </p>
                   )}
                   {settingsSuccess && (
-                    <p className="text-green-500 text-[10.5px] font-mono bg-green-500/10 p-2.5 rounded-xl border border-green-500/20 uppercase tracking-wide">
+                    <p className="text-alert-success text-[10.5px] font-mono bg-alert-success-bg p-2.5 rounded-xl uppercase tracking-wide">
                       {settingsSuccess}
                     </p>
                   )}
@@ -1526,7 +1526,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                                   setActiveSanctionUserId(member.user_id);
                                   setShowSanctionDialog('mute');
                                 }}
-                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg transition active:scale-95 cursor-pointer"
+                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-status-away-bg hover:bg-status-away-bg text-status-away rounded-lg transition active:scale-95 cursor-pointer"
                                 title="Mute user inside lounge"
                               >
                                 Mute
@@ -1536,7 +1536,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                                   setActiveSanctionUserId(member.user_id);
                                   setShowSanctionDialog('kick');
                                 }}
-                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 rounded-lg transition active:scale-95 cursor-pointer"
+                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-status-away-bg hover:bg-status-away-bg text-status-away rounded-lg transition active:scale-95 cursor-pointer"
                                 title="Kick user from lounge"
                               >
                                 Kick
@@ -1546,7 +1546,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                                   setActiveSanctionUserId(member.user_id);
                                   setShowSanctionDialog('ban');
                                 }}
-                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition active:scale-95 cursor-pointer"
+                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd rounded-lg transition active:scale-95 cursor-pointer"
                                 title="Ban user from lounge"
                               >
                                 Ban
@@ -1591,13 +1591,13 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               onClick={() => handleReviewRequest(req.request_id, false)}
-                              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition active:scale-95 cursor-pointer"
+                              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd rounded-lg transition active:scale-95 cursor-pointer"
                             >
                               Reject
                             </button>
                             <button
                               onClick={() => handleReviewRequest(req.request_id, true)}
-                              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition active:scale-95 cursor-pointer"
+                              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-status-online-bg hover:bg-status-online-bg text-status-online rounded-lg transition active:scale-95 cursor-pointer"
                             >
                               Approve
                             </button>
@@ -1640,10 +1640,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                     </div>
 
                     {directAddError && (
-                      <p className="text-red-400 text-[10.5px] font-mono mt-2 uppercase">{directAddError}</p>
+                      <p className="text-alert-error text-[10.5px] font-mono mt-2 uppercase">{directAddError}</p>
                     )}
                     {directAddSuccess && (
-                      <p className="text-emerald-400 text-[10.5px] font-mono mt-2 uppercase">{directAddSuccess}</p>
+                      <p className="text-alert-success text-[10.5px] font-mono mt-2 uppercase">{directAddSuccess}</p>
                     )}
                   </div>
 
@@ -1680,7 +1680,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                             </div>
                             <button
                               onClick={() => handleRevokeInviteCode(inv.invite_id)}
-                              className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition active:scale-95 cursor-pointer"
+                              className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd rounded-lg transition active:scale-95 cursor-pointer"
                             >
                               Revoke
                             </button>
@@ -1699,9 +1699,9 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
       {/* Sanction Dialog Popup Overlay */}
       {showSanctionDialog && activeSanctionUserId && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black-60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center modal-backdrop p-4">
           <div className={`w-full max-w-sm rounded-2xl p-5 border shadow-2xl space-y-4 animate-fade-in ${props.isDark ? 'bg-velum-850 border-white-10 text-white' : 'bg-text-primary border-velum-600 text-velum-900'}`}>
-            <h4 className="text-xs font-black uppercase tracking-wider text-red-500">
+            <h4 className="text-xs font-black uppercase tracking-wider text-alert-error">
               Confirm {showSanctionDialog} Command
             </h4>
             
@@ -1715,8 +1715,8 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               onChange={(e) => setSanctionReason(e.target.value)}
               className={`w-full p-2.5 rounded-lg border text-xs outline-none h-20 resize-none font-mono transition uppercase ${
                 props.isDark 
-                  ? 'bg-velum-900 border-white-10 text-white focus:border-red-500/50' 
-                  : 'bg-white-10 border-velum-600 text-velum-900 focus:border-red-500/50'
+                  ? 'bg-velum-900 border-white-10 text-white focus:border-alert-error/50' 
+                  : 'bg-white-10 border-velum-600 text-velum-900 focus:border-alert-error/50'
               }`}
             />
             
@@ -1733,7 +1733,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               </button>
               <button 
                 onClick={handleApplySanction}
-                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg cursor-pointer"
+                className="px-4 py-2 bg-alert-error hover:bg-alert-error/80 text-white rounded-lg cursor-pointer"
               >
                 Confirm {showSanctionDialog}
               </button>
