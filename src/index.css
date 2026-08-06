@@ -1,49 +1,59 @@
 @import "tailwindcss";
 
-@theme {
-  /* ---- Neutral Scale (warm charcoal) ---- */
-  --color-velum-900: #08090C;   /* canvas (deepest background) */
-  --color-velum-850: #0C0E12;   /* sidebars, drawers, overlays */
-  --color-velum-800: #101218;   /* elevated surfaces (cards, panels) */
-  --color-velum-750: #15171E;   /* inputs, modals, footer cards */
-  --color-velum-700: #1A1D24;   /* hover state for cards/rows */
-  --color-velum-600: #22262E;   /* subtle borders and dividers */
-  --color-velum-500: #2E323B;   /* muted separators, disabled states */
+html, body, #root {
+  height: var(--viewport-height, 100dvh);
+  width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  position: fixed;
+  background-color: var(--color-velum-900);
+  color: var(--color-text-primary);
+}
 
-  /* ---- Primary Accent (rose gold) ---- */
+@theme {
+  /* ---- Neutral Scale (Richer, Warm Charcoal Slate) ---- */
+  --color-velum-900: #111319;   /* canvas (lifted warm dark slate) */
+  --color-velum-850: #161922;   /* sidebars, drawers, overlays */
+  --color-velum-800: #1C202B;   /* cards, panels */
+  --color-velum-750: #222735;   /* inputs, modals */
+  --color-velum-700: #2B3141;   /* hover states */
+  --color-velum-600: #363D50;   /* subtle borders */
+  --color-velum-500: #464F66;   /* muted separators */
+
+  /* ---- Primary Accent (Rose Gold) ---- */
   --color-accent:        #C89B8A;
-  --color-accent-10:     rgba(200, 155, 138, 0.1);
-  --color-accent-20:     rgba(200, 155, 138, 0.2);
-  --color-accent-40:     rgba(200, 155, 138, 0.4);
+  --color-accent-10:     color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --color-accent-20:     color-mix(in srgb, var(--color-accent) 20%, transparent);
+  --color-accent-40:     color-mix(in srgb, var(--color-accent) 40%, transparent);
   --color-accent-hover:  #D9AFA0;   /* brighter variant for hover */
   --color-unread-badge:  #B76E79;   /* Rose gold */
 
   /* ---- Premium Institutional Bank Palette (Steel Sapphire / Platinum Cobalt) ---- */
   --color-bank-accent:        #5585E2;
-  --color-bank-accent-10:     rgba(85, 133, 226, 0.1);
-  --color-bank-accent-20:     rgba(85, 133, 226, 0.2);
-  --color-bank-accent-40:     rgba(85, 133, 226, 0.4);
+  --color-bank-accent-10:     color-mix(in srgb, var(--color-bank-accent) 10%, transparent);
+  --color-bank-accent-20:     color-mix(in srgb, var(--color-bank-accent) 20%, transparent);
+  --color-bank-accent-40:     color-mix(in srgb, var(--color-bank-accent) 40%, transparent);
   --color-bank-accent-hover:  #7AA3FA;
   --color-bank-emerald:       #10B981;
   --color-bank-rose:          #EF4444;
 
-  /* ---- Secondary Accent (muted teal) ---- */
+  /* ---- Secondary Accent (Muted Teal) ---- */
   --color-accent-secondary:        #5B9A8B;
-  --color-accent-secondary-10:     rgba(91, 154, 139, 0.1);
-  --color-accent-secondary-20:     rgba(91, 154, 139, 0.2);
+  --color-accent-secondary-10:     color-mix(in srgb, var(--color-accent-secondary) 10%, transparent);
+  --color-accent-secondary-20:     color-mix(in srgb, var(--color-accent-secondary) 20%, transparent);
 
   /* ---- Text ---- */
   --color-text-primary:    #F5F2EB;   /* warm ivory – high contrast */
   --color-text-secondary:  #9B9790;   /* muted sand – labels, descriptions */
   --color-text-disabled:   #5A5550;   /* disabled or placeholder text */
 
-  /* ---- Status Indicators (standard) ---- */
+  /* ---- Status Indicators (Standard) ---- */
   --color-status-online:    #10B981;
   --color-status-away:      #F59E0B;
   --color-status-dnd:       #F43F5E;
   --color-status-invisible: #71717A;
 
-  /* ---- Opacity Overlays (white / black) ---- */
+  /* ---- Opacity Overlays (White / Black) ---- */
   --color-white-2:   rgba(255, 255, 255, 0.02);
   --color-white-5:   rgba(255, 255, 255, 0.05);
   --color-white-10:  rgba(255, 255, 255, 0.1);
@@ -56,28 +66,116 @@
   --font-mono:    'Fira Code', 'JetBrains Mono', monospace;
   --font-display: 'Poppins', 'Satoshi', system-ui, sans-serif;
 
-  /* ---- Border Radius ---- */
   --radius-sm:  6px;
   --radius-md:  10px;
   --radius-lg:  16px;
   --radius-xl:  24px;
 
+  /* ---- Chat Bubble Color System ---- */
+  --color-bubble-me:            #101218;   /* Elevated charcoal for current user */
+  --color-bubble-me-text:       #F5F2EB;   /* warm ivory text */
+  --color-bubble-peer:          #101218;   /* Elevated charcoal for peer */
+  --color-bubble-peer-text:     #F5F2EB;   /* warm ivory text */
+  --color-bubble-peer-border:   rgba(255, 255, 255, 0.05); /* border color */
+
+  /* ---- Payment Card Custom Gradients ---- */
+  --color-card-bank-start:      #0C0E12;   /* velum-850 */
+  --color-card-bank-end:        #1A1D24;   /* velum-700 */
+  --color-card-credit-start:    #101218;   /* velum-800 */
+  --color-card-credit-end:      #15171E;   /* velum-750 */
+
+  /* ---- Alert / Status Color System ---- */
+  --color-alert-success:        #10B981;   /* Emerald */
+  --color-alert-success-bg:     rgba(16, 185, 129, 0.1);
+  --color-alert-success-border: rgba(16, 185, 129, 0.2);
+  --color-alert-error:          #EF4444;   /* Red */
+  --color-alert-error-bg:       rgba(239, 68, 68, 0.1);
+  --color-alert-error-border:   rgba(239, 68, 68, 0.2);
+
+  /* ---- Glass/Blur System ---- */
+  --blur-glass-panel:        24px;
+  --blur-glass-panel-mobile: 8px;
+  --blur-glass-card:         12px;
+  --blur-glass-button:       12px;
+  --blur-backdrop-sm:        4px;
+  --blur-backdrop-md:        12px;
+  --blur-backdrop-lg:        16px;
+  --blur-backdrop-xl:        24px;
+
+  --backdrop-opacity-light:  0.6;
+  --backdrop-opacity-medium: 0.7;
+  --backdrop-opacity-heavy:  0.75;
+
+  --glass-bg-panel:          rgba(10, 12, 16, 0.4);
+  --glass-bg-panel-mobile:   rgba(10, 12, 16, 0.72);
+  --glass-bg-card:           rgba(255, 255, 255, 0.01);
+  --glass-bg-card-nested:    rgba(255, 255, 255, 0.035);
+  --glass-bg-input:          rgba(255, 255, 255, 0.04);
+  --glass-bg-input-focus:    rgba(255, 255, 255, 0.06);
+  --glass-border-panel:      rgba(255, 255, 255, 0.08);
+  --glass-border-card:       rgba(255, 255, 255, 0.04);
+  --glass-shadow:            rgba(0, 0, 0, 0.3);
+
+  /* ---- Additional colors the audit flagged as missing ---- */
+  --color-status-warning: #F59E0B;
+  --color-status-info:    #3B82F6;
+  --color-status-danger:  #EF4444;
+  --color-white-15: rgba(255, 255, 255, 0.15);
+  --color-white-20: rgba(255, 255, 255, 0.20);
+  --color-white-40: rgba(255, 255, 255, 0.40);
+  --color-black-20: rgba(0, 0, 0, 0.20);
+  --color-black-80: rgba(0, 0, 0, 0.80);
+
+  /* ---- Status Backgrounds and Borders ---- */
+  --color-status-online-bg:        color-mix(in srgb, var(--color-status-online) 15%, transparent);
+  --color-status-online-border:    color-mix(in srgb, var(--color-status-online) 30%, transparent);
+  --color-status-away-bg:          color-mix(in srgb, var(--color-status-away) 15%, transparent);
+  --color-status-away-border:      color-mix(in srgb, var(--color-status-away) 30%, transparent);
+  --color-status-dnd-bg:           color-mix(in srgb, var(--color-status-dnd) 15%, transparent);
+  --color-status-dnd-border:       color-mix(in srgb, var(--color-status-dnd) 30%, transparent);
+  --color-status-info-bg:          color-mix(in srgb, var(--color-status-info) 15%, transparent);
+  --color-status-info-border:      color-mix(in srgb, var(--color-status-info) 30%, transparent);
+  --color-status-special:          #8B5CF6;
+  --color-status-special-bg:       color-mix(in srgb, var(--color-status-special) 15%, transparent);
+  --color-status-special-border:   color-mix(in srgb, var(--color-status-special) 30%, transparent);
+  --color-status-indigo:           #6366F1;
+  --color-status-indigo-bg:        color-mix(in srgb, var(--color-status-indigo) 15%, transparent);
+  --color-status-indigo-border:    color-mix(in srgb, var(--color-status-indigo) 30%, transparent);
+  --color-status-sky:              #0EA5E9;
+  --color-status-sky-bg:           color-mix(in srgb, var(--color-status-sky) 15%, transparent);
+  --color-status-sky-border:       color-mix(in srgb, var(--color-status-sky) 30%, transparent);
+
+  /* ---- Customize Theme System Preview Options ---- */
+  --color-theme-emerald-banner:    #064E3B;
+  --color-theme-bronze-banner:     #422006;
+  --color-theme-violet-banner:     #2E1065;
+  --color-theme-indigo-banner:     #1E1B4B;
+  --color-theme-crimson-banner:    #500724;
+
+  --color-theme-blue-avatar:       #60A5FA;
+  --color-theme-blue-avatar-bg:    rgba(30, 58, 138, 0.4);
+  --color-theme-blue-avatar-border:rgba(30, 58, 138, 0.4);
+
+  --color-theme-emerald-avatar:    #34D399;
+  --color-theme-emerald-avatar-bg: rgba(6, 78, 59, 0.4);
+  --color-theme-emerald-avatar-border:rgba(6, 78, 59, 0.4);
+
+  --color-theme-amber-avatar:      #F59E0B;
+  --color-theme-amber-avatar-bg:   rgba(66, 32, 6, 0.4);
+  --color-theme-amber-avatar-border:rgba(66, 32, 6, 0.4);
+
+  --color-theme-purple-avatar:     #C084FC;
+  --color-theme-purple-avatar-bg:  rgba(46, 16, 101, 0.4);
+  --color-theme-purple-avatar-border:rgba(46, 16, 101, 0.4);
+
+  /* ---- Custom Background Panel Colors ---- */
+  --color-bg-search-bar:           rgba(16, 18, 24, 0.90);
+  --color-bg-pinned-bar:           rgba(16, 18, 24, 0.80);
+  --color-bg-hover-actions:        rgba(12, 14, 18, 0.90);
 }
 
 :root {
   --viewport-height: 100dvh;
-}
-
-html, body, #root {
-    height: var(--viewport-height);
-    width: 100%;
-    overflow: hidden;
-    position: fixed;
-}
-
-body {
-    background-color: var(--color-velum-900);
-    color: var(--color-text-primary);
 }
 
 /* Hide bottom navigation bar instantly when user is typing */
@@ -126,33 +224,33 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 
 /* Glassmorphism System Utilities */
 .glass-panel {
-  background-color: rgba(10, 12, 16, 0.4);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--glass-bg-panel);
+  backdrop-filter: blur(var(--blur-glass-panel));
+  -webkit-backdrop-filter: blur(var(--blur-glass-panel));
+  border: 1px solid var(--glass-border-panel);
   border-radius: var(--radius-lg);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 25px -5px var(--glass-shadow), 0 10px 10px -5px var(--glass-shadow);
 }
 
 /* Optimized responsive glass for mobile devices (phones/tablets) */
 @media (max-width: 1024px) {
   .glass-panel {
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    background-color: rgba(10, 12, 16, 0.72) !important; /* Slightly more opaque to boost performance, but still translucent */
+    background: var(--glass-bg-panel-mobile) !important;
+    backdrop-filter: blur(var(--blur-glass-panel-mobile)) !important;
+    -webkit-backdrop-filter: blur(var(--blur-glass-panel-mobile)) !important;
   }
   .glass-card {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    background-color: rgba(255, 255, 255, 0.035) !important; /* Neutralize nested blurs on cards on mobile */
+    background-color: var(--glass-bg-card-nested) !important;
   }
 }
 
 .glass-card {
-  background-color: rgba(255, 255, 255, 0.01);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--glass-bg-card);
+  backdrop-filter: blur(var(--blur-glass-card));
+  -webkit-backdrop-filter: blur(var(--blur-glass-card));
+  border: 1px solid var(--glass-border-card);
   border-radius: var(--radius-md);
 }
 
@@ -160,12 +258,12 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 .glass-panel .glass-card {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  background-color: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background-color: var(--glass-bg-card-nested);
+  border: 1px solid var(--glass-border-card);
 }
 
 .glass-input {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: var(--glass-bg-input);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--color-text-primary);
   border-radius: var(--radius-md);
@@ -175,8 +273,30 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 }
 
 .glass-input:focus {
-  border-color: rgba(200, 155, 138, 0.4);
-  background-color: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-accent-40);
+  background-color: var(--glass-bg-input-focus);
+}
+
+.modal-backdrop {
+  background: rgba(0, 0, 0, var(--backdrop-opacity-light));
+  backdrop-filter: blur(var(--blur-backdrop-sm));
+  -webkit-backdrop-filter: blur(var(--blur-backdrop-sm));
+}
+
+.auth-portal-glow {
+  background: radial-gradient(40% 40% at 30% 30%, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent 30%);
+}
+
+.audio-active-bar-glow {
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+.avatar-shadow-ring {
+  box-shadow: 0 0 0 1px var(--color-white-10);
+}
+
+.mobile-modal-shadow {
+  box-shadow: 0 -10px 40px var(--color-black-80);
 }
 
 /* --- Contextual color overrides inside glass containers --- */
@@ -199,7 +319,7 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 .glass-panel input[type="password"]:not(.bg-transparent),
 .glass-panel select,
 .glass-panel textarea {
-  background-color: rgba(255, 255, 255, 0.04) !important;
+  background-color: var(--glass-bg-input) !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   color: var(--color-text-primary) !important;
   border-radius: var(--radius-md) !important;
@@ -212,35 +332,33 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 .glass-panel input[type="password"]:not(.bg-transparent):focus,
 .glass-panel select:focus,
 .glass-panel textarea:focus {
-  border-color: rgba(200, 155, 138, 0.4) !important;
-  background-color: rgba(255, 255, 255, 0.06) !important;
-
+  border-color: var(--color-accent-40) !important;
+  background-color: var(--glass-bg-input-focus) !important;
 }
 
-  /* --- Master Split-Pane Layout --- */
-  
-  /* 1. Mobile (Default): Single column. Sidebar will stack or be hidden */
-  .dashboard-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    width: 100vw;
-    height: var(--viewport-height);
-    overflow: hidden;
-  }
-  
-  /* 2. Tablet Screens (768px and up): Split pane with a compact sidebar */
-  @media (min-width: 768px) {
-    .dashboard-layout {
-      grid-template-columns: 260px 1fr; /* Fixed sidebar width, rest goes to content */
-    }
-  }
-  
-  /* 3. PC / Large Desktop Screens (1280px and up): Generous spacious sidebar */
-  @media (min-width: 1280px) {
-    .dashboard-layout {
-      grid-template-columns: 320px 1fr; /* Wider sidebar for massive screens */ 
- 	}
+/* --- Master Split-Pane Layout --- */
 
+/* 1. Mobile (Default): Single column. Sidebar will stack or be hidden */
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  width: 100vw;
+  height: var(--viewport-height);
+  overflow: hidden;
+}
+
+/* 2. Tablet Screens (768px and up): Split pane with a compact sidebar */
+@media (min-width: 768px) {
+  .dashboard-layout {
+    grid-template-columns: 260px 1fr; /* Fixed sidebar width, rest goes to content */
+  }
+}
+
+/* 3. PC / Large Desktop Screens (1280px and up): Generous spacious sidebar */
+@media (min-width: 1280px) {
+  .dashboard-layout {
+    grid-template-columns: 320px 1fr; /* Wider sidebar for massive screens */ 
+  }
 }
 
 /* Allow the body's glowing blobs to shine through the outer containers */
@@ -261,12 +379,42 @@ body:has(input:focus, textarea:focus) .bottom-nav {
   }
 }
 
-/* For elements with a custom long-press interaction (e.g. chat message
-   reaction/edit toolbox) — stops long-press from triggering native
-   text-selection/callout so the custom touch handler gets the gesture
-   instead. Do NOT apply globally; this disables text selection/copy. */
-.touch-interactive {
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
+@keyframes loading-sweep {
+  0%   { left: -33%; }
+  100% { left: 100%; }
+}
+.animate-loading-sweep {
+  animation: loading-sweep 1.3s ease-in-out infinite;
+}
+
+/* Premium WhatsApp-style chat wallpaper background pattern */
+.chat-wallpaper {
+  background-color: var(--color-velum-900);
+  background-image: 
+    radial-gradient(var(--color-accent-10) 1px, transparent 1px),
+    radial-gradient(var(--color-accent-10) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+  position: relative;
+}
+
+.chat-wallpaper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, transparent 20%, var(--color-velum-900) 90%);
+  pointer-events: none;
+}
+
+@keyframes bounce-slow {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 4s ease-in-out infinite;
 }
