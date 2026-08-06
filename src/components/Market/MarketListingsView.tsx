@@ -14,8 +14,8 @@ export const getTechCategoryDetails = (listing: MarketListing) => {
   if (text.includes('audit') || text.includes('security') || text.includes('scan') || text.includes('protect') || text.includes('firewall')) {
     return {
       name: 'Security Audits',
-      icon: <ShieldCheck className="w-5 h-5 text-emerald-400" />,
-      bg: 'from-emerald-500/5 to-emerald-500/20 border-emerald-500/10',
+      icon: <ShieldCheck className="w-5 h-5 text-alert-success" />,
+      bg: 'bg-status-online-bg border-transparent',
     };
   }
   if (text.includes('pipeline') || text.includes('data') || text.includes('sync') || text.includes('db') || text.includes('etl') || text.includes('query')) {
@@ -34,8 +34,8 @@ export const getTechCategoryDetails = (listing: MarketListing) => {
   }
   return {
     name: 'Developer Utilities',
-    icon: <Code className="w-5 h-5 text-amber-400" />,
-    bg: 'from-amber-500/5 to-amber-500/20 border-amber-500/10',
+    icon: <Code className="w-5 h-5 text-status-away" />,
+    bg: 'bg-status-away-bg border-transparent',
   };
 };
 
@@ -90,12 +90,12 @@ export function MarketListingsView({
                   <div className="flex justify-between items-start gap-3">
                     <div className="space-y-1">
                       {listing.verification_status === 'PENDING_REVIEW' && (
-                        <span className="text-[8px] font-mono tracking-widest uppercase bg-amber-400/10 text-amber-400 border border-amber-400/20 px-2 py-0.5 rounded-md leading-none">
+                        <span className="text-[8px] font-mono tracking-widest uppercase bg-status-away-bg text-status-away px-2 py-0.5 rounded-md leading-none">
                           Pending Review
                         </span>
                       )}
                       {listing.verification_status === 'REJECTED' && (
-                        <span className="text-[8px] font-mono tracking-widest uppercase bg-rose-400/10 text-rose-400 border border-rose-400/20 px-2 py-0.5 rounded-md leading-none">
+                        <span className="text-[8px] font-mono tracking-widest uppercase bg-status-dnd-bg text-status-dnd px-2 py-0.5 rounded-md leading-none">
                           Rejected
                         </span>
                       )}
@@ -161,11 +161,11 @@ export function MarketListingsView({
                         isOwner
                           ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
                           : isOutOfStock
-                            ? 'bg-red-950/40 text-red-400 border border-red-900/30 cursor-not-allowed'
+                            ? 'bg-status-dnd-bg text-status-dnd cursor-not-allowed'
                             : listing.verification_status === 'PENDING_REVIEW'
-                            ? 'bg-amber-400/5 text-amber-400 border border-amber-400/20 cursor-not-allowed'
+                            ? 'bg-status-away-bg text-status-away cursor-not-allowed'
                             : listing.verification_status === 'REJECTED'
-                            ? 'bg-rose-400/5 text-rose-400 border border-rose-400/20 cursor-not-allowed'
+                            ? 'bg-status-dnd-bg text-status-dnd cursor-not-allowed'
                             : 'bg-text-primary/[0.03] hover:bg-accent hover:text-velum-900 border border-white-5 hover:border-accent text-white'
                       }`}
                     >

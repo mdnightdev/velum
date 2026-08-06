@@ -249,7 +249,7 @@ export function ListingInspector({
   const currentTotalDisplayPrice = activeDisplayPrice + additionalCost;
 
   return (
-    <div className="fixed inset-0 z-40 bg-velum-900/95 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
       <div className="bg-velum-800 border border-white-5 w-full max-w-2xl h-[85vh] rounded-3xl overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         
         {/* Banner/Header Segment */}
@@ -284,7 +284,7 @@ export function ListingInspector({
                   Listing
                 </span>
                 {isOwner && (
-                  <span className="text-[8px] font-mono tracking-widest uppercase bg-emerald-950 text-emerald-400 border border-emerald-800/30 px-2 py-0.5 rounded-md leading-none">
+                  <span className="text-[8px] font-mono tracking-widest uppercase bg-status-online-bg text-status-online px-2 py-0.5 rounded-md leading-none">
                     Your Asset
                   </span>
                 )}
@@ -454,7 +454,7 @@ export function ListingInspector({
                         }`}
                       >
                         {variant.inventory_count <= 0 && (
-                          <span className="absolute top-2 right-2 text-[8px] font-mono uppercase tracking-widest bg-red-900/50 text-red-400 border border-red-800/20 px-1 py-0.5 rounded leading-none">
+                          <span className="absolute top-2 right-2 text-[8px] font-mono uppercase tracking-widest bg-status-dnd-bg text-status-dnd px-1 py-0.5 rounded leading-none">
                             Out of Stock
                           </span>
                         )}
@@ -568,8 +568,8 @@ export function ListingInspector({
               
               {/* Form (purchase verification is gated on server) */}
               {!userHasReviewed && !isOwner && (
-                <form onSubmit={handlePostReview} className="space-y-4 bg-velum-850 p-5 rounded-2xl border border-emerald-950/40">
-                  <div className="flex items-center gap-1.5 text-emerald-400">
+                <form onSubmit={handlePostReview} className="space-y-4 bg-velum-850 p-5 rounded-2xl">
+                  <div className="flex items-center gap-1.5 text-alert-success">
                     <ShieldCheck className="w-4 h-4" />
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider">
                       Publish a Verified Purchase Review
@@ -589,12 +589,12 @@ export function ListingInspector({
                           required
                           value={reviewComment}
                           onChange={(e) => setReviewComment(e.target.value)}
-                          className="flex-1 bg-black/40 border border-white-5 rounded-xl px-4 py-2 text-xs text-white placeholder-text-disabled focus:border-emerald-500 focus:outline-none"
+                          className="flex-1 bg-black/40 rounded-xl px-4 py-2 text-xs text-white placeholder-text-disabled focus:border-alert-success focus:outline-none"
                         />
                         <button
                           type="submit"
                           disabled={submittingReview || !reviewComment.trim()}
-                          className="px-4 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 text-xs font-bold uppercase rounded-xl transition cursor-pointer"
+                          className="px-4 bg-alert-success hover:bg-alert-success text-velum-900 text-xs font-bold uppercase rounded-xl transition cursor-pointer"
                         >
                           {submittingReview ? 'Saving...' : 'Submit'}
                         </button>
@@ -603,14 +603,14 @@ export function ListingInspector({
                   </div>
 
                   {reviewSuccess && (
-                    <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 bg-emerald-950/30 p-2.5 rounded-lg border border-emerald-900/30">
+                    <div className="text-[10px] font-mono text-alert-success flex items-center gap-1 bg-status-online-bg p-2.5 rounded-lg">
                       <Check className="w-3.5 h-3.5" />
                       <span>Review submitted successfully!</span>
                     </div>
                   )}
 
                   {reviewError && (
-                    <div className="text-[10px] font-mono text-status-dnd flex items-start gap-1.5 bg-status-dnd/10 p-3 rounded-xl border border-status-dnd/20">
+                    <div className="text-[10px] font-mono text-status-dnd flex items-start gap-1.5 bg-status-dnd-bg p-3 rounded-xl">
                       <ShieldAlert className="w-4 h-4 text-status-dnd shrink-0 mt-0.5" />
                       <div>
                         <div className="font-extrabold uppercase text-[9px] tracking-wide">Reputation Gate Error</div>
@@ -687,9 +687,9 @@ export function ListingInspector({
                       isOwner
                         ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
                         : isOutOfStock
-                          ? 'bg-red-950/40 text-red-400 border border-red-900/30 cursor-not-allowed'
+                          ? 'bg-status-dnd-bg text-status-dnd cursor-not-allowed'
                           : addedToCartSuccess
-                            ? 'bg-emerald-900 border border-emerald-500/40 text-emerald-400'
+                            ? 'bg-status-online-bg text-status-online'
                             : 'bg-velum-800 border border-white-10 text-white hover:bg-velum-750'
                     }`}
                   >
@@ -719,7 +719,7 @@ export function ListingInspector({
                     isOwner
                       ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
                       : isOutOfStock
-                        ? 'bg-red-950/40 text-red-400 border border-red-900/30 cursor-not-allowed'
+                        ? 'bg-status-dnd-bg text-status-dnd cursor-not-allowed'
                         : 'bg-accent hover:bg-accent-hover text-velum-900 shadow-md'
                   }`}
                 >

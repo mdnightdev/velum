@@ -84,8 +84,8 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
   const platformFee = finalPrice * 0.05;
 
   return (
-    <div className="fixed inset-0 z-50 bg-velum-900/90 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-velum-800 border border-emerald-900/40 p-6 sm:p-8 rounded-2xl w-full max-w-md space-y-6 shadow-2xl relative">
+    <div className="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+      <div className="bg-velum-800 border border-white-5 p-6 sm:p-8 rounded-2xl w-full max-w-md space-y-6 shadow-2xl relative">
         <button 
           onClick={onCancel}
           className="absolute top-4 right-4 text-text-secondary hover:text-white"
@@ -94,7 +94,7 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
         </button>
 
         <div className="space-y-1">
-          <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+          <span className="text-[10px] font-mono font-bold text-alert-success uppercase tracking-widest flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4" /> Secure Checkout
           </span>
           <h3 className="text-lg font-sans font-black text-white">{listing.title}</h3>
@@ -109,7 +109,7 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
               type="text"
               value={couponCode}
               onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-              className="flex-1 bg-black/40 border border-white-5 rounded-xl px-3.5 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none font-mono"
+              className="flex-1 bg-black/40 border border-white-5 rounded-xl px-3.5 py-2 text-xs text-white focus:border-alert-success focus:outline-none font-mono"
             />
             <button
               onClick={handleVerifyCoupon}
@@ -120,13 +120,13 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
           </div>
 
           {appliedCoupon && (
-            <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 bg-emerald-900/20 p-2.5 rounded-lg border border-emerald-900/30">
+            <div className="text-[10px] font-mono text-alert-success flex items-center gap-1 bg-status-online-bg p-2.5 rounded-lg">
               <Check className="w-3.5 h-3.5" />
               <span>Discount applied: -${Number(appliedCoupon.deduction || 0).toFixed(2)}</span>
             </div>
           )}
           {couponError && (
-            <div className="text-[10px] font-mono text-status-dnd flex items-center gap-1 bg-status-dnd/10 p-2.5 rounded-lg border border-status-dnd/20">
+            <div className="text-[10px] font-mono text-status-dnd flex items-center gap-1 bg-status-dnd-bg p-2.5 rounded-lg">
               <AlertTriangle className="w-3.5 h-3.5" />
               <span>{couponError}</span>
             </div>
@@ -145,7 +145,7 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
             </div>
           )}
           {appliedCoupon && (
-            <div className="flex justify-between text-emerald-400">
+            <div className="flex justify-between text-alert-success">
               <span>Coupon Deduction:</span>
               <span>-${Number(appliedCoupon.deduction || 0).toFixed(2)}</span>
             </div>
@@ -156,12 +156,12 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
           </div>
           <div className="flex justify-between text-white font-black text-sm border-t border-white-5 pt-3">
             <span>Total Commitment:</span>
-            <span className="text-emerald-400">${Number(finalPrice || 0).toFixed(2)}</span>
+            <span className="text-alert-success">${Number(finalPrice || 0).toFixed(2)}</span>
           </div>
         </div>
 
         {checkoutError && (
-          <div className="text-[10px] font-mono text-status-dnd flex items-center gap-1 bg-status-dnd/10 p-2.5 rounded-lg border border-status-dnd/20">
+          <div className="text-[10px] font-mono text-status-dnd flex items-center gap-1 bg-status-dnd-bg p-2.5 rounded-lg">
             <AlertTriangle className="w-3.5 h-3.5" />
             <span>{checkoutError}</span>
           </div>
@@ -169,7 +169,7 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
 
         <button
           onClick={handleConfirmCheckoutAndEscrow}
-          className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 text-[11px] font-sans font-black uppercase tracking-widest rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
+          className="w-full py-3.5 bg-alert-success hover:bg-alert-success text-velum-900 text-[11px] font-sans font-black uppercase tracking-widest rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
         >
           <ShieldCheck className="w-4 h-4" />
           <span>Confirm Purchase</span>

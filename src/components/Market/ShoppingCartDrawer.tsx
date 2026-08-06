@@ -75,7 +75,7 @@ export function ShoppingCartDrawer({ isOpen, onClose, fetchSessionId, onCheckout
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-velum-900/80 backdrop-blur-sm transition-opacity duration-300"
+        className="absolute inset-0 modal-backdrop transition-opacity duration-300"
         onClick={onClose}
       />
 
@@ -110,8 +110,8 @@ export function ShoppingCartDrawer({ isOpen, onClose, fetchSessionId, onCheckout
           <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-none">
             {checkoutStatus === 'success' ? (
               <div className="h-full flex flex-col items-center justify-center text-center space-y-3 p-4 animate-in fade-in duration-200">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/30">
-                  <Check className="w-6 h-6 text-emerald-400" />
+                <div className="w-12 h-12 rounded-full bg-status-online-bg flex items-center justify-center">
+                  <Check className="w-6 h-6 text-alert-success" />
                 </div>
                 <h4 className="text-sm font-bold text-white uppercase tracking-wider font-sans">Checkout Approved</h4>
                 <p className="text-xs text-text-secondary leading-relaxed max-w-xs font-sans font-medium">
@@ -179,7 +179,7 @@ export function ShoppingCartDrawer({ isOpen, onClose, fetchSessionId, onCheckout
                           {/* Trash button */}
                           <button
                             onClick={() => removeFromCart(item.id)}
-                            className="p-1.5 hover:bg-rose-500/10 text-text-disabled hover:text-rose-400 border border-transparent hover:border-rose-500/10 rounded-xl transition cursor-pointer"
+                            className="p-1.5 hover:bg-alert-error-bg text-text-disabled hover:text-alert-error rounded-xl transition cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
