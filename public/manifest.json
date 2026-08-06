@@ -4,8 +4,8 @@
   "description": "A secure, end-to-end encrypted real-time communications .",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#08080A",
-  "theme_color": "#08080A",
+  "background_color": "#08090C",
+  "theme_color": "#08090C",
   "orientation": "portrait-primary",
   "categories": ["social", "communications"],
   "icons": [
