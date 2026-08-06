@@ -227,7 +227,7 @@ export default function TicketsMainDashboard({
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Create Ticket Form */}
-        <form onSubmit={handleSubmitTicket} className="bg-[#10131B] border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl lg:col-span-5">
+        <form onSubmit={handleSubmitTicket} className="bg-velum-800 border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl lg:col-span-5">
           <h3 className="text-sm font-semibold tracking-wide text-accent flex items-center gap-2">
             <Plus className="w-4 h-4 text-accent" />
             <span>Create Support Ticket</span>
@@ -240,13 +240,13 @@ export default function TicketsMainDashboard({
             <button
               type="button"
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="w-full bg-[#151924] border border-white/10 rounded-xl px-4 py-3 text-xs sm:text-sm text-text-primary hover:border-accent/50 focus:border-accent focus:ring-1 focus:ring-accent/40 focus:outline-none flex items-center justify-between cursor-pointer transition shadow-sm font-sans"
+              className="w-full bg-velum-750 border border-white/10 rounded-xl px-4 py-3 text-xs sm:text-sm text-text-primary hover:border-accent/50 focus:border-accent focus:ring-1 focus:ring-accent/40 focus:outline-none flex items-center justify-between cursor-pointer transition shadow-sm font-sans"
             >
               <span className="font-medium text-text-primary">{categories.find(c => c.value === issueType)?.label || 'Select Category'}</span>
               <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform duration-200 ${isDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
             </button>
             {isDropdownOpen && (
-              <div className="absolute left-0 right-0 mt-1.5 bg-[#171B28] border border-white/15 rounded-xl shadow-2xl z-50 overflow-hidden font-sans divide-y divide-white/5">
+              <div className="absolute left-0 right-0 mt-1.5 bg-velum-750 border border-white/15 rounded-xl shadow-2xl z-50 overflow-hidden font-sans divide-y divide-white/5">
                 {categories.map((c) => (
                   <button
                     key={c.value}
@@ -278,7 +278,7 @@ export default function TicketsMainDashboard({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Please describe your issue or question in detail..."
-              className="w-full bg-[#151924] border border-white/10 rounded-xl p-3.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none resize-none font-sans leading-relaxed placeholder:text-text-disabled"
+              className="w-full bg-velum-750 border border-white/10 rounded-xl p-3.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none resize-none font-sans leading-relaxed placeholder:text-text-disabled"
             />
           </div>
 
@@ -292,7 +292,7 @@ export default function TicketsMainDashboard({
               value={credentials}
               onChange={(e) => setCredentials(e.target.value)}
               placeholder="Provide transaction IDs, error logs, or relevant details..."
-              className="w-full bg-[#151924] border border-white/10 rounded-xl p-3.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none resize-none font-sans leading-relaxed placeholder:text-text-disabled"
+              className="w-full bg-velum-750 border border-white/10 rounded-xl p-3.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none resize-none font-sans leading-relaxed placeholder:text-text-disabled"
             />
           </div>
 
@@ -300,7 +300,7 @@ export default function TicketsMainDashboard({
             id="ticket_submit_btn"
             type="submit"
             disabled={isSubmitting}
-            className="w-full py-3 bg-accent hover:bg-accent-hover text-[#0C0E12] text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-md font-sans hover:shadow-accent/20"
+            className="w-full py-3 bg-accent hover:bg-accent-hover text-velum-900 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-md font-sans hover:shadow-accent/20"
           >
             <Send className="w-4 h-4" />
             <span>{isSubmitting ? 'Submitting Ticket...' : 'Submit Ticket'}</span>
@@ -317,7 +317,7 @@ export default function TicketsMainDashboard({
           {loading ? (
             <div className="text-xs text-text-secondary animate-pulse p-4">Loading tickets...</div>
           ) : tickets.length === 0 ? (
-            <div className="text-xs sm:text-sm text-text-secondary leading-relaxed bg-[#10131B] border border-white/10 rounded-2xl p-8 text-center shadow-md">
+            <div className="text-xs sm:text-sm text-text-secondary leading-relaxed bg-velum-800 border border-white/10 rounded-2xl p-8 text-center shadow-md">
               You currently have no support tickets.
             </div>
           ) : (
@@ -332,7 +332,7 @@ export default function TicketsMainDashboard({
                   <div 
                     key={t.ticket_id} 
                     onClick={() => toggleTicket(t.ticket_id)}
-                    className={`bg-[#10131B] border rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-md relative ${styles.border} hover:border-white/20 hover:bg-[#131622]`}
+                    className={`bg-velum-800 border rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-md relative ${styles.border} hover:border-white/20 hover:bg-velum-700`}
                   >
                     <div className="flex justify-between items-start gap-4">
                       <div className="space-y-2 flex-1">
@@ -360,7 +360,7 @@ export default function TicketsMainDashboard({
                           </div>
                         ) : (
                           <div className="pt-3 space-y-4" onClick={(e) => e.stopPropagation()}>
-                            <div className="bg-[#151924] p-4 rounded-xl border border-white/10">
+                            <div className="bg-velum-750 p-4 rounded-xl border border-white/10">
                               <p className="text-xs sm:text-sm text-text-primary font-sans leading-relaxed whitespace-pre-wrap">
                                 {cleanReason}
                               </p>
@@ -376,7 +376,7 @@ export default function TicketsMainDashboard({
                                 if (isSys) {
                                   return (
                                     <div key={idx} className="text-center py-1">
-                                      <span className="text-xs font-medium text-text-secondary bg-[#151924] px-3 py-1 rounded-full border border-white/5">
+                                      <span className="text-xs font-medium text-text-secondary bg-velum-750 px-3 py-1 rounded-full border border-white/5">
                                         {cleanContent}
                                       </span>
                                     </div>
@@ -389,7 +389,7 @@ export default function TicketsMainDashboard({
                                     className={`flex flex-col max-w-[88%] rounded-xl p-3 text-xs sm:text-sm space-y-1.5 ${
                                       isOp 
                                         ? 'bg-accent/10 border-l-2 border-l-accent mr-auto' 
-                                        : 'bg-[#171B28] ml-auto border-r-2 border-r-text-secondary/50'
+                                        : 'bg-velum-750 ml-auto border-r-2 border-r-text-secondary/50'
                                     }`}
                                   >
                                     <div className="flex justify-between gap-4 text-xs text-text-secondary">
@@ -408,7 +408,7 @@ export default function TicketsMainDashboard({
                                 <input
                                   type="text"
                                   placeholder="Type your reply and press Enter..."
-                                  className="w-full bg-[#151924] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none"
+                                  className="w-full bg-velum-750 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none"
                                   onKeyDown={async (e) => {
                                     if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                                       const val = e.currentTarget.value.trim();
@@ -436,7 +436,7 @@ export default function TicketsMainDashboard({
                             )}
 
                             {t.credentials_forwarded && (
-                              <div className="bg-[#151924] border border-white/10 p-3.5 rounded-xl space-y-1">
+                              <div className="bg-velum-750 border border-white/10 p-3.5 rounded-xl space-y-1">
                                 <div className="text-xs font-semibold text-text-secondary">
                                   Supporting Details / Attachments
                                 </div>

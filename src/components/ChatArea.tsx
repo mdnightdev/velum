@@ -269,7 +269,6 @@ export default function ChatArea({
   const [peerPresence, setPeerPresence] = useState<string>('offline');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [decryptedContents, setDecryptedContents] = useState<Map<string, string>>(new Map());
   const [hasPendingNomination, setHasPendingNomination] = useState(false);
   const [isSubmittingNominationAction, setIsSubmittingNominationAction] = useState(false);
   const [activePinIndex, setActivePinIndex] = useState<number>(0);
@@ -347,6 +346,7 @@ const {
   const [waveformAudioProg, setWaveformAudioProg] = useState<Record<string, number>>({});
   const [popoverPeer, setPopoverPeer] = useState<{userId: number, username: string, messageId: string, displayName?: string, bio?: string, location?: string, joinedDate?: string, status?: string, isMuted?: boolean, isBlocked?: boolean, avatar?: string, stats?: { loungesCount: number, connectionsCount: number }} | null>(null);
   const [decryptedMap, setDecryptedMap] = useState<Record<string, string>>({});
+  const [decryptedCiphertexts, setDecryptedCiphertexts] = useState<Record<string, string>>({});
 
   // Active playing audio ref
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -360,12 +360,18 @@ const {
     markedMessageIdsRef.current.clear();
   }, [roomId, activeChatPeer?.userId]);
 
-  // Asynchronous decryption effect for incoming messages
+  // Asynchronous decryption effect for incoming and edited messages
   useEffect(() => {
     let isMounted = true;
     const processDecryption = async () => {
+      const newDecrypted: Record<string, string> = {};
+      const newCiphertexts: Record<string, string> = {};
+      let changed = false;
+
       for (const m of messages) {
-        if (m.content && m.message_id && !decryptedMap[m.message_id]) {
+        if (!m.content || !m.message_id) continue;
+
+        if (decryptedCiphertexts[m.message_id] !== m.content) {
           const peerId = activeChatPeer?.userId || m.user_id;
           try {
             const context: EncryptionContext = {
@@ -375,13 +381,20 @@ const {
               isEncrypted: !!(m.is_encrypted || (m as any).isEncrypted)
             };
             const decrypted = await decryptMessage(m.content, context);
-            if (isMounted && decrypted && decrypted !== m.content) {
-              setDecryptedMap(prev => ({ ...prev, [m.message_id]: decrypted }));
+            if (decrypted) {
+              newDecrypted[m.message_id] = decrypted;
+              newCiphertexts[m.message_id] = m.content;
+              changed = true;
             }
           } catch (err) {
-            console.error('[ChatArea] Decryption error:', err);
+            console.error('[ChatArea] Decryption error:', m.message_id, err);
           }
         }
+      }
+
+      if (isMounted && changed) {
+        setDecryptedMap(prev => ({ ...prev, ...newDecrypted }));
+        setDecryptedCiphertexts(prev => ({ ...prev, ...newCiphertexts }));
       }
     };
     processDecryption();
@@ -425,8 +438,7 @@ const {
   }, [activeChatPeer]);
 
   const getDecryptedText = (msg: Message) => {
-    const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-    const val = decryptedContents.get(msg.message_id) || rawContent;
+    const val = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
     if (!val) return 'Empty message';
     if (val.startsWith('[Voice Note')) return 'Voice Note';
     if (val.includes('[Attachment:')) {
@@ -719,8 +731,7 @@ const handleSearch = async (e?: React.FormEvent) => {
     const queryLower = searchQuery.toLowerCase();
     const localMatches = conversationMessages.filter(m => {
       if (m.deleted) return false;
-      const rawText = decryptedMap[m.message_id] || m.content || '';
-      const plainText = decryptedContents.get(m.message_id) || rawText;
+      const plainText = decryptedMap[m.message_id] || m.content || '';
       return plainText.toLowerCase().includes(queryLower);
     });
 
@@ -736,7 +747,7 @@ const handleSearch = async (e?: React.FormEvent) => {
           message_id: m.message_id,
           db_message_id: m.db_message_id,
           senderName: m.username,
-          content: decryptedContents.get(m.message_id) || decryptedMap[m.message_id] || m.content,
+          content: decryptedMap[m.message_id] || m.content,
           createdAt: m.timestamp
         });
       }
@@ -815,8 +826,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
       return;
     }
     setEditingMessageId(msg.message_id);
-    const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-    const activeContent = decryptedContents.get(msg.message_id) || rawContent;
+    const activeContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
     const attachment = activeContent.includes('[Attachment:') ? parseAttachment(activeContent) : null;
     const plainText = attachment && attachment.length > 0 ? (attachment[0].caption || '') : activeContent;
     
@@ -837,8 +847,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
         const originalMsg = messages.find(m => m.message_id === editingMessageId);
         let finalEditContent = inputText.trim();
         if (originalMsg) {
-          const rawContent = decryptedMap[editingMessageId] || originalMsg.content || '';
-          const activeContent = decryptedContents.get(editingMessageId) || rawContent;
+          const activeContent = decryptedMap[editingMessageId] || originalMsg.content || '';
           if (activeContent.includes('[Attachment:')) {
             const attachmentPart = activeContent.split(']')[0] + ']';
             finalEditContent = `${attachmentPart} ${inputText.trim()}`.trim();
@@ -1032,37 +1041,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
     requestNotificationPermission();
   }, []);
 
-  // Decrypt messages when conversation changes (and re-decrypt if edited)
-  useEffect(() => {
-    const decryptMessages = async () => {
-      const updates = new Map<string, string>();
-      for (const msg of conversationMessages) {
-        const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-        const hasDecrypted = decryptedContents.has(msg.message_id);
-        const prevRaw = rawContentsMap.current.get(msg.message_id);
-        
-        if (rawContent && (!hasDecrypted || prevRaw !== rawContent)) {
-          try {
-            const context: EncryptionContext = {
-              type: activeChatPeer ? 'direct' : 'lounge',
-              roomId: msg.room_id || roomId,
-              peerUserId: activeChatPeer?.userId,
-              isEncrypted: msg.is_encrypted || (msg as any).isEncrypted
-            };
-            const decrypted = await decryptMessage(rawContent, context);
-            updates.set(msg.message_id, decrypted);
-            rawContentsMap.current.set(msg.message_id, rawContent);
-          } catch (err) {
-            console.error('[ChatArea] Decryption error for message', msg.message_id, err);
-          }
-        }
-      }
-      if (updates.size > 0) {
-        setDecryptedContents(prev => new Map([...prev, ...updates]));
-      }
-    };
-    decryptMessages();
-  }, [conversationMessages, activeChatPeer?.userId, roomId]);
+
 
   // Dispatch desktop notification when new message arrives from peer
   const prevMessagesLengthRef = useRef(messages.length);
@@ -1263,10 +1242,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
           const isMe = msg.user_id === currentUserId;
             const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg);
 
-          const rawContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-
-          // Use decrypted content from state, fall back to raw content
-          const activeContent = decryptedContents.get(msg.message_id) || rawContent;
+          const activeContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
 
           // Check for voice note payload
           const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
@@ -1510,8 +1486,8 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                           isSpecialTheme && customBubbleClass
                             ? customBubbleClass
                             : isMe 
-                              ? 'bg-velum-800 text-white rounded-br-sm' 
-                              : 'bg-velum-800 text-text-primary rounded-bl-sm border border-white-5'
+                              ? 'bg-bubble-me text-bubble-me-text rounded-br-sm' 
+                              : 'bg-bubble-peer text-bubble-peer-text border border-bubble-peer-border rounded-bl-sm'
                         } ${msg.deleted ? 'italic text-text-secondary opacity-60 font-mono text-[10px]' : ''}`
                   }>
                   

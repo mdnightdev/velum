@@ -197,14 +197,14 @@ export function useWebSocket({
           }
         } else if (data.type === 'reaction_update') {
           setMessages(prev => prev.map(m => {
-            if (m.message_id === data.message_id) {
+            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
               return { ...m, reactions: data.reactions };
             }
             return m;
           }));
         } else if (data.type === 'message_edit') {
           setMessages(prev => prev.map(m => {
-            if (m.message_id === data.message_id) {
+            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
               return {
                 ...m,
                 content: data.content,
@@ -215,24 +215,24 @@ export function useWebSocket({
             return m;
           }));
         } else if (data.type === 'message_deleted') {
-          setMessages(prev => prev.filter(m => m.message_id !== data.message_id));
+          setMessages(prev => prev.filter(m => String(m.message_id) !== String(data.message_id) && String(m.db_message_id) !== String(data.message_id)));
         } else if (data.type === 'message_pinned') {
           setMessages(prev => prev.map(m => {
-            if (m.message_id === data.message_id) {
+            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
               return { ...m, is_pinned: !!data.is_pinned };
             }
             return m;
           }));
         } else if (data.type === 'message_read') {
           setMessages(prev => prev.map(m => {
-            if (m.message_id === data.message_id) {
+            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
               return { ...m, status: 'read' as 'sent' | 'delivered' | 'read' };
             }
             return m;
           }));
         } else if (data.type === 'message_delivered') {
           setMessages(prev => prev.map(m => {
-            if (m.message_id === data.message_id && m.status !== 'read') {
+            if ((String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) && m.status !== 'read') {
               return { ...m, status: 'delivered' as 'sent' | 'delivered' | 'read' };
             }
             return m;
