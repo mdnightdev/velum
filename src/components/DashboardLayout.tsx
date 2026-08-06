@@ -318,7 +318,7 @@ export default function DashboardLayout({
         {isMobile && sidebarOpen && (
           <div className="fixed inset-0 z-50 flex">
             <div 
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+              className="fixed inset-0 modal-backdrop transition-opacity"
               onClick={closeSidebar}
             />
             <div className="relative z-10 w-64 max-w-[80vw] h-full bg-velum-850 border-r border-white-5 shadow-2xl flex flex-col animate-in slide-in-from-left duration-200">
@@ -748,7 +748,7 @@ export default function DashboardLayout({
     return (
       <div className="w-full h-full bg-velum-900 flex items-center justify-center p-4 font-sans">
         <div className="bg-velum-800 border border-velum-600 p-6 rounded-xl max-w-md w-full text-center">
-          <h3 className="text-red-500 font-bold mb-2 text-lg">Interface Error</h3>
+          <h3 className="text-alert-error font-bold mb-2 text-lg">Interface Error</h3>
           <p className="text-text-secondary text-xs break-all font-mono">{String(error)}</p>
         </div>
       </div>

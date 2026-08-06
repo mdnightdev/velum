@@ -344,7 +344,7 @@ export default function LoungeMainDashboard({
         {/* Create Lounge Button */}
         <button
           onClick={() => setShowCreateLoungeModal(true)}
-          className={`p-3.5 rounded-full border shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-md ${
+          className={`p-3.5 rounded-full border shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-[var(--blur-backdrop-md)] ${
             isDark 
               ? 'bg-accent-10 border-accent-20 text-accent hover:bg-accent-20 hover:border-accent-40 shadow-black-60' 
               : 'bg-white-10 border-velum-600 text-text-secondary hover:text-velum-900 shadow-lg'
@@ -357,7 +357,7 @@ export default function LoungeMainDashboard({
         {/* Join Lounge Button */}
         <button
           onClick={() => setShowJoinLoungeMobileModal(true)}
-          className={`p-3.5 rounded-full border shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-md ${
+          className={`p-3.5 rounded-full border shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-[var(--blur-backdrop-md)] ${
             isDark 
               ? 'bg-white-2 border-white-10 text-text-secondary hover:text-white shadow-black-60' 
               : 'bg-white-10 border-velum-600 text-text-disabled hover:text-velum-900 shadow-lg'
@@ -370,7 +370,7 @@ export default function LoungeMainDashboard({
 
       {/* Glassmorphic Modals */}
       {selectedLounge && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedLounge(null)}>
+        <div className="absolute inset-0 z-[60] flex items-center justify-center p-4 modal-backdrop" onClick={() => setSelectedLounge(null)}>
             <div onClick={e => e.stopPropagation()}>
                 <ProfileCard 
                     type="lounge"
@@ -395,9 +395,9 @@ export default function LoungeMainDashboard({
       )}
       
       {showCreateLoungeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-60 backdrop-blur-md p-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4 animate-fade-in">
           <div 
-            className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl backdrop-blur-2xl transition-all duration-300 ${
+            className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl backdrop-blur-[var(--blur-backdrop-xl)] transition-all duration-300 ${
               isDark 
                 ? 'bg-velum-900 border-white-10 text-white shadow-black-60' 
                 : 'bg-white-10 border-velum-600 text-velum-900 shadow-xl'
@@ -420,7 +420,7 @@ export default function LoungeMainDashboard({
             </div>
 
             {loungeError && (
-              <p className="text-red-500 text-[10.5px] font-mono bg-red-500/10 p-2.5 rounded-xl mb-4 border border-red-500/20 uppercase tracking-wide">
+              <p className="text-status-dnd text-[10.5px] font-mono bg-status-dnd-bg p-2.5 rounded-xl mb-4 uppercase tracking-wide">
                 {loungeError}
               </p>
             )}
@@ -517,7 +517,7 @@ export default function LoungeMainDashboard({
       )}
 
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
           <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-white text-sm font-bold uppercase tracking-wider">Create Lounge Room</h3>
@@ -555,7 +555,7 @@ export default function LoungeMainDashboard({
         </div>
       )}
       {showJoinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
           <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-white text-sm font-bold uppercase tracking-wider">Locked VIP Room</h3>
@@ -585,7 +585,7 @@ export default function LoungeMainDashboard({
       )}
 
       {showJoinLoungeMobileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
           <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4 shadow-2xl">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-white text-sm font-bold uppercase tracking-wider">Join a Lounge</h3>

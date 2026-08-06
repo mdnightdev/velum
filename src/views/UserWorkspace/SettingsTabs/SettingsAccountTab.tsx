@@ -29,13 +29,13 @@ export function SettingsAccountTab({
   return (
     <form onSubmit={handleSaveProfile} className="w-full max-w-4xl space-y-8">
       {profileMsg && (
-        <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+        <div className="p-3.5 bg-status-online-bg text-status-online rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
           <CheckCircle className="w-4 h-4" />
           <span>{profileMsg}</span>
         </div>
       )}
       {profileError && (
-        <div className="p-3.5 bg-red-500/5 border border-red-500/10 text-red-500 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+        <div className="p-3.5 bg-status-dnd-bg text-status-dnd rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
           <span>{profileError}</span>
         </div>
@@ -45,7 +45,7 @@ export function SettingsAccountTab({
       
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         {/* Left Side: Live Glassmorphic Profile Preview Card */}
-        <div className="w-full lg:w-72 shrink-0 bg-velum-800/80 backdrop-blur-md border border-white-10 rounded-2xl overflow-hidden shadow-2xl p-5 relative font-sans text-white">
+        <div className="w-full lg:w-72 shrink-0 bg-bg-pinned-bar backdrop-blur-[var(--blur-backdrop-md)] border border-white-10 rounded-2xl overflow-hidden shadow-2xl p-5 relative font-sans text-white">
           
           <div className="flex flex-col items-center text-center mt-3">
             <div className="relative group mb-4">
@@ -71,7 +71,7 @@ export function SettingsAccountTab({
                 <button
                   type="button"
                   onClick={handleDeleteAvatar}
-                  className="absolute -bottom-1 -right-1 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full transition border border-velum-800 shadow-md cursor-pointer z-10 flex items-center justify-center"
+                  className="absolute -bottom-1 -right-1 p-1.5 bg-alert-error hover:bg-alert-error text-white rounded-full transition border border-velum-800 shadow-md cursor-pointer z-10 flex items-center justify-center"
                   title="Delete avatar"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

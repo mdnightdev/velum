@@ -452,7 +452,7 @@ export default function UserSidebar({
             <button
               type="button"
               onClick={onLogout}
-              className="p-2.5 bg-status-dnd/5 hover:bg-red-500/15 text-red-400/80 hover:text-red-400 rounded-2xl transition cursor-pointer"
+              className="p-2.5 bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd rounded-2xl transition cursor-pointer"
               title="Logout Session"
             >
               <LogOut className="w-5 h-5" />
@@ -463,7 +463,7 @@ export default function UserSidebar({
       </div>
       
       {showJoinLoungeModal && (
-        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black-60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center modal-backdrop p-4">
           <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4 shadow-2xl">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-white text-sm font-bold uppercase tracking-wider">Join a Lounge</h3>

@@ -16,13 +16,13 @@ export function SettingsPrivacyTab({
   return (
     <div className="w-full max-w-4xl space-y-8">
       {accountMsg && (
-        <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+        <div className="p-3.5 bg-status-online-bg text-status-online rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
           <CheckCircle className="w-4 h-4" />
           <span>{accountMsg}</span>
         </div>
       )}
       {accountError && (
-        <div className="p-3.5 bg-red-500/5 border border-red-500/10 text-red-500 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+        <div className="p-3.5 bg-status-dnd-bg text-status-dnd rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
           <span>{accountError}</span>
         </div>
@@ -65,13 +65,13 @@ export function SettingsPrivacyTab({
       </form>
 
       <div className="pt-8 border-t border-white-5 space-y-4">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-red-500 font-mono">Danger Zone</h3>
-        <div className="p-4 border border-red-500/20 bg-red-500/5 rounded-xl flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-alert-error font-mono">Danger Zone</h3>
+        <div className="p-4 bg-status-dnd-bg rounded-xl flex items-center justify-between">
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-white">Delete Account</span>
             <span className="text-xs text-text-secondary">Permanently delete your account and all data</span>
           </div>
-          <button type="button" className="px-4 py-2 bg-red-500 text-white rounded-lg text-xs font-bold uppercase font-mono opacity-50 cursor-not-allowed">
+          <button type="button" className="px-4 py-2 bg-alert-error text-white rounded-lg text-xs font-bold uppercase font-mono opacity-50 cursor-not-allowed">
             Delete
           </button>
         </div>
