@@ -148,7 +148,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h2 className="text-sm font-sans font-black tracking-tight text-white uppercase flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <ShieldCheck className="w-4 h-4 text-alert-success" />
                   Listing Verification Queue
                 </h2>
                 <p className="text-[10px] font-mono text-text-secondary mt-1">
@@ -191,9 +191,9 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
                       <div className="space-y-2 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-mono text-text-secondary">#{(listing.listing_id || '').substring(0, 8)}</span>
-                          {listing.verification_status === 'PENDING_REVIEW' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20">PENDING</span>}
-                          {listing.verification_status === 'APPROVED' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-400/10 text-emerald-400 border border-emerald-400/20">APPROVED</span>}
-                          {listing.verification_status === 'REJECTED' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-rose-400/10 text-rose-400 border border-rose-400/20">REJECTED</span>}
+                          {listing.verification_status === 'PENDING_REVIEW' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-status-away-bg text-status-away">PENDING</span>}
+                          {listing.verification_status === 'APPROVED' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-status-online-bg text-status-online">APPROVED</span>}
+                          {listing.verification_status === 'REJECTED' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-status-dnd-bg text-status-dnd">REJECTED</span>}
                         </div>
                         <h3 className="text-sm font-bold text-white">{listing.title}</h3>
                         <p className="text-xs text-text-secondary line-clamp-2">{listing.description}</p>
@@ -208,14 +208,14 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
                         <div className="flex md:flex-col gap-2 shrink-0 justify-center">
                           <button
                             onClick={() => handleReview(listing.listing_id, 'APPROVED')}
-                            className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-[10px] font-bold uppercase rounded-xl border border-emerald-500/20 transition-colors flex items-center gap-1.5"
+                            className="px-4 py-2 bg-status-online-bg hover:bg-status-online-bg text-status-online text-[10px] font-bold uppercase rounded-xl transition-colors flex items-center gap-1.5"
                           >
                             <CheckCircle className="w-3.5 h-3.5" />
                             Approve
                           </button>
                           <button
                             onClick={() => handleReview(listing.listing_id, 'REJECTED')}
-                            className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[10px] font-bold uppercase rounded-xl border border-rose-500/20 transition-colors flex items-center gap-1.5"
+                            className="px-4 py-2 bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd text-[10px] font-bold uppercase rounded-xl transition-colors flex items-center gap-1.5"
                           >
                             <XCircle className="w-3.5 h-3.5" />
                             Reject
@@ -239,7 +239,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
              </div>
              <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-white-10 scrollbar-track-transparent">
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="sticky top-0 bg-velum-800/95 backdrop-blur z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
+                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-sm)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
                     <tr>
                       <th className="px-6 py-4">Dispute ID</th>
                       <th className="px-6 py-4">Created</th>
@@ -260,7 +260,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
                           {new Date(dis.created_at).toLocaleString()}
                         </td>
                         <td className="px-6 py-5">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${dis.status === 'open' ? 'bg-accent-10 text-accent border-accent-20' : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'}`}>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-widest ${dis.status === 'open' ? 'bg-accent-10 text-accent' : 'bg-status-online-bg text-status-online'}`}>
                             {dis.status === 'open' ? 'Requires Action' : 'Resolved'}
                           </span>
                         </td>
@@ -326,7 +326,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
                       <button 
                         onClick={() => handleResolveDispute(selectedDispute.chat_id, 'RELEASE_TO_SELLER', 'BUYER')}
                         disabled={loading}
-                        className="w-full py-3 rounded-lg text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-sm border bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20 disabled:opacity-50"
+                        className="w-full py-3 rounded-lg text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-sm bg-status-online-bg text-status-online hover:bg-status-online-bg disabled:opacity-50"
                       >
                         <CheckCircle className="w-4 h-4" /> Favor Seller (Release)
                       </button>
@@ -334,7 +334,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
                       <button 
                         onClick={() => handleResolveDispute(selectedDispute.chat_id, 'REFUND_TO_BUYER', 'SELLER')}
                         disabled={loading}
-                        className="w-full py-3 rounded-lg text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-sm border bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500/20 disabled:opacity-50"
+                        className="w-full py-3 rounded-lg text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-sm bg-status-dnd-bg text-status-dnd hover:bg-status-dnd-bg disabled:opacity-50"
                       >
                         <XCircle className="w-4 h-4" /> Favor Buyer (Refund)
                       </button>

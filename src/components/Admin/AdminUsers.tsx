@@ -169,21 +169,21 @@ export default function AdminUsers({
                   { bg: string; border: string; text: string; name: string }
                 > = {
                   CLI_ADMIN: {
-                    bg: 'bg-orange-500/10',
-                    border: 'border-orange-500/20',
-                    text: 'bg-orange-400',
+                    bg: 'bg-status-away-bg',
+                    border: 'border-transparent',
+                    text: 'bg-status-away',
                     name: 'CLI Executive Admin',
                   },
                   LOGIN_ADMIN: {
-                    bg: 'bg-purple-500/10',
-                    border: 'border-purple-500/20',
-                    text: 'bg-purple-400',
+                    bg: 'bg-status-indigo-bg',
+                    border: 'border-transparent',
+                    text: 'bg-status-indigo',
                     name: 'Executive Login Admin',
                   },
                   SUPPORT_ADMIN: {
-                    bg: 'bg-blue-500/10',
-                    border: 'border-blue-500/20',
-                    text: 'bg-blue-400',
+                    bg: 'bg-status-sky-bg',
+                    border: 'border-transparent',
+                    text: 'bg-status-sky',
                     name: 'Support Operator Admin',
                   },
                   USER: {
@@ -199,22 +199,22 @@ export default function AdminUsers({
                     name: 'Standard Member',
                   },
                   BLOCKED: {
-                    bg: 'bg-rose-500/10',
-                    border: 'border-rose-500/20',
-                    text: 'bg-rose-400',
+                    bg: 'bg-status-dnd-bg',
+                    border: 'border-transparent',
+                    text: 'bg-status-dnd',
                     name: 'Blocked User',
                   },
                   SYSTEM: {
-                    bg: 'bg-emerald-500/10',
-                    border: 'border-emerald-500/20',
-                    text: 'bg-emerald-400',
+                    bg: 'bg-status-online-bg',
+                    border: 'border-transparent',
+                    text: 'bg-status-online',
                     name: 'System Service',
                   },
                 };
                 const rConf = u.id === 999 ? {
-                  bg: 'bg-emerald-500/10',
-                  border: 'border-emerald-500/20',
-                  text: 'bg-emerald-400',
+                  bg: 'bg-status-online-bg',
+                  border: 'border-transparent',
+                  text: 'bg-status-online',
                   name: 'System Bot',
                 } : (roleColors[u.role] || roleColors[u.role?.toUpperCase()] || roleColors['USER']);
 
@@ -296,7 +296,7 @@ export default function AdminUsers({
                                   alert('Server unreachable.');
                                 }
                               }}
-                              className="p-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition cursor-pointer"
+                              className="p-1.5 rounded-lg bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd transition cursor-pointer"
                               title="Delete User"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -331,10 +331,10 @@ export default function AdminUsers({
                                   alert('Server unreachable.');
                                 }
                               }}
-                              className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                              className={`p-1.5 rounded-lg transition cursor-pointer ${
                                 u.role === 'BLOCKED'
-                                  ? 'border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400'
-                                  : 'border-amber-500/20 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400'
+                                  ? 'bg-status-online-bg text-status-online hover:bg-status-online-bg'
+                                  : 'bg-status-away-bg text-status-away hover:bg-status-away-bg'
                               }`}
                               title={u.role === 'BLOCKED' ? 'Unblock User' : 'Block User'}
                             >

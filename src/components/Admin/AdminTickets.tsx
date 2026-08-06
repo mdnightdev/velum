@@ -76,7 +76,7 @@ export default function AdminTickets({
         </div>
 
         <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-rose-500/80 uppercase tracking-widest font-mono">
+          <span className="text-[9px] font-bold text-status-dnd uppercase tracking-widest font-mono">
             Active Investigation State
           </span>
           <div className="flex items-baseline gap-2 mt-2">
@@ -113,7 +113,7 @@ export default function AdminTickets({
           </div>
           <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
             <div
-              className="h-full bg-amber-500 rounded-full"
+              className="h-full bg-status-away rounded-full"
               style={{
                 width: `${
                   tickets.length
@@ -227,10 +227,10 @@ export default function AdminTickets({
                 if (ticket.credibility_score !== undefined) {
                   trustBadge =
                     ticket.credibility_score >= 85
-                      ? 'text-status-online bg-status-online/5 border-emerald-500/10 hover:bg-status-online/10'
-                      : 'text-status-dnd bg-status-dnd/5 border-rose-500/10 hover:bg-status-dnd/10';
+                      ? 'text-status-online bg-status-online-bg hover:bg-status-online-bg'
+                      : 'text-status-dnd bg-status-dnd-bg hover:bg-status-dnd-bg';
                 } else {
-                  trustBadge = 'text-text-secondary bg-text-secondary/5 border-white-5';
+                  trustBadge = 'text-text-secondary bg-white/[0.04]';
                 }
 
                 return (
@@ -330,7 +330,7 @@ export default function AdminTickets({
         <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
           {/* Backing Blur Overlay */}
           <div
-            className="absolute inset-0 bg-black-60 backdrop-blur-sm transition-opacity duration-300"
+            className="absolute inset-0 modal-backdrop transition-opacity duration-300"
             onClick={() => {
               setActiveTicket(null);
               setReplyText('');
@@ -517,12 +517,12 @@ export default function AdminTickets({
                       </p>
 
                       {adminRole !== 'LOGIN_ADMIN' ? (
-                        <div className="bg-orange-500/10 text-orange-400 p-3 rounded-lg text-[9px] font-mono text-center font-bold tracking-wide uppercase">
+                        <div className="bg-status-away-bg text-status-away p-3 rounded-lg text-[9px] font-mono text-center font-bold tracking-wide uppercase">
                           APPROVAL LOCKED: INSUFFICIENT ACCESS PRIVILEGES (LOGIN_ADMIN NEEDED).
                         </div>
                       ) : activeTicket.credibility_score !== undefined &&
                         activeTicket.credibility_score < 85 ? (
-                        <div className="bg-status-dnd/10 text-status-dnd p-3 rounded-lg text-[9px] font-mono text-center font-bold tracking-wide uppercase">
+                        <div className="bg-status-dnd-bg text-status-dnd p-3 rounded-lg text-[9px] font-mono text-center font-bold tracking-wide uppercase">
                           AUTHORIZATION BLOCKED: HIGH SYSTEM RISK (TRUST METER UNDER REGULATORY MINIMUM).
                         </div>
                       ) : (
@@ -538,9 +538,9 @@ export default function AdminTickets({
                       )}
 
                       {restoreCode && (
-                        <div className="p-3 bg-status-online/10 border border-emerald-500/20 text-status-online font-mono text-[10px] text-center rounded-xl animate-pulse">
+                        <div className="p-3 bg-status-online-bg text-status-online font-mono text-[10px] text-center rounded-xl animate-pulse">
                           AUTHENTICATED RECOVERY CREDENTIAL CODE GENERATED:
-                          <span className="text-text-primary font-mono font-extrabold select-all ml-1.5 bg-velum-900/60 px-2 py-1 rounded border border-status-online/30">
+                          <span className="text-text-primary font-mono font-extrabold select-all ml-1.5 bg-velum-900/60 px-2 py-1 rounded">
                             {restoreCode}
                           </span>
                         </div>
@@ -595,7 +595,7 @@ export default function AdminTickets({
 
                       <button
                         onClick={() => handleTicketReply(true, false)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-text-primary font-extrabold px-4 py-2.5 rounded-xl cursor-pointer text-xs uppercase tracking-wider transition-all shadow-md border-0"
+                        className="bg-status-online hover:bg-status-online/80 text-text-primary font-extrabold px-4 py-2.5 rounded-xl cursor-pointer text-xs uppercase tracking-wider transition-all shadow-md border-0"
                       >
                         Close Case
                       </button>
@@ -622,7 +622,7 @@ export default function AdminTickets({
                             console.error('Network error deleting ticket:', err);
                           }
                         }}
-                        className="p-2.5 rounded-xl bg-status-dnd/10 hover:bg-rose-600 text-status-dnd hover:text-text-primary transition duration-150 cursor-pointer border border-status-dnd/10 flex items-center gap-1.5 text-xs font-semibold"
+                        className="p-2.5 rounded-xl bg-status-dnd-bg hover:bg-status-dnd text-status-dnd hover:text-text-primary transition duration-150 cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
                         title="Delete Case Dossier File"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -632,7 +632,7 @@ export default function AdminTickets({
                   </div>
                 </div>
               ) : (
-                <div className="bg-status-online/10 text-status-online text-center py-4 px-6 rounded-xl border border-emerald-500/15 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2">
+                <div className="bg-status-online-bg text-status-online text-center py-4 px-6 rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2">
                   <CheckCircle className="w-4 h-4" />
                   <span>[ Case Containment Secured Successfully ]</span>
                 </div>

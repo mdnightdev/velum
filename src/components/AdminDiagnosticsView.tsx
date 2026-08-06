@@ -137,10 +137,10 @@ export default function AdminDiagnosticsView({
               return (
                 <div key={ev.event_id || idx} className="pb-3 border-b border-white-5 last:border-0 last:pb-0 font-sans">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[9px] uppercase px-2 py-0.5 rounded font-mono font-bold border ${
+                    <span className={`text-[9px] uppercase px-2 py-0.5 rounded font-mono font-bold ${
                       risk === 'critical' || risk === 'HIGH' 
-                        ? 'text-status-dnd bg-status-dnd/10 border-rose-500/20' 
-                        : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                        ? 'text-status-dnd bg-status-dnd-bg' 
+                        : 'text-status-away bg-status-away-bg'
                     }`}>
                       {risk}
                     </span>
@@ -171,7 +171,7 @@ export default function AdminDiagnosticsView({
             {logs.map((log, idx) => (
               <div key={log.log_id || idx} className="pb-3 border-b border-white-5 last:border-0 last:pb-0 font-sans">
                 <div className="flex items-center justify-between text-[11px] font-mono mb-1.5">
-                  <span className="text-status-online bg-status-online/10 border border-emerald-500/15 px-2 py-0.5 rounded text-[8px] font-black uppercase">{log.admin_name || `Admin #${log.admin_id}`}</span>
+                  <span className="text-status-online bg-status-online-bg px-2 py-0.5 rounded text-[8px] font-black uppercase">{log.admin_name || `Admin #${log.admin_id}`}</span>
                   <span className="text-text-secondary text-[8px] font-black">{log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : ''}</span>
                 </div>
                 <p className="text-text-primary leading-relaxed font-mono text-[10.5px] mt-1.5">
@@ -222,7 +222,7 @@ export default function AdminDiagnosticsView({
                       </span>
                     </div>
                     <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded ${
-                      diag.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      diag.status === 'resolved' ? 'bg-status-online-bg text-status-online' : 'bg-status-away-bg text-status-away'
                     }`}>
                       {diag.status}
                     </span>
@@ -252,7 +252,7 @@ export default function AdminDiagnosticsView({
                     {selectedLog.status !== 'resolved' && (
                       <button
                         onClick={() => handleResolve(selectedLog.id)}
-                        className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition"
+                        className="px-2.5 py-1 bg-status-online-bg hover:bg-status-online-bg text-status-online rounded text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition"
                       >
                         <CheckCircle2 className="w-3 h-3" />
                         Resolve
@@ -287,10 +287,10 @@ export default function AdminDiagnosticsView({
 
                   {selectedLog.error_buffer && selectedLog.error_buffer.length > 0 && (
                     <div className="pt-2 border-t border-white-5">
-                      <span className="text-[10px] font-bold uppercase text-rose-400 block mb-1">Recent Client Error Buffer ({selectedLog.error_buffer.length})</span>
+                      <span className="text-[10px] font-bold uppercase text-alert-error block mb-1">Recent Client Error Buffer ({selectedLog.error_buffer.length})</span>
                       <div className="space-y-1 bg-black/40 p-2 rounded text-[10px] max-h-[120px] overflow-y-auto">
                         {selectedLog.error_buffer.map((err, idx) => (
-                          <div key={idx} className="text-rose-300 font-mono">
+                          <div key={idx} className="text-alert-error font-mono">
                             [{err.timestamp.split('T')[1]?.slice(0, 8) || err.timestamp}] {err.message} {err.source ? `(${err.source}:${err.lineno})` : ''}
                           </div>
                         ))}

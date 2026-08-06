@@ -285,7 +285,7 @@ export default function AdminProfile({
               {isUploading ? 'Securing Profile...' : 'Save Profile Settings'}
             </button>
             {settingsStatus && (
-              <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/15 text-status-online text-xs rounded font-mono font-bold text-center">
+              <div className="mt-3 p-3 bg-status-online-bg text-status-online text-xs rounded font-mono font-bold text-center">
                 {settingsStatus}
               </div>
             )}
@@ -333,7 +333,7 @@ export default function AdminProfile({
 
           <div className="mt-6 space-y-3">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-orange-500/10 text-orange-400 p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal border border-orange-500/20">
+              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
                 ACCESS LOCKED: CREDENTIAL ROTATIONS FOR EXECUTIVE TERMINALS FORBIDDEN FOR STANDARD OPERATIONS DEPUTY.
               </div>
             ) : (
@@ -346,12 +346,12 @@ export default function AdminProfile({
                   Commit System Rotate
                 </button>
                 {rotationResult && (
-                  <div className="p-3 bg-purple-500/10 border border-purple-500/15 text-purple-400 rounded-xl text-xs font-mono font-bold leading-normal text-center">
+                  <div className="p-3 bg-status-indigo-bg text-status-indigo rounded-xl text-xs font-mono font-bold leading-normal text-center">
                     {rotationResult}
                   </div>
                 )}
                 {rotationError && (
-                  <div className="p-3 bg-status-dnd/10 border border-rose-500/15 text-status-dnd rounded-xl text-xs font-mono font-bold leading-normal text-center">
+                  <div className="p-3 bg-status-dnd-bg text-status-dnd rounded-xl text-xs font-mono font-bold leading-normal text-center">
                     {rotationError}
                   </div>
                 )}

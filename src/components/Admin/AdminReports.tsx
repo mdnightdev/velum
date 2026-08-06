@@ -56,7 +56,7 @@ export default function AdminReports({
             onClick={() => setReportFilter('complaints')}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
               reportFilter === 'complaints'
-                ? 'bg-status-dnd/20 text-status-dnd border-rose-500/30'
+                ? 'bg-status-dnd-bg text-status-dnd border-transparent'
                 : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
             }`}
           >
@@ -66,7 +66,7 @@ export default function AdminReports({
             onClick={() => setReportFilter('bugs')}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
               reportFilter === 'bugs'
-                ? 'bg-amber-500/20 text-status-away border-amber-500/30'
+                ? 'bg-status-away-bg text-status-away border-transparent'
                 : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
             }`}
           >
@@ -76,7 +76,7 @@ export default function AdminReports({
             onClick={() => setReportFilter('suggestions')}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
               reportFilter === 'suggestions'
-                ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                ? 'bg-status-sky-bg text-status-sky border-transparent'
                 : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
             }`}
           >
@@ -104,7 +104,7 @@ export default function AdminReports({
                 key={rep.report_id}
                 className={`transition duration-150 ${
                   rep.priority === 'HIGH'
-                    ? 'bg-rose-500/10 hover:bg-rose-500/15 border-l-2 border-rose-500'
+                    ? 'bg-status-dnd-bg hover:bg-status-dnd-bg border-l-2 border-status-dnd'
                     : 'hover:bg-text-primary-2'
                 }`}
               >
@@ -145,7 +145,7 @@ export default function AdminReports({
                         Resolve Case
                       </button>
                     ) : (
-                      <span className="text-[10px] font-bold text-emerald-400 font-mono uppercase mr-2">
+                      <span className="text-[10px] font-bold text-alert-success font-mono uppercase mr-2">
                         Resolved
                       </span>
                     )}
@@ -172,7 +172,7 @@ export default function AdminReports({
                             }
                           }
                         }}
-                        className="px-2.5 py-1.5 rounded-lg border border-red-500/20 bg-status-dnd/10 hover:bg-red-500 hover:text-text-primary text-red-400 text-[10px] font-bold font-mono uppercase transition cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-lg bg-status-dnd-bg hover:bg-status-danger hover:text-text-primary text-status-danger text-[10px] font-bold font-mono uppercase transition cursor-pointer"
                       >
                         Delete
                       </button>
