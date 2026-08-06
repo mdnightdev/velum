@@ -269,6 +269,15 @@ export default function ChatArea({
   const [peerPresence, setPeerPresence] = useState<string>('offline');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [inputText]);
+
   const [hasPendingNomination, setHasPendingNomination] = useState(false);
   const [isSubmittingNominationAction, setIsSubmittingNominationAction] = useState(false);
   const [activePinIndex, setActivePinIndex] = useState<number>(0);
@@ -1236,7 +1245,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 ${isDark ? 'bg-transparent' : 'bg-velum-900'}`}
+        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 chat-wallpaper"
       >
         {conversationMessages.map((msg,index) => {
           const isMe = msg.user_id === currentUserId;
@@ -2030,15 +2039,23 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
               <Plus className="w-5 h-5" />
             </button>
 
-            <div className="flex-1 relative flex items-center">
-              <input
-                type="text"
+            <div className="flex-1 relative flex items-end">
+              <textarea
+                ref={textareaRef}
+                rows={1}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e);
+                  }
+                }}
                 placeholder={chatTitle ? t('chat.message_peer', 'Message {name}').replace('{name}', chatTitle) : t('chat.message_placeholder', 'Message...')}
-                className="w-full bg-velum-800 border border-white-5 rounded-full pl-5 pr-24 py-3 text-[13px] text-white outline-none focus:border-accent/50 font-sans"
+                className="w-full bg-velum-800 border border-white-5 rounded-2xl pl-5 pr-24 py-[11px] text-[13px] text-white outline-none focus:border-accent/50 font-sans resize-none max-h-32 overflow-y-auto leading-relaxed"
+                style={{ height: 'auto', minHeight: '42px' }}
               />
-              <div className="absolute right-2 flex items-center gap-1">
+              <div className="absolute right-2 bottom-[3px] flex items-center gap-1">
                 <div className="relative w-9 h-9 flex items-center justify-center">
                   <button 
                     type="button" 

@@ -4,8 +4,9 @@ import ChatArea from '../../components/ChatArea';
 import MarketMainDashboard from '../../components/SidebarTabs/MarketMainDashboard';
 import TicketsMainDashboard from '../../components/SidebarTabs/TicketsMainDashboard';
 import SettingsDrawer from './SettingsDrawer';
-import { Shield, Activity, Network } from 'lucide-react';
+import { Shield, Activity, Network, Lock } from 'lucide-react';
 import { useResponsive } from '../../hooks/useResponsive';
+import logoSvg from '../../assets/logo.svg?raw';
 
 interface UserWorkspaceProps {
   user: any;
@@ -200,15 +201,25 @@ export default function UserWorkspace({
                 onBackToDeck={handleBack}
               />
             ) : (
-              <div className={`flex-1 flex flex-col items-center justify-center p-6 text-center font-mono text-[10px] ${isDark ? 'bg-velum-900 text-text-secondary' : 'bg-gray-100 text-gray-700'}`}>
-                <Activity className="w-8 h-8 text-accent opacity-40 mb-3 animate-pulse" />
-                <p className={`font-bold uppercase tracking-wider mb-1 ${isDark ? 'text-text-primary' : 'text-gray-900'}`}>No Channel Selected</p>
-                <button 
-                  onClick={() => setActivePanel('directory')}
-                  className="mt-4 px-4 py-2 bg-velum-800 border border-velum-600 rounded-lg text-accent font-bold"
-                >
-                  Return to Directory
-                </button>
+              <div className={`flex-1 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden ${isDark ? 'bg-velum-900 text-text-secondary' : 'bg-gray-100 text-gray-700'}`}>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-accent/5 rounded-full blur-[80px] pointer-events-none" />
+                <div className="relative z-10 flex flex-col items-center max-w-sm space-y-5">
+                  <div className="w-16 h-16 rounded-2xl bg-velum-800/80 border border-white-5 flex items-center justify-center text-accent shadow-2xl backdrop-blur-md animate-bounce-slow">
+                    <div className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className={`font-bold uppercase tracking-wider text-xs ${isDark ? 'text-text-primary' : 'text-gray-900'}`}>No Channel Selected</p>
+                    <p className="text-[10px] leading-relaxed max-w-[240px] mx-auto text-text-secondary">
+                      Select a conversation from the directory to start chatting securely.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setActivePanel('directory')}
+                    className="px-5 py-2 bg-accent hover:bg-accent-hover text-velum-950 font-bold text-[10px] uppercase tracking-wider rounded-xl transition shadow-md cursor-pointer"
+                  >
+                    Open Directory
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -276,14 +287,29 @@ export default function UserWorkspace({
                 }}
               />
             ) : (
-              <div className={`flex-1 flex flex-col items-center justify-center p-12 text-center font-mono text-[9px] ${isDark ? 'text-text-secondary bg-velum-900' : 'text-gray-600 bg-gray-50'} tracking-widest`}>
-                <div className="w-14 h-14 bg-velum-800/50 border border-velum-600 rounded-2xl flex items-center justify-center text-accent mb-4">
-                  <Network className="w-6 h-6 animate-pulse" />
+              <div className={`flex-1 flex flex-col items-center justify-center p-8 text-center relative overflow-hidden ${isDark ? 'bg-velum-900 text-text-secondary' : 'bg-gray-50 text-gray-700'}`}>
+                {/* Decorative background glow */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-accent/5 rounded-full blur-[80px] pointer-events-none" />
+                
+                <div className="relative z-10 flex flex-col items-center max-w-sm space-y-6">
+                  <div className="w-20 h-20 rounded-3xl bg-velum-800/80 border border-white-5 flex items-center justify-center text-accent shadow-2xl backdrop-blur-md animate-bounce-slow">
+                    <div className="w-10 h-10 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-bold tracking-[0.15em] text-text-primary uppercase font-display">
+                      Velum Workspace
+                    </h3>
+                    <p className="text-xs text-text-secondary leading-relaxed font-sans">
+                      Select an active conversation or lounge from the directory to start messaging securely.
+                    </p>
+                  </div>
+
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/5 border border-accent/10 text-[10px] font-mono text-accent uppercase tracking-wider">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>End-to-End Encrypted</span>
+                  </div>
                 </div>
-                <p className={`font-bold uppercase mb-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>Velum Chat Workspace</p>
-                <p className="text-[8px] text-text-secondary max-w-xs leading-relaxed lowercase mt-1">
-                  Select a chat channel or user conversation from the left sidebar to start messaging.
-                </p>
               </div>
             )}
           </div>
