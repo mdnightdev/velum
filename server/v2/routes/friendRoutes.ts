@@ -123,7 +123,7 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
           } catch (e) {}
         }
 
-        // Cache miss: Fallback to PostgreSQL
+               // Cache miss: Fallback to PostgreSQL
         if (!lastMessage) {
           const lastMsgRes = await db.select().from(messages)
             .where(eq(messages.loungeId, loungeId))
@@ -148,6 +148,10 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
                 await redis.set(`dm:last_msg:${loungeId}`, JSON.stringify(lastMessage));
               } catch (e) {}
             }
+          } else if (redis) {
+            try {
+              await redis.del(`dm:last_msg:${loungeId}`);
+            } catch (e) {}
           }
         }
 

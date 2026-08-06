@@ -239,7 +239,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
              </div>
              <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-white-10 scrollbar-track-transparent">
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-sm)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
+                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-md)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
                     <tr>
                       <th className="px-6 py-4">Dispute ID</th>
                       <th className="px-6 py-4">Created</th>

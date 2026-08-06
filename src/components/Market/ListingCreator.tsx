@@ -116,7 +116,7 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
       </div>
 
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs font-mono">
+        <div className="p-3 bg-status-dnd-bg text-status-dnd text-xs font-mono rounded-xl">
           {error}
         </div>
       )}
@@ -232,7 +232,7 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
                   <button
                     type="button"
                     onClick={() => handleRemoveSku(index)}
-                    className="absolute top-2 right-2 text-[9px] font-mono text-red-400 hover:text-red-300 font-bold uppercase"
+                    className="absolute top-2 right-2 text-[9px] font-mono text-status-dnd hover:text-status-dnd/80 font-bold uppercase"
                   >
                     Remove
                   </button>

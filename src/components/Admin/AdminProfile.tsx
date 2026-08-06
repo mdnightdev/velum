@@ -96,8 +96,8 @@ export default function AdminProfile({
         body: JSON.stringify({
           userId: adminId,
           avatar: finalAvatar,
-          displayName: user?.username || 'Executive',
-          bio: adminProfile?.bio || 'Verified Executive Administrator.',
+          displayName: user?.username || 'DeV',
+          bio: adminProfile?.bio || 'System Dev.',
         }),
       });
 
@@ -156,15 +156,15 @@ export default function AdminProfile({
       const data = await res.json();
       if (res.ok) {
         setRotationResult(
-          'CREDENTIAL ROTATION SECURED: Administrative identity modified successfully.'
+          'Updated.!'
         );
         setRotatedUsername('');
         setRotatedPassword('');
       } else {
-        setRotationError(data.error || 'Identity credentials rotation rejected.');
+        setRotationError(data.error || 'Failed to update .');
       }
     } catch (safeErr) {
-      setRotationError('Connection lost with credentials daemon.');
+      setRotationError('Failed to connect .');
     }
   };
 
@@ -224,7 +224,7 @@ export default function AdminProfile({
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    Assigned Identifier
+                    Identifier
                   </label>
                   <input
                     type="text"
@@ -235,7 +235,7 @@ export default function AdminProfile({
                 </div>
                 <div>
                   <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    Clearance Status
+                    Status
                   </label>
                   <input
                     type="text"
@@ -249,7 +249,7 @@ export default function AdminProfile({
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    Personal Safe Word Key
+                     Safe Word
                   </label>
                   <input
                     type="text"
@@ -261,7 +261,7 @@ export default function AdminProfile({
                 </div>
                 <div>
                   <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    Secure Panic Phrase Trigger
+                     Panic Phrase
                   </label>
                   <input
                     type="text"
@@ -318,7 +318,7 @@ export default function AdminProfile({
                 </div>
                 <div>
                   <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    New Secret Key
+                    New Password
                   </label>
                   <PasswordInput
                     value={rotatedPassword}
@@ -334,7 +334,7 @@ export default function AdminProfile({
           <div className="mt-6 space-y-3">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
               <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-                ACCESS LOCKED: CREDENTIAL ROTATIONS FOR EXECUTIVE TERMINALS FORBIDDEN FOR STANDARD OPERATIONS DEPUTY.
+                ACCESS LOCKED: CREDENTIAL ROTATIONS DISABLED
               </div>
             ) : (
               <>
@@ -342,8 +342,8 @@ export default function AdminProfile({
                   type="button"
                   onClick={rotateExecutiveCredentials}
                   className="w-full bg-purple-600 hover:bg-purple-700 text-text-primary font-extrabold py-3 rounded-xl text-[10px] uppercase tracking-wider transition border-0 cursor-pointer shadow-md font-mono"
-                >
-                  Commit System Rotate
+                >Update credentials
+                  
                 </button>
                 {rotationResult && (
                   <div className="p-3 bg-status-indigo-bg text-status-indigo rounded-xl text-xs font-mono font-bold leading-normal text-center">

@@ -216,7 +216,7 @@ export default function ProfileCard({
 
                 {onJoinLeaveLounge && (
                   <div className="mt-auto max-w-lg mx-auto w-full">
-                    <button onClick={onJoinLeaveLounge} className={`w-full py-4 rounded-xl text-xs font-bold uppercase tracking-widest transition shadow-lg ${isJoinedLounge ? 'bg-status-dnd/20 text-red-500 border border-red-900/30' : 'bg-accent text-black hover:bg-accent-hover'}`}>
+                    <button onClick={onJoinLeaveLounge} className={`w-full py-4 rounded-xl text-xs font-bold uppercase tracking-widest transition shadow-lg ${isJoinedLounge ? 'bg-status-dnd-bg text-status-dnd' : 'bg-accent text-black hover:bg-accent-hover'}`}>
                       {isJoinedLounge ? 'Leave Lounge' : 'Join Lounge'}
                     </button>
                   </div>
@@ -250,7 +250,7 @@ export default function ProfileCard({
             </div>
 
             {isMuted && (
-              <div className="mb-3 p-2 bg-status-away/10 border border-status-away/20 rounded-xl text-[9px] text-status-away font-mono uppercase tracking-wider">
+              <div className="mb-3 p-2 bg-status-away-bg rounded-xl text-[9px] text-status-away font-mono uppercase tracking-wider">
                 Muted by administrators
               </div>
             )}
@@ -274,7 +274,7 @@ export default function ProfileCard({
                     <span>Type: {visibilityLabel}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-3 h-3 text-emerald-450" />
+                    <ShieldCheck className="w-3 h-3 text-alert-success" />
                     <span>Host: {ownerLabel}</span>
                   </div>
                 </div>
@@ -285,7 +285,7 @@ export default function ProfileCard({
           {!isMinimal && (onJoinLeaveLounge || onLoungeSettings) && (
             <div className="p-2 border-b border-white-5 flex gap-2">
               {onJoinLeaveLounge && (
-                <button onClick={onJoinLeaveLounge} className={`flex-1 py-2 rounded-lg text-xs font-semibold text-center transition ${isJoinedLounge ? 'bg-status-dnd/20 text-red-400 border border-red-900/30' : 'bg-accent hover:bg-accent-hover text-black'}`}>
+                <button onClick={onJoinLeaveLounge} className={`flex-1 py-2 rounded-lg text-xs font-semibold text-center transition ${isJoinedLounge ? 'bg-status-dnd-bg text-status-dnd' : 'bg-accent hover:bg-accent-hover text-black'}`}>
                   {isJoinedLounge ? 'Leave Lounge' : 'Join Lounge'}
                 </button>
               )}
@@ -331,7 +331,7 @@ export default function ProfileCard({
                   <div className="flex items-center gap-1.5">
                     <h2 className="text-xl font-bold text-white truncate">{displayName}</h2>
                     {isAdminMode && (
-                      <span className="px-1.5 py-0.5 bg-red-950 text-red-400 border border-red-900/30 text-[8px] font-mono font-bold uppercase rounded">
+                      <span className="px-1.5 py-0.5 bg-status-dnd-bg text-status-dnd text-[8px] font-mono font-bold uppercase rounded">
                         {user.role || 'ADMIN'}
                       </span>
                     )}
@@ -412,19 +412,19 @@ export default function ProfileCard({
                   </button>
                 )}
                 {onBlock && (
-                  <button onClick={onBlock} className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition ${user.isBlocked ? 'bg-velum-800 border-white-5 hover:bg-velum-800 text-text-secondary hover:text-white' : 'bg-status-dnd/20 border-red-900/30 hover:bg-red-950/40 text-red-500'}`}>
+                  <button onClick={onBlock} className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition ${user.isBlocked ? 'bg-velum-800 border-white-5 hover:bg-velum-800 text-text-secondary hover:text-white' : 'bg-status-dnd-bg text-status-dnd hover:bg-status-dnd-bg'}`}>
                     {user.isBlocked ? <ShieldAlert className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                     <span className="text-[9px] uppercase font-mono font-semibold">{user.isBlocked ? 'Unblock' : 'Block'}</span>
                   </button>
                 )}
                 {onDeleteChat && (
-                  <button onClick={onDeleteChat} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-velum-800 border border-white-5 hover:bg-red-950/30 hover:text-red-400 transition text-text-secondary">
+                  <button onClick={onDeleteChat} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-velum-800 border border-white-5 hover:bg-status-dnd-bg hover:text-status-dnd transition text-text-secondary">
                     <Trash2 className="w-4 h-4" />
                     <span className="text-[9px] uppercase font-mono font-semibold">Delete</span>
                   </button>
                 )}
                 {onReport && (
-                  <button onClick={onReport} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-velum-800 border border-white-5 hover:bg-red-950/30 hover:text-red-400 transition text-text-secondary">
+                  <button onClick={onReport} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-velum-800 border border-white-5 hover:bg-status-dnd-bg hover:text-status-dnd transition text-text-secondary">
                     <AlertCircle className="w-4 h-4" />
                     <span className="text-[9px] uppercase font-mono font-semibold">Report</span>
                   </button>
@@ -454,7 +454,7 @@ export default function ProfileCard({
                 <div className="flex items-center gap-1">
                   <h3 className="font-bold text-[14px] truncate">{displayName}</h3>
                   {isAdminMode && (
-                    <span className="px-1 py-0.2 bg-red-950 text-red-400 border border-red-900/30 text-[7px] font-mono font-bold uppercase rounded">
+                    <span className="px-1 py-0.2 bg-status-dnd-bg text-status-dnd text-[7px] font-mono font-bold uppercase rounded">
                       ADMIN
                     </span>
                   )}
@@ -507,13 +507,13 @@ export default function ProfileCard({
               </button>
             )}
             {onBlock && (
-              <button onClick={onBlock} className={`flex items-center gap-3 w-full p-2.5 rounded-lg transition text-left ${user.isBlocked ? 'hover:bg-text-primary/5 text-text-primary hover:text-white' : 'hover:bg-status-dnd/10 text-red-400 hover:text-red-300'}`}>
+              <button onClick={onBlock} className={`flex items-center gap-3 w-full p-2.5 rounded-lg transition text-left ${user.isBlocked ? 'hover:bg-text-primary/5 text-text-primary hover:text-white' : 'hover:bg-status-dnd-bg text-status-dnd hover:text-status-dnd/80'}`}>
                 {user.isBlocked ? <ShieldAlert className={`w-4 h-4 ${user.isBlocked ? 'text-text-secondary' : ''}`} /> : <Ban className="w-4 h-4" />}
                 <span className="text-xs font-medium">{user.isBlocked ? 'Unblock' : 'Block'}</span>
               </button>
             )}
             {onDeleteChat && (
-              <button onClick={onDeleteChat} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-status-dnd/10 transition text-left text-red-400 hover:text-red-300">
+              <button onClick={onDeleteChat} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-status-dnd-bg transition text-left text-status-dnd hover:text-status-dnd/80">
                 <Trash2 className="w-4 h-4" />
                 <span className="text-xs font-medium">Delete Chat</span>
               </button>
@@ -549,7 +549,7 @@ export default function ProfileCard({
             <div className="flex items-center gap-2">
               <h1 className="text-3xl font-bold mb-1">{displayName}</h1>
               {isAdminMode && (
-                <span className="px-2 py-0.5 bg-red-950 text-red-400 border border-red-900/30 text-[10px] font-mono font-bold uppercase rounded">
+                <span className="px-2 py-0.5 bg-status-dnd-bg text-status-dnd text-[10px] font-mono font-bold uppercase rounded">
                   {user.role || 'ADMIN'}
                 </span>
               )}
@@ -587,8 +587,8 @@ export default function ProfileCard({
           )}
 
           {isAdminMode && (
-            <div className="bg-red-950/10 border border-red-900/20 rounded-2xl p-4 mb-8 max-w-md mx-auto w-full text-center">
-              <div className="flex items-center justify-center gap-2 text-red-400 text-xs font-mono font-bold uppercase tracking-wider">
+            <div className="bg-status-dnd-bg rounded-2xl p-4 mb-8 max-w-md mx-auto w-full text-center">
+              <div className="flex items-center justify-center gap-2 text-status-dnd text-xs font-mono font-bold uppercase tracking-wider">
                 <AlertIcon className="w-4 h-4" />
                 <span>Security Diagnostics Console Active</span>
               </div>
@@ -626,13 +626,13 @@ export default function ProfileCard({
                 </button>
               )}
               {onBlock && (
-                <button onClick={onBlock} className={`py-3 px-2 rounded-xl border transition flex flex-col items-center justify-center gap-1 text-[11px] uppercase font-mono font-semibold ${user.isBlocked ? 'bg-velum-900/50 border-white-5 hover:bg-velum-800 text-text-secondary hover:text-white' : 'bg-red-950/10 border-red-900/20 hover:bg-red-950/30 text-red-500 hover:text-red-400'}`}>
+                <button onClick={onBlock} className={`py-3 px-2 rounded-xl border transition flex flex-col items-center justify-center gap-1 text-[11px] uppercase font-mono font-semibold ${user.isBlocked ? 'bg-velum-900/50 border-white-5 hover:bg-velum-800 text-text-secondary hover:text-white' : 'bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd'}`}>
                   {user.isBlocked ? <ShieldAlert className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                   <span>{user.isBlocked ? 'Unblock' : 'Block'}</span>
                 </button>
               )}
               {onDeleteChat && (
-                <button onClick={onDeleteChat} className="py-3 px-2 bg-velum-900/50 border border-red-900/20 hover:bg-red-950/30 text-red-500 font-semibold rounded-xl transition flex flex-col items-center justify-center gap-1 text-[11px] uppercase font-mono">
+                <button onClick={onDeleteChat} className="py-3 px-2 bg-velum-900/50 border border-white-5 hover:bg-status-dnd-bg text-status-dnd font-semibold rounded-xl transition flex flex-col items-center justify-center gap-1 text-[11px] uppercase font-mono">
                   <Trash2 className="w-4 h-4" />
                   <span>Delete Chat</span>
                 </button>

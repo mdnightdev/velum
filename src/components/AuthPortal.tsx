@@ -491,14 +491,14 @@ export default function AuthPortal({ isDark, setIsDark, onLoginSuccess, onMigrat
         </div>
 
         {authError && (
-          <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-mono flex items-start gap-2 animate-fadeIn">
+          <div className="mb-6 p-4 rounded-xl bg-status-dnd-bg text-status-dnd text-xs font-mono flex items-start gap-2 animate-fadeIn">
             <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{authError}</span>
           </div>
         )}
 
         {recoverySuccessMessage && (
-          <div className="mb-6 p-4 rounded-xl bg-status-online/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono flex items-start gap-2 animate-fadeIn">
+          <div className="mb-6 p-4 rounded-xl bg-status-online-bg text-status-online text-xs font-mono flex items-start gap-2 animate-fadeIn">
             <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <div className="space-y-2">
               <p className="font-semibold select-text">{recoverySuccessMessage}</p>
@@ -735,16 +735,16 @@ export default function AuthPortal({ isDark, setIsDark, onLoginSuccess, onMigrat
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <h2 className="text-sm font-bold uppercase tracking-widest text-rose-400">
+              <h2 className="text-sm font-bold uppercase tracking-widest text-status-dnd">
                 Account Compromised
               </h2>
             </div>
-
-            <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 space-y-3">
+ 
+            <div className="bg-status-dnd-bg rounded-xl p-4 space-y-3">
               <div className="flex items-start gap-3">
-                <ShieldAlert className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+                <ShieldAlert className="w-5 h-5 text-status-dnd flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold text-rose-400 text-xs">Security Alert</p>
+                  <p className="font-bold text-status-dnd text-xs">Security Alert</p>
                   <p className="text-text-secondary text-[10px] mt-1">
                     Your account has been flagged as compromised due to a panic protocol activation. 
                     Contact support with your ticket ID to restore access.
@@ -752,12 +752,12 @@ export default function AuthPortal({ isDark, setIsDark, onLoginSuccess, onMigrat
                 </div>
               </div>
               
-              <div className="mt-3 pt-3 border-t border-rose-500/20">
+              <div className="mt-3 pt-3 border-t border-white-5">
                 <p className="text-[9px] uppercase text-text-secondary font-mono mb-1">Your Ticket ID</p>
                 <p className="font-mono text-white text-sm tracking-wider">{compromiseTicketId}</p>
               </div>
             </div>
-
+ 
             <div className="bg-velum-850 border border-white-5 rounded-xl p-4 space-y-3">
               <p className="text-text-secondary text-[10px]">
                 1. Copy your ticket ID above
@@ -816,7 +816,7 @@ export default function AuthPortal({ isDark, setIsDark, onLoginSuccess, onMigrat
                     </div>
                     <div className="text-right">
                       <p className="text-[9px] uppercase text-text-secondary font-mono">Status</p>
-                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${activeTicket.status === 'open' ? 'bg-amber-500/10 text-amber-400' : 'bg-status-online/10 text-emerald-400'}`}>
+                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${activeTicket.status === 'open' ? 'bg-status-away-bg text-status-away' : 'bg-status-online-bg text-status-online'}`}>
                         {activeTicket.status}
                       </span>
                     </div>

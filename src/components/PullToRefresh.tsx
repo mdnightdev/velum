@@ -114,7 +114,7 @@ export default function PullToRefresh({ children, disabled = false }: PullToRefr
             opacity: Math.min(1, pullDistance / threshold),
           }}
         >
-          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-velum-850/90 backdrop-blur-md border border-white-10 shadow-xl">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-velum-850/90 backdrop-blur-[var(--blur-backdrop-md)] border border-white-10 shadow-xl">
             <RefreshCw 
               className={`w-3.5 h-3.5 text-accent ${
                 isRefreshing 

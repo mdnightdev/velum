@@ -643,22 +643,24 @@ export default function DashboardLayout({
 
           {profileCardUser && (
             <ProfileCard
-              user={{
-                userId: profileCardUser.userId,
-                username: profileCardUser.username || "Peer",
-                displayName: profileCardUser.displayName || profileCardUser.username || "Peer",
-                avatarUrl: profileCardUser.avatar,
-                bio: profileCardUser.bio || "Secure Node Operator. Communication established via E2EE protocols.",
-                location: profileCardUser.location || "Earth",
-                joinedDate: profileCardUser.created_at ? new Date(profileCardUser.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : "May 2026",
-                status: profileCardUser.status || "Active now",
-                isMuted: !!profileCardUser.isMuted,
-                isBlocked: !!profileCardUser.isBlocked,
-                stats: {
-                  loungesCount: profileCardUser.loungesCount || 1,
-                  connectionsCount: profileCardUser.connectionsCount || 0
-                }
-              }}
+                      user={{
+          userId: profileCardUser.userId,
+          username: profileCardUser.username || '',
+          displayName: profileCardUser.displayName || profileCardUser.username || '',
+          avatarUrl: profileCardUser.avatar,
+          bio: profileCardUser.bio || '',
+          location: profileCardUser.location || '',
+          joinedDate: profileCardUser.created_at 
+            ? new Date(profileCardUser.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) 
+            : 'Recently',
+          status: profileCardUser.status || 'Offline',
+          isMuted: !!profileCardUser.isMuted,
+          isBlocked: !!profileCardUser.isBlocked,
+          stats: {
+            loungesCount: profileCardUser.loungesCount ?? 0,
+            connectionsCount: profileCardUser.connectionsCount ?? 0,
+          },
+        }}
               variant={isMobile ? 'mobile' : 'expanded'}
               onClose={() => setProfileCardUser(null)}
               onMessage={() => {
@@ -695,7 +697,7 @@ export default function DashboardLayout({
                     const willBeBlocked = !profileCardUser.isBlocked;
                     setProfileCardUser({...profileCardUser, isBlocked: willBeBlocked});
                     if (willBeBlocked) {
-                      alert(`Blocked ${profileCardUser.username}. This peer is now permanently purged from your view.`);
+                      alert(`Blocked ${profileCardUser.username}. User Blocked!`);
                       if (onRoomSelect) onRoomSelect('');
                       if (onClearChatPeer) onClearChatPeer();
                       setActiveCategory('direct');
@@ -713,7 +715,7 @@ export default function DashboardLayout({
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
                   if (res.ok) {
-                    alert(`Chat with ${profileCardUser.username} securely deleted and purged.`);
+                    alert(`Chat with ${profileCardUser.username} Deleted!`);
                     if (onRoomSelect) onRoomSelect('');
                     if (onClearChatPeer) onClearChatPeer();
                     setActiveCategory('direct');

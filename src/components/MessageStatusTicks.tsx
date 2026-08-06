@@ -22,7 +22,7 @@ export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({ status =
     return (
       <button 
         onClick={onRetry}
-        className="flex items-center gap-1 text-red-500 hover:text-red-400 cursor-pointer text-[10px] ml-1 uppercase font-bold tracking-wider transition-colors" 
+        className="flex items-center gap-1 text-status-dnd hover:text-status-dnd/80 cursor-pointer text-[10px] ml-1 uppercase font-bold tracking-wider transition-colors" 
         title="Failed to send. Tap to retry."
       >
         <AlertCircle className="w-3 h-3" /> Failed

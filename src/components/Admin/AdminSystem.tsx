@@ -116,7 +116,8 @@ export default function AdminSystem({
           <div className="mt-5 space-y-3">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
               <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-                ACCESS LOCKED: ONLY EXECUTIVE LEVEL PRIVILEGE GATES PERMIT GENERATING ENTRY ENROLLMENT SCHEMAS.
+               ACCESS RESTRICTED: ADMIN PRIVILEGES REQUIRED TO GENERATE INVITE KEYS.
+                
               </div>
             ) : (
               <>
@@ -137,56 +138,55 @@ export default function AdminSystem({
           </div>
         </div>
 
-        {/* Gateway Lockdown emergency triggers */}
-        <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
-              <Unlock className="w-4.5 h-4.5 text-status-away" />
-              <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Security Containment System
-              </h4>
-            </div>
+        {/* Emergency System Lockdown */}
+                <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
+                      <Unlock className="w-4.5 h-4.5 text-status-away" />
+                      <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
+                        Emergency System Lockdown
+                      </h4>
+                    </div>
 
-            <p className="text-xs text-text-secondary leading-relaxed font-sans mb-4">
-              In case of compromise alerts, emergency lockdown forces immediate token revokes, blocks
-              registrations, and freezes socket connections.
-            </p>
-          </div>
+                    <p className="text-xs text-text-secondary leading-relaxed font-sans mb-4">
+                      In case of security incidents, emergency lockdown revokes active tokens, disables user registration, and closes active socket connections.
+                    </p>
+                  </div>
 
-          <div className="mt-5 space-y-3">
-            {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-status-dnd/10 text-status-dnd p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal border border-rose-500/20">
-                ACCESS LOCKED: DISPATCHING CENTRAL CONTAINER LOCKDOWNS RESTRICTED TO EXECUTIVE OVERWATCH LEVEL.
-              </div>
-            ) : (
-              <>
-                {isGatewayLocked ? (
-                  <button
-                    onClick={() => {
-                      setIsGatewayLocked(false);
-                      alert('Gateway lockdown lifted.');
-                    }}
-                    className="w-full bg-status-online hover:bg-status-online/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
-                  >
-                    Lift Gateway Lockdown
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setIsGatewayLocked(true);
-                      alert('Emergency lockdown activated.');
-                    }}
-                    className="w-full bg-status-danger hover:bg-status-danger/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
-                  >
-                    Deploy Gateway Lockdown Override
-                  </button>
-                )}
-                <div className="p-3 text-[9.5px] font-mono text-text-disabled uppercase tracking-wide leading-relaxed">
+                  <div className="mt-5 space-y-3">
+                    {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
+                      <div className="bg-status-dnd-bg text-status-dnd p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
+                        ACCESS DENIED:REQUIRES ADMIN PRIVILIGES
+                      </div>
+                    ) : (
+                      <>
+                        {isGatewayLocked ? (
+                          <button
+                            onClick={() => {
+                              setIsGatewayLocked(false);
+                              alert('System lockdown disabled.');
+                            }}
+                            className="w-full bg-status-online hover:bg-status-online/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
+                          >
+                            Disable System Lockdown
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setIsGatewayLocked(true);
+                              alert('System lockdown enabled.');
+                            }}
+                            className="w-full bg-status-danger hover:bg-status-danger/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
+                          >
+                            Enable System Lockdown
+                          </button>
+                        )}
+        <div className="p-3 text-[9.5px] font-mono text-text-disabled uppercase tracking-wide leading-relaxed">
                   Status:{' '}
                   {isGatewayLocked ? (
-                    <span className="text-status-danger font-black">LOCKED DOWN</span>
+                    <span className="text-status-danger font-black">LOCKED</span>
                   ) : (
-                    <span className="text-status-online font-bold">SECURED OPEN</span>
+                    <span className="text-status-online font-bold">OPEN</span>
                   )}
                 </div>
               </>
@@ -206,7 +206,7 @@ export default function AdminSystem({
             <div className="space-y-4 font-sans text-xs">
               <div>
                 <label className="block text-[9px] text-text-secondary font-black uppercase mb-2 tracking-widest font-mono font-bold">
-                  Client Target Numeric Database ID
+                  Client ID
                 </label>
                 <input
                   type="text"
@@ -222,14 +222,14 @@ export default function AdminSystem({
           <div className="mt-5 space-y-3">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
               <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-                ACCESS LOCKED: SECURE ARCHIVE RESTORATION REQUIRES CENTRAL COMPLIANCE MATRIX CLEARANCE.
+                ACCESS LOCKED: REQUIRES ADMIN PRIVILEGES
               </div>
             ) : (
               <button
                 onClick={() => approveQuarantineAccess(quarantineTargetId, 'approve')}
                 className="w-full bg-accent-20 hover:bg-accent text-accent hover:text-text-primary font-extrabold py-3 rounded-xl text-[10px] uppercase tracking-wider cursor-pointer border border-accent-40 transition"
               >
-                Manually Unlock Target
+                UNLOCK
               </button>
             )}
           </div>
@@ -241,7 +241,7 @@ export default function AdminSystem({
             <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
               <Megaphone className="w-4.5 h-4.5 text-accent-hover" />
               <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                System Broadcast Console
+                BROADCAST PANEL
               </h4>
             </div>
             <div className="space-y-4 font-sans text-xs">
@@ -294,7 +294,7 @@ export default function AdminSystem({
                       type="number"
                       value={broadcastUserId}
                       onChange={(e) => setBroadcastUserId(e.target.value)}
-                      placeholder="e.g. 1"
+                      placeholder=""
                       className={`w-full p-2.5 rounded-xl outline-none font-mono ${c.bgInput}`}
                     />
                   </div>
@@ -304,16 +304,15 @@ export default function AdminSystem({
           </div>
 
           <div className="mt-5 space-y-3">
-            {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-                ACCESS LOCKED: SYSTEM BROADCAST PRIVILEGES GATE TO EXECUTIVE OVERWATCH LEVEL.
-              </div>
-            ) : (
+                      {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' && adminRole !== 'SUPPORT_ADMIN' ? (
+            <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
+            </div>
+          ) : (
               <button
                 onClick={handleSendBroadcast}
                 className="w-full bg-accent-hover hover:bg-accent text-black font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
               >
-                Transmit System Broadcast
+                Broadcast
               </button>
             )}
           </div>

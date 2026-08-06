@@ -62,15 +62,15 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   // Design theme variables
   const c = {
-    bgPanel: "bg-white/[0.03] backdrop-blur-xl border border-white-10 rounded-2xl shadow-xl",
-    bgSubPanel: "bg-white/[0.01] backdrop-blur-md border border-white-5 rounded-xl shadow-md",
+    bgPanel: "bg-white/[0.03] backdrop-blur-[var(--blur-backdrop-xl)] border border-white-10 rounded-2xl shadow-xl",
+    bgSubPanel: "bg-white/[0.01] backdrop-blur-[var(--blur-backdrop-md)] border border-white-5 rounded-xl shadow-md",
     bgInput: "bg-white/[0.04] border border-white-10 text-text-primary focus:border-accent/40 placeholder:text-text-disabled rounded-lg p-2.5 outline-none transition-all",
     border: "border-white-10",
     textMain: "text-text-primary",
     textMuted: "text-text-secondary",
-    statusResolved: "bg-accent-secondary-10 text-accent-secondary border border-accent-secondary-20",
-    statusOpen: "bg-status-dnd/10 text-status-dnd border border-status-dnd/20",
-    statusPending: "bg-status-away/10 text-status-away border border-status-away/20",
+    statusResolved: "bg-status-online-bg text-status-online",
+    statusOpen: "bg-status-dnd-bg text-status-dnd",
+    statusPending: "bg-status-away-bg text-status-away",
     statusEscalated: "bg-accent-10 text-accent border border-accent-20"
   };
 
@@ -504,7 +504,7 @@ export default function AdminPanel({
       {isMobile && isMobileDrawerOpen && (
         <div className="fixed inset-0 z-50 flex">
           <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 modal-backdrop transition-opacity"
             onClick={() => setIsMobileDrawerOpen(false)}
           />
           <div className="relative z-10 w-64 max-w-[80vw] h-full bg-velum-850 border-r border-white-5 shadow-2xl flex flex-col animate-in slide-in-from-left duration-200">

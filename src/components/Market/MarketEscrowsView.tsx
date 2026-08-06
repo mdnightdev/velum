@@ -25,7 +25,7 @@ export function MarketEscrowsView({
   return (
     <div className="space-y-4 pt-6 border-t border-white-5">
       <div className="flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+        <ShieldCheck className="w-4 h-4 text-alert-success" />
         <h3 className="text-xs font-mono font-black uppercase tracking-wider text-white">
           Escrows ({escrows.length})
         </h3>

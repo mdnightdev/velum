@@ -237,7 +237,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
             <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-white-10 scrollbar-track-transparent">
               {activeTab === 'BALANCES' && (
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="sticky top-0 bg-velum-800/95 backdrop-blur z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
+                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-md)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
                     <tr>
                       <th className="px-6 py-4">Institution / Name</th>
                       <th className="px-6 py-4 hidden md:table-cell">Account ID</th>
@@ -289,7 +289,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
               )}
               {activeTab === 'LEDGER' && (
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="sticky top-0 bg-velum-800/95 backdrop-blur z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
+                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-md)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
                     <tr>
                       <th className="px-6 py-4 hidden md:table-cell">Txn ID</th>
                       <th className="px-6 py-4">Details</th>
@@ -349,7 +349,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
               )}
               {activeTab === 'PAYMENT_QUEUE' && (
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="sticky top-0 bg-velum-800/95 backdrop-blur z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
+                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-md)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
                     <tr>
                       <th className="px-6 py-4">Request ID</th>
                       <th className="px-6 py-4">User ID</th>
@@ -406,7 +406,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
               
               {activeTab === 'ISSUED_CARDS' && (
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="sticky top-0 bg-velum-800/95 backdrop-blur z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
+                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-md)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
                     <tr>
                       <th className="px-6 py-4">User ID</th>
                       <th className="px-6 py-4">Institution / Card</th>
@@ -455,7 +455,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
               )}
               {activeTab === 'LIMITS_MONITORING' && (
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="sticky top-0 bg-velum-800/95 backdrop-blur z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
+                  <thead className="sticky top-0 bg-bg-search-bar backdrop-blur-[var(--blur-backdrop-md)] z-10 text-[10px] font-black text-text-secondary uppercase tracking-[0.2em] border-b border-white-5">
                     <tr>
                       <th className="px-6 py-4">User</th>
                       <th className="px-6 py-4 text-center">KYC Level</th>

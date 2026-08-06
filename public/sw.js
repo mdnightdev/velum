@@ -1,4 +1,4 @@
-const CACHE_NAME = 'velum-cache-v3';
+const CACHE_NAME = 'velum-cache-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -37,7 +37,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (
     event.request.method !== 'GET' ||
-    url.pathname.startsWith('/api') ||
+    url.pathname.startsWith('/api') || url.pathname.startsWith('/v2') ||
     url.pathname.startsWith('/socket.io') ||
     url.protocol.startsWith('ws')
   ) {
@@ -84,7 +84,7 @@ self.addEventListener('fetch', (event) => {
           networkResponse &&
           networkResponse.status === 200 &&
           (networkResponse.type === 'basic' || networkResponse.type === 'cors') &&
-          !url.pathname.startsWith('/api')
+          !url.pathname.startsWith('/api') && !url.pathname.startsWith('/v2')
         ) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {

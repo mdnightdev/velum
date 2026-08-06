@@ -1129,8 +1129,8 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   }
 
   // Mobile View
-  if (isLoadingLounge) {
-    return (
+ if (isLoadingLounge && !props.activeRoomId) {
+      return (
       <div className="flex items-center justify-center h-full text-text-secondary font-mono text-xs animate-pulse">
         Loading lounge workspace...
       </div>

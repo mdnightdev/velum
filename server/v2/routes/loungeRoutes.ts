@@ -3,7 +3,7 @@ import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
 import { users } from '../db/schema/users.js';
 import { ensureVelumLoungeSeeded } from '../services/loungeSeeder.js';
-import { eq, and, desc, like } from 'drizzle-orm';
+import { eq,gt, and, desc, like } from 'drizzle-orm';
 import { createAuthMiddleware, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 
@@ -638,6 +638,11 @@ loungeRouter.get('/:id/messages', optionalAuth, async (req: Request, res: Respon
     const currentUserId = req.user?.userId || null;
     const isDM = target.type === 'dm';
 
+    const since = req.query.since ? new Date(req.query.since as string) : null;
+    const whereClause = since && !isNaN(since.getTime())
+      ? and(eq(messages.loungeId, target.id), gt(messages.createdAt, since))
+      : eq(messages.loungeId, target.id);
+
     const msgList = await db.select({
       id: messages.id,
       loungeId: messages.loungeId,
@@ -651,10 +656,9 @@ loungeRouter.get('/:id/messages', optionalAuth, async (req: Request, res: Respon
     })
     .from(messages)
     .leftJoin(users, eq(messages.senderId, users.id))
-    .where(eq(messages.loungeId, target.id))
+    .where(whereClause)
     .orderBy(desc(messages.createdAt))
     .limit(100);
-
     const messagesWithStatus = msgList.reverse().map(m => {
       if (!isDM || !currentUserId) {
         return { ...m };

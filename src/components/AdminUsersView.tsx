@@ -213,9 +213,9 @@ export default function AdminUsersView({
               <button
                 type="button"
                 onClick={() => setSanctionType('mute')}
-                className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
+                 className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
                   sanctionType === 'mute'
-                    ? "bg-amber-500/10 text-status-away border border-amber-500/30"
+                    ? "bg-status-away-bg text-status-away border border-transparent"
                     : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
                 }`}
               >
@@ -228,7 +228,7 @@ export default function AdminUsersView({
                 disabled={adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN'}
                 className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
                   sanctionType === 'ban'
-                    ? "bg-status-dnd/10 text-status-dnd border border-rose-500/30"
+                    ? "bg-status-dnd-bg text-status-dnd border border-transparent"
                     : (adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN')
                     ? "bg-velum-900/20 text-accent/20 border border-velum-600 opacity-40 cursor-not-allowed"
                     : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
@@ -243,7 +243,7 @@ export default function AdminUsersView({
                 disabled={adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN'}
                 className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
                   sanctionType === 'purge'
-                    ? "bg-red-500/10 text-red-400 border border-red-500/30"
+                    ? "bg-status-dnd-bg text-status-dnd border border-transparent"
                     : (adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN')
                     ? "bg-velum-900/20 text-accent/20 border border-velum-600 opacity-40 cursor-not-allowed"
                     : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
@@ -258,7 +258,7 @@ export default function AdminUsersView({
                   onClick={() => setSanctionType('restore')}
                   className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
                     sanctionType === 'restore'
-                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                      ? "bg-status-online-bg text-status-online border border-transparent"
                       : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
                   }`}
                 >
@@ -302,12 +302,12 @@ export default function AdminUsersView({
           </button>
 
           {sanctionResult && (
-            <div className="p-3 bg-status-online/10 border border-emerald-500/15 text-status-online text-[10px] rounded-xl font-mono font-bold uppercase tracking-wider">
+            <div className="p-3 bg-status-online-bg text-status-online text-[10px] rounded-xl font-mono font-bold uppercase tracking-wider">
               {sanctionResult}
             </div>
           )}
           {sanctionError && (
-            <div className="p-3 bg-status-dnd/10 border border-rose-500/15 text-status-dnd text-[10px] rounded-xl font-mono font-bold uppercase tracking-wider">
+            <div className="p-3 bg-status-dnd-bg text-status-dnd text-[10px] rounded-xl font-mono font-bold uppercase tracking-wider">
               {sanctionError}
             </div>
           )}
@@ -362,11 +362,11 @@ export default function AdminUsersView({
                       </td>
                       <td className="py-4 px-2 whitespace-nowrap">
                         {sanction.type === 'ban' ? (
-                          <span className="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider uppercase font-mono bg-status-dnd/10 text-status-dnd border border-rose-500/20">
+                          <span className="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider uppercase font-mono bg-status-dnd-bg text-status-dnd">
                             BAN
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider uppercase font-mono bg-amber-500/10 text-status-away border border-amber-500/20">
+                          <span className="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider uppercase font-mono bg-status-away-bg text-status-away">
                             MUTE
                           </span>
                         )}
@@ -403,7 +403,7 @@ export default function AdminUsersView({
                               alert('Communication error.');
                             }
                           }}
-                          className="px-2.5 py-1 text-[9px] font-extrabold uppercase font-mono tracking-wider rounded-lg border border-emerald-500/20 bg-status-online/5 hover:bg-status-online hover:text-text-primary text-status-online cursor-pointer transition whitespace-nowrap"
+                          className="px-2.5 py-1 text-[9px] font-extrabold uppercase font-mono tracking-wider rounded-lg bg-status-online-bg hover:bg-status-online hover:text-text-primary text-status-online cursor-pointer transition whitespace-nowrap"
                         >
                           Revoke
                         </button>
@@ -421,7 +421,7 @@ export default function AdminUsersView({
                       {u.username}
                     </td>
                     <td className="py-4 px-2 whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider uppercase font-mono bg-red-500/10 text-red-400 border border-red-500/20">
+                      <span className="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider uppercase font-mono bg-status-dnd-bg text-status-dnd">
                         PURGED
                       </span>
                     </td>
@@ -452,7 +452,7 @@ export default function AdminUsersView({
                             }
                           }
                         }}
-                        className="px-2.5 py-1 text-[9px] font-extrabold uppercase font-mono tracking-wider rounded-lg border border-emerald-500/20 bg-status-online/5 hover:bg-status-online hover:text-text-primary text-status-online cursor-pointer transition whitespace-nowrap"
+                        className="px-2.5 py-1 text-[9px] font-extrabold uppercase font-mono tracking-wider rounded-lg bg-status-online-bg hover:bg-status-online hover:text-text-primary text-status-online cursor-pointer transition whitespace-nowrap"
                       >
                         Restore
                       </button>
@@ -468,7 +468,7 @@ export default function AdminUsersView({
       {/* Selected User/Admin Profile Card Overlay */}
       {selectedUser && (
         <div 
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center modal-backdrop p-4"
           onClick={() => setSelectedUser(null)}
         >
           <div onClick={e => e.stopPropagation()} className="relative">

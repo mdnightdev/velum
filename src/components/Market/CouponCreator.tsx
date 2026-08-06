@@ -98,7 +98,7 @@ export function CouponCreator({ onSuccess, onCancel, fetchSessionId }: CouponCre
       </div>
 
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs font-mono">
+        <div className="p-3 bg-status-dnd-bg text-status-dnd text-xs font-mono rounded-xl">
           {error}
         </div>
       )}
@@ -237,7 +237,7 @@ export function CouponCreator({ onSuccess, onCancel, fetchSessionId }: CouponCre
                   <button
                     type="button"
                     onClick={() => handleRemoveTier(index)}
-                    className="mt-4 px-2 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 rounded-lg text-[9px] font-mono text-red-400 uppercase tracking-wider cursor-pointer"
+                    className="mt-4 px-2 py-1.5 bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd rounded-lg text-[9px] font-mono uppercase tracking-wider cursor-pointer"
                   >
                     Delete
                   </button>

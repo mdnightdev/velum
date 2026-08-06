@@ -140,7 +140,7 @@ export function LegalDocModal({ docType, onClose }: LegalDocModalProps) {
                 <span className="text-xs font-medium tracking-wide">Loading Document...</span>
               </div>
             ) : error ? (
-              <div className="py-20 flex flex-col items-center justify-center gap-3 text-red-600">
+              <div className="py-20 flex flex-col items-center justify-center gap-3 text-status-dnd">
                 <span className="text-sm font-medium">{error}</span>
               </div>
             ) : (
