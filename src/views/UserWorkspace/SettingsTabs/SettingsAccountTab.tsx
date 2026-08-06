@@ -23,11 +23,16 @@ export function SettingsAccountTab({
   setDisplayName,
   setBio,
   handleFileChange,
-  handleDeleteAvatar
+  handleDeleteAvatar,
+  bannerPreview,
+  bannerUrl,
+  bannerColor,
+  getBannerClass,
+  handleBannerFileChange
 }: any) {
   // We'll just return the form contents here
-  return (
-    <form onSubmit={handleSaveProfile} className="w-full max-w-4xl space-y-8">
+   return (
+    <form onSubmit={handleSaveProfile} className="w-full max-w-4xl space-y-6">
       {profileMsg && (
         <div className="p-3.5 bg-status-online-bg text-status-online rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
           <CheckCircle className="w-4 h-4" />
@@ -40,108 +45,93 @@ export function SettingsAccountTab({
           <span>{profileError}</span>
         </div>
       )}
+
+      <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">
+        Account Settings
+      </h3>
+
+           {/* Profile Header with Banner */}
+      <div className="relative rounded-2xl bg-velum-800 border border-white/10 overflow-hidden shadow-xl mb-6">
+             {/* Banner Area (Theme-derived gradient or custom image) */}
+      <div 
+        className={`h-24 relative ${(!bannerPreview && (!bannerColor || bannerColor === 'charcoal' || bannerColor === 'custom')) ? 'bg-gradient-to-r from-accent/30 via-accent/10 to-transparent' : getBannerClass(bannerColor)}`}
+        style={
+          (bannerPreview || (bannerColor === 'custom' && bannerUrl))
+            ? { backgroundImage: `url(${bannerPreview || bannerUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+            : {}
+        }
+      >
+        <label className="absolute top-3 right-3 px-2.5 py-1 bg-velum-800/80 hover:bg-velum-750 text-[10px] font-mono text-text-primary rounded-md backdrop-blur-[var(--blur-backdrop-md)] border border-velum-700 cursor-pointer transition">
+          Change Banner
+          <input 
+            type="file" 
+            accept="image/*" 
+            className="hidden" 
+            onChange={handleBannerFileChange} 
+          />
+        </label>
+      </div>
+
       
-      <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Account</h3>
-      
-      <div className="flex flex-col lg:flex-row gap-8 items-start">
-        {/* Left Side: Live Glassmorphic Profile Preview Card */}
-        <div className="w-full lg:w-72 shrink-0 bg-bg-pinned-bar backdrop-blur-[var(--blur-backdrop-md)] border border-white-10 rounded-2xl overflow-hidden shadow-2xl p-5 relative font-sans text-white">
-          
-          <div className="flex flex-col items-center text-center mt-3">
-            <div className="relative group mb-4">
-              <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-accent/40 bg-white-5 flex items-center justify-center font-bold text-white text-lg">
+
+        {/* Profile Details Bar */}
+        <div className="px-6 pb-5 pt-0 relative flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-10">
+          <div className="flex items-end gap-4">
+            <div className="relative group shrink-0">
+              <div className="w-20 h-20 rounded-full border-4 border-velum-800 bg-velum-750 flex items-center justify-center font-bold text-2xl text-accent overflow-hidden shadow-2xl">
                 {avatarPreview || (avatarColor === 'custom' && avatarUrl) ? (
-                  <img 
-                    src={avatarPreview || avatarUrl} 
-                    alt="Avatar" 
-                    className="w-full h-full object-cover" 
-                    referrerPolicy="no-referrer"
-                  />
+                  <img src={avatarPreview || avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
-                  <div className={`w-full h-full flex items-center justify-center text-xl font-mono font-bold uppercase ${getAvatarClass(avatarColor)}`}>
-                    {displayName.slice(0, 1) || 'P'}
-                  </div>
+                  displayName.slice(0, 1).toUpperCase() || 'U'
                 )}
               </div>
               <label className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 rounded-full transition-opacity cursor-pointer">
                 <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-                <Upload className="w-6 h-6 text-white" />
+                <Upload className="w-5 h-5 text-text-primary" />
               </label>
-              {(avatarPreview || (avatarColor === 'custom' && avatarUrl)) && (
-                <button
-                  type="button"
-                  onClick={handleDeleteAvatar}
-                  className="absolute -bottom-1 -right-1 p-1.5 bg-alert-error hover:bg-alert-error text-white rounded-full transition border border-velum-800 shadow-md cursor-pointer z-10 flex items-center justify-center"
-                  title="Delete avatar"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
-            
-            <h4 className="text-lg font-bold leading-tight flex items-center gap-1">
-              {displayName}
-            </h4>
-            <span className="text-xs text-text-secondary font-mono mt-0.5">
-              {currentUsername}
-            </span>
-          </div>
-          
-          <div className="mt-5 space-y-3">
-            <div>
-              <div className="text-[10px] font-bold text-text-secondary uppercase font-mono mb-1">Bio</div>
-              <p className="text-xs leading-relaxed text-text-secondary">
-                {bio || "No status set."}
-              </p>
+            <div className="mb-1">
+              <h4 className="text-lg font-bold text-text-primary leading-none">{displayName || 'User'}</h4>
+              <p className="text-xs font-mono text-text-secondary mt-1">@{currentUsername || 'username'}</p>
             </div>
-          </div>
-          
-          <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white-10 pt-4">
-            <div className="text-center p-2 rounded-xl bg-white-5">
-              <div className="text-lg font-black text-white">{loungesCount}</div>
-              <div className="text-[9px] font-mono uppercase text-text-secondary mt-0.5">Lounges</div>
-            </div>
-            <div className="text-center p-2 rounded-xl bg-white-5">
-              <div className="text-lg font-black text-white">{connectionsCount}</div>
-              <div className="text-[9px] font-mono uppercase text-text-secondary mt-0.5">Connects</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Side: Form Inputs */}
-        <div className="flex-1 w-full space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary font-mono">Display Name</label>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full bg-velum-750 border border-velum-600 rounded-xl px-3 py-2 text-sm text-text-primary focus:border-accent outline-none transition"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary font-mono">Status Bio</label>
-              <input
-                type="text"
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                className="w-full bg-velum-750 border border-velum-600 rounded-xl px-3 py-2 text-sm text-text-primary focus:border-accent outline-none transition"
-                maxLength={100}
-              />
-            </div>
-          </div>
-          
-          <div className="pt-2">
-            <button
-              type="submit"
-              className="bg-accent hover:bg-accent-hover text-black px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition flex items-center justify-center shadow-lg cursor-pointer"
-            >
-              Save Profile
-            </button>
           </div>
         </div>
       </div>
+
+      {/* Form Fields Stacked */}
+      <div className="space-y-4">
+        <div>
+          <label className="block text-[10px] font-mono text-text-secondary uppercase tracking-wider mb-2">
+            Display Name
+          </label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="w-full glass-input"
+          />
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-mono text-text-secondary uppercase tracking-wider mb-2">
+            Status Bio
+          </label>
+          <textarea
+            rows={2}
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            placeholder="Write a short bio..."
+            className="w-full glass-input resize-none"
+          />
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        className="w-full sm:w-auto px-6 py-2.5 bg-accent hover:bg-accent-hover text-velum-900 font-bold text-xs uppercase tracking-wider rounded-xl transition"
+      >
+        Save Profile
+      </button>
     </form>
   );
 }

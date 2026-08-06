@@ -70,6 +70,9 @@ export default function SettingsDrawer({
   const [avatarColor, setAvatarColor] = useState('emerald');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [bannerColor, setBannerColor] = useState('charcoal');
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | Blob | null>(null);
+  const [bannerUrl, setBannerUrl] = useState('');
   
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -149,6 +152,14 @@ export default function SettingsDrawer({
         }
       }).catch(() => {});
 
+      getLocalMedia(`banner_${currentUserId}`).then((cachedBlob) => {
+        if (cachedBlob) {
+          const localUrl = URL.createObjectURL(cachedBlob);
+          setBannerPreview(localUrl);
+          setBannerColor('custom');
+        }
+      }).catch(() => {});
+
       const sId = getSessionId();
       const requestHeaders = {
         'Authorization': `Bearer ${sId}`,
@@ -177,7 +188,16 @@ export default function SettingsDrawer({
             }
             if (data.email) setEmail(data.email);
             if (data.phone) setPhone(data.phone);
-            if (data.bannerColor) setBannerColor(data.bannerColor);
+            if (data.bannerColor) {
+              const bannerVal = data.bannerColor || '';
+              if (bannerVal.startsWith('http') || bannerVal.startsWith('data:') || bannerVal.startsWith('/')) {
+                setBannerUrl(bannerVal);
+                setBannerColor('custom');
+              } else {
+                setBannerUrl('');
+                setBannerColor(bannerVal || 'charcoal');
+              }
+            }
 
             if (data.settings) {
               const s = data.settings;
@@ -364,6 +384,22 @@ export default function SettingsDrawer({
     }
   };
 
+  const handleBannerFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const compressedBlob = await captureAndCompressPhoto(e);
+      setBannerFile(compressedBlob);
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setBannerPreview(event.target?.result as string);
+        setBannerColor('custom');
+      };
+      reader.readAsDataURL(compressedBlob);
+    } catch (err) {
+      console.error("Banner image processing error:", err);
+    }
+  };
+
   const handleRemovePhoto = () => {
     setAvatarPreview(null);
     setAvatarFile(null);
@@ -378,6 +414,7 @@ export default function SettingsDrawer({
     setIsUploading(true);
 
     let finalAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
+    let finalBanner = bannerColor === 'custom' ? bannerUrl : bannerColor;
 
     try {
       const sId = getSessionId();
@@ -396,6 +433,13 @@ export default function SettingsDrawer({
         await deleteLocalMedia(`avatar_${currentUserId}`);
       }
 
+      if (bannerFile && bannerPreview) {
+        const uploadedUrl = await streamFileDirectToCloudStorage(bannerFile, 'avatars', 'webp');
+        finalBanner = uploadedUrl;
+        setBannerUrl(uploadedUrl);
+        await saveLocalMedia(`banner_${currentUserId}`, bannerFile);
+      }
+
       const res = await fetch('/v2/user/profile', {
         method: 'POST',
         headers: requestHeaders,
@@ -406,7 +450,7 @@ export default function SettingsDrawer({
           avatar: finalAvatar,
           email: email.trim(),
           phone: phone.trim(),
-          bannerColor,
+          bannerColor: finalBanner,
           settings: {
             theme: themeMode,
             messageScaling,
@@ -432,7 +476,12 @@ export default function SettingsDrawer({
           setAvatarUrl(data.user.avatar);
           setAvatarPreview(data.user.avatar);
         }
+        if (data.user?.bannerColor) {
+          setBannerUrl(data.user.bannerColor);
+          setBannerPreview(data.user.bannerColor);
+        }
         setAvatarFile(null);
+        setBannerFile(null);
         setTimeout(() => setProfileMsg(null), 3500);
       } else {
         setProfileError(data.error || 'Failed to update profile.');
@@ -625,7 +674,7 @@ export default function SettingsDrawer({
         className="absolute inset-0 modal-backdrop transition-opacity duration-300"
         onClick={onClose}
       />
-      <div className="glass-panel w-full max-w-2xl ml-auto h-full bg-velum-900 border-l border-white-5 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none shadow-2xl animate-in slide-in-from-right duration-200">
+      <div className="glass-panel w-full max-w-md ml-auto h-full bg-velum-900 border-l border-white-5 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none shadow-2xl animate-in slide-in-from-right duration-200">
         
         <div className="p-4 md:p-4 border-b border-white-5 flex items-center justify-between flex-shrink-0 bg-velum-850">
           <div>
@@ -640,127 +689,125 @@ export default function SettingsDrawer({
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden">
           
-          {(!isMobile || activeView === 'menu') && (
-          <div className="flex-shrink-0 w-full md:w-72 bg-velum-850 border-b md:border-b-0 md:border-r border-white-5 overflow-y-auto">
-            <div className="flex flex-col p-4 gap-6">
-              
-              <div className="space-y-1">
-                <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">{t('settings.account', 'Account')}</div>
-                {[
-                  { id: 'account', label: t('settings.account', 'Account'), icon: User },
-                  { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
-                  { id: 'notifications', label: t('settings.notifications', 'Notifications'), icon: Bell }
-                ].map((cat) => {
-                  const Icon = cat.icon;
-                  const active = activeView === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setActiveView(cat.id as SettingCategory)}
-                      className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                        active 
-                          ? 'bg-accent/10 text-accent' 
-                          : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span>{cat.label}</span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-text-disabled" />
-                    </button>
-                  );
-                })}
-              </div>
+          {activeView === 'menu' ? (
+            <div className="flex-shrink-0 w-full bg-velum-850 overflow-y-auto">
+              <div className="flex flex-col p-4 gap-6">
+                
+                <div className="space-y-1">
+                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">{t('settings.account', 'Account')}</div>
+                  {[
+                    { id: 'account', label: t('settings.account', 'Account'), icon: User },
+                    { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
+                    { id: 'notifications', label: t('settings.notifications', 'Notifications'), icon: Bell }
+                  ].map((cat) => {
+                    const Icon = cat.icon;
+                    const active = activeView === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setActiveView(cat.id as SettingCategory)}
+                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
+                          active 
+                            ? 'bg-accent/10 text-accent' 
+                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span>{cat.label}</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-text-disabled" />
+                      </button>
+                    );
+                  })}
+                </div>
 
-              <div className="space-y-1">
-                <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">App</div>
-                {[
-                  { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
-                  { id: 'media', label: t('settings.voice_audio', 'Voice & Audio'), icon: Volume2 },
-                  { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
-                ].map((cat) => {
-                  const Icon = cat.icon;
-                  const active = activeView === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setActiveView(cat.id as SettingCategory)}
-                      className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                        active 
-                          ? 'bg-accent/10 text-accent' 
-                          : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span>{cat.label}</span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-text-disabled" />
-                    </button>
-                  );
-                })}
-              </div>
+                <div className="space-y-1">
+                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">App</div>
+                  {[
+                    { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
+                    { id: 'media', label: t('settings.voice_audio', 'Voice & Audio'), icon: Volume2 },
+                    { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
+                  ].map((cat) => {
+                    const Icon = cat.icon;
+                    const active = activeView === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setActiveView(cat.id as SettingCategory)}
+                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
+                          active 
+                            ? 'bg-accent/10 text-accent' 
+                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span>{cat.label}</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-text-disabled" />
+                      </button>
+                    );
+                  })}
+                </div>
 
-              <div className="space-y-1">
-                <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">More</div>
-                {[
-                  { id: 'tickets', label: t('settings.tickets', 'Support Tickets'), icon: Ticket },
-                  { id: 'diagnostics', label: t('settings.diagnostics', 'Diagnostics'), icon: Activity },
-                  { id: 'about', label: t('settings.about', 'About Velum'), icon: Info }
-                ].map((cat) => {
-                  const Icon = cat.icon;
-                  const active = activeView === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setActiveView(cat.id as SettingCategory)}
-                      className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                        active 
-                          ? 'bg-accent/10 text-accent' 
-                          : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span>{cat.label}</span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-text-disabled" />
-                    </button>
-                  );
-                })}
-              </div>
+                <div className="space-y-1">
+                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">More</div>
+                  {[
+                    { id: 'tickets', label: t('settings.tickets', 'Support Tickets'), icon: Ticket },
+                    { id: 'diagnostics', label: t('settings.diagnostics', 'Diagnostics'), icon: Activity },
+                    { id: 'about', label: t('settings.about', 'About Velum'), icon: Info }
+                  ].map((cat) => {
+                    const Icon = cat.icon;
+                    const active = activeView === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setActiveView(cat.id as SettingCategory)}
+                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
+                          active 
+                            ? 'bg-accent/10 text-accent' 
+                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span>{cat.label}</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-text-disabled" />
+                      </button>
+                    );
+                  })}
+                </div>
 
-              <div className="space-y-1 pt-2">
+                <div className="space-y-1 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sessionStorage.clear();
+                      window.location.reload();
+                    }}
+                    className="w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer text-alert-error hover:bg-alert-error-bg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <LogOut className="w-4 h-4 shrink-0" />
+                      <span>Log Out</span>
+                    </div>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 bg-velum-900 p-4 overflow-y-auto">
+              <div className="mb-4 flex items-center">
                 <button
                   type="button"
-                  onClick={() => {
-                    sessionStorage.clear();
-                    window.location.reload();
-                  }}
-                  className="w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer text-alert-error hover:bg-alert-error-bg"
-                >
-                  <div className="flex items-center gap-3">
-                    <LogOut className="w-4 h-4 shrink-0" />
-                    <span>Log Out</span>
-                  </div>
-                </button>
-              </div>
-
-            </div>
-            </div>
-          )}
-
-          {(!isMobile || activeView !== 'menu') && (
-          <div className="flex-1 bg-velum-900 p-4 md:p-4 overflow-y-auto">
-            {isMobile && (
-              <div className="mb-6 flex items-center">
-                <button 
                   onClick={() => setActiveView('menu')}
                   className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition cursor-pointer"
                 >
@@ -768,33 +815,37 @@ export default function SettingsDrawer({
                   <span className="text-[10px] uppercase font-bold font-mono tracking-widest">Back</span>
                 </button>
               </div>
-            )}
-            
-            {(activeView === 'account' || (!isMobile && activeView === 'menu')) && (
-              <SettingsAccountTab
-                profileMsg={profileMsg}
-                profileError={profileError}
-                handleSaveProfile={handleSaveProfile}
-                avatarPreview={avatarPreview}
-                avatarUrl={avatarUrl}
-                avatarColor={avatarColor}
-                getAvatarClass={getAvatarClass}
-                displayName={displayName}
-                bio={bio}
-                loungesCount={loungesCount}
-                connectionsCount={connectionsCount}
-                currentUsername={currentUsername}
-                currentUserRole={currentUserRole}
-                email={email}
-                setEmail={setEmail}
-                phone={phone}
-                setPhone={setPhone}
-                setDisplayName={setDisplayName}
-                setBio={setBio}
-                handleFileChange={handleFileChange}
-                handleDeleteAvatar={handleRemovePhoto}
-              />
-            )}
+
+              {activeView === 'account' && (
+                <SettingsAccountTab
+                  profileMsg={profileMsg}
+                  profileError={profileError}
+                  handleSaveProfile={handleSaveProfile}
+                  avatarPreview={avatarPreview}
+                  avatarUrl={avatarUrl}
+                  avatarColor={avatarColor}
+                  getAvatarClass={getAvatarClass}
+                  displayName={displayName}
+                  bio={bio}
+                  loungesCount={loungesCount}
+                  connectionsCount={connectionsCount}
+                  currentUsername={currentUsername}
+                  currentUserRole={currentUserRole}
+                  email={email}
+                  setEmail={setEmail}
+                  phone={phone}
+                  setPhone={setPhone}
+                  setDisplayName={setDisplayName}
+                  setBio={setBio}
+                  handleFileChange={handleFileChange}
+                  handleDeleteAvatar={handleRemovePhoto}
+                  bannerPreview={bannerPreview}
+                  bannerUrl={bannerUrl}
+                  bannerColor={bannerColor}
+                  getBannerClass={getBannerClass}
+                  handleBannerFileChange={handleBannerFileChange}
+                />
+              )}
 
             {activeView === 'privacy' && (
               <SettingsPrivacyTab
@@ -1130,12 +1181,6 @@ export default function SettingsDrawer({
         </div>
 
       </div>
-
-      {/* Remaining split backdrop on right */}
-      <div 
-        className="flex-1 h-full modal-backdrop transition-opacity duration-300 cursor-pointer hidden md:block" 
-        onClick={onClose} 
-      />
 
       {/* In-App Legal Document Modal */}
       <LegalDocModal docType={activeLegalDoc} onClose={() => setActiveLegalDoc(null)} />
