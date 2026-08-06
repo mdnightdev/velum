@@ -45,14 +45,14 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
         <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-10">
           <button
             onClick={handleDownload}
-            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-sm cursor-pointer border-0"
+            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
             title="Download"
           >
             <Download className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setIsExpanded(true)}
-            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-sm cursor-pointer border-0"
+            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
             title="Expand"
           >
             <Maximize2 className="w-3.5 h-3.5" />
@@ -61,7 +61,7 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
 
         {/* Floating Time & Status overlay in bottom-right corner (Telegram style) */}
         {children && (
-          <div className="absolute bottom-2.5 right-2.5 bg-black/45 backdrop-blur-sm px-2 py-0.5 rounded-full flex items-center gap-1 text-[9px] font-mono text-white select-none z-10 border border-white/5">
+          <div className="absolute bottom-2.5 right-2.5 bg-black/45 backdrop-blur-[var(--blur-backdrop-sm)] px-2 py-0.5 rounded-full flex items-center gap-1 text-[9px] font-mono text-white select-none z-10 border border-white/5">
             {children}
           </div>
         )}
@@ -77,7 +77,7 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
       {/* Expanded Modal */}
       {isExpanded && (
         <div 
-          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[999] flex items-center justify-center modal-backdrop p-4"
           onClick={() => setIsExpanded(false)}
         >
           <button

@@ -328,7 +328,7 @@ export default function DirectMainDashboard({
                     </p>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isFailed ? (
-                        <span className="text-[10px] font-mono font-bold text-red-500 uppercase tracking-wider">
+                        <span className="text-[10px] font-mono font-bold text-status-dnd uppercase tracking-wider">
                           Failed
                         </span>
                       ) : unread > 0 ? (

@@ -593,7 +593,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
       
       {/* Exchange Modal */}
       {isExchangeModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4 animate-in fade-in duration-200">
           <div className="glass-panel w-full max-w-md p-6 shadow-2xl relative">
             <button onClick={() => setIsExchangeModalOpen(false)} className="absolute top-5 right-5 p-2 hover:bg-white-10 rounded-full transition-colors">
               <X className="w-4 h-4 text-text-secondary" />
@@ -650,7 +650,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
 
       {/* Funding Modal */}
       {isFundingModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4 animate-in fade-in duration-200">
           <div className="glass-panel w-full max-w-md p-6 shadow-2xl relative">
             <button onClick={() => setIsFundingModalOpen(false)} className="absolute top-5 right-5 p-2 hover:bg-white-10 rounded-full transition-colors">
               <X className="w-4 h-4 text-text-secondary" />
@@ -697,7 +697,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
 
       {/* Add Method Modal */}
       {isMethodModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4 animate-in fade-in duration-200">
           <div className="glass-panel w-full max-w-lg p-6 md:p-8 shadow-2xl relative">
             <button onClick={() => setIsMethodModalOpen(false)} className="absolute top-5 right-5 p-2 hover:bg-white-10 rounded-full transition-colors">
               <X className="w-4 h-4 text-text-secondary" />
