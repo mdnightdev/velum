@@ -187,7 +187,7 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ content,
                 onClick={() => handleSeek(idx)}
                 className={`flex-1 rounded-full transition-all duration-150 ${
                   isActive
-                    ? isMe ? 'bg-accent shadow-[0_0_4px_rgba(34,211,238,0.6)]' : 'bg-accent'
+                    ? isMe ? 'bg-accent audio-active-bar-glow' : 'bg-accent'
                     : 'bg-text-secondary/30 hover:bg-text-secondary/50'
                 }`}
                 style={{ height: `${height}%` }}

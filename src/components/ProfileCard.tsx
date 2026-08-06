@@ -122,7 +122,7 @@ export default function ProfileCard({
 
             <div className="flex flex-col items-center mt-6 mb-8 text-center">
               <div className="relative group mb-5">
-                <div className="w-28 h-28 rounded-full overflow-hidden bg-accent border-4 border-velum-900 shadow-[0_0_0_1px_rgba(255,255,255,0.1)] flex items-center justify-center font-bold text-black text-3xl">
+                <div className="w-28 h-28 rounded-full overflow-hidden bg-accent border-4 border-velum-900 avatar-shadow-ring flex items-center justify-center font-bold text-black text-3xl">
                   {lounge.avatarUrl ? (
                     <img src={lounge.avatarUrl} alt={displayLoungeName} className="w-full h-full object-cover" />
                   ) : (
@@ -309,8 +309,8 @@ export default function ProfileCard({
 
     if (variant === 'mobile') {
       return (
-        <div className="fixed inset-0 z-[99999] flex flex-col justify-end bg-black-60 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full bg-velum-800 border-t border-white-10 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.8)] translate-y-0 transition-transform duration-300">
+        <div className="fixed inset-0 z-[99999] flex flex-col justify-end modal-backdrop animate-fadeIn">
+          <div className="w-full bg-velum-800 border-t border-white-10 rounded-t-3xl mobile-modal-shadow translate-y-0 transition-transform duration-300">
             <div className="flex justify-center pt-3 pb-2">
               <div className="w-12 h-1.5 bg-text-primary/10 rounded-full" />
             </div>
@@ -537,7 +537,7 @@ export default function ProfileCard({
         
         <div className="flex-1 px-6 pb-12 flex flex-col max-w-2xl mx-auto w-full">
           <div className="flex flex-col items-center mt-6 mb-8 text-center">
-            <div className="w-32 h-32 rounded-full overflow-hidden bg-accent border-4 border-velum-900 shadow-[0_0_0_1px_rgba(255,255,255,0.1)] flex items-center justify-center font-bold text-black text-4xl mb-5">
+            <div className="w-32 h-32 rounded-full overflow-hidden bg-accent border-4 border-velum-900 avatar-shadow-ring flex items-center justify-center font-bold text-black text-4xl mb-5">
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt={displayName} className="w-full h-full object-cover" />
               ) : user.userId === 999 ? (

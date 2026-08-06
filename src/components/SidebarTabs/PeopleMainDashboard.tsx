@@ -195,8 +195,7 @@ export default function PeopleMainDashboard({
               placeholder={t('people.search', 'Search users...')}
               value={userSearchTerm}
               onChange={(e) => setUserSearchTerm(e.target.value)}
-              className="w-full bg-transparent border-none outline-none text-xs ml-2 text-inherit"
-              style={{ color: isDark ? 'white' : 'black' }}
+              className="w-full bg-transparent border-none outline-none text-xs ml-2 text-text-primary"
             />
           </div>
           <button className={`w-9 h-9 flex items-center justify-center rounded-full border flex-shrink-0 transition-colors ${isDark ? 'bg-velum-800 border-white-5 text-text-secondary hover:text-white hover:bg-text-primary/5' : 'bg-gray-100 border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>

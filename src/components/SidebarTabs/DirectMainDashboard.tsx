@@ -141,8 +141,7 @@ export default function DirectMainDashboard({
             placeholder={t('chats.search', 'Search chats...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent border-none outline-none text-xs ml-1"
-            style={{ color: isDark ? 'white' : 'black' }}
+            className="w-full bg-transparent border-none outline-none text-xs ml-1 text-text-primary"
           />
         </div>
       </div>

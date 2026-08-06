@@ -457,7 +457,7 @@ export default function AuthPortal({ isDark, setIsDark, onLoginSuccess, onMigrat
         
         {/* Brand Header — premium minimalist */}
         <div className="text-center mb-6 relative">
-          <div className="mx-auto mb-3 w-20 h-20 rounded-lg flex items-center justify-center" style={{ background: 'radial-gradient(40% 40% at 30% 30%, rgba(212,131,106,0.06), transparent 30%)' }}>
+          <div className="mx-auto mb-3 w-20 h-20 rounded-lg flex items-center justify-center auth-portal-glow">
             <div className="w-16 h-16 flex items-center justify-center rounded-md bg-transparent text-accent">
               {/* Premium Earth Ochre brand mark (same as StartupSplash) */}
               <div 
