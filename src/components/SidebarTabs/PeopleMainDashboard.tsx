@@ -114,7 +114,7 @@ export default function PeopleMainDashboard({
       return (
         <div className="flex items-center gap-1.5 mt-1">
           <span className="w-2.5 h-2.5 rounded-full bg-bank-accent" />
-          <span className="text-[10px] font-bold text-status-away bg-amber-500/10 px-1.5 py-0.5 rounded-sm border border-amber-500/20">
+          <span className="text-[10px] font-bold text-status-away bg-status-away-bg px-1.5 py-0.5 rounded-sm">
             {activeLounge}
           </span>
         </div>
@@ -341,7 +341,7 @@ export default function PeopleMainDashboard({
                             handleRespondFriendRequest(item.request_id, 'declined');
                           }}
                           disabled={processingRequests.has(item.request_id)}
-                          className="w-9 h-9 rounded-full bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-9 h-9 rounded-full bg-status-dnd-bg text-status-dnd hover:bg-status-dnd hover:text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Decline Request"
                         >
                           <X className="w-4 h-4" />
@@ -391,7 +391,7 @@ export default function PeopleMainDashboard({
 
       {/* Add Contact Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
           <div className={`p-6 rounded-2xl w-full max-w-sm space-y-4 shadow-2xl ${isDark ? 'bg-velum-800 border border-white-10' : 'bg-text-primary border border-gray-200'}`}>
             <div className="flex justify-between items-center mb-2">
               <h3 className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-gray-900'}`}>Add Contact</h3>

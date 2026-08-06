@@ -20,7 +20,7 @@ export function parsePresence(lastSeen: string | null): PresenceDetails {
     return {
       status: 'dnd',
       label: 'Do Not Disturb',
-      colorClass: 'bg-rose-500',
+      colorClass: 'bg-status-dnd',
       dotStyle: 'solid'
     };
   }
@@ -28,7 +28,7 @@ export function parsePresence(lastSeen: string | null): PresenceDetails {
     return {
       status: 'idle',
       label: 'Idle',
-      colorClass: 'border-amber-500',
+      colorClass: 'border-status-away',
       dotStyle: 'ring'
     };
   }

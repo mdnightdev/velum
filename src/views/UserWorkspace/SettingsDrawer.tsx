@@ -599,21 +599,21 @@ export default function SettingsDrawer({
   const getBannerClass = (color: string) => {
     const classes: Record<string, string> = {
       charcoal: 'bg-velum-800',
-      emerald: 'bg-emerald-900',
-      bronze: 'bg-yellow-950',
-      violet: 'bg-purple-950',
-      indigo: 'bg-indigo-950',
-      crimson: 'bg-rose-950'
+      emerald: 'bg-theme-emerald-banner',
+      bronze: 'bg-theme-bronze-banner',
+      violet: 'bg-theme-violet-banner',
+      indigo: 'bg-theme-indigo-banner',
+      crimson: 'bg-theme-crimson-banner'
     };
     return classes[color] || classes.charcoal;
   };
 
   const getAvatarClass = (color: string) => {
     const classes: Record<string, string> = {
-      blue: 'bg-blue-950/40 text-blue-400 border-blue-900/40',
-      emerald: 'bg-emerald-950/40 text-emerald-400 border-emerald-900/40',
-      amber: 'bg-amber-950/40 text-amber-500 border-amber-900/40',
-      purple: 'bg-purple-950/40 text-purple-400 border-purple-900/40'
+      blue: 'bg-theme-blue-avatar-bg text-theme-blue-avatar border-theme-blue-avatar-border',
+      emerald: 'bg-theme-emerald-avatar-bg text-theme-emerald-avatar border-theme-emerald-avatar-border',
+      amber: 'bg-theme-amber-avatar-bg text-theme-amber-avatar border-theme-amber-avatar-border',
+      purple: 'bg-theme-purple-avatar-bg text-theme-purple-avatar border-theme-purple-avatar-border'
     };
     return classes[color] || 'bg-velum-800 text-text-secondary border-velum-600';
   };
@@ -622,7 +622,7 @@ export default function SettingsDrawer({
     <div className="fixed inset-0 z-[99999] flex overflow-hidden select-none font-sans">
       {/* Backdrop with a premium blur */}
       <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
+        className="absolute inset-0 modal-backdrop transition-opacity duration-300"
         onClick={onClose}
       />
       <div className="glass-panel w-full max-w-2xl ml-auto h-full bg-velum-900 border-l border-white-5 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none shadow-2xl animate-in slide-in-from-right duration-200">
@@ -743,7 +743,7 @@ export default function SettingsDrawer({
                     sessionStorage.clear();
                     window.location.reload();
                   }}
-                  className="w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer text-red-500 hover:bg-red-500/10"
+                  className="w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer text-alert-error hover:bg-alert-error-bg"
                 >
                   <div className="flex items-center gap-3">
                     <LogOut className="w-4 h-4 shrink-0" />
@@ -920,14 +920,14 @@ export default function SettingsDrawer({
               <div className="w-full max-w-4xl space-y-8">
                 
                 {mediaMsg && (
-                  <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+                  <div className="p-3.5 bg-alert-success-bg text-alert-success rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
                     <span>{mediaMsg}</span>
                   </div>
                 )}
 
                 {mediaError && (
-                  <div className="p-3.5 bg-red-500/5 border border-red-500/10 text-red-500 rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+                  <div className="p-3.5 bg-alert-error-bg text-alert-error rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" />
                     <span>{mediaError}</span>
                   </div>
@@ -1054,10 +1054,10 @@ export default function SettingsDrawer({
                   </div>
 
                   {diagResult && (
-                    <div className={`p-3.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-2 ${
+                    <div className={`p-3.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 ${
                       diagResult.success 
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                        : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                        ? 'bg-alert-success-bg text-alert-success' 
+                        : 'bg-alert-error-bg text-alert-error'
                     }`}>
                       {diagResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
                       <span>
@@ -1133,7 +1133,7 @@ export default function SettingsDrawer({
 
       {/* Remaining split backdrop on right */}
       <div 
-        className="flex-1 h-full bg-black-60 backdrop-blur-[2.5px] transition-opacity duration-300 cursor-pointer hidden md:block" 
+        className="flex-1 h-full modal-backdrop transition-opacity duration-300 cursor-pointer hidden md:block" 
         onClick={onClose} 
       />
 

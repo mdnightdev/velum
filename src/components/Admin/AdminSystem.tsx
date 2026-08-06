@@ -115,7 +115,7 @@ export default function AdminSystem({
 
           <div className="mt-5 space-y-3">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-orange-500/10 text-orange-400 p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal border border-orange-500/20">
+              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
                 ACCESS LOCKED: ONLY EXECUTIVE LEVEL PRIVILEGE GATES PERMIT GENERATING ENTRY ENROLLMENT SCHEMAS.
               </div>
             ) : (
@@ -129,7 +129,7 @@ export default function AdminSystem({
                 {newCodeInfo && (
                   <div className="p-3.5 bg-accent-hover/10 border border-accent-hover/15 text-accent-hover rounded-xl font-mono text-xs font-black tracking-wider block text-center uppercase">
                     Verification Key:{' '}
-                    <strong className="text-red-500 select-all font-black ml-1 font-sans">{newCodeInfo}</strong>
+                    <strong className="text-status-danger select-all font-black ml-1 font-sans">{newCodeInfo}</strong>
                   </div>
                 )}
               </>
@@ -141,7 +141,7 @@ export default function AdminSystem({
         <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
-              <Unlock className="w-4.5 h-4.5 text-orange-400" />
+              <Unlock className="w-4.5 h-4.5 text-status-away" />
               <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
                 Security Containment System
               </h4>
@@ -166,7 +166,7 @@ export default function AdminSystem({
                       setIsGatewayLocked(false);
                       alert('Gateway lockdown lifted.');
                     }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
+                    className="w-full bg-status-online hover:bg-status-online/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
                   >
                     Lift Gateway Lockdown
                   </button>
@@ -176,7 +176,7 @@ export default function AdminSystem({
                       setIsGatewayLocked(true);
                       alert('Emergency lockdown activated.');
                     }}
-                    className="w-full bg-red-650 hover:bg-red-700 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
+                    className="w-full bg-status-danger hover:bg-status-danger/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
                   >
                     Deploy Gateway Lockdown Override
                   </button>
@@ -184,7 +184,7 @@ export default function AdminSystem({
                 <div className="p-3 text-[9.5px] font-mono text-text-disabled uppercase tracking-wide leading-relaxed">
                   Status:{' '}
                   {isGatewayLocked ? (
-                    <span className="text-red-500 font-black">LOCKED DOWN</span>
+                    <span className="text-status-danger font-black">LOCKED DOWN</span>
                   ) : (
                     <span className="text-status-online font-bold">SECURED OPEN</span>
                   )}
@@ -221,7 +221,7 @@ export default function AdminSystem({
 
           <div className="mt-5 space-y-3">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-orange-500/10 text-orange-400 p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal border border-orange-500/20">
+              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
                 ACCESS LOCKED: SECURE ARCHIVE RESTORATION REQUIRES CENTRAL COMPLIANCE MATRIX CLEARANCE.
               </div>
             ) : (
@@ -305,7 +305,7 @@ export default function AdminSystem({
 
           <div className="mt-5 space-y-3">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-orange-500/10 text-orange-400 p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal border border-orange-500/20">
+              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
                 ACCESS LOCKED: SYSTEM BROADCAST PRIVILEGES GATE TO EXECUTIVE OVERWATCH LEVEL.
               </div>
             ) : (

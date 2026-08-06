@@ -105,7 +105,7 @@ export default function ProfileMigration({
     <div className="w-full h-full bg-velum-900 flex items-center justify-center font-sans select-none p-4 overflow-y-auto">
       <div className="bg-velum-800 border border-white-5 w-full max-w-md rounded p-6 shadow-2xl space-y-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-amber-500/10 text-status-away rounded">
+          <div className="p-2 bg-status-away-bg text-status-away rounded">
             <ShieldAlert className="w-5 h-5" />
           </div>
           <div>
@@ -123,7 +123,7 @@ export default function ProfileMigration({
         </p>
 
         {errorMsg && (
-          <div className="p-3 bg-rose-500/10 border border-rose-950/40 text-rose-450 rounded text-[10px] font-mono leading-relaxed">
+          <div className="p-3 bg-status-dnd-bg text-status-dnd rounded text-[10px] font-mono leading-relaxed">
             {errorMsg}
           </div>
         )}

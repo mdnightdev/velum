@@ -174,29 +174,29 @@ export default function TicketsMainDashboard({
     switch (type) {
       case 'escrow_dispute':
         return {
-          border: 'border-l-4 border-l-amber-500 border-t border-r border-b border-white/10',
-          badge: 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+          border: 'border-l-4 border-l-status-away border-t border-r border-b border-white/10',
+          badge: 'bg-status-away-bg text-status-away'
         };
       case 'account_sanction':
         return {
-          border: 'border-l-4 border-l-rose-500 border-t border-r border-b border-white/10',
-          badge: 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+          border: 'border-l-4 border-l-status-dnd border-t border-r border-b border-white/10',
+          badge: 'bg-status-dnd-bg text-status-dnd'
         };
       case 'marketplace_listing':
         return {
-          border: 'border-l-4 border-l-indigo-500 border-t border-r border-b border-white/10',
-          badge: 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+          border: 'border-l-4 border-l-status-indigo border-t border-r border-b border-white/10',
+          badge: 'bg-status-indigo-bg text-status-indigo'
         };
       case 'wallet_payments':
         return {
-          border: 'border-l-4 border-l-emerald-500 border-t border-r border-b border-white/10',
-          badge: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+          border: 'border-l-4 border-l-status-online border-t border-r border-b border-white/10',
+          badge: 'bg-status-online-bg text-status-online'
         };
       case 'general_support':
       default:
         return {
-          border: 'border-l-4 border-l-sky-500 border-t border-r border-b border-white/10',
-          badge: 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+          border: 'border-l-4 border-l-status-sky border-t border-r border-b border-white/10',
+          badge: 'bg-status-sky-bg text-status-sky'
         };
     }
   };
@@ -461,7 +461,7 @@ export default function TicketsMainDashboard({
                                     type="button"
                                     onClick={(e) => confirmAction.type === 'close' ? executeCloseTicket(t.ticket_id, e) : executeDeleteTicket(t.ticket_id, e)}
                                     className={`px-3 py-1.5 rounded-lg text-xs font-bold text-white transition cursor-pointer ${
-                                      confirmAction.type === 'close' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-rose-600 hover:bg-rose-700'
+                                      confirmAction.type === 'close' ? 'bg-status-away hover:bg-status-away/80' : 'bg-status-dnd hover:bg-status-dnd/80'
                                     }`}
                                   >
                                     {confirmAction.type === 'close' ? 'Yes, Close Ticket' : 'Yes, Delete'}
@@ -495,7 +495,7 @@ export default function TicketsMainDashboard({
                                     e.stopPropagation();
                                     setConfirmAction({ type: 'delete', ticketId: t.ticket_id });
                                   }}
-                                  className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                                  className="px-3 py-1.5 bg-status-dnd-bg hover:bg-status-dnd-bg/80 text-status-dnd border border-status-dnd-border rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   <span>Delete</span>
@@ -508,9 +508,9 @@ export default function TicketsMainDashboard({
 
                       <div className="flex flex-col items-end gap-2">
                         <span className={`text-xs px-2.5 py-1 rounded-full font-semibold uppercase ${
-                          t.status === 'resolved' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' :
-                          t.status === 'denied' ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30' :
-                          'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                          t.status === 'resolved' ? 'bg-status-online-bg text-status-online' :
+                          t.status === 'denied' ? 'bg-status-dnd-bg text-status-dnd' :
+                          'bg-status-away-bg text-status-away'
                         }`}>
                           {t.status}
                         </span>

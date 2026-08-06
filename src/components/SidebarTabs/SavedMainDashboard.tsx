@@ -90,7 +90,7 @@ export default function SavedMainDashboard({
                         id={`delete_note_${idx}`}
                         type="button"
                         onClick={() => onDeleteNote(idx)}
-                        className="text-text-disabled hover:text-rose-400 transition hover:bg-rose-500/10 p-1 rounded-lg border-0 bg-transparent cursor-pointer"
+                        className="text-text-disabled hover:text-alert-error transition hover:bg-alert-error-bg p-1 rounded-lg border-0 bg-transparent cursor-pointer"
                         title="Delete note"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
