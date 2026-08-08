@@ -26,40 +26,42 @@ let isSeeded = false;
 
 export async function ensureExchangeRatesSeeded() {
   try {
-    const rawCurrencies = [
-      { code: 'VLM', usdVal: 1.33 }, // Pegged at EUR + 0.25 (EUR is 1.08)
-      { code: 'TWD', usdVal: 0.031 },
-      { code: 'USD', usdVal: 1.0 },
-      { code: 'EUR', usdVal: 1.08 },
-      { code: 'GBP', usdVal: 1.28 },
-      { code: 'JPY', usdVal: 0.0062 },
-      { code: 'CAD', usdVal: 0.73 },
-      { code: 'AUD', usdVal: 0.66 },
-      { code: 'CHF', usdVal: 1.11 },
-      { code: 'CNY', usdVal: 0.14 },
-      { code: 'SGD', usdVal: 0.74 },
-      { code: 'HKD', usdVal: 0.13 }
-    ];
+    await executeWithRetry(async () => {
+      const rawCurrencies = [
+        { code: 'VLM', usdVal: 1.33 }, // Pegged at EUR + 0.25 (EUR is 1.08)
+        { code: 'TWD', usdVal: 0.031 },
+        { code: 'USD', usdVal: 1.0 },
+        { code: 'EUR', usdVal: 1.08 },
+        { code: 'GBP', usdVal: 1.28 },
+        { code: 'JPY', usdVal: 0.0062 },
+        { code: 'CAD', usdVal: 0.73 },
+        { code: 'AUD', usdVal: 0.66 },
+        { code: 'CHF', usdVal: 1.11 },
+        { code: 'CNY', usdVal: 0.14 },
+        { code: 'SGD', usdVal: 0.74 },
+        { code: 'HKD', usdVal: 0.13 }
+      ];
 
-    const existing = await db.select().from(exchangeRates).limit(1);
-    if (existing.length === 0) {
-      console.log('[AdminSeeder] Seeding exchange rates database table...');
-      const ratesToInsert = [];
-      for (const base of rawCurrencies) {
-        for (const quote of rawCurrencies) {
-          if (base.code !== quote.code) {
-            const rateVal = base.usdVal / quote.usdVal;
-            ratesToInsert.push({
-              baseCurrency: base.code,
-              quoteCurrency: quote.code,
-              rate: rateVal.toFixed(6)
-            });
+      const existing = await db.select().from(exchangeRates).limit(1);
+      if (existing.length === 0) {
+        console.log('[AdminSeeder] Seeding exchange rates database table...');
+        const ratesToInsert = [];
+        for (const base of rawCurrencies) {
+          for (const quote of rawCurrencies) {
+            if (base.code !== quote.code) {
+              const rateVal = base.usdVal / quote.usdVal;
+              ratesToInsert.push({
+                baseCurrency: base.code,
+                quoteCurrency: quote.code,
+                rate: rateVal.toFixed(6)
+              });
+            }
           }
         }
+        await db.insert(exchangeRates).values(ratesToInsert);
+        console.log(`[AdminSeeder] Successfully seeded ${ratesToInsert.length} exchange rate pairs.`);
       }
-      await db.insert(exchangeRates).values(ratesToInsert);
-      console.log(`[AdminSeeder] Successfully seeded ${ratesToInsert.length} exchange rate pairs.`);
-    }
+    });
   } catch (err) {
     console.error('[AdminSeeder] Failed to seed exchange rates:', err);
   }
@@ -67,95 +69,97 @@ export async function ensureExchangeRatesSeeded() {
 
 export async function ensureReservesSeeded() {
   try {
-    // 1. Check for legacy reserve rows to migrate and clean up
-    const legacyClearing = await reserveRepository.getReserve('CLEARING');
-    if (legacyClearing) {
-      console.log(`[AdminSeeder] Migrating balance from legacy CLEARING (${legacyClearing.balanceCents} cents) to VELUM CENTRAL BANK...`);
+    await executeWithRetry(async () => {
+      // 1. Check for legacy reserve rows to migrate and clean up
+      const legacyClearing = await reserveRepository.getReserve('CLEARING');
+      if (legacyClearing) {
+        console.log(`[AdminSeeder] Migrating balance from legacy CLEARING (${legacyClearing.balanceCents} cents) to VELUM CENTRAL BANK...`);
+        const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+        if (vcb) {
+          await db.update(reserves).set({ balanceCents: legacyClearing.balanceCents }).where(eq(reserves.reserveType, 'VELUM CENTRAL BANK'));
+        } else {
+          await reserveRepository.updateBalance('VELUM CENTRAL BANK', legacyClearing.balanceCents);
+        }
+        await db.delete(reserves).where(eq(reserves.reserveType, 'CLEARING'));
+      }
+
+      const legacyVcbUnderscore = await reserveRepository.getReserve('VELUM_CENTRAL_BANK');
+      if (legacyVcbUnderscore) {
+        console.log(`[AdminSeeder] Migrating balance from legacy VELUM_CENTRAL_BANK (${legacyVcbUnderscore.balanceCents} cents) to VELUM CENTRAL BANK...`);
+        const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+        if (vcb) {
+          await db.update(reserves).set({ balanceCents: legacyVcbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'VELUM CENTRAL BANK'));
+        } else {
+          await reserveRepository.updateBalance('VELUM CENTRAL BANK', legacyVcbUnderscore.balanceCents);
+        }
+        await db.delete(reserves).where(eq(reserves.reserveType, 'VELUM_CENTRAL_BANK'));
+      }
+
+      const legacyTreasury = await reserveRepository.getReserve('TREASURY');
+      if (legacyTreasury) {
+        console.log(`[AdminSeeder] Migrating balance from legacy TREASURY (${legacyTreasury.balanceCents} cents) to SENTRY BANK...`);
+        const sb = await reserveRepository.getReserve('SENTRY BANK');
+        if (sb) {
+          await db.update(reserves).set({ balanceCents: legacyTreasury.balanceCents }).where(eq(reserves.reserveType, 'SENTRY BANK'));
+        } else {
+          await reserveRepository.updateBalance('SENTRY BANK', legacyTreasury.balanceCents);
+        }
+        await db.delete(reserves).where(eq(reserves.reserveType, 'TREASURY'));
+      }
+
+      const legacySbUnderscore = await reserveRepository.getReserve('SENTRY_BANK');
+      if (legacySbUnderscore) {
+        console.log(`[AdminSeeder] Migrating balance from legacy SENTRY_BANK (${legacySbUnderscore.balanceCents} cents) to SENTRY BANK...`);
+        const sb = await reserveRepository.getReserve('SENTRY BANK');
+        if (sb) {
+          await db.update(reserves).set({ balanceCents: legacySbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'SENTRY BANK'));
+        } else {
+          await reserveRepository.updateBalance('SENTRY BANK', legacySbUnderscore.balanceCents);
+        }
+        await db.delete(reserves).where(eq(reserves.reserveType, 'SENTRY_BANK'));
+      }
+
+      const legacyEscrow = await reserveRepository.getReserve('ESCROW');
+      if (legacyEscrow) {
+        console.log(`[AdminSeeder] Migrating balance from legacy ESCROW (${legacyEscrow.balanceCents} cents) to VELUM TRADING ACCOUNT...`);
+        const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
+        if (escrow) {
+          await db.update(reserves).set({ balanceCents: legacyEscrow.balanceCents }).where(eq(reserves.reserveType, 'VELUM TRADING ACCOUNT'));
+        } else {
+          await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', legacyEscrow.balanceCents);
+        }
+        await db.delete(reserves).where(eq(reserves.reserveType, 'ESCROW'));
+      }
+
+      const legacyEscrowUnderscore = await reserveRepository.getReserve('VELUM_TRADING_ACCOUNT');
+      if (legacyEscrowUnderscore) {
+        console.log(`[AdminSeeder] Migrating balance from legacy VELUM_TRADING_ACCOUNT (${legacyEscrowUnderscore.balanceCents} cents) to VELUM TRADING ACCOUNT...`);
+        const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
+        if (escrow) {
+          await db.update(reserves).set({ balanceCents: legacyEscrowUnderscore.balanceCents }).where(eq(reserves.reserveType, 'VELUM TRADING ACCOUNT'));
+        } else {
+          await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', legacyEscrowUnderscore.balanceCents);
+        }
+        await db.delete(reserves).where(eq(reserves.reserveType, 'VELUM_TRADING_ACCOUNT'));
+      }
+
+      // 2. Ensure standard V2 reserve rows exist with default balances if not migrated
       const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
-      if (vcb) {
-        await db.update(reserves).set({ balanceCents: legacyClearing.balanceCents }).where(eq(reserves.reserveType, 'VELUM CENTRAL BANK'));
-      } else {
-        await reserveRepository.updateBalance('VELUM CENTRAL BANK', legacyClearing.balanceCents);
+      if (!vcb) {
+        await reserveRepository.updateBalance('VELUM CENTRAL BANK', 1000000000); 
+        console.log('[AdminSeeder] Seeded default central bank reserve: VELUM CENTRAL BANK ($10M)');
       }
-      await db.delete(reserves).where(eq(reserves.reserveType, 'CLEARING'));
-    }
-
-    const legacyVcbUnderscore = await reserveRepository.getReserve('VELUM_CENTRAL_BANK');
-    if (legacyVcbUnderscore) {
-      console.log(`[AdminSeeder] Migrating balance from legacy VELUM_CENTRAL_BANK (${legacyVcbUnderscore.balanceCents} cents) to VELUM CENTRAL BANK...`);
-      const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
-      if (vcb) {
-        await db.update(reserves).set({ balanceCents: legacyVcbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'VELUM CENTRAL BANK'));
-      } else {
-        await reserveRepository.updateBalance('VELUM CENTRAL BANK', legacyVcbUnderscore.balanceCents);
-      }
-      await db.delete(reserves).where(eq(reserves.reserveType, 'VELUM_CENTRAL_BANK'));
-    }
-
-    const legacyTreasury = await reserveRepository.getReserve('TREASURY');
-    if (legacyTreasury) {
-      console.log(`[AdminSeeder] Migrating balance from legacy TREASURY (${legacyTreasury.balanceCents} cents) to SENTRY BANK...`);
       const sb = await reserveRepository.getReserve('SENTRY BANK');
-      if (sb) {
-        await db.update(reserves).set({ balanceCents: legacyTreasury.balanceCents }).where(eq(reserves.reserveType, 'SENTRY BANK'));
-      } else {
-        await reserveRepository.updateBalance('SENTRY BANK', legacyTreasury.balanceCents);
+      if (!sb) {
+        await reserveRepository.updateBalance('SENTRY BANK', 500000000); 
+        console.log('[AdminSeeder] Seeded default sentry bank reserve: SENTRY BANK ($5M)');
       }
-      await db.delete(reserves).where(eq(reserves.reserveType, 'TREASURY'));
-    }
-
-    const legacySbUnderscore = await reserveRepository.getReserve('SENTRY_BANK');
-    if (legacySbUnderscore) {
-      console.log(`[AdminSeeder] Migrating balance from legacy SENTRY_BANK (${legacySbUnderscore.balanceCents} cents) to SENTRY BANK...`);
-      const sb = await reserveRepository.getReserve('SENTRY BANK');
-      if (sb) {
-        await db.update(reserves).set({ balanceCents: legacySbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'SENTRY BANK'));
-      } else {
-        await reserveRepository.updateBalance('SENTRY BANK', legacySbUnderscore.balanceCents);
-      }
-      await db.delete(reserves).where(eq(reserves.reserveType, 'SENTRY_BANK'));
-    }
-
-    const legacyEscrow = await reserveRepository.getReserve('ESCROW');
-    if (legacyEscrow) {
-      console.log(`[AdminSeeder] Migrating balance from legacy ESCROW (${legacyEscrow.balanceCents} cents) to VELUM TRADING ACCOUNT...`);
       const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
-      if (escrow) {
-        await db.update(reserves).set({ balanceCents: legacyEscrow.balanceCents }).where(eq(reserves.reserveType, 'VELUM TRADING ACCOUNT'));
-      } else {
-        await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', legacyEscrow.balanceCents);
+      if (!escrow) {
+        await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', 0);
+        console.log('[AdminSeeder] Seeded default escrow reserve: VELUM TRADING ACCOUNT ($0)');
       }
-      await db.delete(reserves).where(eq(reserves.reserveType, 'ESCROW'));
-    }
-
-    const legacyEscrowUnderscore = await reserveRepository.getReserve('VELUM_TRADING_ACCOUNT');
-    if (legacyEscrowUnderscore) {
-      console.log(`[AdminSeeder] Migrating balance from legacy VELUM_TRADING_ACCOUNT (${legacyEscrowUnderscore.balanceCents} cents) to VELUM TRADING ACCOUNT...`);
-      const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
-      if (escrow) {
-        await db.update(reserves).set({ balanceCents: legacyEscrowUnderscore.balanceCents }).where(eq(reserves.reserveType, 'VELUM TRADING ACCOUNT'));
-      } else {
-        await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', legacyEscrowUnderscore.balanceCents);
-      }
-      await db.delete(reserves).where(eq(reserves.reserveType, 'VELUM_TRADING_ACCOUNT'));
-    }
-
-    // 2. Ensure standard V2 reserve rows exist with default balances if not migrated
-    const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
-    if (!vcb) {
-      await reserveRepository.updateBalance('VELUM CENTRAL BANK', 1000000000); 
-      console.log('[AdminSeeder] Seeded default central bank reserve: VELUM CENTRAL BANK ($10M)');
-    }
-    const sb = await reserveRepository.getReserve('SENTRY BANK');
-    if (!sb) {
-      await reserveRepository.updateBalance('SENTRY BANK', 500000000); 
-      console.log('[AdminSeeder] Seeded default sentry bank reserve: SENTRY BANK ($5M)');
-    }
-    const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
-    if (!escrow) {
-      await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', 0);
-      console.log('[AdminSeeder] Seeded default escrow reserve: VELUM TRADING ACCOUNT ($0)');
-    }
+    });
   } catch (err) {
     console.error('[AdminSeeder] Failed to seed/migrate reserves:', err);
   }

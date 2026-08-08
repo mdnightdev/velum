@@ -6,7 +6,7 @@ let pgPool: pg.Pool | null = null;
 
 export function getPgPool(): pg.Pool {
   if (!pgPool) {
-    const databaseUrl = (config.DATABASE_URL || '').trim().replace(/\s+/g, '');
+    const databaseUrl = (config.DATABASE_URL || '').trim().replace(/\s+/g, '').replace('-pooler', '');
     
     // Explicit disable check for local postgres setups (e.g., localhost, 127.0.0.1, or sslmode=disable)
     const isExplicitDisable =
@@ -30,9 +30,9 @@ export function getPgPool(): pg.Pool {
     pgPool = new pg.Pool({
       connectionString: databaseUrl || undefined,
       ssl: useSsl ? { rejectUnauthorized: false } : false,
-      max: Number(process.env.PG_MAX_POOL) || 50,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 2000,
+      max: Number(process.env.PG_MAX_POOL) || 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
       maxUses: 7500,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000

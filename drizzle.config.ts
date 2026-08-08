@@ -4,7 +4,8 @@ const defaultDbUrl = 'postgresql://neondb_owner:npg_7d1BLlsUWFRz@ep-silent-paper
 
 const getCleanUrl = () => {
   const raw = (process.env.DATABASE_URL || process.env.CLOUD_DATABASE_URL || defaultDbUrl).trim().replace(/\s+/g, '');
-  return raw.replace(/(&|\?)channel_binding=[^&]+/g, '');
+  const clean = raw.replace(/(&|\?)channel_binding=[^&]+/g, '');
+  return clean.replace('-pooler', '');
 };
 
 export default {

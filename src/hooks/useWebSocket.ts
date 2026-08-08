@@ -316,12 +316,15 @@ export function useWebSocket({
           if (data.room_id === activeRoomIdRef.current) {
             setMessages(prev => {
               const newMessage = data as Message;
-              // Check if we have an optimistic message to replace
+              // Check if we have an optimistic message to replace by nonce
               if (newMessage.nonce) {
-                const optIdx = prev.findIndex(m => m.nonce === newMessage.nonce && m.status === 'sending');
+                const optIdx = prev.findIndex(m => m.nonce === newMessage.nonce);
                 if (optIdx !== -1) {
                   const newArr = [...prev];
-                  newArr[optIdx] = newMessage;
+                  newArr[optIdx] = {
+                    ...newMessage,
+                    status: newMessage.status || 'sent'
+                  };
                   if (onMessageReceived) {
                     onMessageReceived(newMessage);
                   }
@@ -401,9 +404,13 @@ export function useWebSocket({
       'support',
       'feedback'
     ].includes(destRoomId);
-    const shouldEncrypt = !isOfficialChannel;
-    const context: EncryptionContext = { type: 'lounge', roomId: destRoomId, isEncrypted: shouldEncrypt };
-    const finalContent = shouldEncrypt ? await encryptMessage(text, context) : text;
+    const isAlreadyEncrypted = text.startsWith('ratchet:v2:') || text.startsWith('ratchet:v1:') || text.startsWith('VEL_E2EE[');
+    const shouldEncrypt = isAlreadyEncrypted || isEncrypted || !isOfficialChannel;
+    let finalContent = text;
+    if (!isAlreadyEncrypted && shouldEncrypt) {
+      const context: EncryptionContext = { type: 'lounge', roomId: destRoomId, isEncrypted: shouldEncrypt };
+      finalContent = await encryptMessage(text, context);
+    }
     
     const nonce = `nonce_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     const optMessage: Message = {

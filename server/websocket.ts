@@ -638,10 +638,10 @@ async function handleClientMessage(client: ClientConnection, message: any) {
           }));
           return;
         }
-        startMessageBatching(client.userId, message);
+        handleSendMessage(client, message);
       }).catch(err => {
         console.error('Rate limit error:', err);
-        startMessageBatching(client.userId, message);
+        handleSendMessage(client, message);
       });
       break;
     case 'add_reaction':
@@ -991,19 +991,18 @@ async function handleMarkDelivered(client: ClientConnection, message: any) {
 
 async function handleSendMessage(client: ClientConnection, message: any) {
   const roomId = message.room_id ? message.room_id.toString() : '';
-  // Relax check for DMs or auto-subscribe to prevent message blocking
   const loungeId = await getLoungeIdFromRoomId(roomId);
   const canonicalRoomId = loungeId ? String(loungeId) : roomId;
-  if (!client.rooms.has(roomId) && !client.rooms.has(canonicalRoomId) && !roomId.startsWith('dm_')) {
-    client.rooms.add(roomId);
-    if (loungeId) client.rooms.add(String(loungeId));
-    let members = roomMembers.get(roomId);
-    if (!members) {
-      members = new Set();
-      roomMembers.set(roomId, members);
-    }
-    members.add(client.ws);
+  
+  // Ensure the sender's connection is always subscribed to the room's message stream
+  client.rooms.add(roomId);
+  if (loungeId) client.rooms.add(String(loungeId));
+  let members = roomMembers.get(roomId);
+  if (!members) {
+    members = new Set();
+    roomMembers.set(roomId, members);
   }
+  members.add(client.ws);
 
   const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const enrichedMessage = {
@@ -1022,22 +1021,17 @@ async function handleSendMessage(client: ClientConnection, message: any) {
       targetLoungeId = await getOrCreateDMLounge(roomId);
       isDM = true;
     } else {
-      const loungeList = await executeWithRetry(() => db.select().from(lounges));
-      const targetLounge = loungeList.find(l => l.slug === roomId || l.id.toString() === roomId);
-      if (targetLounge) {
-        targetLoungeId = targetLounge.id;
-        isDM = targetLounge.type === 'dm';
-      }
+      targetLoungeId = loungeId;
+      isDM = false;
     }
 
     if (targetLoungeId) {
       // Check if receiver is online for DMs
       let deliveredTo: number[] = [];
       if (isDM) {
-        const members = roomMembers.get(roomId);
-        if (members && members.size > 1) {
-          // Receiver is online (other members in room)
-          members.forEach(ws => {
+        const roomSockets = roomMembers.get(roomId);
+        if (roomSockets && roomSockets.size > 1) {
+          roomSockets.forEach(ws => {
             const memberClient = connectedClients.get(ws);
             if (memberClient && memberClient.userId !== client.userId) {
               deliveredTo.push(memberClient.userId);
@@ -1143,49 +1137,48 @@ async function handleSendMessage(client: ClientConnection, message: any) {
         }
       }
 
-      // Announcements bot broadcast - if message sent to Announcements lounge, broadcast to VELUM bot
+      // Announcements bot broadcast - run asynchronously to avoid blocking instant message confirmation
       if (roomId.includes('announce') || roomId.includes('ANNOUNCE')) {
-        const loungeList = await executeWithRetry(() => db.select().from(lounges));
-        const currentLounge = loungeList.find(l => l.id === targetLoungeId);
-        if (currentLounge && (currentLounge.accessLevel === 'ANNOUNCE' || currentLounge.name.toLowerCase().includes('announce'))) {
-          // Broadcast to VELUM bot (user 999) DMs for all users
-          // Decrypt if E2E encrypted for broadcast
-          let broadcastContent = message.content || '';
-          if (message.is_encrypted) {
-            // Simple XOR decryption for broadcast (same key as client encryption)
-            const roomIdKey = 'VELUM_E2EE_' + roomId;
-            try {
-              let decoded = '';
-              const cleanCipher = broadcastContent.startsWith('VEL_E2EE[') 
-                ? broadcastContent.substring(9, broadcastContent.length - 1) 
-                : broadcastContent;
-              const cipherBase64 = decodeURIComponent(escape(atob(cleanCipher)));
-              for (let i = 0; i < cipherBase64.length; i++) {
-                const charCode = cipherBase64.charCodeAt(i) ^ roomIdKey.charCodeAt(i % roomIdKey.length);
-                decoded += String.fromCharCode(charCode);
+        (async () => {
+          const loungeList = await executeWithRetry(() => db.select().from(lounges));
+          const currentLounge = loungeList.find(l => l.id === targetLoungeId);
+          if (currentLounge && (currentLounge.accessLevel === 'ANNOUNCE' || currentLounge.name.toLowerCase().includes('announce'))) {
+            let broadcastContent = message.content || '';
+            if (message.is_encrypted) {
+              const roomIdKey = 'VELUM_E2EE_' + roomId;
+              try {
+                let decoded = '';
+                const cleanCipher = broadcastContent.startsWith('VEL_E2EE[') 
+                  ? broadcastContent.substring(9, broadcastContent.length - 1) 
+                  : broadcastContent;
+                const cipherBase64 = decodeURIComponent(escape(atob(cleanCipher)));
+                for (let i = 0; i < cipherBase64.length; i++) {
+                  const charCode = cipherBase64.charCodeAt(i) ^ roomIdKey.charCodeAt(i % roomIdKey.length);
+                  decoded += String.fromCharCode(charCode);
+                }
+                broadcastContent = decoded;
+              } catch (err) {
+                console.error('[WS Broadcast] Failed to decrypt message for broadcast:', err);
+                broadcastContent = message.content || '';
               }
-              broadcastContent = decoded;
-            } catch (err) {
-              console.error('[WS Broadcast] Failed to decrypt message for broadcast:', err);
-              broadcastContent = message.content || '';
             }
-          }
 
-          const allUsers = await executeWithRetry(() => db.select().from(users));
-          for (const user of allUsers) {
-            const botDMRoomId = `dm_velum_${user.id}`;
-            const botLoungeId = await getOrCreateDMLounge(botDMRoomId);
-            if (botLoungeId) {
-              await executeWithRetry(() => db.insert(dbMessages).values({
-                loungeId: botLoungeId,
-                senderId: 999,
-                content: broadcastContent,
-                encrypted: false,
-                deliveredTo: ''
-              }));
+            const allUsers = await executeWithRetry(() => db.select().from(users));
+            for (const user of allUsers) {
+              const botDMRoomId = `dm_velum_${user.id}`;
+              const botLoungeId = await getOrCreateDMLounge(botDMRoomId);
+              if (botLoungeId) {
+                await executeWithRetry(() => db.insert(dbMessages).values({
+                  loungeId: botLoungeId,
+                  senderId: 999,
+                  content: broadcastContent,
+                  encrypted: false,
+                  deliveredTo: ''
+                }));
+              }
             }
           }
-        }
+        })().catch(err => console.error('[WS Broadcast Error]:', err));
       }
     }
   } catch (err) {
@@ -1194,8 +1187,15 @@ async function handleSendMessage(client: ClientConnection, message: any) {
 
   broadcastToRoom(roomId, enrichedMessage);
 
-  // If this is a DM, we also need to deliver it to the other user globally
-  // so their sidebar can update (if they aren't actively in this DM room).
+  // Guarantee sender receives the ACK payload back even if connection state was transient
+  if (client.ws.readyState === WebSocket.OPEN) {
+    const roomSockets = roomMembers.get(roomId);
+    if (!roomSockets || !roomSockets.has(client.ws)) {
+      client.ws.send(JSON.stringify(enrichedMessage));
+    }
+  }
+
+  // If this is a DM, deliver to recipient globally if they are online outside room
   if (roomId.startsWith('dm_')) {
     const parts = roomId.replace('dm_', '').split('_');
     if (parts.length >= 2) {
@@ -1203,12 +1203,10 @@ async function handleSendMessage(client: ClientConnection, message: any) {
       const uid2 = parseInt(parts[1], 10);
       const targetId = client.userId === uid1 ? uid2 : uid1;
       
-      const members = roomMembers.get(roomId);
-      for (const c of connectedClients.keys()) {
-        const clientData = connectedClients.get(c);
+      const roomSockets = roomMembers.get(roomId);
+      for (const [c, clientData] of connectedClients.entries()) {
         if (clientData && clientData.userId === targetId && c.readyState === WebSocket.OPEN) {
-          // Only send if they aren't already in the room (prevent duplicate)
-          if (!members || !members.has(c)) {
+          if (!roomSockets || !roomSockets.has(c)) {
             c.send(JSON.stringify(enrichedMessage));
           }
         }

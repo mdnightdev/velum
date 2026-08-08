@@ -4,10 +4,24 @@ import {
   Paperclip, Mic, Square, Play, Pause, FileIcon, X, Check, CheckCheck, Menu, Copy, Plus, Flag, Bell, Lock, Pencil, Pin, Forward, Reply,Search
 } from 'lucide-react';
 import { Message, stripAt } from '../types';
-import { encryptMessage, decryptMessage, EncryptionContext } from '../services/encryptionService';
+import { EncryptionContext } from '../services/encryptionService';
 import ProfileCard from './ProfileCard';
-import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { useAudioRecorder } from './Chat/hooks/useAudioRecorder';
+import { useMessageInput } from './Chat/hooks/useMessageInput';
+import { useMessageScroll } from './Chat/hooks/useMessageScroll';
+import { useMessageActions } from './Chat/hooks/useMessageActions';
+import { useSupportNomination } from './Chat/hooks/useSupportNomination';
+import { useAttachmentActions } from './Chat/hooks/useAttachmentActions';
+import { useAudioPlayback } from './Chat/hooks/useAudioPlayback';
+import { useMessageDecryption } from './Chat/hooks/useMessageDecryption';
+import { useTypingStatus } from './Chat/hooks/useTypingStatus';
+import { useMessageSearch } from './Chat/hooks/useMessageSearch';
+import { useForwardingFriends } from './Chat/hooks/useForwardingFriends';
+import { usePeerPresence } from './Chat/hooks/usePeerPresence';
 import { ChatHeader } from './Chat/ChatHeader';
+import { ChatInput } from './Chat/ChatInput';
+import { SearchDrawer } from './Chat/SearchDrawer';
+import { PinnedMessageBar } from './Chat/PinnedMessageBar';
 import { streamFileDirectToCloudStorage } from '../utils/mediaPipeline';
 import logoSvg from '../assets/logo.svg?raw';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -190,177 +204,95 @@ export default function ChatArea({
   roomAccessLevel,
 }: ChatAreaProps) {
   const { t } = useLanguage();
-  const [inputText, setInputText] = useState('');
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  // Hover-based toolboxes never trigger on touch devices — this tracks which
-  // message's toolbox should be forced visible after a long-press instead.
-  const [longPressedMsgId, setLongPressedMsgId] = useState<string | null>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressFiredRef = useRef(false);
 
-  const handleTouchStart = (msgId: string) => {
-    longPressFiredRef.current = false;
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    longPressTimer.current = setTimeout(() => {
-      longPressFiredRef.current = true;
-      setLongPressedMsgId((prev) => (prev === msgId ? null : msgId));
-      if (navigator.vibrate) navigator.vibrate(15);
-    }, 450);
-  };
+  const {
+    inputText,
+    setInputText,
+    selectedAttachment,
+    setSelectedAttachment,
+    fileInputRef,
+    textareaRef,
+    clearInput
+  } = useMessageInput({ roomId, activeChatPeer });
 
-  const handleTouchEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
+  const {
+    editingMessageId,
+    setEditingMessageId,
+    longPressedMsgId,
+    setLongPressedMsgId,
+    showEmojisForMsg,
+    setShowEmojisForMsg,
+    copiedMessageId,
+    setCopiedMessageId,
+    replyingToMessage,
+    setReplyingToMessage,
+    forwardingMessage,
+    setForwardingMessage,
+    handleTouchStart,
+    handleTouchEnd,
+    handleCopyMessage,
+    handleStartEdit: actionStartEdit,
+    handleCancelEdit: actionCancelEdit
+  } = useMessageActions();
 
-  // Dismiss an open long-press toolbox when tapping elsewhere on the screen —
-  // but not when the tap lands inside the toolbox that's currently open,
-  // otherwise the toolbox closes before the button tap (edit/react) registers.
-  useEffect(() => {
-    if (!longPressedMsgId) return;
-    const dismiss = (e: TouchEvent) => {
-      const target = e.target as HTMLElement;
-      const container = target.closest('[data-message-id]') as HTMLElement | null;
-      if (container && container.dataset.messageId === longPressedMsgId) return;
-      setLongPressedMsgId(null);
-    };
-    document.addEventListener('touchstart', dismiss);
-    return () => document.removeEventListener('touchstart', dismiss);
-  }, [longPressedMsgId]);
   const rawContentsMap = useRef<Map<string, string>>(new Map());
-  
-  // Attachment states
-  const [selectedAttachment, setSelectedAttachment] = useState<{ name: string; size: string; type: string; data: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Room-specific drafts tracking
-  const currentKey = activeChatPeer ? `dm_${activeChatPeer.userId}` : `room_${roomId}`;
-  const prevKeyRef = useRef(currentKey);
-  const draftsRef = useRef<Record<string, { text: string; attachment: any }>>({});
 
-  useEffect(() => {
-    const prevKey = prevKeyRef.current;
-    
-    if (prevKey !== currentKey) {
-      // Save draft for previous conversation
-      draftsRef.current[prevKey] = {
-        text: inputText,
-        attachment: selectedAttachment
-      };
+  const { isTyping, setIsTyping, typingPeer } = useTypingStatus({
+    inputText,
+    onSendTyping,
+    roomId,
+    currentUserId,
+    activeChatPeer
+  });
 
-      // Load draft for new conversation
-      const currentDraft = draftsRef.current[currentKey] || { text: '', attachment: null };
-      setInputText(currentDraft.text);
-      setSelectedAttachment(currentDraft.attachment);
+  const { peerPresence } = usePeerPresence({ activeChatPeer });
 
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      
-      prevKeyRef.current = currentKey;
-    }
-  }, [currentKey, inputText, selectedAttachment]);
+  const {
+    messagesEndRef,
+    scrollContainerRef,
+    isScrolledUp,
+    handleScroll,
+    scrollToBottom,
+    handleScrollToMessage
+  } = useMessageScroll({ messagesLength: messages.length, typingPeer });
 
-  const [isTyping, setIsTyping] = useState(false);
-  const [typingPeer, setTypingPeer] = useState<string | null>(null);
-  const [showEmojisForMsg, setShowEmojisForMsg] = useState<string | null>(null);
-  const [peerPresence, setPeerPresence] = useState<string>('offline');
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const {
+    hasPendingNomination,
+    isSubmittingNominationAction,
+    handleNominationAction
+  } = useSupportNomination({ activeChatPeer });
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [inputText]);
-
-  const [hasPendingNomination, setHasPendingNomination] = useState(false);
-  const [isSubmittingNominationAction, setIsSubmittingNominationAction] = useState(false);
   const [activePinIndex, setActivePinIndex] = useState<number>(0);
   const [showAllPins, setShowAllPins] = useState<boolean>(false);
-  const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
-  const [friendsList, setFriendsList] = useState<any[]>([]);
-  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
-  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchIndex, setSearchIndex] = useState(-1);
 
-  useEffect(() => {
-    if (activeChatPeer?.userId === 999) {
-      const sessionId = getSessionId();
-      fetch('/v2/user/nomination/pending', {
-        headers: { 'Authorization': `Bearer ${sessionId}` }
-      })
-        .then(res => res.json())
-        .then(data => {
-          setHasPendingNomination(!!data.hasPending);
-        })
-        .catch(() => {});
-    } else {
-      setHasPendingNomination(false);
-    }
-  }, [activeChatPeer]);
-
-  useEffect(() => {
-    if (forwardingMessage) {
-      setIsLoadingFriends(true);
-      const sId = getSessionId();
-      fetch('/v2/friends/relationships', {
-        headers: { 'Authorization': `Bearer ${sId}` }
-      })
-        .then(res => res.ok ? res.json() : [])
-        .then(data => {
-          const list = Array.isArray(data) ? data : (data?.relationships || []);
-          const activeFriends = list.filter((r: any) => r.status === 'accepted').map((r: any) => {
-            const peer = r.userId === currentUserId ? r.friend : r.user;
-            if (!peer) return null;
-            return {
-              userId: peer.id || peer.user_id || peer.userId,
-              username: peer.username,
-              displayName: peer.displayName || peer.username,
-              avatar: peer.avatarUrl || peer.avatar || ''
-            };
-          }).filter(Boolean);
-          setFriendsList(activeFriends);
-        })
-        .catch(() => {})
-        .finally(() => setIsLoadingFriends(false));
-    }
-  }, [forwardingMessage, currentUserId]);
+  const { friendsList, isLoadingFriends } = useForwardingFriends({
+    forwardingMessage,
+    currentUserId
+  });
 
   // Audio recording hook
-const {
-  isRecording,
-  isPaused,
-  recordingSeconds,
-  micError,
-  audioLevels,
-  startRecording,
-  pauseRecording,
-  resumeRecording,
-  stopRecording,
-  cancelRecording,
-  setMicError
-} = useAudioRecorder();
+  const {
+    isRecording,
+    isPaused,
+    recordingSeconds,
+    micError,
+    audioLevels,
+    startRecording,
+    pauseRecording,
+    resumeRecording,
+    stopRecording,
+    cancelRecording,
+    setMicError
+  } = useAudioRecorder();
 
-  // Visual audio waveform playing states
-  const [playingWaveforms, setPlayingWaveforms] = useState<Record<string, boolean>>({});
-  const [waveformAudioProg, setWaveformAudioProg] = useState<Record<string, number>>({});
+  // Audio playback hook
+  const {
+    playingWaveforms,
+    waveformAudioProg,
+    handleTogglePlayWave
+  } = useAudioPlayback();
+
   const [popoverPeer, setPopoverPeer] = useState<{userId: number, username: string, messageId: string, displayName?: string, bio?: string, location?: string, joinedDate?: string, status?: string, isMuted?: boolean, isBlocked?: boolean, avatar?: string, stats?: { loungesCount: number, connectionsCount: number }} | null>(null);
-  const [decryptedMap, setDecryptedMap] = useState<Record<string, string>>({});
-  const [decryptedCiphertexts, setDecryptedCiphertexts] = useState<Record<string, string>>({});
-
-  // Active playing audio ref
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const currentAudioMsgIdRef = useRef<string | null>(null);
-
   // Keep track of messages we have already called onMarkAsRead for in this mount/session
   const markedMessageIdsRef = useRef<Set<string>>(new Set());
 
@@ -369,439 +301,70 @@ const {
     markedMessageIdsRef.current.clear();
   }, [roomId, activeChatPeer?.userId]);
 
-  // Asynchronous decryption effect for incoming and edited messages
-  useEffect(() => {
-    let isMounted = true;
-    const processDecryption = async () => {
-      const newDecrypted: Record<string, string> = {};
-      const newCiphertexts: Record<string, string> = {};
-      let changed = false;
-
-      for (const m of messages) {
-        if (!m.content || !m.message_id) continue;
-
-        if (decryptedCiphertexts[m.message_id] !== m.content) {
-          const peerId = activeChatPeer?.userId || m.user_id;
-          try {
-            const context: EncryptionContext = {
-              type: activeChatPeer ? 'direct' : 'lounge',
-              roomId: m.room_id || roomId,
-              peerUserId: peerId,
-              isEncrypted: !!(m.is_encrypted || (m as any).isEncrypted)
-            };
-            const decrypted = await decryptMessage(m.content, context);
-            if (decrypted) {
-              newDecrypted[m.message_id] = decrypted;
-              newCiphertexts[m.message_id] = m.content;
-              changed = true;
-            }
-          } catch (err) {
-            console.error('[ChatArea] Decryption error:', m.message_id, err);
-          }
-        }
-      }
-
-      if (isMounted && changed) {
-        setDecryptedMap(prev => ({ ...prev, ...newDecrypted }));
-        setDecryptedCiphertexts(prev => ({ ...prev, ...newCiphertexts }));
-      }
-    };
-    processDecryption();
-    return () => { isMounted = false; };
-  }, [messages, activeChatPeer?.userId, roomId]);
-
-  useEffect(() => {
-    if (!activeChatPeer) return;
-
-    // Fetch user status initially
-    const sessionId = getSessionId();
-    fetch(`/v2/user/${activeChatPeer.userId}/status`, {
-      headers: {
-        'Authorization': `Bearer ${sessionId}`,
-        'Content-Type': 'application/json'
-      }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data) {
-          setPeerPresence(data.last_seen_at || 'offline');
-        }
-      })
-      .catch((err) => {
-        // Ignore abort errors to prevent crashes
-        if (err && err.name === 'AbortError') {
-          return;
-        }
-        log.warn('Failed to fetch peer status', { error: (err as Error).message });
-      });
-
-    const handlePresence = (e: any) => {
-      const { user_id, last_seen_at } = e.detail || {};
-      if (activeChatPeer && user_id === activeChatPeer.userId) {
-        setPeerPresence(last_seen_at || 'offline');
-      }
-    };
-
-    window.addEventListener('velum-presence-change', handlePresence);
-    return () => window.removeEventListener('velum-presence-change', handlePresence);
-  }, [activeChatPeer]);
-
-  const getDecryptedText = (msg: Message) => {
-    const val = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-    if (!val) return 'Empty message';
-    if (val.startsWith('[Voice Note')) return 'Voice Note';
-    if (val.includes('[Attachment:')) {
-      const parsed = parseAttachment(val);
-      return (parsed && parsed.length > 0) ? (parsed[0].name || 'Attachment') : 'Attachment';
-    }
-    return val;
-  };
-
-  const handleScrollToMessage = (msgId: string) => {
-    const element = document.getElementById(`msg-${msgId}`);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      element.classList.add('animate-pulse', 'bg-accent/10');
-      setTimeout(() => {
-        element.classList.remove('animate-pulse', 'bg-accent/10');
-      }, 1500);
-    }
-  };
-
-  const handleDeleteConversation = async () => {
-    if (!activeChatPeer) return;
-    if (!window.confirm("Are you sure you want to delete all chat logs and history with this peer? This action cannot be undone.")) return;
-    
-    const otherId = activeChatPeer.userId;
-    const sId = getSessionId();
-    const headers = {
-      'Authorization': `Bearer ${sId}`,
-      'Content-Type': 'application/json'
-    };
-
-    try {
-      const res = await fetch(`/v2/user/${otherId}/chat`, {
-        method: 'DELETE',
-        headers
-      });
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        const errData = await res.json();
-        alert(errData.error || "Failed to delete direct message conversation.");
-      }
-    } catch {
-      alert("Network handshake failure during delete.");
-    }
-  };
-
-  const handleNominationAction = async (action: 'accept' | 'decline') => {
-    if (isSubmittingNominationAction) return;
-    setIsSubmittingNominationAction(true);
-    
-    try {
-      const sessionId = getSessionId();
-      const res = await fetch(`/v2/user/nomination/${action}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${sessionId}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (res.ok) {
-        alert(`Successfully ${action === 'accept' ? 'accepted' : 'declined'} support admin nomination.`);
-        setHasPendingNomination(false);
-      } else {
-        const data = await res.json();
-        alert(data.error || `Failed to ${action} nomination.`);
-      }
-    } catch {
-      alert("Network error.");
-    } finally {
-      setIsSubmittingNominationAction(false);
-    }
-  };
-
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [isScrolledUp, setIsScrolledUp] = useState(false);
-
-  const handleScroll = () => {
-    if (scrollContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-      setIsScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
-    }
-  };
-
-  // Auto scroll to bottom
-  const scrollToBottom = () => {
-    if (!isScrolledUp) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  // Only scroll on messages length change, not all the time, and respect manual scroll up
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages.length, typingPeer]);
-
-
-  // Handle typing status broadcast with timeout
-  useEffect(() => {
-    if (!onSendTyping) return;
-
-    let timer: any = null;
-
-    if (inputText.length > 0) {
-      if (!isTyping) {
-        setIsTyping(true);
-        onSendTyping(true);
-      }
-
-      // Reset the timer every time a new character is typed
-      timer = setTimeout(() => {
-        setIsTyping(false);
-        onSendTyping(false);
-      }, 3000);
-    } else if (inputText.length === 0 && isTyping) {
-      setIsTyping(false);
-      onSendTyping(false);
-    }
-
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [inputText, onSendTyping, isTyping]);
-
-
-
-  // Sync peer typing alerts
-  useEffect(() => {
-    const handleStart = (e: any) => {
-      const { room_id, username, userId } = e.detail || {};
-      
-      // Only show typing if:
-      // 1. Not the current user
-      // 2. Room matches (or no room_id specified for global)
-      // 3. In DM mode, must match the active chat peer
-      if (userId !== currentUserId) {
-        if (activeChatPeer) {
-          // DM mode: only show typing if it's from the chat peer
-          if (userId === activeChatPeer.userId) {
-            setTypingPeer(username);
-          }
-        } else {
-          // Room mode: show typing if room matches
-          if (!room_id || room_id === roomId) {
-            setTypingPeer(username);
-          }
-        }
-      }
-    };
-    const handleStop = (e: any) => {
-      const { room_id, username, userId } = e.detail || {};
-      
-      // Only clear typing if it's from the same user
-      if (userId !== currentUserId) {
-        if (activeChatPeer) {
-          // DM mode: only clear if it's the chat peer
-          if (userId === activeChatPeer.userId && typingPeer === username) {
-            setTypingPeer(null);
-          }
-        } else {
-          // Room mode: clear if room matches
-          if ((!room_id || room_id === roomId) && typingPeer === username) {
-            setTypingPeer(null);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('velum-typing-start', handleStart);
-    window.addEventListener('velum-typing-stop', handleStop);
-
-    return () => {
-      window.removeEventListener('velum-typing-start', handleStart);
-      window.removeEventListener('velum-typing-stop', handleStop);
-    };
-  }, [roomId, currentUserId, activeChatPeer, typingPeer]);
-
-  // Attachment operations
-  const handleTriggerFileInput = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleDismissAttachment = () => {
-    setSelectedAttachment(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-const compressImage = (file: File): Promise<string> => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        let width = img.width;
-        let height = img.height;
-        if (width > MAX_WIDTH) {
-          height = Math.round((height * MAX_WIDTH) / width);
-          width = MAX_WIDTH;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
-      };
-      img.src = e.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+  // Message decryption hook
+  const {
+    decryptedMap,
+    getDecryptedText,
+    encryptOutgoingMessage
+  } = useMessageDecryption({
+    messages,
+    activeChatPeer,
+    roomId
   });
-};
 
-const compressImageToBlob = (file: File): Promise<Blob> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        let width = img.width;
-        let height = img.height;
-        if (width > MAX_WIDTH) {
-          height = Math.round((height * MAX_WIDTH) / width);
-          width = MAX_WIDTH;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('Canvas compression failed'));
-        }, 'image/jpeg', 0.8);
-      };
-      img.onerror = reject;
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+  // Channel details title helper (No '@' prefixes)
+  const chatTitle = activeChatPeer
+    ? stripAt(activeChatPeer.username)
+    : roomName
+      ? roomName.replace(/^#\s*/, '')
+      : (roomId.startsWith('#') ? roomId.slice(1) : roomId);
+
+  const activePeerId = activeChatPeer?.userId;
+
+  // Filter messages based on chat context
+  const conversationMessages = messages.filter(m => {
+    if (activePeerId) {
+      const otherId = activePeerId;
+      if (otherId === 999) {
+        return m.room_id === `dm_velum_${currentUserId}`;
+      }
+      const isPeerFromMe = m.user_id === currentUserId && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
+      const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
+      return isPeerFromMe || isPeerToMe || m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`);
+    } else {
+      return m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);
+    }
   });
-};
 
-const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = e.target.files;
-  if (!files || files.length === 0) return;
+  const {
+    showSearch,
+    setShowSearch,
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    setSearchResults,
+    isSearching,
+    searchIndex,
+    setSearchIndex,
+    handleSearch,
+    handleNavigateSearch
+  } = useMessageSearch({
+    roomId,
+    conversationMessages,
+    decryptedMap,
+    handleScrollToMessage
+  });
 
-  const payloadParts: string[] = [];
-
-  for (const file of Array.from(files)) {
-    try {
-      const blob = await compressImageToBlob(file);
-      const url = await streamFileDirectToCloudStorage(blob, 'media', 'jpg');
-      const sizeStr = `${(blob.size / 1024).toFixed(0)} KB`;
-      payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:image/jpeg url:${url}]`);
-    } catch (err) {
-      console.error('Upload failed:', err);
-    }
-  }
-
-  if (payloadParts.length > 0) {
-    onSendMessage(payloadParts.join(' '), null, false);
-  }
-
-  if (fileInputRef.current) {
-    fileInputRef.current.value = '';
-  }
-};
-
-const handleSearch = async (e?: React.FormEvent) => {
-  if (e) e.preventDefault();
-  if (!searchQuery.trim()) {
-    setSearchResults([]);
-    setSearchIndex(-1);
-    return;
-  }
-  setIsSearching(true);
-  try {
-    const sId = getSessionId();
-    const res = await fetch(`/v2/lounges/${roomId}/search?q=${encodeURIComponent(searchQuery)}`, {
-      headers: { 'Authorization': `Bearer ${sId}` }
-    });
-    const data = await res.json();
-    const dbMatches = data.messages || [];
-
-    const queryLower = searchQuery.toLowerCase();
-    const localMatches = conversationMessages.filter(m => {
-      if (m.deleted) return false;
-      const plainText = decryptedMap[m.message_id] || m.content || '';
-      return plainText.toLowerCase().includes(queryLower);
-    });
-
-    const seenKeys = new Set<string>();
-    const merged: any[] = [];
-
-    for (const m of localMatches) {
-      const key = String(m.db_message_id || m.message_id);
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        merged.push({
-          id: m.db_message_id || m.message_id,
-          message_id: m.message_id,
-          db_message_id: m.db_message_id,
-          senderName: m.username,
-          content: decryptedMap[m.message_id] || m.content,
-          createdAt: m.timestamp
-        });
-      }
-    }
-
-    for (const m of dbMatches) {
-      const key = String(m.id || m.message_id);
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        merged.push({
-          id: m.id,
-          message_id: String(m.id),
-          db_message_id: m.id,
-          senderName: m.senderName || m.username,
-          content: m.content,
-          createdAt: m.createdAt
-        });
-      }
-    }
-
-    setSearchResults(merged);
-    setSearchIndex(merged.length > 0 ? 0 : -1);
-    if (merged.length > 0) {
-      const firstMatch = merged[0];
-      handleScrollToMessage(String(firstMatch.db_message_id || firstMatch.message_id));
-    }
-  } catch (err) {
-    console.error('[Search] Failed:', err);
-  } finally {
-    setIsSearching(false);
-  }
-};
-
-const handleNavigateSearch = (direction: 'next' | 'prev') => {
-  if (searchResults.length === 0) return;
-  let nextIdx = searchIndex;
-  if (direction === 'next') {
-    nextIdx = (searchIndex + 1) % searchResults.length;
-  } else {
-    nextIdx = (searchIndex - 1 + searchResults.length) % searchResults.length;
-  }
-  setSearchIndex(nextIdx);
-  const target = searchResults[nextIdx];
-  handleScrollToMessage(String(target.db_message_id || target.message_id));
-};
+  // Attachment actions hook
+  const {
+    handleTriggerFileInput,
+    handleDismissAttachment,
+    handleFileSelect
+  } = useAttachmentActions({
+    fileInputRef,
+    setSelectedAttachment,
+    onSendMessage
+  });
 
   // Recording operations
   const handleToggleRecording = async () => {
@@ -828,23 +391,12 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
   };
 
   const handleStartEdit = (msg: Message) => {
-    const timestampMs = typeof msg.timestamp === 'number' ? msg.timestamp : new Date(msg.timestamp).getTime();
-    const timeDiffMinutes = (Date.now() - timestampMs) / (1000 * 60);
-    if (timeDiffMinutes > 15) {
-      alert('Message editing window (15 minutes) has expired.');
-      return;
-    }
-    setEditingMessageId(msg.message_id);
     const activeContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
-    const attachment = activeContent.includes('[Attachment:') ? parseAttachment(activeContent) : null;
-    const plainText = attachment && attachment.length > 0 ? (attachment[0].caption || '') : activeContent;
-    
-    setInputText(plainText);
+    actionStartEdit(msg, activeContent, setInputText);
   };
 
   const handleCancelEdit = () => {
-    setEditingMessageId(null);
-    setInputText('');
+    actionCancelEdit(setInputText);
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -895,7 +447,7 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
     if (activeChatPeer && activeChatPeer.userId !== 999) {
       try {
         const context: EncryptionContext = { type: 'direct', peerUserId: activeChatPeer.userId };
-        const encryptedEnvelope = await encryptMessage(textToSend, context);
+        const encryptedEnvelope = await encryptOutgoingMessage(textToSend, context);
         onSendMessage(encryptedEnvelope, null, true, undefined, replyMsgId);
       } catch (err) {
         onSendMessage(textToSend, null, false, undefined, replyMsgId);
@@ -915,135 +467,6 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
       onSendTyping(false);
     }
   };
-
-  // Toggle waveform simulated audio playback
-  const handleTogglePlayWave = (msgId: string, durationStr: string, audioData: string, audioType: string = 'audio/webm') => {
-    const isPlaying = !!playingWaveforms[msgId];
-    
-    // Always stop the currently playing audio first if any
-    if (currentAudioRef.current) {
-      try {
-        currentAudioRef.current.pause();
-      } catch (e) {}
-      currentAudioRef.current = null;
-    }
-    
-    // Stop all other playing states if starting a new one
-    setPlayingWaveforms(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(k => {
-        next[k] = false;
-      });
-      return next;
-    });
-
-    if (isPlaying) {
-      setPlayingWaveforms(prev => ({ ...prev, [msgId]: false }));
-      setWaveformAudioProg(prev => ({ ...prev, [msgId]: 0 }));
-      currentAudioMsgIdRef.current = null;
-    } else {
-      setPlayingWaveforms(prev => ({ ...prev, [msgId]: true }));
-      currentAudioMsgIdRef.current = msgId;
-      
-      if (audioData) {
-        // Play actual audio dynamically via memory instantiation to avoid pre-mounting DOM nodes
-        try {
-          const audioSrc = audioData.startsWith('/') ? audioData : `data:${audioType};base64,${audioData}`;
-          const audio = new Audio();
-          audio.preload = 'none'; // Absolutely do not preload unless explicitly playing
-          audio.src = audioSrc;
-          currentAudioRef.current = audio;
-          
-          audio.onended = () => {
-            setPlayingWaveforms(prev => ({ ...prev, [msgId]: false }));
-            setWaveformAudioProg(prev => ({ ...prev, [msgId]: 0 }));
-            if (currentAudioMsgIdRef.current === msgId) {
-              currentAudioRef.current = null;
-              currentAudioMsgIdRef.current = null;
-            }
-          };
-          
-          audio.ontimeupdate = () => {
-            if (audio.duration) {
-              const progress = (audio.currentTime / audio.duration) * 100;
-              setWaveformAudioProg(prev => ({ ...prev, [msgId]: progress }));
-            }
-          };
-
-          audio.onerror = (e) => {
-            log.warn('Audio playback error, falling back to simulated playback', { error: String(e) });
-            audio.onended = null;
-            audio.ontimeupdate = null;
-            runSimulatedPlayback(msgId, durationStr);
-          };
-
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-            playPromise.catch(err => {
-              log.warn('Playback interrupted', { error: String(err) });
-              audio.onended = null;
-              audio.ontimeupdate = null;
-              runSimulatedPlayback(msgId, durationStr);
-            });
-          }
-        } catch (err) {
-          log.warn('Audio setup failed', { error: (err as Error).message });
-          runSimulatedPlayback(msgId, durationStr);
-        }
-      } else {
-        // Fallback to simulated playback if no audio data
-        runSimulatedPlayback(msgId, durationStr);
-      }
-    }
-  };
-
-  const runSimulatedPlayback = (msgId: string, durationStr: string) => {
-    const durationS = parseInt(durationStr, 10) || 5;
-    let p = 0;
-    const interval = setInterval(() => {
-      // Check if we are still supposed to be playing this waveform
-      setPlayingWaveforms(prev => {
-        if (!prev[msgId]) {
-          clearInterval(interval);
-          return prev;
-        }
-        
-        p += 5;
-        if (p > 100) {
-          clearInterval(interval);
-          setWaveformAudioProg(v => ({ ...v, [msgId]: 0 }));
-          return { ...prev, [msgId]: false };
-        } else {
-          setWaveformAudioProg(v => ({ ...v, [msgId]: p }));
-          return prev;
-        }
-      });
-    }, (durationS * 1000) / 20);
-  };
-
-  // Channel details title helper (No '@' prefixes)
-  const chatTitle = activeChatPeer
-    ? stripAt(activeChatPeer.username)
-    : roomName
-      ? roomName.replace(/^#\s*/, '')
-      : (roomId.startsWith('#') ? roomId.slice(1) : roomId);
-
-  const activePeerId = activeChatPeer?.userId;
-
-  // Filter messages based on chat context
-  const conversationMessages = messages.filter(m => {
-    if (activePeerId) {
-      const otherId = activePeerId;
-      if (otherId === 999) {
-        return m.room_id === `dm_velum_${currentUserId}`;
-      }
-      const isPeerFromMe = m.user_id === currentUserId && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
-      const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
-      return isPeerFromMe || isPeerToMe || m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`);
-    } else {
-      return m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);
-    }
-  });
 
   // Request browser notification permissions on chat mount
   useEffect(() => {
@@ -1133,114 +556,31 @@ const handleNavigateSearch = (direction: 'next' | 'prev') => {
         conversationMessages={conversationMessages}
         onSearchToggle={() => setShowSearch(!showSearch)}
       />
-      {showSearch && (
-        <div className="bg-bg-search-bar border-b border-white-5 p-3 px-4 flex flex-col md:flex-row items-center gap-3 backdrop-blur-[var(--blur-backdrop-md)] relative z-30 select-none">
-          <form onSubmit={handleSearch} className="flex items-center gap-2 flex-1 w-full">
-            <Search className="w-4 h-4 text-text-secondary shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search conversation..."
-              className="bg-transparent border-none text-[13px] text-white outline-none flex-1 font-sans placeholder-text-secondary"
-              autoFocus
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSearchResults([]);
-                  setSearchIndex(-1);
-                }}
-                className="text-text-secondary hover:text-white p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </form>
-          {searchResults.length > 0 && (
-            <div className="flex items-center gap-3 text-xs shrink-0 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 border-white-5 pt-2 md:pt-0">
-              <span className="text-text-secondary font-mono">
-                {searchIndex + 1} of {searchResults.length} matches
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => handleNavigateSearch('prev')}
-                  className="p-1 px-2 rounded bg-velum-700 border border-white-10 hover:border-white-20 hover:bg-velum-600 transition text-white font-mono text-[10px] uppercase font-bold"
-                  title="Previous match"
-                >
-                  Prev
-                </button>
-                <button
-                  onClick={() => handleNavigateSearch('next')}
-                  className="p-1 px-2 rounded bg-velum-700 border border-white-10 hover:border-white-20 hover:bg-velum-600 transition text-white font-mono text-[10px] uppercase font-bold"
-                  title="Next match"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-          {searchQuery && searchResults.length === 0 && !isSearching && (
-            <span className="text-[11px] text-alert-error font-mono tracking-wide uppercase shrink-0">
-              No matches found
-            </span>
-          )}
-          {isSearching && (
-            <span className="text-[11px] text-accent font-mono tracking-wide uppercase shrink-0 animate-pulse">
-              Searching...
-            </span>
-          )}
-          <button
-            onClick={() => {
-              setShowSearch(false);
-              setSearchQuery('');
-              setSearchResults([]);
-              setSearchIndex(-1);
-            }}
-            className="text-text-secondary hover:text-white p-1 ml-2 shrink-0 hidden md:block"
-            title="Close search"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-      {pinnedMessages.length > 0 && activePinnedMsg && (
-        <div className="bg-bg-pinned-bar border-b border-white-5 p-2.5 px-4 flex items-center justify-between gap-3 text-xs backdrop-blur-[var(--blur-backdrop-md)] relative z-30 select-none">
-          <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => handleScrollToMessage(activePinnedMsg.message_id)}>
-            <Pin className="w-4 h-4 text-accent shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] uppercase font-bold text-accent tracking-wider font-mono">
-                {pinnedMessages.length > 1 ? `Pinned Messages (${pinnedMessages.length})` : 'Pinned Message'}
-              </div>
-              <div className="text-text-primary/95 truncate font-medium max-w-full">
-                {getDecryptedText(activePinnedMsg)}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {pinnedMessages.length > 1 && (
-              <button 
-                onClick={() => setActivePinIndex(prev => (prev + 1) % pinnedMessages.length)}
-                className="p-1 px-2 rounded-lg bg-white-5 hover:bg-white-10 text-[9px] font-mono font-bold uppercase text-text-secondary hover:text-white transition"
-                title="Next pinned message"
-              >
-                Next
-              </button>
-            )}
-            {onPinMessage && (
-              <button 
-                onClick={() => onPinMessage(activePinnedMsg.db_message_id ? String(activePinnedMsg.db_message_id) : activePinnedMsg.message_id, activePinnedMsg.room_id || roomId, false)}
-                className="p-1.5 rounded-lg hover:bg-alert-error-bg text-text-secondary hover:text-alert-error transition"
-                title="Unpin message"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      <SearchDrawer
+        showSearch={showSearch}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        searchResults={searchResults}
+        searchIndex={searchIndex}
+        isSearching={isSearching}
+        onSearchSubmit={handleSearch}
+        onNavigateSearch={handleNavigateSearch}
+        onCloseSearch={() => {
+          setShowSearch(false);
+          setSearchQuery('');
+          setSearchResults([]);
+          setSearchIndex(-1);
+        }}
+      />
+      <PinnedMessageBar
+        pinnedMessages={pinnedMessages}
+        activePinnedMsg={activePinnedMsg}
+        onScrollToMessage={handleScrollToMessage}
+        onNextPin={() => setActivePinIndex((prev) => (prev + 1) % pinnedMessages.length)}
+        onPinMessage={onPinMessage}
+        roomId={roomId}
+        getDecryptedText={getDecryptedText}
+      />
       {/* Primary Message Log area */}
       <div
         ref={scrollContainerRef}
@@ -1818,266 +1158,43 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
 />
 
       {/* Footer Text area form with safe-area inset bottom padding */}
-      <div 
-        className="px-4 pt-2 flex-shrink-0 bg-velum-850"
-        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
-      >
-        {micError && (
-          <div className="mb-3 p-3 rounded-xl bg-alert-error-bg flex items-start justify-between gap-4 font-mono text-[10px] text-alert-error">
-            <span className="whitespace-normal break-words flex-1 leading-relaxed">{micError}</span>
-            <button 
-              type="button" 
-              onClick={() => setMicError(null)} 
-              className="text-text-secondary hover:text-white font-mono font-bold cursor-pointer transition uppercase mt-0.5 shrink-0"
-            >
-              Dismiss
-            </button>
-          </div>
-        
-)}
-        {/* Attachment slots list preview bar if selected */}
-        {selectedAttachment && (
-          selectedAttachment.type.startsWith('image/') ? (
-            <div className="mb-4 relative inline-block group">
-              <div className="w-32 h-32 rounded-2xl overflow-hidden border border-white-10 bg-velum-800 shadow-lg relative">
-                <img 
-                  src={selectedAttachment.data} 
-                  alt="Draft upload" 
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                  <span className="text-[9px] font-bold text-white uppercase tracking-widest font-mono">
-                    {selectedAttachment.size}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleDismissAttachment}
-                className="absolute -top-1.5 -right-1.5 p-1 bg-alert-error text-white rounded-full transition shadow-md cursor-pointer border border-velum-800 z-10 flex items-center justify-center"
-                title="Remove image"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <div className="mb-3 p-2.5 rounded-xl border border-accent/20 bg-accent/5 flex items-center justify-between gap-3 font-mono text-[10px]">
-              <div className="flex items-center gap-2 truncate">
-                <Paperclip className="w-3.5 h-3.5 text-accent shrink-0" />
-                <span className="text-white font-bold truncate">{selectedAttachment.name}</span>
-                <span className="text-text-secondary uppercase font-mono">({selectedAttachment.size})</span>
-              </div>
-              <button
-                onClick={handleDismissAttachment}
-                className="text-text-secondary hover:text-alert-error transition p-1 cursor-pointer"
-                title="Remove Attachment"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )
-        )}
-        {isPrivateSublounge && (
-          <div className="mb-2 px-2 text-[10px] font-mono text-text-disabled uppercase tracking-wider select-none">
-             Sanctions in the parent lounge apply here automatically
-          </div>
-        
-)}
-     {/* Voice Recording Overlay Bar */}
-        {isRecording ? (
-          <div className="bg-velum-850 p-4 border-t border-white-5 text-text-primary flex flex-col gap-3 rounded-2xl">
-            {/* Live Audio Track / Waveform preview */}
-            <div className="flex items-center justify-between gap-3 px-1">
-              <div className="flex items-center gap-2 font-mono text-xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-alert-error animate-pulse" />
-                <span className="text-white font-semibold">
-                  {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
-                </span>
-              </div>
-        
-             {/* Dynamic Dots Visualizer */}
-<div className="flex flex-1 items-center justify-between gap-[3px] overflow-hidden px-3 h-6">
-  {audioLevels.map((level, i) => (
-    <span
-      key={i}
-      className="w-1 rounded-full bg-accent transition-all duration-75 opacity-90"
-     style={{ height: `${Math.max(4, (level / 100) * 24)}px` }}
-    />
-  ))}
-</div>
-            </div>
-        
-           {/* Controls Row */}
-          <div className="flex items-center justify-between gap-3">
-            {/* Trash / Cancel */}
-            <button
-              type="button"
-              onClick={cancelRecording}
-              className="w-11 h-11 rounded-full bg-status-dnd-bg hover:bg-status-dnd-bg/85 text-status-dnd flex items-center justify-center transition cursor-pointer"
-              title="Discard recording"
-            >
-              <Trash2 className="w-5 h-5" />
-            </button>
-          
-            {/* Pause / Resume Pill */}
-            <button
-              type="button"
-              onClick={isPaused ? resumeRecording : pauseRecording}
-              className="flex-1 h-11 rounded-full bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20 font-mono text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
-            >
-              {isPaused ? (
-                <>
-                  <Mic className="w-4 h-4" />
-                  <span>RESUME</span>
-                </>
-              ) : (
-                <>
-                  <Pause className="w-4 h-4 fill-current" />
-                  <span>PAUSE</span>
-                </>
-              )}
-            </button>
-          
-            {/* Send Button */}
-            <button
-              type="button"
-              onClick={() => {
-                stopRecording(async (audioBase64, durationSeconds) => {
-                  try {
-                    const response = await fetch(`data:audio/webm;base64,${audioBase64}`);
-                    const blob = await response.blob();
-                    const url = await streamFileDirectToCloudStorage(blob, 'media', 'webm');
-                    onSendMessage(`[Voice Note  duration:${durationSeconds}s url:${url}]`, null, false);
-                  } catch (err) {
-                    onSendMessage(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
-                  }
-                });
-              }}
-              className="w-11 h-11 rounded-full bg-accent text-velum-950 hover:bg-accent-light flex items-center justify-center transition shadow-md cursor-pointer"
-              title="Send voice note"
-            >
-              <Send className="w-4 h-4 ml-0.5" />
-            </button>
-          </div>
-          </div>
-        ) : 
-         roomId === `dm_velum_${currentUserId}` || activeChatPeer?.userId === 999 ? (
-          <div className="w-full flex flex-col gap-3">
-            <div className="w-full bg-white-5 border border-white-10 rounded-xl p-3.5 text-center text-xs font-sans text-text-secondary select-none">
-              This is a one-way system broadcast channel.
-            </div>
-            {hasPendingNomination && (
-              <div className="flex gap-3 justify-center items-center p-3 bg-velum-850 border border-white-5 rounded-xl">
-                <span className="text-[10px] text-text-secondary font-mono uppercase tracking-wider">Nomination pending:</span>
-                <button
-                  type="button"
-                  onClick={() => handleNominationAction('accept')}
-                  disabled={isSubmittingNominationAction}
-                  className="px-3.5 py-1.5 bg-bank-accent text-white hover:bg-bank-accent/80 font-bold rounded-lg uppercase text-[9px] cursor-pointer transition disabled:opacity-50"
-                >
-                  Accept
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleNominationAction('decline')}
-                  disabled={isSubmittingNominationAction}
-                  className="px-3.5 py-1.5 bg-status-dnd-bg text-status-dnd hover:bg-status-dnd-bg/80 font-bold rounded-lg uppercase text-[9px] cursor-pointer transition disabled:opacity-50"
-                >
-                  Decline
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-          {editingMessageId && (
-            <div className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 mb-2.5 flex justify-between items-center text-[10px] text-text-secondary select-none font-mono tracking-wider">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
-                <span>EDITING MESSAGE</span>
-              </div>
-              <button 
-                type="button"
-                onClick={handleCancelEdit}
-                className="text-status-dnd hover:text-status-dnd/80 font-bold uppercase text-[9px] cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          {replyingToMessage && (
-            <div className="flex items-center justify-between py-2 px-4 bg-accent/10 border-b border-accent/20 text-[10px] font-mono font-bold text-accent tracking-wider uppercase">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <Reply className="w-3.5 h-3.5 text-accent shrink-0" />
-                <span className="text-[9px] text-text-secondary uppercase">Replying to {stripAt(replyingToMessage.username || 'User')}:</span>
-                <span className="text-white normal-case truncate max-w-xs font-medium font-sans">
-                  {getDecryptedText(replyingToMessage)}
-                </span>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setReplyingToMessage(null)}
-                className="text-status-dnd hover:text-status-dnd/80 font-bold uppercase text-[9px] cursor-pointer shrink-0 ml-2"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          {roomAccessLevel === 'ANNOUNCE' && !['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(currentUserRole) ? (
-            <div className="w-full bg-velum-800 border border-white-5 rounded-xl p-3 text-center text-[11px] text-text-secondary font-mono tracking-widest uppercase">
-              🔒 Admins Only
-            </div>
-          ) : (
-          <form onSubmit={handleSend} className="flex gap-3 items-center">
-            
-            <button
-              type="button"
-              onClick={handleTriggerFileInput}
-              className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 text-text-secondary hover:text-white hover:bg-velum-800 transition flex items-center justify-center shrink-0 cursor-pointer"
-              title="Attach File"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-
-            <div className="flex-1 relative flex items-end">
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend(e);
-                  }
-                }}
-                placeholder={chatTitle ? t('chat.message_peer', 'Message {name}').replace('{name}', chatTitle) : t('chat.message_placeholder', 'Message...')}
-                className="w-full bg-velum-800 border border-white-5 rounded-2xl pl-5 pr-24 py-[11px] text-[13px] text-white outline-none focus:border-accent/50 font-sans resize-none max-h-32 overflow-y-auto leading-relaxed"
-                style={{ height: 'auto', minHeight: '42px' }}
-              />
-              <div className="absolute right-2 bottom-[3px] flex items-center gap-1">
-                <div className="relative w-9 h-9 flex items-center justify-center">
-                  <button 
-                    type="button" 
-                    onClick={handleToggleRecording} 
-                    className={`absolute inset-0 flex items-center justify-center text-text-secondary hover:text-accent transition-all duration-200 cursor-pointer ${inputText.length > 0 ? 'opacity-0 scale-50 pointer-events-none' : 'opacity-100 scale-100'}`}
-                  >
-                    <Mic className="w-5 h-5" />
-                  </button>
-                  <button 
-                    type="submit" 
-                    className={`absolute inset-0 flex items-center justify-center bg-accent text-black rounded-full transition-all duration-200 shadow-md cursor-pointer ${inputText.length > 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-50 pointer-events-none'}`}
-                  >
-                    <Send className="w-4 h-4 ml-0.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </form>
-          )}
-          </>
-        )}
-      </div>
+      <ChatInput
+        inputText={inputText}
+        setInputText={setInputText}
+        selectedAttachment={selectedAttachment}
+        onDismissAttachment={handleDismissAttachment}
+        textareaRef={textareaRef}
+        isRecording={isRecording}
+        recordingSeconds={recordingSeconds}
+        isPaused={isPaused}
+        audioLevels={audioLevels}
+        cancelRecording={cancelRecording}
+        pauseRecording={pauseRecording}
+        resumeRecording={resumeRecording}
+        stopRecording={stopRecording}
+        onToggleRecording={handleToggleRecording}
+        micError={micError}
+        setMicError={setMicError}
+        roomId={roomId}
+        currentUserId={currentUserId}
+        activeChatPeer={activeChatPeer}
+        hasPendingNomination={hasPendingNomination}
+        isSubmittingNominationAction={isSubmittingNominationAction}
+        onNominationAction={handleNominationAction}
+        editingMessageId={editingMessageId}
+        onCancelEdit={handleCancelEdit}
+        replyingToMessage={replyingToMessage}
+        onCancelReply={() => setReplyingToMessage(null)}
+        getDecryptedText={getDecryptedText}
+        roomAccessLevel={roomAccessLevel}
+        currentUserRole={currentUserRole}
+        chatTitle={chatTitle}
+        t={t}
+        onSend={handleSend}
+        onSendVoiceNote={(voiceContent) => onSendMessage(voiceContent, null, false)}
+        onTriggerFileInput={handleTriggerFileInput}
+        isPrivateSublounge={isPrivateSublounge}
+      />
     </div>
   );
 }

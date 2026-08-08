@@ -5,7 +5,8 @@ dotenv.config();
 
 const cleanEnvStr = (val?: string) => {
   if (!val) return '';
-  return val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '').replace(/(&|\?)channel_binding=[^&]+/g, '');
+  const cleaned = val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '').replace(/(&|\?)channel_binding=[^&]+/g, '');
+  return cleaned.replace('-pooler', '');
 };
 
 const isValidPgUrl = (str?: string) => {
@@ -39,7 +40,17 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string().optional().default(''),
   R2_PUBLIC_URL: z.string().optional().default(''),
   REDIS_URL: z.string().optional().transform((val) => {
-    return cleanEnvStr(val) || cleanEnvStr(process.env.REDIS_URL) || cleanEnvStr(process.env.CLOUD_REDIS_URL) || cleanEnvStr(process.env.UPSTASH_REDIS_URL) || '';
+    const isLocal = (url: string) => url.includes('localhost') || url.includes('127.0.0.1');
+    const cloudRedis = cleanEnvStr(process.env.CLOUD_REDIS_URL);
+    const upstashRedis = cleanEnvStr(process.env.UPSTASH_REDIS_URL);
+    if (cloudRedis && !isLocal(cloudRedis)) return cloudRedis;
+    if (upstashRedis && !isLocal(upstashRedis)) return upstashRedis;
+
+    const rawRedis = cleanEnvStr(val) || cleanEnvStr(process.env.REDIS_URL);
+    if (rawRedis && !isLocal(rawRedis)) {
+      return rawRedis;
+    }
+    return cloudRedis || upstashRedis || '';
   }),
   CLOUD_REDIS_URL: z.string().optional().transform(cleanEnvStr).default(''),
   MESSAGE_BATCH_INTERVAL: z.string().optional().transform((val) => {

@@ -10,14 +10,14 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 3000,
+    host: '0.0.0.0',
     strictPort: true,
+    allowedHosts: true,
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     },
-    // HMR enabled for faster development.
-    hmr: true,
-    // Enable file watching.
-    watch: {},
+    hmr: process.env.DISABLE_HMR !== 'true',
+    watch: process.env.DISABLE_HMR === 'true' ? null : {},
   },
   test: {
     testTimeout: 20000,
