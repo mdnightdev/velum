@@ -328,7 +328,10 @@ loungeRouter.get('/:id/rooms', optionalAuth, async (req: Request, res: Response,
       topic: sub.description,
       is_locked: sub.accessLevel === 'ANNOUNCE' || sub.accessLevel === 'EXEC_ONLY',
       accessLevel: sub.accessLevel,
-      type: sub.type
+      type: sub.type,
+      is_private: sub.isPrivate,
+      invite_code: sub.inviteCode,
+      owner_id: sub.ownerId
     }));
 
     res.json({ rooms: formattedRooms });
@@ -746,11 +749,9 @@ loungeRouter.post('/:id/messages', auth, async (req: Request, res: Response, nex
 
 loungeRouter.get('/:loungeId/invites', auth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const loungeId = parseInt(req.params.loungeId, 10);
-    if (isNaN(loungeId)) {
-      return res.status(400).json({ error: 'Invalid lounge ID.' });
-    }
-    const [lounge] = await db.select().from(lounges).where(eq(lounges.id, loungeId)).limit(1);
+    const rawId = req.params.loungeId;
+    const all = await db.select().from(lounges);
+    const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
     if (!lounge) {
       return res.status(404).json({ error: 'Lounge not found.' });
     }
@@ -767,13 +768,39 @@ loungeRouter.get('/:loungeId/invites', auth, async (req: Request, res: Response,
   }
 });
 
+loungeRouter.post('/:loungeId/invites', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.loungeId;
+    const all = await db.select().from(lounges);
+    const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+    if (!lounge) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+    let code = lounge.inviteCode;
+    if (!code) {
+      const prefix = lounge.parentLoungeId ? 'VL/S' : 'VL/M';
+      code = `${prefix}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      await db.update(lounges).set({ inviteCode: code }).where(eq(lounges.id, lounge.id));
+    }
+    res.json({
+      invite_id: 'code',
+      invite_code: code,
+      created_at: lounge.createdAt.toISOString()
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 loungeRouter.delete('/:loungeId/invites/:inviteId', auth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const loungeId = parseInt(req.params.loungeId, 10);
-    if (isNaN(loungeId)) {
-      return res.status(400).json({ error: 'Invalid lounge ID.' });
+    const rawId = req.params.loungeId;
+    const all = await db.select().from(lounges);
+    const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+    if (!lounge) {
+      return res.status(404).json({ error: 'Lounge not found.' });
     }
-    await db.update(lounges).set({ inviteCode: null }).where(eq(lounges.id, loungeId));
+    await db.update(lounges).set({ inviteCode: null }).where(eq(lounges.id, lounge.id));
     res.json({ success: true });
   } catch (err) {
     next(err);
