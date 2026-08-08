@@ -26,7 +26,7 @@ interface ManageLoungeModalProps {
   directAddError: string;
   directAddSuccess: string;
   onClose: () => void;
-  onSaveSettings: () => void;
+  onSaveSettings: (iconFile?: Blob | null) => void | Promise<void>;
   onUpdateRole: (targetUserId: number, newRole: string) => void;
   onSanctionClick: (userId: number, type: 'mute' | 'kick' | 'ban') => void;
   onReviewRequest: (requestId: string, approve: boolean) => void;
@@ -71,6 +71,7 @@ export default function ManageLoungeModal({
 }: ManageLoungeModalProps) {
   const [isUploadingIcon, setIsUploadingIcon] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [loungeIconFile, setLoungeIconFile] = useState<Blob | null>(null);
 
   const handleIconFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError('');
@@ -78,6 +79,8 @@ export default function ManageLoungeModal({
     setIsUploadingIcon(true);
     try {
       const compressedBlob = await captureAndCompressPhoto(e);
+      setLoungeIconFile(compressedBlob);
+      
       const reader = new FileReader();
       reader.onloadend = () => {
         if (typeof reader.result === 'string') {
@@ -85,29 +88,9 @@ export default function ManageLoungeModal({
         }
       };
       reader.readAsDataURL(compressedBlob);
-
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
-      const uploadRes = await fetch(`/v2/lounges/${loungeId}/upload-avatar`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': compressedBlob.type || 'application/octet-stream',
-          'Authorization': `Bearer ${sid}`
-        },
-        body: compressedBlob
-      });
-
-      if (!uploadRes.ok) {
-        const errorData = await uploadRes.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Lounge upload failed.');
-      }
-
-      const data = await uploadRes.json();
-      if (data.url) {
-        setEditIconUrl(data.url);
-      }
     } catch (err: any) {
-      console.error('Failed to process/upload lounge icon:', err);
-      setUploadError(err.message || 'Failed to upload image. Please ensure file is a valid image (JPEG, PNG, WebP).');
+      console.error('Failed to process lounge icon:', err);
+      setUploadError(err.message || 'Failed to process image. Please ensure file is a valid image (JPEG, PNG, WebP).');
     } finally {
       setIsUploadingIcon(false);
     }
@@ -287,10 +270,22 @@ export default function ManageLoungeModal({
 
               <div className="pt-2 flex justify-end">
                 <button
-                  onClick={onSaveSettings}
-                  className="px-6 py-3 bg-accent hover:bg-accent-hover text-velum-950 text-xs font-mono font-bold uppercase tracking-wider rounded-xl cursor-pointer transition shadow-lg active:scale-95"
+                  onClick={async () => {
+                    setIsUploadingIcon(true);
+                    setUploadError('');
+                    try {
+                      await onSaveSettings(loungeIconFile);
+                      setLoungeIconFile(null);
+                    } catch (err: any) {
+                      setUploadError(err.message || 'Failed to save configuration.');
+                    } finally {
+                      setIsUploadingIcon(false);
+                    }
+                  }}
+                  disabled={isUploadingIcon}
+                  className="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-velum-950 text-xs font-mono font-bold uppercase tracking-wider rounded-xl cursor-pointer transition shadow-lg active:scale-95"
                 >
-                  Save Configuration
+                  {isUploadingIcon ? 'Saving...' : 'Save Configuration'}
                 </button>
               </div>
 

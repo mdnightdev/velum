@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLoungeSettings } from './useLoungeSettings';
+import { streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
 
 interface UseLoungeDataOptions {
   loungeId: string;
@@ -155,7 +156,7 @@ export function useLoungeData({
     }
   };
 
-  const handleSaveSettings = async () => {
+  const handleSaveSettings = async (iconFile?: Blob | null) => {
     if (!editName.trim()) {
       setSettingsError('Lounge name is required.');
       return;
@@ -163,6 +164,15 @@ export function useLoungeData({
     setSettingsError('');
     setSettingsSuccess('');
     try {
+      let finalIconUrl = editIconUrl;
+      if (iconFile) {
+        const uploadedUrl = await streamFileDirectToCloudStorage(iconFile, 'avatars', 'webp');
+        if (uploadedUrl) {
+          finalIconUrl = uploadedUrl;
+          setEditIconUrl(uploadedUrl);
+        }
+      }
+
       const sid = sessionStorage.getItem('velum-sessionId') || '';
       const res = await fetch(`/v2/lounges/${loungeId}`, {
         method: 'PUT',
@@ -173,7 +183,7 @@ export function useLoungeData({
         body: JSON.stringify({
           name: editName,
           description: editDescription,
-          icon_url: editIconUrl
+          icon_url: finalIconUrl
         })
       });
 
