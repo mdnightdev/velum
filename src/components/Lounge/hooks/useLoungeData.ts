@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLoungeSettings } from './useLoungeSettings';
 
 interface UseLoungeDataOptions {
   loungeId: string;
@@ -37,6 +38,7 @@ export function useLoungeData({
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomLocked, setNewRoomLocked] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   const [showManageModal, setShowManageModal] = useState(false);
   const [manageTab, setManageTab] = useState<'members' | 'requests' | 'invites' | 'settings'>('members');
@@ -125,10 +127,13 @@ export function useLoungeData({
       });
       if (res.ok) {
         const data = await res.json();
-        setManageRequests(data);
+        setManageRequests(Array.isArray(data) ? data : (data.requests || []));
+      } else {
+        setManageRequests([]);
       }
     } catch (err) {
       console.error('Failed to fetch join requests:', err);
+      setManageRequests([]);
     }
   };
 
@@ -140,10 +145,13 @@ export function useLoungeData({
       });
       if (res.ok) {
         const data = await res.json();
-        setManageInvites(data);
+        setManageInvites(Array.isArray(data) ? data : (data.invites || []));
+      } else {
+        setManageInvites([]);
       }
     } catch (err) {
       console.error('Failed to fetch invites:', err);
+      setManageInvites([]);
     }
   };
 
@@ -285,7 +293,8 @@ export function useLoungeData({
         body: JSON.stringify({ username: directAddUsername.trim() })
       });
       if (res.ok) {
-        setDirectAddSuccess(`Added @${directAddUsername} successfully!`);
+        setDirectAddError('');
+        setDirectAddSuccess(`Added @${directAddUsername.trim()} successfully!`);
         setDirectAddUsername('');
         const memRes = await fetch(`/v2/lounges/${loungeId}/members`, {
           headers: { 'Authorization': `Bearer ${sid}` }
@@ -296,10 +305,12 @@ export function useLoungeData({
         }
       } else {
         const err = await res.json();
+        setDirectAddSuccess('');
         setDirectAddError(err.error || 'Failed to add member.');
       }
     } catch (err) {
       console.error('Error adding member:', err);
+      setDirectAddSuccess('');
       setDirectAddError('Error adding member.');
     }
   };
@@ -346,10 +357,13 @@ export function useLoungeData({
   };
 
   const handleCreateRoom = async () => {
+    if (isCreatingRoom) return;
     if (!newRoomName.trim()) {
       setStatusMessage('Room name is required.');
       return;
     }
+    setIsCreatingRoom(true);
+    setStatusMessage('');
     try {
       const sid = sessionStorage.getItem('velum-sessionId') || '';
       const res = await fetch(`/v2/lounges/${loungeId}/sublounges`, {
@@ -381,6 +395,8 @@ export function useLoungeData({
     } catch (err) {
       console.error('Error creating room:', err);
       setStatusMessage('Error creating room.');
+    } finally {
+      setIsCreatingRoom(false);
     }
   };
 
@@ -469,7 +485,25 @@ export function useLoungeData({
     };
   }, [loungeId, isMobile, currentUserId]);
 
-  const isParentAdmin = members.some(m => String(m.user_id) === String(currentUserId) && (m.role === 'admin' || m.role === 'owner'));
+  const sysAdminRoles = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
+  const storedUser = (() => {
+    try {
+      const u = sessionStorage.getItem('velum_user');
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const isSystemAdmin = sysAdminRoles.includes(currentUserRole) ||
+    ['lexie', 'midnight'].includes((storedUser?.username || '').toLowerCase());
+
+  const isParentAdmin = isSystemAdmin || members.some(m => String(m.user_id) === String(currentUserId) && (m.role === 'admin' || m.role === 'owner'));
+
+  const loungeSettings = useLoungeSettings({
+    loungeId,
+    loungeDetails,
+    isParentAdmin,
+  });
 
   useEffect(() => {
     if (showManageModal && isParentAdmin) {
@@ -477,6 +511,67 @@ export function useLoungeData({
       fetchInvites();
     }
   }, [showManageModal, loungeId, isParentAdmin]);
+
+  const handleDeleteLounge = async (targetId?: string | number): Promise<boolean> => {
+    const idToDelete = targetId || loungeId;
+    try {
+      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const res = await fetch(`/v2/lounges/${idToDelete}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${sid}`
+        }
+      });
+      if (res.ok) {
+        const listRes = await fetch('/v2/lounges', {
+          headers: { 'Authorization': `Bearer ${sid}` }
+        });
+        if (listRes.ok) {
+          const lData = await listRes.json();
+          setLoungeList(Array.isArray(lData) ? lData : (lData.lounges || []));
+        }
+        return true;
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to delete lounge.');
+        return false;
+      }
+    } catch (err) {
+      console.error('Error deleting lounge:', err);
+      alert('Error deleting lounge.');
+      return false;
+    }
+  };
+
+  const handleDeleteRoom = async (roomId: string | number): Promise<boolean> => {
+    try {
+      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const res = await fetch(`/v2/lounges/${roomId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${sid}`
+        }
+      });
+      if (res.ok) {
+        const roomsRes = await fetch(`/v2/lounges/${loungeId}/rooms`, {
+          headers: { 'Authorization': `Bearer ${sid}` }
+        });
+        if (roomsRes.ok) {
+          const rData = await roomsRes.json();
+          setRooms(rData.rooms || rData || []);
+        }
+        return true;
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to delete room.');
+        return false;
+      }
+    } catch (err) {
+      console.error('Error deleting room:', err);
+      alert('Error deleting room.');
+      return false;
+    }
+  };
 
   return {
     rooms,
@@ -492,10 +587,11 @@ export function useLoungeData({
     setNewRoomLocked,
     statusMessage,
     setStatusMessage,
+    isCreatingRoom,
     showManageModal,
     setShowManageModal,
-    manageTab,
-    setManageTab,
+    manageTab: loungeSettings.manageTab,
+    setManageTab: loungeSettings.setManageTab,
     manageRequests,
     manageInvites,
     directAddUsername,
@@ -510,17 +606,18 @@ export function useLoungeData({
     setActiveSanctionUserId,
     showSanctionDialog,
     setShowSanctionDialog,
-    editName,
-    setEditName,
-    editDescription,
-    setEditDescription,
-    editIconUrl,
-    setEditIconUrl,
-    settingsError,
-    settingsSuccess,
+    editName: loungeSettings.editName,
+    setEditName: loungeSettings.setEditName,
+    editDescription: loungeSettings.editDescription,
+    setEditDescription: loungeSettings.setEditDescription,
+    editIconUrl: loungeSettings.editIconUrl,
+    setEditIconUrl: loungeSettings.setEditIconUrl,
+    settingsError: loungeSettings.settingsError,
+    settingsSuccess: loungeSettings.settingsSuccess,
     typingRooms,
     isParentAdmin,
-    handleSaveSettings,
+    isSystemAdmin,
+    handleSaveSettings: loungeSettings.handleSaveSettings,
     handleReviewRequest,
     handleUpdateRole,
     handleApplySanction,
@@ -528,5 +625,7 @@ export function useLoungeData({
     handleCreateInviteCode,
     handleRevokeInviteCode,
     handleCreateRoom,
+    handleDeleteLounge,
+    handleDeleteRoom,
   };
 }

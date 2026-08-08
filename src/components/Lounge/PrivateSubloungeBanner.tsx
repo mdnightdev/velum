@@ -5,6 +5,7 @@ interface PrivateSubloungeBannerProps {
   isPrivateSublounge: boolean;
   isSubloungeCreator: boolean;
   isLoungeOwnerNotCreator?: boolean;
+  isMember?: boolean;
   isMobile?: boolean;
 }
 
@@ -13,11 +14,40 @@ export default function PrivateSubloungeBanner({
   isPrivateSublounge,
   isSubloungeCreator,
   isLoungeOwnerNotCreator,
+  isMember = true,
   isMobile = false,
 }: PrivateSubloungeBannerProps) {
   const [copied, setCopied] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyMessage, setApplyMessage] = useState('');
 
   if (!activeRoom || !isPrivateSublounge) return null;
+
+  const handleApplyToJoin = async () => {
+    if (!activeRoom?.lounge_id || isApplying) return;
+    setIsApplying(true);
+    setApplyMessage('');
+    try {
+      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const res = await fetch(`/v2/lounges/${activeRoom.lounge_id}/apply`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sid}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setApplyMessage(data.message || 'Application submitted successfully! Administrator review pending.');
+      } else {
+        setApplyMessage(data.error || 'Failed to submit join request.');
+      }
+    } catch (err) {
+      setApplyMessage('Error submitting application.');
+    } finally {
+      setIsApplying(false);
+    }
+  };
 
   const handleCopyCode = () => {
     if (!activeRoom.invite_code) return;
@@ -68,6 +98,44 @@ export default function PrivateSubloungeBanner({
           title="Request System Admin to delete this sublounge"
         >
           Request Deletion
+        </button>
+      </div>
+    );
+  }
+
+  // Non-member banner
+  if (!isMember) {
+    if (isPrivateSublounge) {
+      return (
+        <div className="bg-velum-850/90 border-b border-white-10 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 select-none">
+          <div className="flex items-center gap-2 text-xs min-w-0">
+            <span className="font-bold text-accent uppercase tracking-wider text-[10px] shrink-0">
+              🔒 Private Sublounge
+            </span>
+            <span className="text-text-secondary truncate text-[11px]">
+              Applications restricted. Joining is by invite link shared directly by the room creator.
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-velum-850/90 border-b border-white-10 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 select-none">
+        <div className="flex items-center gap-2 text-xs min-w-0">
+          <span className="font-bold text-accent uppercase tracking-wider text-[10px] shrink-0">
+            🔒 Private Lounge
+          </span>
+          <span className="text-text-secondary truncate text-[11px]">
+            {applyMessage || 'This community requires approval to join.'}
+          </span>
+        </div>
+        <button
+          onClick={handleApplyToJoin}
+          disabled={isApplying}
+          className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-accent text-velum-950 hover:bg-accent-hover rounded-xl transition active:scale-95 cursor-pointer shrink-0 shadow-sm disabled:opacity-50"
+        >
+          {isApplying ? 'Applying...' : 'Apply to Join'}
         </button>
       </div>
     );

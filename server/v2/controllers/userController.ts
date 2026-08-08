@@ -42,6 +42,25 @@ export class UserController {
     const isRecentlyActive = user.updatedAt && (Date.now() - new Date(user.updatedAt).getTime() < 300000);
     const resolvedStatus = isRecentlyActive ? 'Online' : 'Offline';
 
+    let isMuted = false;
+    const redis = await getRedisClient();
+    if (redis) {
+      const exists = await redis.get(`user:${req.user.userId}:muted:${targetUserId}`);
+      isMuted = !!exists;
+    }
+
+    let isBlocked = false;
+    const blockRecord = await db.select().from(relationships).where(
+      and(
+        eq(relationships.status, 'blocked'),
+        or(
+          and(eq(relationships.userId, req.user.userId), eq(relationships.friendId, targetUserId)),
+          and(eq(relationships.userId, targetUserId), eq(relationships.friendId, req.user.userId))
+        )
+      )
+    ).limit(1);
+    isBlocked = blockRecord.length > 0;
+
     res.status(200).json({
       userId: user.id,
       username: user.username,
@@ -53,6 +72,8 @@ export class UserController {
       role: user.role,
       createdAt: user.createdAt,
       status: resolvedStatus,
+      isMuted,
+      isBlocked,
       stats: {
         loungesCount,
         connectionsCount

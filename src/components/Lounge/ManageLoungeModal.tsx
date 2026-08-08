@@ -1,5 +1,6 @@
-import React from 'react';
-import { Settings, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings, X, Upload, Loader2 } from 'lucide-react';
+import { captureAndCompressPhoto, streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
 
 interface ManageLoungeModalProps {
   show: boolean;
@@ -31,6 +32,7 @@ interface ManageLoungeModalProps {
   onDirectAddMember: () => void;
   onCreateInviteCode: () => void;
   onRevokeInviteCode: (inviteId: string) => void;
+  onDeleteLounge?: () => void;
 }
 
 export default function ManageLoungeModal({
@@ -63,16 +65,50 @@ export default function ManageLoungeModal({
   onDirectAddMember,
   onCreateInviteCode,
   onRevokeInviteCode,
+  onDeleteLounge,
 }: ManageLoungeModalProps) {
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  const handleIconFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError('');
+    if (!e.target.files || e.target.files.length === 0) return;
+    setIsUploadingIcon(true);
+    try {
+      const compressedBlob = await captureAndCompressPhoto(e);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setEditIconUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(compressedBlob);
+
+      const uploadedUrl = await streamFileDirectToCloudStorage(compressedBlob, 'avatars', 'webp');
+      if (uploadedUrl) {
+        setEditIconUrl(uploadedUrl);
+      }
+    } catch (err: any) {
+      console.error('Failed to process/upload lounge icon:', err);
+      setUploadError('Failed to upload image. Please ensure file is a valid image (JPEG, PNG, WebP).');
+    } finally {
+      setIsUploadingIcon(false);
+    }
+  };
+
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center modal-backdrop p-4 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-[9998] flex justify-end bg-black/60 backdrop-blur-sm animate-fade-in transition-all duration-300"
+      onClick={onClose}
+    >
       <div 
-        className={`w-full max-w-2xl h-[550px] flex flex-col rounded-3xl border shadow-2xl overflow-hidden backdrop-blur-[var(--blur-glass-panel)] transition-all duration-300 ${
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full max-w-2xl h-full flex flex-col border-l shadow-2xl overflow-hidden backdrop-blur-xl transition-all duration-300 animate-in slide-in-from-right ${
           isDark 
-            ? 'bg-velum-900 border-white-10 text-white shadow-black-60' 
-            : 'bg-white-10 border-velum-600 text-velum-900 shadow-xl'
+            ? 'bg-velum-900/95 border-white-10 text-white shadow-black-60' 
+            : 'bg-white/95 border-velum-600 text-velum-900 shadow-xl'
         }`}
       >
         {/* Modal Header */}
@@ -99,7 +135,7 @@ export default function ManageLoungeModal({
           {[
             { id: 'settings', label: 'General Settings' },
             { id: 'members', label: 'Members & Roles' },
-            { id: 'requests', label: `Join Applications (${manageRequests.length})` },
+            { id: 'requests', label: `Join Applications (${(manageRequests || []).length})` },
             { id: 'invites', label: 'Invites & Direct Add' }
           ].map(tab => (
             <button
@@ -120,74 +156,152 @@ export default function ManageLoungeModal({
         <div className="flex-1 overflow-y-auto p-5 scrollbar-none">
           {/* Tab 0: General Settings */}
           {manageTab === 'settings' && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">Lounge Node Parameters</span>
+            <div className="space-y-5 animate-fade-in">
+              {/* Header Badge */}
+              <div className="flex justify-between items-center pb-2 border-b border-white-5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-accent font-mono">
+                  Lounge Settings
+                </span>
+                <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded bg-white-5 text-text-secondary">
+                  Live Sync Mode
+                </span>
               </div>
 
+              {/* Status Notifications */}
               {settingsError && (
-                <p className="text-alert-error text-[10.5px] font-mono bg-alert-error-bg p-2.5 rounded-xl uppercase tracking-wide">
-                  {settingsError}
-                </p>
+                <div className="text-alert-error text-[10.5px] font-mono bg-alert-error-bg p-3 rounded-xl uppercase tracking-wide flex items-center gap-2 border border-alert-error/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-alert-error shrink-0 animate-ping" />
+                  <span>{settingsError}</span>
+                </div>
               )}
               {settingsSuccess && (
-                <p className="text-alert-success text-[10.5px] font-mono bg-alert-success-bg p-2.5 rounded-xl uppercase tracking-wide">
-                  {settingsSuccess}
-                </p>
+                <div className="text-alert-success text-[10.5px] font-mono bg-alert-success-bg p-3 rounded-xl uppercase tracking-wide flex items-center gap-2 border border-alert-success/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-alert-success shrink-0" />
+                  <span>{settingsSuccess}</span>
+                </div>
               )}
 
+              {/* Live Preview Card */}
+              <div className="p-4 rounded-2xl bg-velum-850/60 border border-white-10 flex items-center gap-4 shadow-md">
+                {editIconUrl ? (
+                  <img
+                    src={editIconUrl}
+                    alt="Lounge Icon"
+                    className="w-12 h-12 rounded-xl object-cover border border-white-10 shadow"
+                    onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-mono font-bold text-lg">
+                    {(editName || loungeName || 'L').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-text-primary truncate">
+                    {editName || loungeName || 'Unnamed Lounge'}
+                  </div>
+                  <p className="text-[10px] text-text-secondary truncate mt-0.5">
+                    {editDescription || 'No topic overview provided yet.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Editable Fields */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Lounge Name *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5 text-text-secondary">
+                    Lounge Designation *
+                  </label>
                   <input
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    className={`w-full p-2.5 rounded-xl border text-xs outline-none transition font-mono ${
-                      isDark 
-                        ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
-                        : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
-                    }`}
+                    className="w-full p-3 rounded-xl border text-xs outline-none transition font-mono bg-velum-900 border-white-10 text-text-primary focus:border-accent/60 shadow-inner"
                     placeholder="e.g. general-lounge"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Overview / Topic</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5 text-text-secondary">
+                    Overview & Community Guidelines
+                  </label>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
-                    className={`w-full p-2.5 rounded-xl border text-xs outline-none resize-none h-20 transition ${
-                      isDark 
-                        ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
-                        : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
-                    }`}
+                    className="w-full p-3 rounded-xl border text-xs outline-none resize-none h-24 transition font-mono bg-velum-900 border-white-10 text-text-primary focus:border-accent/60 shadow-inner"
                     placeholder="Describe lounge topic or community rules..."
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Lounge Avatar / Icon URL</label>
-                  <input
-                    type="text"
-                    value={editIconUrl}
-                    onChange={(e) => setEditIconUrl(e.target.value)}
-                    className={`w-full p-2.5 rounded-xl border text-xs outline-none transition font-mono ${
-                      isDark 
-                        ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
-                        : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
-                    }`}
-                    placeholder="https://example.com/lounge-icon.png"
-                  />
+                  <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5 text-text-secondary">
+                    Lounge Avatar / Custom Icon
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={editIconUrl}
+                        onChange={(e) => setEditIconUrl(e.target.value)}
+                        className="w-full p-3 rounded-xl border text-xs outline-none transition font-mono bg-velum-900 border-white-10 text-text-primary focus:border-accent/60 shadow-inner"
+                        placeholder="https://example.com/lounge-icon.png or upload image file"
+                      />
+                    </div>
+                    <label className="px-4 py-3 bg-velum-800 hover:bg-velum-700 border border-white-10 hover:border-accent/40 rounded-xl text-xs font-mono font-bold text-accent uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition shrink-0 active:scale-95">
+                      {isUploadingIcon ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-accent" />
+                      ) : (
+                        <Upload className="w-4 h-4" />
+                      )}
+                      <span>{isUploadingIcon ? 'Uploading...' : 'Upload Image'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={handleIconFileSelect}
+                        disabled={isUploadingIcon}
+                      />
+                    </label>
+                  </div>
+                  {uploadError && (
+                    <div className="text-[10px] text-alert-error font-mono mt-1">{uploadError}</div>
+                  )}
                 </div>
               </div>
 
-              <div className="pt-4 flex justify-end">
+              <div className="pt-2 flex justify-end">
                 <button
                   onClick={onSaveSettings}
-                  className="px-5 py-2.5 bg-accent hover:bg-accent/90 text-velum-900 text-[10px] font-bold uppercase tracking-wider rounded-xl cursor-pointer transition"
+                  className="px-6 py-3 bg-accent hover:bg-accent-hover text-velum-950 text-xs font-mono font-bold uppercase tracking-wider rounded-xl cursor-pointer transition shadow-lg active:scale-95"
                 >
                   Save Configuration
                 </button>
               </div>
+
+              {onDeleteLounge && (
+                <div className="pt-6 mt-6 border-t border-alert-error/20 space-y-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-alert-error">
+                    Danger Zone
+                  </div>
+                  <div className="p-4 rounded-2xl bg-alert-error/10 border border-alert-error/20 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-xs font-bold text-white">Delete Lounge</div>
+                      <div className="text-[10px] text-text-secondary mt-0.5">
+                        Permanently delete this lounge, all sublounges, and messages. This action cannot be undone.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to permanently delete "${loungeName}" and all its sublounges?`)) {
+                          onDeleteLounge();
+                        }
+                      }}
+                      className="px-4 py-2 bg-alert-error hover:bg-alert-error/90 text-white text-[10px] font-bold uppercase tracking-wider rounded-xl cursor-pointer transition shrink-0"
+                    >
+                      Delete Lounge
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -195,8 +309,8 @@ export default function ManageLoungeModal({
           {manageTab === 'members' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">Lounge Node Operators</span>
-                <span className="text-[10px] font-mono text-accent">{members.length} Active Nodes</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">Lounge Members</span>
+                <span className="text-[10px] font-mono text-accent">{members.length} Active Members</span>
               </div>
               
               <div className="space-y-2">
@@ -280,13 +394,13 @@ export default function ManageLoungeModal({
             <div className="space-y-4">
               <div className="text-[10px] font-bold uppercase tracking-widest opacity-60">Pending Admission Logs</div>
               
-              {manageRequests.length === 0 ? (
+              {(!manageRequests || manageRequests.length === 0) ? (
                 <div className={`p-8 rounded-2xl text-center border font-mono text-[10px] uppercase tracking-widest ${isDark ? 'bg-white/[0.01] border-white-5 text-text-secondary' : 'bg-text-primary border-velum-600 text-text-disabled'}`}>
                   // No active admission requests pending //
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {manageRequests.map((req, index) => (
+                  {(manageRequests || []).map((req, index) => (
                     <div 
                       key={req.request_id || `req-${index}`} 
                       className={`p-4 rounded-2xl border flex items-center justify-between gap-4 transition-all ${
@@ -374,13 +488,13 @@ export default function ManageLoungeModal({
                   </button>
                 </div>
 
-                {manageInvites.length === 0 ? (
+                {(!manageInvites || manageInvites.length === 0) ? (
                   <div className={`p-6 rounded-2xl text-center border font-mono text-[9.5px] uppercase tracking-widest ${isDark ? 'bg-white/[0.01] border-white-5 text-text-secondary' : 'bg-text-primary border-velum-600 text-text-disabled'}`}>
                     // No custom invite links generated //
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {manageInvites.map((inv, index) => (
+                    {(manageInvites || []).map((inv, index) => (
                       <div 
                         key={inv.invite_id || `inv-${index}`} 
                         className={`p-3 rounded-2xl border flex items-center justify-between gap-4 transition-all ${

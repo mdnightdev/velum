@@ -94,6 +94,7 @@ export default function UserSidebar({
   const [newLoungeName, setNewLoungeName] = useState('');
   const [newLoungeDesc, setNewLoungeDesc] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [isCreatingLounge, setIsCreatingLounge] = useState(false);
   const [showCreateLounge, setShowCreateLounge] = useState(false);
   const [showJoinLoungeModal, setShowJoinLoungeModal] = useState(false);
   const [loungeInviteCodeInput, setLoungeInviteCodeInput] = useState('');
@@ -110,10 +111,13 @@ export default function UserSidebar({
   };
 
   const handleCreateLounge = async () => {
+    if (isCreatingLounge) return;
     if (!newLoungeName.trim()) {
       setStatusMessage('Lounge name is required.');
       return;
     }
+    setIsCreatingLounge(true);
+    setStatusMessage('');
     try {
       const sId = fetchSessionId();
       const res = await fetch('/v2/lounges', {
@@ -141,6 +145,8 @@ export default function UserSidebar({
     } catch (err) {
       console.error('Error creating lounge:', err);
       setStatusMessage('Error creating lounge.');
+    } finally {
+      setIsCreatingLounge(false);
     }
   };
 
@@ -282,33 +288,33 @@ export default function UserSidebar({
       {/* Brand Header with Custom V Logo & Spaced V E L U M */}
       <div className={`py-4 flex-shrink-0 transition-all ${isSidebarExpanded ? 'px-6' : 'px-0 text-center flex justify-center'}`}>
         {isSidebarExpanded ? (
-          <div>
-          
-                      {/* 1. ADD THE HAMBURGER BUTTON RIGHT HERE */}
-                      <button 
-                          onClick={onToggleExpand} 
-                          className="mb-4 text-text-secondary hover:text-accent transition-colors"
-                      >
-                          <Menu className="w-5 h-5" />
-                      </button>
-          
+          <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-3">
               <div className="w-6 h-6 shrink-0 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               <div className="flex flex-col">
                 <span className="text-sm font-semibold tracking-[0.4em] text-text-primary font-display uppercase leading-none">VELUM</span>
               </div>
             </div>
+            <button 
+              type="button"
+              onClick={isMobile ? onCloseSidebar : onToggleExpand} 
+              className="w-11 h-11 flex items-center justify-center text-text-secondary hover:text-accent transition-colors rounded-full hover:bg-white-5 shrink-0 cursor-pointer"
+              title={isMobile ? "Close Sidebar" : "Collapse Sidebar"}
+            >
+              {isMobile ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-3">
             <button
-                onClick={onToggleExpand}
-                className="text-text-secondary hover:text-accent transition-colors"
+              type="button"
+              onClick={onToggleExpand}
+              className="w-11 h-11 flex items-center justify-center text-text-secondary hover:text-accent transition-colors rounded-full hover:bg-white-5 cursor-pointer"
+              title="Expand Sidebar"
             >
-                <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5" />
             </button>
             <div className="w-6 h-6 shrink-0 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-            
           </div>
         )}
       </div>
@@ -359,8 +365,8 @@ export default function UserSidebar({
                 }}
                 className={`w-full text-left flex items-center transition duration-150 cursor-pointer select-none ${
                   isSidebarExpanded 
-                    ? 'px-4 py-3 justify-between rounded-2xl' 
-                    : 'w-10 h-10 mx-auto justify-center rounded-xl'
+                    ? 'px-4 py-3 justify-between rounded-2xl min-h-[44px]' 
+                    : 'w-11 h-11 mx-auto justify-center rounded-xl'
                 } ${
                   isSelected
                     ? it.isCyan ? 'bg-cyan-950/40 text-cyan-400 font-medium border border-cyan-500/30 shadow-sm' : 'bg-white-10 text-white font-medium shadow-sm' 
@@ -397,7 +403,7 @@ export default function UserSidebar({
       {/* Solid Minimalist Footer matching figma mockup layout */}
       <div className={`p-2 bg-transparent flex-shrink-0 transition-all ${isSidebarExpanded ? 'px-4 p-4' : 'px-1 text-center flex justify-center'}`}>
         <div className={`glass-card shadow-lg flex items-center justify-between transition-all ${
-          isSidebarExpanded ? 'p-3 rounded-3xl w-full' : 'p-1 rounded-2xl flex-col gap-2 justify-center w-10 mx-auto'
+          isSidebarExpanded ? 'p-3 rounded-3xl w-full' : 'p-1 rounded-2xl flex-col gap-2 justify-center w-11 mx-auto'
         }`}>
           
           {/* Profile icon avatar bottom-left */}

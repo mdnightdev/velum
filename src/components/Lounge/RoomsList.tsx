@@ -1,5 +1,5 @@
 import React from 'react';
-import { Hash, Lock } from 'lucide-react';
+import { Hash, Lock, Trash2 } from 'lucide-react';
 import { OutlinedSeal, FilledSeal, LockedSeal, cleanRoomName } from './SealIcons';
 import { decryptMessageSync } from '../../services/encryptionService';
 
@@ -13,7 +13,9 @@ interface RoomsListProps {
   unreadCounts?: Record<string, number>;
   lastMessages?: Record<string, any>;
   typingRooms: Record<string, Set<string>>;
+  isParentAdmin?: boolean;
   onRoomSelect: (roomId: string) => void;
+  onDeleteRoom?: (roomId: string) => void;
 }
 
 export default function RoomsList({
@@ -26,7 +28,9 @@ export default function RoomsList({
   unreadCounts,
   lastMessages,
   typingRooms,
+  isParentAdmin,
   onRoomSelect,
+  onDeleteRoom,
 }: RoomsListProps) {
   const getRoomId = (room: any): string | null => {
     if (!room) return null;
@@ -40,12 +44,14 @@ export default function RoomsList({
     const isLockedCard = type === 'private_locked';
     const cleanName = cleanRoomName(room.name);
     const lm = lastMessages?.[roomId];
+    const isRoomOwner = String(room.owner_id || room.ownerId || room.created_by) === String(currentUserId);
+    const canDeleteThisRoom = !isMasterLounge && onDeleteRoom && (isRoomOwner || isParentAdmin);
 
     return (
       <div
         key={roomId}
         onClick={isLockedCard ? undefined : () => onRoomSelect(roomId)}
-        className={`flex items-center gap-3 p-3 rounded-2xl transition-all duration-150 ${
+        className={`group flex items-center gap-3 p-3 rounded-2xl transition-all duration-150 ${
           isLockedCard
             ? 'opacity-50 cursor-not-allowed border border-white-5 bg-velum-800'
             : isActive
@@ -82,6 +88,21 @@ export default function RoomsList({
             room.description && <div className="text-[9px] opacity-60 truncate mt-0.5">{room.description}</div>
           )}
         </div>
+
+        {canDeleteThisRoom && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`Are you sure you want to delete room "#${cleanName}"?`)) {
+                onDeleteRoom(roomId);
+              }
+            }}
+            title="Delete Room"
+            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-alert-error/20 text-alert-error rounded-lg transition-opacity cursor-pointer shrink-0"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     );
   };

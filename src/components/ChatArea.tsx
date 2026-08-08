@@ -585,10 +585,19 @@ export default function ChatArea({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 chat-wallpaper"
+        className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2 chat-wallpaper"
       >
-        {conversationMessages.map((msg,index) => {
-          const isMe = msg.user_id === currentUserId;
+        {conversationMessages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center p-8 text-center select-none">
+            <div className="max-w-md bg-white/[0.03] backdrop-blur-md rounded-2xl p-6 border border-white-5 text-center">
+              <p className="text-xs text-text-secondary font-medium font-sans">
+                No messages in this workspace yet. Write the first message below to start the conversation.
+              </p>
+            </div>
+          </div>
+        ) : (
+          conversationMessages.map((msg,index) => {
+            const isMe = msg.user_id === currentUserId;
             const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg);
 
           const activeContent = (msg.message_id && decryptedMap[msg.message_id]) || msg.content || '';
@@ -830,8 +839,8 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                   {/* Content Bubble Card */}
                   <div className={
                     isVoiceNote || isImageCard
-                      ? "relative font-sans text-[13px]"
-                      : `px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed break-words font-sans relative ${
+                      ? "relative font-sans text-[13px] selectable-text"
+                      : `px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed break-words font-sans relative selectable-text ${
                           isSpecialTheme && customBubbleClass
                             ? customBubbleClass
                             : isMe 
@@ -1135,7 +1144,8 @@ const isImageCard = attachments.length > 0 && attachments.every((att) =>
                 </div>
               </div>
             );
-          })}
+          })
+        )}
         <div ref={messagesEndRef} />
       </div>
 

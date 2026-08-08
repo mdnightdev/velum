@@ -317,20 +317,22 @@ export function useWebSocket({
             setMessages(prev => {
               const newMessage = data as Message;
               // Check if we have an optimistic message to replace by nonce
-              if (newMessage.nonce) {
-                const optIdx = prev.findIndex(m => m.nonce === newMessage.nonce);
-                if (optIdx !== -1) {
-                  const newArr = [...prev];
-                  newArr[optIdx] = {
-                    ...newMessage,
-                    status: newMessage.status || 'sent'
-                  };
-                  if (onMessageReceived) {
-                    onMessageReceived(newMessage);
-                  }
-                  return newArr;
-                }
+          if (newMessage.nonce) {
+            const optIdx = prev.findIndex(m => m.nonce === newMessage.nonce);
+            if (optIdx !== -1) {
+              const originalPlaintext = prev[optIdx].plaintext;
+              const newArr = [...prev];
+              newArr[optIdx] = {
+                ...newMessage,
+                plaintext: originalPlaintext || newMessage.plaintext,
+                status: newMessage.status || 'sent'
+              };
+              if (onMessageReceived) {
+                onMessageReceived(newArr[optIdx]);
               }
+              return newArr;
+            }
+          }
               const exists = prev.some(m => m.message_id === data.message_id);
               if (exists) return prev;
               if (onMessageReceived) {
@@ -420,6 +422,7 @@ export function useWebSocket({
       user_id: userId || 0, // Note: using userId from params
       username: 'You', // This will be overwritten by server, just a placeholder
       content: finalContent,
+      plaintext: text,
       is_encrypted: shouldEncrypt,
       status: 'sending',
       reply_to: replyTo ? String(replyTo) : null,

@@ -1,4 +1,4 @@
-import React, { RefObject } from 'react';
+import React, { RefObject, useEffect } from 'react';
 import {
   Mic,
   Pause,
@@ -96,6 +96,14 @@ export function ChatInput({
   onTriggerFileInput,
   isPrivateSublounge
 }: ChatInputProps) {
+  useEffect(() => {
+    if (textareaRef && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${Math.min(160, Math.max(42, scrollHeight))}px`;
+    }
+  }, [inputText, textareaRef]);
+
   return (
     <div className="p-4 border-t flex-shrink-0 bg-black/10 border-white-5">
       <div className="max-w-5xl mx-auto">

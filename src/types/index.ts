@@ -88,6 +88,7 @@ export interface Message {
   user_id: number;
   username?: string;
   content: string;
+  plaintext?: string;
   timestamp: string | number;
   created_at?: string | number;
   nonce?: string;

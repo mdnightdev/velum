@@ -7,7 +7,8 @@ import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
 import { users, supportAdminNominations } from '../db/schema/users.js';
 import { userPrekeys } from '../db/schema/keys.js';
-import { messages as dbMessages, lounges, userUnreadCounts } from '../db/schema/lounges.js';
+import { relationships } from '../db/schema/relationships.js';
+import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema/lounges.js';
 import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import type { Request, Response } from 'express';
@@ -167,6 +168,110 @@ userRouter.delete('/me', authMiddleware, (req, res, next) => {
 
 userRouter.post('/report', authMiddleware, (req, res, next) => {
   userController.reportUser(req, res).catch(next);
+});
+
+// POST /v2/user/:id/mute - Mute or unmute user
+userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const targetUserId = parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+    const redis = await getRedisClient();
+    const muteKey = `user:${currentUserId}:muted:${targetUserId}`;
+    let isMuted = false;
+    if (redis) {
+      const exists = await redis.get(muteKey);
+      if (exists) {
+        await redis.del(muteKey);
+        isMuted = false;
+      } else {
+        await redis.set(muteKey, '1');
+        isMuted = true;
+      }
+    }
+    res.json({ success: true, isMuted, message: isMuted ? 'User muted.' : 'User unmuted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to toggle mute status.' });
+  }
+});
+
+// POST /v2/user/:id/block - Block or unblock user
+userRouter.post('/:id/block', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const targetUserId = parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+    
+    const existing = await db.select().from(relationships).where(
+      or(
+        and(eq(relationships.userId, currentUserId), eq(relationships.friendId, targetUserId)),
+        and(eq(relationships.userId, targetUserId), eq(relationships.friendId, currentUserId))
+      )
+    ).limit(1);
+
+    let isBlocked = false;
+    if (existing.length > 0) {
+      if (existing[0].status === 'blocked') {
+        await db.update(relationships).set({ status: 'accepted', updatedAt: new Date() }).where(eq(relationships.id, existing[0].id));
+        isBlocked = false;
+      } else {
+        await db.update(relationships).set({ status: 'blocked', updatedAt: new Date() }).where(eq(relationships.id, existing[0].id));
+        isBlocked = true;
+      }
+    } else {
+      await db.insert(relationships).values({
+        userId: currentUserId,
+        friendId: targetUserId,
+        status: 'blocked',
+        updatedAt: new Date()
+      });
+      isBlocked = true;
+    }
+
+    const redis = await getRedisClient();
+    if (redis) {
+      const blockKey = `user:${currentUserId}:blocked:${targetUserId}`;
+      if (isBlocked) {
+        await redis.set(blockKey, '1');
+      } else {
+        await redis.del(blockKey);
+      }
+    }
+
+    res.json({ success: true, isBlocked, message: isBlocked ? 'User blocked.' : 'User unblocked.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to toggle block status.' });
+  }
+});
+
+// DELETE /v2/user/:id/chat - Clear direct chat messages
+userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const targetUserId = parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+
+    const dmLounges = await db.select().from(lounges).where(eq(lounges.type, 'dm'));
+    const members = await db.select().from(loungeMembers).where(inArray(loungeMembers.userId, [currentUserId, targetUserId]));
+    
+    const userLounges = new Set(members.filter(m => m.userId === currentUserId).map(m => m.loungeId));
+    const targetLounges = new Set(members.filter(m => m.userId === targetUserId).map(m => m.loungeId));
+    const commonDmLounge = dmLounges.find(l => userLounges.has(l.id) && targetLounges.has(l.id));
+
+    if (commonDmLounge) {
+      await db.delete(messages).where(eq(messages.loungeId, commonDmLounge.id));
+    }
+
+    res.json({ success: true, message: 'Chat history cleared.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete chat history.' });
+  }
 });
 
 // GET /v2/users/:id/status - Get user online status

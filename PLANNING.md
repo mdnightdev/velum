@@ -1,48 +1,70 @@
-# ChatArea Deconstruction Plan
+# Velum Architectural Refinement & Feature Restoration Plan
 
 ## Overview
-`ChatArea.tsx` is a 2,084-line monolithic component performing 9 distinct operational roles:
-1. **Header Management**: Active channel/DM info, topic, call controls, drawer toggles.
-2. **Message List & Scrolling**: Message grouping, timestamp dividers, auto-scroll to bottom, unread indicators, jump-to-message logic.
-3. **Message Item Rendering**: Markdown parsing, media attachments, audio playback, hover action bar, reaction chips.
-4. **Interactive Message Actions**: Editing, deletion, pinning, thread creation, reaction pickers, report ticket triggers.
-5. **Input / Composer Area**: Auto-growing textarea, attachment uploader, drag-and-drop, draft auto-save, `@` mention auto-completion.
-6. **Voice Note Recording**: Web Audio API / MediaRecorder capture, waveform visualization, audio draft preview.
-7. **Thread Management**: Side panel for thread conversations and replies.
-8. **Search & Pin Drawers**: Full-text message search filtering and pinned message list modals.
-9. **Active Call Overlay**: Audio/video call interface header bar.
+This document outlines the systematic, multi-phase plan to address all structural, behavioral, security, and UI/UX issues across Velum Lounge, Chat, Admin systems, and Responsive Layouts, adhering strictly to the Velum Master Agent Protocol (`docs/AGENTS.md`).
 
 ---
 
-## Deconstruction Strategy
-
-### Phase 1: Custom Hooks Extraction (`src/components/chat/hooks/`)
-- `useMessageInput.ts`: Input text, draft auto-save, attachment handling, mention matching.
-- `useMessageScroll.ts`: Auto-scroll bottom detection, jump-to-message anchor, scroll event listener.
-- `useAudioRecorder.ts`: Microphone permissions, recording timer, audio blob export.
-- `useMessageActions.ts`: Reactions, message edit/delete states, pin toggling.
-
-### Phase 2: Core Presentational Components (`src/components/chat/`)
-- `ChatHeader.tsx`: Channel/DM title, banner, call triggers, drawer toggle buttons.
-- `ChatInput.tsx`: Composer bar, text area, attachment previews, recording trigger, emoji/GIF buttons.
-
-### Phase 3: Message Display Sub-Components (`src/components/chat/`)
-- `ChatMessageItem.tsx`: Individual message view, avatar, markdown formatting, reactions, media preview, hover actions.
-- `ChatMessageList.tsx`: Virtualized/grouped list rendering, timestamp separators, unread marker, scroll anchors.
-
-### Phase 4: Drawers & Modals (`src/components/chat/`)
-- `PinnedMessagesModal.tsx`: Modal for displaying and unpinning saved messages.
-- `SearchDrawer.tsx`: Search filter input and matching message results drawer.
-- `ThreadPanel.tsx`: Contextual thread drawer for nested replies.
-
-### Phase 5: Final Clean Integration
-- Refactor `ChatArea.tsx` into a lightweight, orchestrator component delegating presentational rendering and business logic to the extracted hooks and sub-components.
-- Verify full TypeScript compilation and linter passing after each phase.
+## Phase 1: System Admin Roles & Lounge Access Control Infrastructure
+- **System Admin Identification**: Ensure system admins (e.g. `Lexie`, `Midnight`) are properly recognized with system-level roles (`ADMIN`, `BANK_ADMIN`, etc.) in session payloads and backend checks.
+- **Velum Official Lounge Boundaries**:
+  - Restrict Velum Lounge sub-lounge creation: System-owned lounge managed strictly by System Admins (`Lexie` & `Midnight`). Completely disable sub-lounge creation UI and return `403 Forbidden` on backend endpoints if non-system admin attempts creation in Velum Lounge.
+  - Sub-lounge Capacity & Visibility: Exactly 10 sub-lounges total (8 public/visible to all users, 2 locked/hidden for System & Support Admins only).
+  - Deterministic Ordering: Enforce strict deterministic sorting (by `order_index` or fixed priority slug) on Velum sub-lounges so they never shift randomly across renders.
+- **User-Created Lounge Privileges**:
+  - Allow higher sub-lounge capacity for user-created lounges.
+  - Fix Auto-Promotion Bug: When lounge creators add users, default their role strictly to `member` (never auto-promote to `admin`).
+  - Privacy Boundaries: Non-members cannot view member lists, private rooms, or message contents — only the public "About / Join" preview card. Hide `+` create sub-lounge buttons from non-members/non-admins.
 
 ---
 
-## Next Steps
-To begin execution, please authorize with one of the trigger commands:
-- `start working`
-- `implement phase 1`
-- `execute plan`
+## Phase 2: Lounge & Room Management, Deletion & Avatar Uploads
+- **Lounge & Sub-lounge Deletion**:
+  - Implement full backend and UI deletion flow for individual sub-lounges and parent lounges (with complete cascading deletion of messages, members, and invites).
+- **Lounge Avatar Upload**:
+  - Unify lounge icon/avatar upload logic to match the user avatar upload system (file selection, image validation, preview, and server-side/state persistence).
+
+---
+
+## Phase 3: Interactive Search, User Actions & Profile Drawer
+- **Functional Lounge Search**:
+  - Fix dead-code search bar: connect backend/frontend filtering to search public lounges by title, description, or slug.
+- **User Actions Execution**:
+  - Implement functional handlers for Block, Mute, and Report actions in user profile cards.
+- **Animated Lounge Settings Overlay**:
+  - Extract Lounge Settings into a clean custom hook (`useLoungeSettings`) and smooth full-height overlay transition over the workspace.
+
+---
+
+## Phase 4: Chat Area UX, Instant Messaging & Textarea Flow
+- **Optimistic Instant Messaging**:
+  - Implement client-side optimistic message insertion in both lounge channels and direct messages so sending messages feels instantaneous without lag.
+- **Chat Layout & Spacing Overhaul**:
+  - Eliminate dead void space, optimize paddings, update message item cards, and improve typography density.
+  - Auto-growing composer textarea with max-height scrolling for long pasted text.
+- **Clean Human Copy**:
+  - Remove all tech-larping jargon ("nodes", "cyber", "daemons", etc.) and generic placeholder text; replace with humble, clean, human-readable labels.
+
+---
+
+## Phase 5: Mobile-First Touch Experience & App-Native Feel
+- **Mobile-First Responsive Layout**:
+  - Optimize drawers, sidebars, navigation tabs, and touch targets (>=44px) for mobile-first, followed by tablet and desktop views.
+- **Native App Touch Callouts**:
+  - Disable default web text selection callouts (`-webkit-touch-callout: none; user-select: none;`) across UI controls and cards while retaining text selection inside chat message content.
+
+---
+
+## Phase 6: System Integrity & Self-Healing Diagnostic Engine
+- **Velum Self-Healing Script**:
+  - Create an automated diagnostic engine (`npm run heal` / `server/self-healing.ts`) that validates DB tables, fixes orphaned room/member references, repairs missing default sub-lounges, and verifies role integrity automatically.
+
+---
+
+## Authorization & Next Steps
+Per `docs/AGENTS.md` Section III & IV:
+- Code modifications are paused in the Brainstorming/Planning phase.
+- To begin execution, please provide one of the explicit authorization triggers:
+  - `start working`
+  - `implement phase 1`
+  - `execute plan`

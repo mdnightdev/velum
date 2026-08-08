@@ -7,6 +7,7 @@
     "start": "node dist/server.cjs",
     "build": "vite build && esbuild server/index.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "lint": "tsc --noEmit",
+    "heal": "tsx server/self-healing.ts",
     "dev:server": "tsx watch server/index.ts",
     "cli": "tsx cli/v2/index.ts",
     "cli:v2": "tsx cli/v2/index.ts",

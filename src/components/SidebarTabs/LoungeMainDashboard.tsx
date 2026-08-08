@@ -54,6 +54,35 @@ export default function LoungeMainDashboard({
   const [showJoinLoungeMobileModal, setShowJoinLoungeMobileModal] = useState(false);
   const [loungeInviteCodeInput, setLoungeInviteCodeInput] = useState('');
   const [loungeStatusMessage, setLoungeStatusMessage] = useState('');
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyMessage, setApplyMessage] = useState('');
+
+  const handleApplyToJoin = async (targetId: string) => {
+    if (!targetId || isApplying) return;
+    setIsApplying(true);
+    setApplyMessage('');
+    try {
+      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const res = await fetch(`/v2/lounges/${targetId}/apply`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sid}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setApplyMessage(data.message || 'Application submitted successfully!');
+      } else {
+        setApplyMessage(data.error || 'Failed to submit application.');
+      }
+    } catch (err) {
+      console.error('Error applying to join:', err);
+      setApplyMessage('Error submitting join application.');
+    } finally {
+      setIsApplying(false);
+    }
+  };
   // Create Lounge State
   const [showCreateLoungeModal, setShowCreateLoungeModal] = useState(false);
   const [newLoungeName, setNewLoungeName] = useState('');
@@ -284,8 +313,15 @@ export default function LoungeMainDashboard({
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {(() => {
           const loungesList = Array.isArray(lounges) ? lounges : [];
+          const q = searchQuery.trim().toLowerCase();
           const filtered = loungesList
-            .filter((lounge) => (lounge.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+            .filter((lounge) => {
+              if (!q) return true;
+              const nameMatch = (lounge.name || '').toLowerCase().includes(q);
+              const descMatch = (lounge.description || '').toLowerCase().includes(q);
+              const slugMatch = (lounge.slug || '').toLowerCase().includes(q);
+              return nameMatch || descMatch || slugMatch;
+            })
             .sort((a, b) => {
               const lm = lastMessages || {};
               const keyA = a.slug || a.lounge_id;
@@ -405,8 +441,8 @@ export default function LoungeMainDashboard({
           >
             <div className="flex justify-between items-center mb-5">
               <div className="flex flex-col">
-                <h3 className="text-xs font-black uppercase tracking-widest text-accent">Initialize Lounge</h3>
-                <span className="text-[10px] opacity-60 uppercase tracking-wider font-mono">Create Lounge Node</span>
+                <h3 className="text-xs font-black uppercase tracking-widest text-accent">Create Lounge</h3>
+                <span className="text-[10px] opacity-60 uppercase tracking-wider font-mono">Create a new lounge room</span>
               </div>
               <button 
                 onClick={() => {
@@ -507,9 +543,10 @@ export default function LoungeMainDashboard({
               </button>
               <button
                 onClick={handleCreateLounge}
-                className="px-5 py-2.5 bg-accent hover:bg-accent/90 text-velum-900 rounded-xl cursor-pointer transition"
+                disabled={isSubmittingLounge}
+                className="px-5 py-2.5 bg-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed text-velum-900 rounded-xl cursor-pointer transition flex items-center justify-center gap-2"
               >
-                Initialize
+                {isSubmittingLounge ? 'Initializing...' : 'Initialize'}
               </button>
             </div>
           </div>
@@ -521,15 +558,27 @@ export default function LoungeMainDashboard({
           <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-white text-sm font-bold uppercase tracking-wider">Create Lounge Room</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-text-secondary hover:text-white"><X className="w-4 h-4" /></button>
+              <button 
+                onClick={() => setShowCreateModal(false)} 
+                disabled={isSubmittingRoom}
+                className="text-text-secondary hover:text-white disabled:opacity-40"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
             
             <input
               type="text"
               placeholder="Room name"
               value={newRoomName}
+              disabled={isSubmittingRoom}
               onChange={e => setNewRoomName(e.target.value)}
-              className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white focus:border-accent focus:outline-none"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !isSubmittingRoom) {
+                  handleCreateRoom();
+                }
+              }}
+              className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white focus:border-accent focus:outline-none disabled:opacity-50"
             />
             
             <div className="flex items-center gap-3">
@@ -537,8 +586,9 @@ export default function LoungeMainDashboard({
                 type="checkbox" 
                 id="isLocked"
                 checked={newRoomLocked}
+                disabled={isSubmittingRoom}
                 onChange={e => setNewRoomLocked(e.target.checked)}
-                className="w-4 h-4 bg-velum-900 border border-white-10 accent-accent"
+                className="w-4 h-4 bg-velum-900 border border-white-10 accent-accent disabled:opacity-50"
               />
               <label htmlFor="isLocked" className="text-xs text-text-secondary uppercase tracking-wider">Locked VIP Room</label>
             </div>
@@ -547,9 +597,10 @@ export default function LoungeMainDashboard({
 
             <button 
               onClick={handleCreateRoom}
-              className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition"
+              disabled={isSubmittingRoom}
+              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
             >
-              Create Room
+              {isSubmittingRoom ? 'Creating Room...' : 'Create Room'}
             </button>
           </div>
         </div>
@@ -558,11 +609,11 @@ export default function LoungeMainDashboard({
         <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
           <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-white text-sm font-bold uppercase tracking-wider">Locked VIP Room</h3>
-              <button onClick={() => setShowJoinModal(false)} className="text-text-secondary hover:text-white"><X className="w-4 h-4" /></button>
+              <h3 className="text-white text-sm font-bold uppercase tracking-wider">Locked Private Room</h3>
+              <button onClick={() => { setShowJoinModal(false); setApplyMessage(''); }} className="text-text-secondary hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
             
-            <p className="text-xs text-text-secondary font-mono">This room requires an invite code to join.</p>
+            <p className="text-xs text-text-secondary font-mono">This room is private. Enter an invite code or submit a join application like Telegram.</p>
             
             <input 
               type="text" 
@@ -572,14 +623,25 @@ export default function LoungeMainDashboard({
               className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white uppercase focus:border-accent focus:outline-none tracking-[0.2em] font-mono text-center"
             />
             
-            {statusMessage && <div className="text-accent text-[10px] font-mono">{statusMessage}</div>}
+            {statusMessage && <div className="text-accent text-[10px] font-mono text-center">{statusMessage}</div>}
+            {applyMessage && <div className="text-accent text-[10px] font-mono text-center bg-accent/10 p-2 rounded-lg border border-accent/20">{applyMessage}</div>}
 
-            <button 
-              onClick={() => handleJoinRoom(targetLoungeId, joinRoomId, inviteCodeInput)}
-              className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition"
-            >
-              Verify Code
-            </button>
+            <div className="space-y-2">
+              <button 
+                onClick={() => handleJoinRoom(targetLoungeId, joinRoomId, inviteCodeInput)}
+                className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+              >
+                Verify Code
+              </button>
+
+              <button
+                onClick={() => handleApplyToJoin(joinRoomId || targetLoungeId)}
+                disabled={isApplying}
+                className="w-full bg-white-5 hover:bg-white-10 text-white p-2.5 rounded-lg text-[10.5px] font-bold uppercase tracking-wider transition cursor-pointer border border-white-10 disabled:opacity-50"
+              >
+                {isApplying ? 'Submitting Application...' : 'Apply to Join (Request Access)'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -589,10 +651,10 @@ export default function LoungeMainDashboard({
           <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4 shadow-2xl">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-white text-sm font-bold uppercase tracking-wider">Join a Lounge</h3>
-              <button onClick={() => setShowJoinLoungeMobileModal(false)} className="text-text-secondary hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
+              <button onClick={() => { setShowJoinLoungeMobileModal(false); setApplyMessage(''); }} className="text-text-secondary hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
             
-            <p className="text-xs text-text-secondary font-mono">Enter a valid lounge invite code.</p>
+            <p className="text-xs text-text-secondary font-mono">Enter a lounge code or apply directly to join.</p>
             
             <input 
               type="text" 
@@ -603,13 +665,16 @@ export default function LoungeMainDashboard({
             />
             
             {loungeStatusMessage && <div className="text-accent text-[10px] font-mono text-center">{loungeStatusMessage}</div>}
-            
-            <button 
-              onClick={handleJoinLoungeMobile}
-              className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
-            >
-              Verify Code
-            </button>
+            {applyMessage && <div className="text-accent text-[10px] font-mono text-center bg-accent/10 p-2 rounded-lg border border-accent/20">{applyMessage}</div>}
+
+            <div className="space-y-2">
+              <button 
+                onClick={handleJoinLoungeMobile}
+                className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+              >
+                Verify Code
+              </button>
+            </div>
           </div>
         </div>
       )}

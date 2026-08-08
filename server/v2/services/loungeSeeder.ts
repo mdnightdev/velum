@@ -1,17 +1,18 @@
 import { db } from '../db/client.js';
 import { lounges, loungeMembers } from '../db/schema/lounges.js';
 import { eq, sql } from 'drizzle-orm';
+import { deduplicateSublounges } from './loungeDeduplicator.js';
 
 export const OFFICIAL_SUBLOUNGES = [
-  { slug: 'velum_general', name: 'General', description: 'Main community chat & general discussion', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_market', name: 'Marketplace', description: 'Official trading & commerce discussions', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_escrow', name: 'Escrow Operations', description: 'Escrow status & secure trade support', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_offtopic', name: 'Offtopic', description: 'Casual banter, games, & off-topic chatter', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_bugs', name: 'Bug Reports', description: 'Report system bugs & technical issues', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_support', name: 'Support', description: 'Velum customer support & ticket assistance', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_suggestions', name: 'Suggestions', description: 'Propose new features & platform improvements', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_events', name: 'Live Events', description: 'Community events & scheduled discussions', accessLevel: 'ALL', isLocked: false },
-  { slug: 'velum_announcements', name: 'Announcements', description: 'Official Velum platform updates & news', accessLevel: 'ANNOUNCE', isLocked: true },
+  { slug: 'velum_general', name: 'General', description: 'Main community chat & general discussion', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_market', name: 'Marketplace', description: 'Official trading & commerce discussions', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_escrow', name: 'Escrow Operations', description: 'Escrow status & secure trade support', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_offtopic', name: 'Offtopic', description: 'Casual banter, games, & off-topic chatter', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_bugs', name: 'Bug Reports', description: 'Report system bugs & technical issues', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_support', name: 'Support', description: 'Velum customer support & ticket assistance', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_suggestions', name: 'Suggestions', description: 'Propose new features & platform improvements', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_events', name: 'Live Events', description: 'Community events & scheduled discussions', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { slug: 'velum_announcements', name: 'Announcements', description: 'Official Velum platform updates & news', accessLevel: 'ANNOUNCE', isLocked: true, isHidden: true },
   { slug: 'velum_executives', name: 'Executive Lounge', description: 'Restricted executive & governance channel', accessLevel: 'EXEC_ONLY', isLocked: true, isHidden: true }
 ];
 
@@ -106,6 +107,10 @@ export async function ensureVelumLoungeSeeded() {
         });
       }
     }
+
+    // Run self-healing deduplication to purge any spammed duplicates
+    await deduplicateSublounges();
+
     isSeeded = true;
   } catch (err) {
     console.error('[LoungeSeeder] Seeding error:', err);

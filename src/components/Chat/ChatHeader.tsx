@@ -38,8 +38,9 @@ export function ChatHeader({
       <div className="flex items-center gap-3">
         {isMobile && onBackToDeck && (
           <button
+            type="button"
             onClick={onBackToDeck}
-            className="p-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-text-primary/5 cursor-pointer flex items-center justify-center transition-colors"
+            className="w-11 h-11 rounded-full text-text-secondary hover:text-white hover:bg-text-primary/5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
             title="Back to directory"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -76,8 +77,9 @@ export function ChatHeader({
       </div>
       {onSearchToggle && (
         <button
+          type="button"
           onClick={onSearchToggle}
-          className="p-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
+          className="w-11 h-11 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
           title="Search messages"
         >
           <Search className="w-5 h-5" />

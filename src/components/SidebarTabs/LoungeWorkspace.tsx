@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ChatArea from '../ChatArea';
 import { useResponsive } from '../../hooks/useResponsive';
 import { ChevronLeft, ChevronRight, Plus, Settings, Menu } from 'lucide-react';
@@ -29,6 +29,44 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     onRoomSelect: props.onRoomSelect,
   });
 
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const targetId = selectedMember?.user_id || selectedMember?.userId;
+      if (targetId && !selectedMember.isDetailsLoaded) {
+        try {
+          const sId = sessionStorage.getItem('velum-sessionId') || '';
+          const res = await fetch(`/v2/user/${targetId}/profile`, {
+            headers: { 'Authorization': `Bearer ${sId}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setSelectedMember((prev: any) => {
+              const prevId = prev?.user_id || prev?.userId;
+              if (prev && String(prevId) === String(targetId)) {
+                return {
+                  ...prev,
+                  displayName: data.displayName || prev.displayName || prev.username,
+                  bio: data.bio || prev.bio || 'Velum Member.',
+                  location: data.location || prev.location || 'Unknown location',
+                  status: data.status || prev.status || 'Active',
+                  isMuted: !!data.isMuted,
+                  isBlocked: !!data.isBlocked,
+                  created_at: data.createdAt || prev.created_at,
+                  isDetailsLoaded: true,
+                  stats: data.stats || { loungesCount: 4, connectionsCount: 18 }
+                };
+              }
+              return prev;
+            });
+          }
+        } catch (e) {
+          console.error('[LoungeWorkspace] Error loading member profile:', e);
+        }
+      }
+    };
+    fetchProfile();
+  }, [selectedMember]);
+
   const handleProfileMessage = (member: any) => {
     const currentUserId = props.currentUserId;
     const targetUserId = member.userId || member.user_id;
@@ -47,9 +85,18 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}` }
       });
-      if (res.ok) alert(`Muted user.`);
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.isMuted ? 'Muted user. They can no longer disturb you.' : 'Unmuted user.');
+        setSelectedMember((prev: any) => {
+          const prevId = prev?.user_id || prev?.userId;
+          if (prev && String(prevId) === String(targetId)) {
+            return { ...prev, isMuted: !!data.isMuted };
+          }
+          return prev;
+        });
+      }
     } catch(e) {}
-    setSelectedMember(null);
   };
 
   const handleProfileBlock = async (member: any) => {
@@ -60,9 +107,21 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}` }
       });
-      if (res.ok) alert(`Blocked user.`);
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.isBlocked ? 'Blocked user. User Blocked!' : 'Unblocked user.');
+        if (data.isBlocked && props.onRoomSelect) {
+          props.onRoomSelect('');
+        }
+        setSelectedMember((prev: any) => {
+          const prevId = prev?.user_id || prev?.userId;
+          if (prev && String(prevId) === String(targetId)) {
+            return { ...prev, isBlocked: !!data.isBlocked };
+          }
+          return prev;
+        });
+      }
     } catch(e) {}
-    setSelectedMember(null);
   };
 
   const handleProfileDeleteChat = async (member: any) => {
@@ -73,7 +132,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${sId}` }
       });
-      if (res.ok) alert(`Chat deleted.`);
+      if (res.ok) {
+        alert(`Chat deleted.`);
+        if (props.onRoomSelect) props.onRoomSelect('');
+      }
     } catch(e) {}
     setSelectedMember(null);
   };
@@ -164,6 +226,9 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     String(activeRoom.owner_id || activeRoom.created_by) === String(props.currentUserId) || isLoungeCreator
   ) : false;
 
+  const isOfficialLounge = loungeData.loungeDetails?.is_official || loungeData.loungeDetails?.is_system || props.loungeId === 'velum_master_lounge';
+  const canCreateSublounge = isOfficialLounge ? loungeData.isSystemAdmin : (loungeData.isParentAdmin || isLoungeCreator);
+
   const handleMarkAsRead = (messageId: string, roomId: string) => {
     props.onMarkAsRead?.(messageId, roomId);
   };
@@ -224,14 +289,14 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                       <Settings className="w-4 h-4" />
                     </button>
                   )}
-                  {!isSubloungeCollapsed && (
+                  {!isSubloungeCollapsed && canCreateSublounge && (
                     <button
                       onClick={() => {
                         loungeData.setStatusMessage('');
                         loungeData.setShowCreateModal(true);
                       }}
                       className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer"
-                      title="Create Room"
+                      title="Create Room / Sublounge"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
@@ -258,7 +323,9 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                     unreadCounts={props.unreadCounts}
                     lastMessages={props.lastMessages}
                     typingRooms={loungeData.typingRooms}
+                    isParentAdmin={loungeData.isParentAdmin}
                     onRoomSelect={props.onRoomSelect}
+                    onDeleteRoom={loungeData.handleDeleteRoom}
                   />
                 </div>
               )}
@@ -383,6 +450,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           newRoomLocked={loungeData.newRoomLocked}
           setNewRoomLocked={loungeData.setNewRoomLocked}
           statusMessage={loungeData.statusMessage}
+          isCreatingRoom={loungeData.isCreatingRoom}
           onClose={() => loungeData.setShowCreateModal(false)}
           onCreateRoom={loungeData.handleCreateRoom}
         />
@@ -424,6 +492,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           onDirectAddMember={loungeData.handleDirectAddMember}
           onCreateInviteCode={loungeData.handleCreateInviteCode}
           onRevokeInviteCode={loungeData.handleRevokeInviteCode}
+          onDeleteLounge={loungeData.handleDeleteLounge}
         />
 
         <SanctionDialog
@@ -448,13 +517,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               userId: selectedMember.user_id,
               username: selectedMember.username,
               displayName: selectedMember.displayName || selectedMember.username.replace('@', ''),
-              bio: selectedMember.bio || 'Secure Node Operator.',
+              bio: selectedMember.bio || 'Velum Member.',
               location: selectedMember.location || 'Unknown location',
               joinedDate: selectedMember.created_at ? new Date(selectedMember.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'May 2026',
               status: selectedMember.status || 'offline',
               role: selectedMember.role,
               avatarUrl: selectedMember.avatar,
-              stats: {
+              isMuted: !!selectedMember.isMuted,
+              isBlocked: !!selectedMember.isBlocked,
+              stats: selectedMember.stats || {
                 loungesCount: 4,
                 connectionsCount: 18
               }
@@ -599,7 +670,9 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               unreadCounts={props.unreadCounts}
               lastMessages={props.lastMessages}
               typingRooms={loungeData.typingRooms}
+              isParentAdmin={loungeData.isParentAdmin}
               onRoomSelect={props.onRoomSelect}
+              onDeleteRoom={loungeData.handleDeleteRoom}
             />
           )}
           {mobileTab === 'members' && (
@@ -639,6 +712,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         newRoomLocked={loungeData.newRoomLocked}
         setNewRoomLocked={loungeData.setNewRoomLocked}
         statusMessage={loungeData.statusMessage}
+        isCreatingRoom={loungeData.isCreatingRoom}
         onClose={() => loungeData.setShowCreateModal(false)}
         onCreateRoom={loungeData.handleCreateRoom}
       />
@@ -680,6 +754,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         onDirectAddMember={loungeData.handleDirectAddMember}
         onCreateInviteCode={loungeData.handleCreateInviteCode}
         onRevokeInviteCode={loungeData.handleRevokeInviteCode}
+        onDeleteLounge={loungeData.handleDeleteLounge}
       />
 
       <SanctionDialog
@@ -709,13 +784,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 userId: selectedMember.user_id,
                 username: selectedMember.username,
                 displayName: selectedMember.displayName || selectedMember.username.replace('@', ''),
-                bio: selectedMember.bio || 'Secure Node Operator.',
+                bio: selectedMember.bio || 'Velum Member.',
                 location: selectedMember.location || 'Unknown location',
                 joinedDate: selectedMember.created_at ? new Date(selectedMember.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'May 2026',
                 status: selectedMember.status || 'offline',
                 role: selectedMember.role,
                 avatarUrl: selectedMember.avatar,
-                stats: {
+                isMuted: !!selectedMember.isMuted,
+                isBlocked: !!selectedMember.isBlocked,
+                stats: selectedMember.stats || {
                   loungesCount: 4,
                   connectionsCount: 18
                 }

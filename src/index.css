@@ -418,3 +418,36 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 .animate-bounce-slow {
   animation: bounce-slow 4s ease-in-out infinite;
 }
+
+/* --- Native App Touch Callouts & Selection Control --- */
+/* Disable default web text selection callouts across UI controls, buttons, sidebars, cards, and panels */
+body, 
+button, 
+a, 
+[role="button"], 
+.bottom-nav, 
+.sidebar, 
+.drawer, 
+.card, 
+.control, 
+.badge, 
+.chip, 
+.tab, 
+.panel,
+.glass-panel,
+.glass-card {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Retain text selection specifically inside chat message content, input fields, and textareas */
+.selectable-text, 
+.selectable-text *, 
+input, 
+textarea, 
+[contenteditable="true"] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+

@@ -3,7 +3,8 @@ import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
 import { users } from '../db/schema/users.js';
 import { ensureVelumLoungeSeeded } from '../services/loungeSeeder.js';
-import { eq,gt, and, desc, like } from 'drizzle-orm';
+import { deduplicateSublounges } from '../services/loungeDeduplicator.js';
+import { eq, gt, and, desc, like, inArray } from 'drizzle-orm';
 import { createAuthMiddleware, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 
@@ -23,6 +24,29 @@ const auth = createAuthMiddleware(async (hashedToken) => {
     expiresAt: session.expiresAt
   };
 });
+
+const SYSTEM_ADMIN_ROLES = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
+const SYSTEM_ADMIN_USERNAMES = ['lexie', 'midnight'];
+
+export function checkIsSystemAdmin(user?: { role?: string; username?: string }): boolean {
+  if (!user) return false;
+  if (user.role && SYSTEM_ADMIN_ROLES.includes(user.role)) return true;
+  if (user.username && SYSTEM_ADMIN_USERNAMES.includes(user.username.toLowerCase())) return true;
+  return false;
+}
+
+const OFFICIAL_SLUGS_ORDER = [
+  'velum_general',
+  'velum_market',
+  'velum_escrow',
+  'velum_offtopic',
+  'velum_bugs',
+  'velum_support',
+  'velum_suggestions',
+  'velum_events',
+  'velum_announcements',
+  'velum_executives'
+];
 
 const optionalAuth = async (req: Request, _res: Response, next: NextFunction) => {
   try {
@@ -211,13 +235,59 @@ loungeRouter.get('/link-preview', optionalAuth, async (req: Request, res: Respon
 // GET /v2/lounges - List all official lounges and top-level public lounges
 loungeRouter.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const currentUserId = req.user?.userId;
+    const isAdmin = checkIsSystemAdmin(req.user);
+
+    let userJoinedIds = new Set<number>();
+    if (currentUserId) {
+      const m = await db.select().from(loungeMembers).where(and(eq(loungeMembers.userId, currentUserId), eq(loungeMembers.status, 'active')));
+      userJoinedIds = new Set(m.map(x => x.loungeId));
+    }
+
     const allLounges = (await db.select().from(lounges)).filter(l => l.type !== 'dm');
     const parentLounges = allLounges.filter(l => !l.parentLoungeId);
-    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'BANK_ADMIN' || req.user?.role === 'SUPPORT_ADMIN' || req.user?.role === 'CLI_ADMIN';
     
-    const formatted = parentLounges.map(parent => {
+    const searchQueryParam = (req.query.q || req.query.search || req.query.query || '').toString().trim().toLowerCase();
+
+    const visibleParents = parentLounges.filter(parent => {
+      if (searchQueryParam) {
+        const nameMatch = (parent.name || '').toLowerCase().includes(searchQueryParam);
+        const descMatch = (parent.description || '').toLowerCase().includes(searchQueryParam);
+        const slugMatch = (parent.slug || '').toLowerCase().includes(searchQueryParam);
+        if (!nameMatch && !descMatch && !slugMatch) return false;
+      }
+
+      if (!parent.isPrivate && !parent.isHidden) return true;
+      if (isAdmin) return true;
+      if (currentUserId) {
+        if (parent.ownerId === currentUserId) return true;
+        if (userJoinedIds.has(parent.id)) return true;
+      }
+      return false; // Private parent lounge is invisible to non-members
+    });
+
+    const formatted = visibleParents.map(parent => {
       const sublounges = allLounges.filter(l => l.parentLoungeId === parent.id);
-      const visibleSublounges = isAdmin ? sublounges : sublounges.filter(l => !l.isHidden);
+      const visibleSublounges = sublounges.filter(sub => {
+        if (!sub.isPrivate && !sub.isHidden) return true;
+        if (isAdmin) return true;
+        if (currentUserId) {
+          if (sub.ownerId === currentUserId) return true;
+          if (parent.ownerId === currentUserId) return true;
+          if (userJoinedIds.has(sub.id)) return true;
+        }
+        return false; // Private sublounge is invisible to non-members
+      });
+
+      if (parent.slug === 'velum_master_lounge') {
+        visibleSublounges.sort((a, b) => {
+          const idxA = OFFICIAL_SLUGS_ORDER.indexOf(a.slug || '');
+          const idxB = OFFICIAL_SLUGS_ORDER.indexOf(b.slug || '');
+          const posA = idxA !== -1 ? idxA : 999;
+          const posB = idxB !== -1 ? idxB : 999;
+          return posA - posB;
+        });
+      }
       
       return {
         ...parent,
@@ -244,7 +314,7 @@ loungeRouter.get('/', optionalAuth, async (req: Request, res: Response, next: Ne
 loungeRouter.get('/user', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const currentUserId = req.user?.userId;
-    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'BANK_ADMIN' || req.user?.role === 'SUPPORT_ADMIN' || req.user?.role === 'CLI_ADMIN';
+    const isAdmin = checkIsSystemAdmin(req.user);
     const allLounges = (await db.select().from(lounges)).filter(l => l.type !== 'dm');
     
     if (!currentUserId) {
@@ -273,7 +343,7 @@ loungeRouter.get('/user', optionalAuth, async (req: Request, res: Response, next
 loungeRouter.get('/:id', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawId = req.params.id;
-    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'BANK_ADMIN' || req.user?.role === 'SUPPORT_ADMIN' || req.user?.role === 'CLI_ADMIN';
+    const isAdmin = checkIsSystemAdmin(req.user);
     const all = await db.select().from(lounges);
     const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
@@ -288,6 +358,16 @@ loungeRouter.get('/:id', optionalAuth, async (req: Request, res: Response, next:
 
     const sublounges = all.filter(l => l.parentLoungeId === target.id);
     const visibleSublounges = isAdmin ? sublounges : sublounges.filter(l => !l.isHidden);
+
+    if (target.slug === 'velum_master_lounge') {
+      visibleSublounges.sort((a, b) => {
+        const idxA = OFFICIAL_SLUGS_ORDER.indexOf(a.slug || '');
+        const idxB = OFFICIAL_SLUGS_ORDER.indexOf(b.slug || '');
+        const posA = idxA !== -1 ? idxA : 999;
+        const posB = idxB !== -1 ? idxB : 999;
+        return posA - posB;
+      });
+    }
 
     res.json({
       lounge: {
@@ -313,6 +393,9 @@ loungeRouter.get('/:id', optionalAuth, async (req: Request, res: Response, next:
 loungeRouter.get('/:id/rooms', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawId = req.params.id;
+    const currentUserId = req.user?.userId;
+    const isAdmin = checkIsSystemAdmin(req.user);
+
     const all = await db.select().from(lounges);
     const parent = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
@@ -320,8 +403,37 @@ loungeRouter.get('/:id/rooms', optionalAuth, async (req: Request, res: Response,
       return res.json({ rooms: [] });
     }
 
+    let userJoinedSubIds = new Set<number>();
+    if (currentUserId) {
+      const m = await db.select().from(loungeMembers).where(and(eq(loungeMembers.userId, currentUserId), eq(loungeMembers.status, 'active')));
+      userJoinedSubIds = new Set(m.map(x => x.loungeId));
+    }
+
     const subs = all.filter(l => l.parentLoungeId === parent.id);
-    const formattedRooms = subs.map(sub => ({
+
+    // Filter sublounges: private sublounges are invisible to non-members
+    const visibleSubs = subs.filter(sub => {
+      if (!sub.isPrivate && !sub.isHidden) return true; // Public room is visible
+      if (isAdmin) return true;
+      if (currentUserId) {
+        if (sub.ownerId === currentUserId) return true; // Creator of private sublounge
+        if (parent.ownerId === currentUserId) return true; // Parent lounge owner
+        if (userJoinedSubIds.has(sub.id)) return true; // Active member of this sublounge
+      }
+      return false; // Invisible to non-members
+    });
+
+    if (parent.slug === 'velum_master_lounge') {
+      visibleSubs.sort((a, b) => {
+        const idxA = OFFICIAL_SLUGS_ORDER.indexOf(a.slug || '');
+        const idxB = OFFICIAL_SLUGS_ORDER.indexOf(b.slug || '');
+        const posA = idxA !== -1 ? idxA : 999;
+        const posB = idxB !== -1 ? idxB : 999;
+        return posA - posB;
+      });
+    }
+
+    const formattedRooms = visibleSubs.map(sub => ({
       id: sub.slug || `sub_${sub.id}`,
       lounge_id: parent.slug || `lounge_${parent.id}`,
       name: sub.name,
@@ -440,12 +552,25 @@ loungeRouter.post('/', auth, async (req: Request, res: Response, next: NextFunct
       return res.status(400).json({ error: 'Lounge name is required.' });
     }
 
+    const cleanName = name.trim();
+
+    // Prevent duplicate top-level lounge creation by same user with same name
+    const existing = await db.select().from(lounges);
+    const dup = existing.find(
+      l => !l.parentLoungeId &&
+           l.ownerId === currentUserId &&
+           l.name.toLowerCase() === cleanName.toLowerCase()
+    );
+    if (dup) {
+      return res.status(409).json({ error: `You already created a lounge named "${cleanName}".` });
+    }
+
     const isPrivate = Boolean(is_private);
     const inviteCode = isPrivate ? `VL/M-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
     const slug = `lounge_${Date.now()}`;
     const [created] = await db.insert(lounges).values({
       slug,
-      name: name.trim(),
+      name: cleanName,
       description: typeof description === 'string' ? description : null,
       ownerId: currentUserId,
       isPrivate,
@@ -489,9 +614,12 @@ loungeRouter.post('/:id/sublounges', auth, async (req: Request, res: Response, n
 
     const parentLoungeId = parentLounge.id;
 
-    // Check if parent is user-created (not Velum official)
-    if (parentLounge.isOfficial || parentLounge.isSystem) {
-      return res.status(403).json({ error: 'Cannot create sublounges under Velum official lounges.' });
+    // Check if parent is Velum official lounge
+    const isSysAdmin = checkIsSystemAdmin(req.user);
+    if (parentLounge.isOfficial || parentLounge.isSystem || parentLounge.slug === 'velum_master_lounge') {
+      if (!isSysAdmin) {
+        return res.status(403).json({ error: 'Sub-lounge creation under Velum Official Lounge is restricted exclusively to System Admins.' });
+      }
     }
 
     // Permission checks
@@ -507,6 +635,16 @@ loungeRouter.post('/:id/sublounges', auth, async (req: Request, res: Response, n
       }
     }
 
+    // Prevent duplicate sublounge/channel creation with the same name under this parent
+    const cleanSubName = name.trim();
+    const existingSameName = allLounges.find(
+      l => l.parentLoungeId === parentLoungeId &&
+           l.name.toLowerCase() === cleanSubName.toLowerCase()
+    );
+    if (existingSameName) {
+      return res.status(409).json({ error: `A channel or room named "${cleanSubName}" already exists in this lounge.` });
+    }
+
     // Generate invite code only for private sublounges
     const isPrivate = Boolean(is_private);
     const inviteCode = isPrivate ? `VL/S-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
@@ -514,7 +652,7 @@ loungeRouter.post('/:id/sublounges', auth, async (req: Request, res: Response, n
 
     const [created] = await db.insert(lounges).values({
       slug,
-      name: name.trim(),
+      name: cleanSubName,
       description: typeof description === 'string' ? description : null,
       ownerId: currentUserId,
       parentLoungeId: parentLoungeId,
@@ -750,11 +888,21 @@ loungeRouter.post('/:id/messages', auth, async (req: Request, res: Response, nex
 loungeRouter.get('/:loungeId/invites', auth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawId = req.params.loungeId;
+    const currentUserId = req.user!.userId;
+    const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(req.user!.role);
+
     const all = await db.select().from(lounges);
     const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
     if (!lounge) {
       return res.status(404).json({ error: 'Lounge not found.' });
     }
+
+    if (lounge.parentLoungeId && lounge.isPrivate) {
+      if (lounge.ownerId !== currentUserId && !isAdmin) {
+        return res.status(403).json({ error: 'Only the creator of this private room can view invite links.' });
+      }
+    }
+
     if (lounge.inviteCode) {
       return res.json([{
         invite_id: 'code',
@@ -771,11 +919,21 @@ loungeRouter.get('/:loungeId/invites', auth, async (req: Request, res: Response,
 loungeRouter.post('/:loungeId/invites', auth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawId = req.params.loungeId;
+    const currentUserId = req.user!.userId;
+    const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(req.user!.role);
+
     const all = await db.select().from(lounges);
     const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
     if (!lounge) {
       return res.status(404).json({ error: 'Lounge not found.' });
     }
+
+    if (lounge.parentLoungeId && lounge.isPrivate) {
+      if (lounge.ownerId !== currentUserId && !isAdmin) {
+        return res.status(403).json({ error: 'Only the creator of this private room can generate invite links.' });
+      }
+    }
+
     let code = lounge.inviteCode;
     if (!code) {
       const prefix = lounge.parentLoungeId ? 'VL/S' : 'VL/M';
@@ -802,6 +960,440 @@ loungeRouter.delete('/:loungeId/invites/:inviteId', auth, async (req: Request, r
     }
     await db.update(lounges).set({ inviteCode: null }).where(eq(lounges.id, lounge.id));
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /v2/lounges/:id/requests - Get pending join requests
+loungeRouter.get('/:id/requests', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.json({ requests: [] });
+    }
+
+    const pendingMembers = await db.select({
+      id: loungeMembers.id,
+      user_id: loungeMembers.userId,
+      role: loungeMembers.role,
+      status: loungeMembers.status,
+      username: users.username,
+      avatar: users.avatarUrl
+    })
+    .from(loungeMembers)
+    .leftJoin(users, eq(loungeMembers.userId, users.id))
+    .where(and(
+      eq(loungeMembers.loungeId, target.id),
+      eq(loungeMembers.status, 'pending')
+    ));
+
+    const requests = pendingMembers.map(m => ({
+      requestId: m.id.toString(),
+      userId: m.user_id,
+      username: m.username || `User_${m.user_id}`,
+      avatar: m.avatar,
+      createdAt: new Date().toISOString()
+    }));
+
+    res.json({ requests });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /v2/lounges/apply/review - Review join request
+loungeRouter.post('/apply/review', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { requestId, approve } = req.body;
+
+    if (!requestId) {
+      return res.status(400).json({ error: 'Request ID is required.' });
+    }
+
+    const memberId = parseInt(requestId, 10);
+    if (isNaN(memberId)) {
+      return res.status(400).json({ error: 'Invalid Request ID.' });
+    }
+
+    if (approve) {
+      await db.update(loungeMembers)
+        .set({ status: 'active' })
+        .where(eq(loungeMembers.id, memberId));
+    } else {
+      await db.delete(loungeMembers)
+        .where(eq(loungeMembers.id, memberId));
+    }
+
+    res.json({ success: true, approved: Boolean(approve) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /v2/lounges/:id/members/:targetUserId - Update member role
+loungeRouter.put('/:id/members/:targetUserId', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const targetUserId = parseInt(req.params.targetUserId, 10);
+    const { role } = req.body;
+    const currentUserId = req.user!.userId;
+
+    if (isNaN(targetUserId) || !role) {
+      return res.status(400).json({ error: 'Valid target user ID and role are required.' });
+    }
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+
+    const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(req.user!.role);
+    if (target.ownerId !== currentUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Only lounge owner can modify member roles.' });
+    }
+
+    await db.update(loungeMembers)
+      .set({ role })
+      .where(and(
+        eq(loungeMembers.loungeId, target.id),
+        eq(loungeMembers.userId, targetUserId)
+      ));
+
+    res.json({ success: true, message: 'Member role updated.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /v2/lounges/:id/members/:targetUserId - Kick/Remove member
+loungeRouter.delete('/:id/members/:targetUserId', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const targetUserId = parseInt(req.params.targetUserId, 10);
+    const currentUserId = req.user!.userId;
+
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Valid target user ID is required.' });
+    }
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+
+    const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(req.user!.role);
+    if (target.ownerId !== currentUserId && targetUserId !== currentUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Permission denied.' });
+    }
+
+    await db.delete(loungeMembers)
+      .where(and(
+        eq(loungeMembers.loungeId, target.id),
+        eq(loungeMembers.userId, targetUserId)
+      ));
+
+    res.json({ success: true, message: 'Member removed from lounge.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /v2/lounges/sanction - Sanction member (kick, ban, mute)
+loungeRouter.post('/sanction', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { loungeId, targetUserId, type } = req.body;
+    const currentUserId = req.user!.userId;
+
+    if (!loungeId || !targetUserId || !type) {
+      return res.status(400).json({ error: 'loungeId, targetUserId, and type are required.' });
+    }
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === loungeId || l.id.toString() === loungeId.toString());
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+
+    const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(req.user!.role);
+    if (target.ownerId !== currentUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Only lounge owners or admins can apply sanctions.' });
+    }
+
+    const numTargetId = parseInt(targetUserId, 10);
+
+    if (type === 'kick') {
+      await db.delete(loungeMembers)
+        .where(and(
+          eq(loungeMembers.loungeId, target.id),
+          eq(loungeMembers.userId, numTargetId)
+        ));
+    } else if (type === 'ban' || type === 'mute') {
+      await db.update(loungeMembers)
+        .set({ status: type === 'ban' ? 'banned' : 'muted' })
+        .where(and(
+          eq(loungeMembers.loungeId, target.id),
+          eq(loungeMembers.userId, numTargetId)
+        ));
+    }
+
+    res.json({ success: true, message: `Sanction "${type}" applied successfully.` });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /v2/lounges/:id/members/add - Direct add member by username
+loungeRouter.post('/:id/members/add', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const { username } = req.body;
+    const currentUserId = req.user!.userId;
+
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({ error: 'Username is required.' });
+    }
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+
+    const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(req.user!.role);
+    if (target.ownerId !== currentUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Only lounge owner or admins can add members directly.' });
+    }
+
+    const cleanUsername = username.trim().replace(/^@/, '');
+    const targetUser = await userRepository.findByUsername(cleanUsername);
+
+    if (!targetUser) {
+      return res.status(404).json({ error: `User "@${cleanUsername}" not found.` });
+    }
+
+    const existing = await db.select().from(loungeMembers)
+      .where(and(
+        eq(loungeMembers.loungeId, target.id),
+        eq(loungeMembers.userId, targetUser.id)
+      ));
+
+    if (existing.length === 0) {
+      await db.insert(loungeMembers).values({
+        loungeId: target.id,
+        userId: targetUser.id,
+        role: 'member',
+        status: 'active'
+      });
+    }
+
+    res.json({ success: true, message: `Added @${cleanUsername} to ${target.name}` });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /v2/lounges/:loungeId/rooms/:roomId/join - Join room
+loungeRouter.post('/:loungeId/rooms/:roomId/join', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { roomId } = req.params;
+    const { invite_code } = req.body || {};
+    const currentUserId = req.user!.userId;
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === roomId || l.id.toString() === roomId || (invite_code && l.inviteCode === invite_code));
+
+    if (!target) {
+      return res.status(404).json({ error: 'Room not found.' });
+    }
+
+    if (target.isPrivate && target.inviteCode && target.inviteCode !== invite_code && target.ownerId !== currentUserId) {
+      return res.status(403).json({ error: 'Invalid invite code for private room.' });
+    }
+
+    const existing = await db.select().from(loungeMembers)
+      .where(and(eq(loungeMembers.loungeId, target.id), eq(loungeMembers.userId, currentUserId)));
+
+    if (existing.length === 0) {
+      await db.insert(loungeMembers).values({
+        loungeId: target.id,
+        userId: currentUserId,
+        role: 'member',
+        status: 'active'
+      });
+    }
+
+    res.json({ success: true, message: `Joined room ${target.name}`, room: target });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /v2/lounges/:id - Update lounge settings (name, description, avatar)
+loungeRouter.put('/:id', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const { name, description, icon_url, is_private } = req.body;
+    const currentUserId = req.user!.userId;
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+
+    const isAdmin = checkIsSystemAdmin(req.user);
+    if (target.ownerId !== currentUserId && !isAdmin) {
+      return res.status(403).json({ error: 'Only lounge owner or admins can update settings.' });
+    }
+
+    const updates: Record<string, any> = {
+      updatedAt: new Date()
+    };
+
+    if (name && typeof name === 'string' && name.trim()) {
+      updates.name = name.trim();
+    }
+    if (description !== undefined) {
+      updates.description = typeof description === 'string' ? description.trim() : null;
+    }
+    const iconVal = icon_url !== undefined ? icon_url : req.body.avatar_url;
+    if (iconVal !== undefined) {
+      updates.avatarUrl = typeof iconVal === 'string' ? iconVal.trim() : null;
+    }
+    if (is_private !== undefined) {
+      updates.isPrivate = Boolean(is_private);
+    }
+
+    const [updated] = await db.update(lounges)
+      .set(updates)
+      .where(eq(lounges.id, target.id))
+      .returning();
+
+    res.json({
+      ...updated,
+      lounge_id: updated.slug || `lounge_${updated.id}`,
+      is_official: updated.isOfficial,
+      is_private: updated.isPrivate,
+      avatar_url: updated.avatarUrl
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /v2/lounges/:id/apply - Apply to join a private lounge or sublounge (Telegram style)
+loungeRouter.post('/:id/apply', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const currentUserId = req.user!.userId;
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge or room not found.' });
+    }
+
+    // Restrict applications for private sublounges (joining is by creator's invite code/link only)
+    if (target.parentLoungeId && target.isPrivate) {
+      return res.status(403).json({
+        error: 'Applications are restricted for this private room. Joining requires an invite link or code shared directly by the room creator.'
+      });
+    }
+
+    const existing = await db.select().from(loungeMembers)
+      .where(and(eq(loungeMembers.loungeId, target.id), eq(loungeMembers.userId, currentUserId)));
+
+    if (existing.length > 0) {
+      const member = existing[0];
+      if (member.status === 'active') {
+        return res.json({ success: true, status: 'active', message: 'You are already a member.' });
+      }
+      if (member.status === 'pending') {
+        return res.json({ success: true, status: 'pending', message: 'Your application is pending review.' });
+      }
+    }
+
+    await db.insert(loungeMembers).values({
+      loungeId: target.id,
+      userId: currentUserId,
+      role: 'member',
+      status: 'pending'
+    });
+
+    res.json({
+      success: true,
+      status: 'pending',
+      message: 'Join application submitted successfully! Awaiting approval.'
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /v2/lounges/deduplicate - Run self-healing deduplication for duplicate sublounges/lounges
+loungeRouter.post('/deduplicate', auth, async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await deduplicateSublounges();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /v2/lounges/:id - Delete lounge or sublounge with cascade
+loungeRouter.delete('/:id', auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawId = req.params.id;
+    const currentUserId = req.user!.userId;
+    const isAdmin = checkIsSystemAdmin(req.user);
+
+    const all = await db.select().from(lounges);
+    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Lounge not found.' });
+    }
+
+    if ((target.isOfficial || target.isSystem || target.slug === 'velum_master_lounge') && !isAdmin) {
+      return res.status(403).json({ error: 'Official Velum lounges cannot be deleted.' });
+    }
+
+    let canDelete = false;
+    if (isAdmin || target.ownerId === currentUserId) {
+      canDelete = true;
+    } else if (target.parentLoungeId) {
+      const parentLounge = all.find(l => l.id === target.parentLoungeId);
+      if (parentLounge && parentLounge.ownerId === currentUserId) {
+        canDelete = true;
+      }
+    }
+
+    if (!canDelete) {
+      return res.status(403).json({ error: 'You do not have permission to delete this lounge.' });
+    }
+
+    // Collect target ID and all child sublounge IDs
+    const childSubs = all.filter(l => l.parentLoungeId === target.id);
+    const targetIds = [target.id, ...childSubs.map(s => s.id)];
+
+    // Cascade delete messages, members, and lounges
+    await db.delete(messages).where(inArray(messages.loungeId, targetIds));
+    await db.delete(loungeMembers).where(inArray(loungeMembers.loungeId, targetIds));
+    await db.delete(lounges).where(inArray(lounges.id, targetIds));
+
+    res.json({ success: true, message: `Lounge "${target.name}" and all associated channels were deleted successfully.` });
   } catch (err) {
     next(err);
   }

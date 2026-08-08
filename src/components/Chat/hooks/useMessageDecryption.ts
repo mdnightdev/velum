@@ -25,6 +25,15 @@ export function useMessageDecryption({
       for (const m of messages) {
         if (!m.content || !m.message_id) continue;
 
+        if (m.plaintext) {
+          if (decryptedMap[m.message_id] !== m.plaintext) {
+            newDecrypted[m.message_id] = m.plaintext;
+            newCiphertexts[m.message_id] = m.content;
+            changed = true;
+          }
+          continue;
+        }
+
         if (decryptedCiphertexts[m.message_id] !== m.content) {
           const peerId = activeChatPeer?.userId || m.user_id;
           try {

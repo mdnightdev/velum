@@ -545,3 +545,35 @@ For technical support or questions about the codebase, refer to:
 - **Admin Ticket Deletion**: Created and registered the `POST /v2/admin/tickets/:ticketId/delete` route on the backend router and linked it directly to the "Delete Ticket" button inside the support dashboard.
 - **Lounge Invite Revocation**: Implemented the missing `GET /v2/lounges/:loungeId/invites` and `DELETE /v2/lounges/:loungeId/invites/:inviteId` endpoints in the backend routes to allow creators to list and revoke invite codes dynamically.
 - **Saved Notes Persistence**: Fixed a localStorage key discrepancy (`velum-noteis-` vs `velum-notes-`) in `DashboardLayout.tsx` that previously caused notes to disappear on page refreshes.
+
+## Phase 5: Mobile-First Touch Experience & App-Native Feel (Implemented)
+
+### 1. Touch Target Optimization (>=44px)
+- **Sidebar & Navigation Controls**: Overhauled sidebar navigation menu items to have a minimum touch-target height of `min-h-[44px]` when expanded and `w-11 h-11` sizing when collapsed.
+- **Action & Toggle Buttons**:
+  - Upgraded the sidebar collapse/expand toggle button to a robust `w-11 h-11` circular target.
+  - Upgraded settings close controls (`SettingsDrawer.tsx`) to `w-11 h-11` circular targets.
+  - Upgraded chat header back navigation and search toggles (`ChatHeader.tsx`) to `w-11 h-11` circular targets.
+- **Visual Sizing Consistency**: Adjusted bottom profile footer alignment and container padding to maintain a seamless transition during expand/collapse cycles.
+
+### 2. Native App Selection & Touch Callouts Control
+- **UI Control Protection**: Implemented strict selection suppression across interactive UI nodes (`body`, `button`, `a`, sidebars, drawers, cards, panels, badges, chips, tabs) using CSS selectors with `-webkit-touch-callout: none;` and `user-select: none;`. This prevents annoying web callouts when tapping buttons on mobile touch devices.
+- **Controlled Text Selection**: Retained explicit, granular text selection (`user-select: text !important;`) inside text inputs, textareas, `contenteditable` elements, and chat content bubbles.
+- **Selectable Message Content**: Added `.selectable-text` to chat message bubbles in `ChatArea.tsx` to enable intuitive text copying while securing the surrounding message cards and actions.
+
+## Phase 6: System Integrity & Self-Healing Diagnostic Engine (Implemented)
+
+### 1. Core Self-Healing Framework
+- **Diagnostic Entrypoint**: Designed and implemented `/server/self-healing.ts` containing a centralized automated validation routine.
+- **Package Automation**: Configured a persistent `"heal"` execution script (`npm run heal`) inside `package.json` utilizing `tsx`.
+
+### 2. Automated Validation and Repair Operations
+- **Database Table Validation**: Scans PostgreSQL tables to verify that all necessary tables are present, logging diagnostic status reports.
+- **Sub-lounge Seeding Repair**: Integrates with `ensureVelumLoungeSeeded()` to rebuild, verify, and order missing or corrupted official Velum sub-lounges and default categories.
+- **Orphaned Record Cleanup**:
+  - Prunes orphaned members (where referenced users or lounges do not exist) from `lounge_members`.
+  - Prunes orphaned chat messages (where referenced sender or lounge has been deleted) from `messages`.
+  - Prunes orphaned sub-lounges (where parent lounge reference is invalid) from `lounges`.
+- **Administrative Credentials & Role Integrity**: Verification of system administrator profiles, including resolving potential database drift or role mismatches:
+  - Verifies and repairs the correct role mapping for central administration accounts (`midnight` as `CLI_ADMIN`, `lexie` as `LOGIN_ADMIN`, and `velum` as `ADMIN`).
+
