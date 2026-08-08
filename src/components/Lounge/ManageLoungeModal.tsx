@@ -6,6 +6,7 @@ interface ManageLoungeModalProps {
   show: boolean;
   isDark: boolean;
   loungeName: string;
+  loungeId: string;
   manageTab: 'members' | 'requests' | 'invites' | 'settings';
   setManageTab: (tab: 'members' | 'requests' | 'invites' | 'settings') => void;
   manageRequests: any[];
@@ -39,6 +40,7 @@ export default function ManageLoungeModal({
   show,
   isDark,
   loungeName,
+  loungeId,
   manageTab,
   setManageTab,
   manageRequests,
@@ -84,13 +86,28 @@ export default function ManageLoungeModal({
       };
       reader.readAsDataURL(compressedBlob);
 
-      const uploadedUrl = await streamFileDirectToCloudStorage(compressedBlob, 'avatars', 'webp');
-      if (uploadedUrl) {
-        setEditIconUrl(uploadedUrl);
+      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const uploadRes = await fetch(`/v2/lounges/${loungeId}/upload-avatar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': compressedBlob.type || 'application/octet-stream',
+          'Authorization': `Bearer ${sid}`
+        },
+        body: compressedBlob
+      });
+
+      if (!uploadRes.ok) {
+        const errorData = await uploadRes.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Lounge upload failed.');
+      }
+
+      const data = await uploadRes.json();
+      if (data.url) {
+        setEditIconUrl(data.url);
       }
     } catch (err: any) {
       console.error('Failed to process/upload lounge icon:', err);
-      setUploadError('Failed to upload image. Please ensure file is a valid image (JPEG, PNG, WebP).');
+      setUploadError(err.message || 'Failed to upload image. Please ensure file is a valid image (JPEG, PNG, WebP).');
     } finally {
       setIsUploadingIcon(false);
     }

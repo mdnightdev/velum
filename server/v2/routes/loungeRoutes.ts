@@ -1,4 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import path from 'path';
+import fs from 'fs';
 import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
 import { users } from '../db/schema/users.js';
@@ -710,6 +712,59 @@ loungeRouter.put('/:id/avatar', auth, async (req: Request, res: Response, next: 
   } catch (err) {
     next(err);
   }
+});
+
+// POST /v2/lounges/:id/upload-avatar - Stream binary chunk file upload and update lounge avatar
+loungeRouter.post('/:id/upload-avatar', auth, (req: Request, res: Response, next: NextFunction) => {
+  const chunks: Buffer[] = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('end', async () => {
+    try {
+      const buffer = Buffer.concat(chunks);
+      if (buffer.length === 0) {
+        return res.status(400).json({ error: 'Empty file payload' });
+      }
+
+      const rawId = req.params.id;
+      const currentUserId = req.user!.userId;
+
+      const all = await db.select().from(lounges);
+      const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+
+      if (!target) {
+        return res.status(404).json({ error: 'Lounge not found.' });
+      }
+
+      const isAdmin = checkIsSystemAdmin(req.user);
+      if (target.ownerId !== currentUserId && !isAdmin) {
+        return res.status(403).json({ error: 'Only lounge owner or admins can update avatar.' });
+      }
+
+      if (target.parentLoungeId) {
+        return res.status(403).json({ error: 'Avatar upload is only available for parent lounges.' });
+      }
+
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+
+      const filename = `lounge-${target.id}-${Date.now()}.webp`;
+      const filepath = path.join(uploadsDir, filename);
+      fs.writeFileSync(filepath, buffer);
+
+      const avatarUrl = `/uploads/${filename}`;
+
+      // Update the database record
+      await db.update(lounges)
+        .set({ avatarUrl, updatedAt: new Date() })
+        .where(eq(lounges.id, target.id));
+
+      res.status(200).json({ success: true, url: avatarUrl });
+    } catch (err) {
+      next(err);
+    }
+  });
 });
 
 // GET /v2/lounges/:id/search - Search messages in lounge or DM
