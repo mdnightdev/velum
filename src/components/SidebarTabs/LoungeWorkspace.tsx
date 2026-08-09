@@ -459,6 +459,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           show={loungeData.showManageModal}
           isDark={props.isDark}
           loungeName={props.loungeName}
+          loungeId={props.loungeId}
           manageTab={loungeData.manageTab}
           setManageTab={loungeData.setManageTab}
           manageRequests={loungeData.manageRequests}
@@ -721,6 +722,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         show={loungeData.showManageModal}
         isDark={props.isDark}
         loungeName={props.loungeName}
+        loungeId={props.loungeId}
         manageTab={loungeData.manageTab}
         setManageTab={loungeData.setManageTab}
         manageRequests={loungeData.manageRequests}

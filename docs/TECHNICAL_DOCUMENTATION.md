@@ -577,3 +577,11 @@ For technical support or questions about the codebase, refer to:
 - **Administrative Credentials & Role Integrity**: Verification of system administrator profiles, including resolving potential database drift or role mismatches:
   - Verifies and repairs the correct role mapping for central administration accounts (`midnight` as `CLI_ADMIN`, `lexie` as `LOGIN_ADMIN`, and `velum` as `ADMIN`).
 
+## Phase 7: Deferred Lounge Avatar Upload Logic (Implemented)
+
+### 1. Unified S3/Cloud Storage Streaming and Deferred Client Flow
+- **Client Flow Deferral**: Overhauled the Lounge settings panel to defer file uploads until the user explicitly clicks **"Save Configuration"**. This aligns the lounge avatar experience exactly with the user profile saving behavior.
+- **Unified Media Pipeline**: Utilizes the standard `streamFileDirectToCloudStorage` function from the unified media pipeline in `/src/utils/mediaPipeline.ts` during form submission. This avoids duplicating custom file stream parsing routes on the Express server.
+- **Database Synchronization**: Updates the `avatarUrl` column for the target lounge in the PostgreSQL database via the standard `PUT /v2/lounges/:id` settings endpoint upon success, maintaining architectural simplicity.
+
+
