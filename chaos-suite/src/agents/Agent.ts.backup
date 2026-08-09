@@ -1,0 +1,150 @@
+import { ApiClient } from './ApiClient.js';
+
+export type AgentState = 'REGISTER' | 'ACTIVE' | 'ROGUE' | 'RECOVERY';
+
+export interface AgentCredentials {
+  username: string;
+  password: string;
+  panicPhrase: string;
+  safeWord: string;
+}
+
+export class Agent {
+  private state: AgentState = 'REGISTER';
+  private credentials: AgentCredentials;
+  private client: ApiClient;
+  private token?: string;
+
+  private static names = ['lexie', 'midnight', 'zen', 'jax', 'rio', 'nova', 'kai', 'luna', 'ace', 'ruby'];
+
+  constructor(id: number) {
+    const name = Agent.names[id % Agent.names.length];
+    this.credentials = {
+      username: `${name}_${id}_${Math.floor(Math.random() * 1000)}`,
+      password: `Pass_${Math.random()}`,
+      panicPhrase: `phrase_${Math.random()}`,
+      safeWord: `word_${Math.random()}`,
+    };
+    
+    // Assign lexie and midnight to ROGUE testing directly
+    if (name === 'lexie' || name === 'midnight') {
+      this.state = 'ROGUE';
+    }
+
+    this.client = new ApiClient(this.credentials);
+  }
+
+  private log(message: string): void {
+    console.log(`[${new Date().toISOString()}] [Agent ${this.credentials.username}] ${message}`);
+  }
+
+  public async run(): Promise<void> {
+    this.log(`Starting in state: ${this.state}`);
+    while (true) {
+      try {
+        await this.performAction();
+      } catch (err: any) {
+        this.log(`Action error: ${err.message}`);
+      }
+      
+      // Realistic human delay between actions (1.5s - 4.5s)
+      const thinkTime = Math.floor(Math.random() * 3000) + 1500;
+      await new Promise((resolve) => setTimeout(resolve, thinkTime));
+    }
+  }
+
+  private async performAction(): Promise<void> {
+    switch (this.state) {
+      case 'REGISTER':
+        await this.register();
+        break;
+      case 'ACTIVE':
+        await this.activeAction();
+        break;
+      case 'ROGUE':
+        await this.rogueAction();
+        break;
+      case 'RECOVERY':
+        await this.recover();
+        break;
+    }
+  }
+
+  private async register(): Promise<void> {
+    this.log('Attempting registration...');
+    try {
+      this.token = await this.client.register();
+      this.log('Registered successfully.');
+      this.state = 'ACTIVE';
+    } catch (err: any) {
+      this.log(`Registration failed: ${err.message}`);
+      this.state = 'RECOVERY';
+    }
+  }
+
+  private async activeAction(): Promise<void> {
+    if (!this.token) {
+      this.state = 'REGISTER';
+      return;
+    }
+
+    const roll = Math.random();
+
+    if (roll < 0.5) {
+      // 50% chance: Chat interaction
+      this.log('Sending message to main lounge...');
+      const sampleMessages = [
+        "Hey everyone!",
+        "Any updates on the build?",
+        "Checking in.",
+        "Testing connection...",
+        "Looks stable so far!"
+      ];
+      const msg = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
+      await this.client.sendMessage('main', msg, this.token).catch(() => {});
+    } else if (roll < 0.8) {
+      // 30% chance: Lurk / Read messages
+      this.log('Fetching lounge messages...');
+      await this.client.getMessages('main', this.token).catch(() => {});
+    } else {
+      // 20% chance: Create or view support tickets
+      this.log('Checking support tickets...');
+      await this.client.getTickets(this.token).catch(() => {});
+    }
+  }
+
+  private async rogueAction(): Promise<void> {
+    this.log('⚡ ROGUE AGENT: Attempting admin credential stuffing / unauthorized probe...');
+    
+    // 1. Try logging into admin accounts directly
+    try {
+      this.log('Attempting brute-force login on admin...');
+      await this.client.login(); 
+    } catch (e) {
+      // expected failure
+    }
+
+    // 2. Try sending malicious / forged token requests
+    if (this.token) {
+      this.log('Attempting unauthorized ticket injection...');
+      await this.client.createTicket('EXPLOIT', "'; DROP TABLE users; --", this.token).catch(() => {});
+    } else {
+      // Try registering to get active token
+      try {
+        this.token = await this.client.register();
+      } catch (e) {}
+    }
+  }
+
+  private async recover(): Promise<void> {
+    this.log('Attempting account recovery / re-login...');
+    try {
+      this.token = await this.client.login();
+      this.log('Recovered session via login.');
+      this.state = 'ACTIVE';
+    } catch (err) {
+      this.log('Recovery failed, retrying registration cycle...');
+      this.state = 'REGISTER';
+    }
+  }
+}

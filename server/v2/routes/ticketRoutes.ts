@@ -48,6 +48,16 @@ ticketRouter.get('/admin/tickets', authMiddleware, async (req: Request, res: Res
 
 ticketRouter.post('/tickets', authMiddleware, async (req: Request, res: Response) => {
   const { reason, issueType, credentialsForwarded } = req.body;
+
+    const [recent] = await db.select().from(tickets)
+      .where(eq(tickets.userId, req.user!.userId))
+      .orderBy(desc(tickets.createdAt))
+      .limit(1);
+
+    if (recent && recent.createdAt && (Date.now() - new Date(recent.createdAt).getTime() < 60000)) {
+      return res.status(429).json({ error: "Too many tickets. Please wait 60s." });
+    }
+
   
   if (!reason) {
     return res.status(400).json({ error: 'Reason is required.' });

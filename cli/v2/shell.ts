@@ -1227,6 +1227,16 @@ export class VelumV2Shell {
         return;
       }
 
+      if (sub === 'cat' || sub === 'show') {
+        const id = parseInt(rawArgs[0], 10);
+        if (isNaN(id)) { console.log('Usage: cat <ticket_id>'); return; }
+        const ticket = await ticketRepository.findById(id);
+        if (!ticket) { console.log('Ticket not found.'); return; }
+        const user = await userRepository.findById(ticket.userId);
+        console.log(JSON.stringify({ ...ticket, username: user?.username || 'unknown' }, null, 2));
+        return;
+      }
+
       if (sub === 'delete') {
         const id = parseInt(rawArgs[0], 10);
         if (isNaN(id)) { console.log('Usage: delete <ticket_id>'); return; }
@@ -1271,19 +1281,97 @@ export class VelumV2Shell {
         return;
       }
 
-      if (sub === 'orphans') {
-        console.log('\n=== Scanning Relational Tables for Orphaned Records ===');
-        console.log('Scanning orphaned sessions... 0 found.');
-        console.log('Scanning orphaned transactions... 0 found.');
-        console.log('Scanning orphaned escrows... 0 found.');
-        console.log('[OK] Scan complete: 0 orphaned entities detected.');
-        return;
+    if (sub === 'orphans') {
+      console.log('\n=== Scanning Relational Tables for Orphaned Records ===');
+      try {
+        const res = await pool.query(`
+          SELECT 'lounges (orphaned owners)' as name, count(*)::int FROM lounges WHERE (owner_id NOT IN (SELECT id FROM users) OR owner_id IS NULL) AND is_official = false AND is_system = false
+          UNION ALL
+          SELECT 'relationships (invalid users)', count(*)::int FROM relationships WHERE user_id NOT IN (SELECT id FROM users) OR friend_id NOT IN (SELECT id FROM users)
+          UNION ALL
+          SELECT 'lounge_members (invalid references)', count(*)::int FROM lounge_members WHERE lounge_id NOT IN (SELECT id FROM lounges) OR user_id NOT IN (SELECT id FROM users)
+          UNION ALL
+          SELECT 'messages (invalid references)', count(*)::int FROM messages WHERE lounge_id NOT IN (SELECT id FROM lounges) OR sender_id NOT IN (SELECT id FROM users)
+          UNION ALL
+          SELECT 'sublounges (invalid parent)', count(*)::int FROM lounges WHERE parent_lounge_id IS NOT NULL AND parent_lounge_id NOT IN (SELECT id FROM lounges)
+        `);
+        let total = 0;
+        for (const row of res.rows) {
+          console.log(`Scanning orphaned ${row.name} ... ${row.count} found.`);
+          total += row.count;
+        }
+        console.log(`[OK] Scan complete: ${total} orphaned entities detected.`);
+        await this.logAudit('/db/orphans', 'SYSTEM', `Scanned for orphaned entities, found ${total}`);
+      } catch (err) {
+        console.log(`[ERROR] Orphan scan failed: ${(err as Error).message}`);
       }
+      return;
+    }
 
       if (sub === 'clean') {
-        await db.delete(sessions);
-        console.log('[OK] Purged dead session registries and cleaned volatile state.');
-        await this.logAudit('/db/clean', 'SESSIONS', 'Purged dead sessions');
+        try {
+          console.log('\n=== Purging Orphaned Records & Dead Sessions ===');
+          
+          // 1. Clean up orphaned memberships
+          const cleanMembers = await db.execute(sql`
+            DELETE FROM lounge_members 
+            WHERE lounge_id NOT IN (SELECT id FROM lounges)
+               OR user_id NOT IN (SELECT id FROM users)
+          `);
+          const membersCount = cleanMembers.rowCount || 0;
+          console.log(`- Cleaned ${membersCount} orphaned membership entries.`);
+
+          // 2. Clean up orphaned messages
+          const cleanMessages = await db.execute(sql`
+            DELETE FROM messages 
+            WHERE lounge_id NOT IN (SELECT id FROM lounges)
+               OR sender_id NOT IN (SELECT id FROM users)
+          `);
+          const messagesCount = cleanMessages.rowCount || 0;
+          console.log(`- Cleaned ${messagesCount} orphaned chat messages.`);
+
+          // 3. Clean up orphaned sublounges
+          const cleanSublounges = await db.execute(sql`
+            DELETE FROM lounges 
+            WHERE parent_lounge_id IS NOT NULL 
+              AND parent_lounge_id NOT IN (SELECT id FROM lounges)
+          `);
+          const subloungesCount = cleanSublounges.rowCount || 0;
+          console.log(`- Cleaned ${subloungesCount} orphaned sub-lounges.`);
+
+          // 4. Clean up orphaned relationships (where user_id or friend_id doesn't exist)
+          const cleanRelationships = await db.execute(sql`
+            DELETE FROM relationships
+            WHERE user_id NOT IN (SELECT id FROM users)
+               OR friend_id NOT IN (SELECT id FROM users)
+          `);
+          const relationshipsCount = cleanRelationships.rowCount || 0;
+          console.log(`- Cleaned ${relationshipsCount} orphaned relationships.`);
+
+          // 5. Clean up user-created lounges that are ownerless (orphaned by deleted users)
+          const cleanOwnerlessLounges = await db.execute(sql`
+            DELETE FROM lounges
+            WHERE (owner_id NOT IN (SELECT id FROM users) OR owner_id IS NULL)
+              AND is_official = false
+              AND is_system = false
+          `);
+          const ownerlessCount = cleanOwnerlessLounges.rowCount || 0;
+          console.log(`- Cleaned ${ownerlessCount} orphaned user-created lounges (owner deleted).`);
+
+          // 6. Purge expired sessions
+          const cleanSessions = await db.execute(sql`
+            DELETE FROM sessions
+            WHERE expires_at < NOW()
+          `);
+          const sessionsCount = cleanSessions.rowCount || 0;
+          console.log(`- Cleaned ${sessionsCount} expired/dead sessions.`);
+
+          console.log('[OK] SYSTEM CLEANUP COMPLETE.');
+          
+          await this.logAudit('/db/clean', 'SYSTEM', `Purged orphaned records (members: ${membersCount}, messages: ${messagesCount}, sublounges: ${subloungesCount}, relationships: ${relationshipsCount}, lounges: ${ownerlessCount}, sessions: ${sessionsCount})`);
+        } catch (err) {
+          console.log(`[ERROR] Cleanup failed: ${(err as Error).message}`);
+        }
         return;
       }
 
