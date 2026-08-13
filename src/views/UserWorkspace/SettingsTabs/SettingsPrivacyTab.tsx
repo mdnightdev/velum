@@ -1,0 +1,106 @@
+import React from 'react';
+import { CheckCircle, AlertTriangle } from 'lucide-react';
+import PasswordInput from '../../../components/PasswordInput';
+
+export function SettingsPrivacyTab({
+  accountMsg,
+  accountError,
+  handlePasswordReset,
+  currentPassword,
+  setCurrentPassword,
+  newPassword,
+  setNewPassword,
+  confirmPassword,
+  setConfirmPassword
+}: any) {
+  return (
+    <div className="w-full max-w-4xl space-y-8">
+      {accountMsg && (
+        <div className="p-3.5 bg-status-online-bg text-status-online rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+          <CheckCircle className="w-4 h-4" />
+          <span>{accountMsg}</span>
+        </div>
+      )}
+      {accountError && (
+        <div className="p-3.5 bg-status-dnd-bg text-status-dnd rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" />
+          <span>{accountError}</span>
+        </div>
+      )}
+      <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Privacy & Safety</h3>
+      <form onSubmit={handlePasswordReset} className="space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-text-secondary font-mono">Password</h3>
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Current Password</label>
+          <PasswordInput
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">New Password</label>
+          <PasswordInput
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase font-mono font-bold text-text-secondary">Confirm New Password</label>
+          <PasswordInput
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="w-full bg-velum-750 border border-white-5 rounded-xl px-4 py-3 text-sm text-text-primary outline-none focus:border-accent"
+          />
+        </div>
+        <div className="pt-2">
+          <button
+            type="submit"
+            className="bg-accent/10 hover:bg-accent/20 border border-accent/20 text-accent px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition flex items-center justify-center cursor-pointer"
+          >
+            Update Password
+          </button>
+        </div>
+      </form>
+
+      <div className="pt-8 border-t border-white-5 space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-alert-error font-mono">Panic Protocol & Danger Zone</h3>
+        <div className="p-4 bg-status-dnd-bg rounded-xl flex items-center justify-between border border-alert-error/30">
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-white">Trigger Emergency Panic Protocol</span>
+            <span className="text-xs text-text-secondary">Executes instant WAL cascade deletion of sensitive messages, prekeys, and sessions.</span>
+          </div>
+          <button 
+            type="button" 
+            onClick={async () => {
+              if (window.confirm('CRITICAL WARNING: Are you sure you want to trigger the Panic Protocol? This will immediately perform a WAL cascade purge of your sensitive data and sessions.')) {
+                try {
+                  const token = localStorage.getItem('velum_session_token') || sessionStorage.getItem('velum-sessionId');
+                  const res = await fetch('/api/v2/auth/panic', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    }
+                  });
+                  if (res.ok) {
+                    alert('Panic protocol executed successfully. Session ended.');
+                    sessionStorage.clear();
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                } catch (e) {
+                  alert('Panic trigger request sent.');
+                }
+              }
+            }}
+            className="px-4 py-2 bg-alert-error hover:bg-alert-error/80 text-white rounded-lg text-xs font-bold uppercase font-mono transition cursor-pointer"
+          >
+            Trigger Panic
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

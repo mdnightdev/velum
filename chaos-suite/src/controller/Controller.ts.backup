@@ -1,0 +1,165 @@
+import { Agent, AgentState } from '../agents/Agent.js';
+import { Telemetry } from '../telemetry/Telemetry.js';
+
+export type ScenarioType = 'ramp_up' | 'soak' | 'spike' | 'stress';
+
+export interface ControllerOptions {
+  agentCount?: number;
+  scenario?: ScenarioType;
+  baseUrl?: string;
+  wsUrl?: string;
+  durationSec?: number;
+}
+
+export class Controller {
+  private agents: Agent[] = [];
+  private peerUsernames: Set<string> = new Set();
+  private agentCount: number;
+  private scenario: ScenarioType;
+  private baseUrl: string;
+  private wsUrl: string;
+  private durationSec: number;
+  private dashboardInterval: NodeJS.Timeout | null = null;
+  private isRunning = false;
+
+  constructor(options: ControllerOptions = {}) {
+    this.agentCount = options.agentCount || 35;
+    this.scenario = options.scenario || 'ramp_up';
+    this.baseUrl = options.baseUrl || 'http://localhost:3000/v2';
+    this.wsUrl = options.wsUrl || 'ws://localhost:3000/ws';
+    this.durationSec = options.durationSec || 60;
+  }
+
+  public async start(): Promise<void> {
+    this.isRunning = true;
+    console.log(`\n==========================================================`);
+    console.log(` [Chaos Engineering Controller V2] Starting Execution`);
+    console.log(` Scenario    : ${this.scenario.toUpperCase()}`);
+    console.log(` Target Agents: ${this.agentCount}`);
+    console.log(` API Endpoint: ${this.baseUrl}`);
+    console.log(` WS Endpoint : ${this.wsUrl}`);
+    console.log(` Test Duration: ${this.durationSec}s`);
+    console.log(`==========================================================\n`);
+
+    // Start live telemetry dashboard
+    this.dashboardInterval = setInterval(() => {
+      Telemetry.getInstance().printDashboard(this.agents.length);
+    }, 5000);
+
+    // Execute scenario orchestrator
+    switch (this.scenario) {
+      case 'ramp_up':
+        await this.runRampUpScenario();
+        break;
+      case 'spike':
+        await this.runSpikeScenario();
+        break;
+      case 'stress':
+        await this.runStressScenario();
+        break;
+      case 'soak':
+      default:
+        await this.runSoakScenario();
+        break;
+    }
+
+    // Run until duration expires
+    if (this.durationSec > 0) {
+      setTimeout(() => {
+        this.stop();
+      }, this.durationSec * 1000);
+    }
+  }
+
+  public stop(): void {
+    if (!this.isRunning) return;
+    this.isRunning = false;
+
+    if (this.dashboardInterval) {
+      clearInterval(this.dashboardInterval);
+      this.dashboardInterval = null;
+    }
+
+    console.log(`\n[Controller] Stopping scenario and terminating ${this.agents.length} active agents...`);
+    for (const agent of this.agents) {
+      agent.stop();
+    }
+
+    console.log(`\n==========================================================`);
+    console.log(` [Chaos Engineering Controller V2] Test Completed`);
+    Telemetry.getInstance().printDashboard(this.agents.length);
+  }
+
+  private spawnAgent(id: number, isRogue = false): Agent {
+    const agent = new Agent({
+      id,
+      baseUrl: this.baseUrl,
+      wsUrl: this.wsUrl,
+      isRogue,
+      getPeerUsernames: () => Array.from(this.peerUsernames),
+      registerPeerUsername: (username: string) => this.peerUsernames.add(username)
+    });
+
+    this.agents.push(agent);
+    agent.run().catch(err => {
+      console.error(`[Agent ${id}] Fatal error:`, err.message);
+    });
+
+    return agent;
+  }
+
+  private async runSoakScenario(): Promise<void> {
+    console.log(`[Scenario: SOAK] Spawning ${this.agentCount} steady-state agents...`);
+    for (let i = 0; i < this.agentCount; i++) {
+      this.spawnAgent(i, false);
+      await new Promise(r => setTimeout(r, 100)); // Stagger connection
+    }
+  }
+
+  private async runRampUpScenario(): Promise<void> {
+    console.log(`[Scenario: RAMP_UP] Gradually spawning ${this.agentCount} agents over time...`);
+    const batchSize = Math.max(1, Math.floor(this.agentCount / 10));
+    let spawned = 0;
+
+    while (spawned < this.agentCount && this.isRunning) {
+      const toSpawn = Math.min(batchSize, this.agentCount - spawned);
+      for (let i = 0; i < toSpawn; i++) {
+        this.spawnAgent(spawned + i, false);
+      }
+      spawned += toSpawn;
+      console.log(`[Ramp-Up] ${spawned}/${this.agentCount} agents active.`);
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+
+  private async runSpikeScenario(): Promise<void> {
+    const baseCount = Math.floor(this.agentCount * 0.3);
+    console.log(`[Scenario: SPIKE] Phase 1: Spawning ${baseCount} baseline agents...`);
+    for (let i = 0; i < baseCount; i++) {
+      this.spawnAgent(i, false);
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    console.log(`[Scenario: SPIKE] Waiting 5s before triggering traffic spike...`);
+    await new Promise(r => setTimeout(r, 5000));
+
+    const spikeCount = this.agentCount - baseCount;
+    console.log(`[Scenario: SPIKE] Phase 2: BURST! Spawning ${spikeCount} concurrent burst agents...`);
+    for (let i = 0; i < spikeCount; i++) {
+      this.spawnAgent(baseCount + i, i % 5 === 0); // 20% rogue burst agents
+    }
+  }
+
+  private async runStressScenario(): Promise<void> {
+    console.log(`[Scenario: STRESS] Spawning ${this.agentCount} high-load agents (20% adversarial)...`);
+    for (let i = 0; i < this.agentCount; i++) {
+      const isRogue = i % 5 === 0;
+      this.spawnAgent(i, isRogue);
+      await new Promise(r => setTimeout(r, 50));
+    }
+  }
+
+  public getActiveAgentsCount(): number {
+    return this.agents.length;
+  }
+}

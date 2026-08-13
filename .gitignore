@@ -1,0 +1,28 @@
+node_modules/
+*.sqlite
+.env
+dist/
+.env
+.superdesign
+data/server.log
+data/velum_state_v3.bin
+server/services/ws.log
+
+/scripts/
+
+# Ignore local databases, keys, and logs
+bun.lock
+bun.lockb
+data/
+*.sqlite
+*.sqlite-journal
+*.log
+bank-log.txt
+
+# Local analysis stats, screenshots, and downloaded backup files
+stats.html
+Check.png
+velum_backup_*.json
+databackup.md
+uploads
+dump.rdb

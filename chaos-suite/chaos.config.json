@@ -1,0 +1,12 @@
+{
+  "agentCount": 10,
+  "duration": 60000,
+  "baseUrl": "http://localhost:3000/v2",
+  "personaDistribution": {
+    "SOCIAL_BUTTERFLY": 3,
+    "CASUAL_USER": 3,
+    "TECH_SAVVY": 2,
+    "SUPPORT_SEEKER": 1,
+    "DRAMA_QUEEN": 1
+  }
+}

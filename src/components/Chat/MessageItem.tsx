@@ -1,0 +1,549 @@
+import React from 'react';
+import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, FileIcon, Check, Copy } from 'lucide-react';
+import { Message, stripAt } from '../../types';
+import ProfileCard from '../ProfileCard';
+import { AudioMessagePlayer } from '../AudioMessagePlayer';
+import { SecureImageCard } from '../SecureImageCard';
+import { MessageStatusTicks } from '../MessageStatusTicks';
+import { parseAttachment } from '../../utils/messageParser';
+import { getSessionId } from '../../utils/auth';
+import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
+import { LinkPreviewCard } from './LinkPreviewCard';
+import { ReactionPicker } from './ReactionPicker';
+
+const SYSTEM_ROLES: Record<number, { name: string; style: string }> = {
+  1: { name: 'MIDNIGHT (executive)', style: 'bg-velum-700 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
+  2: { name: 'Lexie (Administrator)', style: 'bg-velum-750 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
+  999: { name: 'VELUM', style: 'bg-velum-800 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
+};
+
+export function getSenderIdentity(msg: Message, fallbackUsername?: string) {
+  if (SYSTEM_ROLES[msg.user_id]) {
+    return { cleanName: SYSTEM_ROLES[msg.user_id].name, isSpecialTheme: true, customBubbleClass: SYSTEM_ROLES[msg.user_id].style };
+  }
+  let name = msg.username;
+  if (!name || name === 'Client' || name === 'client' || name.toLowerCase() === 'you') {
+    if (fallbackUsername) {
+      name = fallbackUsername;
+    } else {
+      name = msg.username && msg.username !== 'Client' ? msg.username : 'User';
+    }
+  }
+  return { cleanName: stripAt(name || 'User'), isSpecialTheme: false, customBubbleClass: '' };
+}
+
+export interface MessageItemProps {
+  msg: Message;
+  index: number;
+  currentUserId: number;
+  currentUsername?: string;
+  currentUserRole: string;
+  roomId: string;
+  conversationMessages: Message[];
+  decryptedMap: Record<string, string>;
+  getDecryptedText: (msg: Message) => string;
+  longPressedMsgId: string | null;
+  showEmojisForMsg: string | null;
+  setShowEmojisForMsg: (id: string | null) => void;
+  copiedMessageId: string | null;
+  setCopiedMessageId: (id: string | null) => void;
+  setReplyingToMessage: (msg: Message) => void;
+  setForwardingMessage: (msg: Message) => void;
+  handleTouchStart: (msg: Message) => void;
+  handleTouchEnd: () => void;
+  handleStartEdit: (msg: Message) => void;
+  onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
+  onEditMessage?: (messageId: string, roomId: string, content: string) => void;
+  onDeleteMessage?: (messageId: string, roomId: string) => void;
+  onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
+  onSendMessage: (content: string, burnSeconds: number | null, isEncrypted: boolean) => void;
+  onScrollToMessage: (messageId: string) => void;
+  popoverPeer: any;
+  setPopoverPeer: React.Dispatch<React.SetStateAction<any>>;
+  onBackToDeck?: () => void;
+  onRoomKick?: (targetUserId: number) => void;
+  onRoomMute?: (targetUserId: number, mute: boolean) => void;
+}
+
+export function MessageItem({
+  msg,
+  index,
+  currentUserId,
+  currentUsername,
+  currentUserRole,
+  roomId,
+  conversationMessages,
+  decryptedMap,
+  getDecryptedText,
+  longPressedMsgId,
+  showEmojisForMsg,
+  setShowEmojisForMsg,
+  copiedMessageId,
+  setCopiedMessageId,
+  setReplyingToMessage,
+  setForwardingMessage,
+  handleTouchStart,
+  handleTouchEnd,
+  handleStartEdit,
+  onSendReaction,
+  onEditMessage,
+  onDeleteMessage,
+  onPinMessage,
+  onSendMessage,
+  onScrollToMessage,
+  popoverPeer,
+  setPopoverPeer,
+  onBackToDeck,
+  onRoomKick,
+  onRoomMute,
+}: MessageItemProps) {
+  const isMe = msg.user_id === currentUserId;
+  const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
+  const isCipher = msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('VEL_E2EE[');
+  const activeContent = (msg.message_id && decryptedMap[msg.message_id]) || (isCipher ? '···' : (msg.content || ''));
+
+  const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
+  const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment:');
+
+  const attachments = isAttachment ? parseAttachment(activeContent) : [];
+  const firstAttachment = attachments[0];
+
+  const parsedAttachmentName = firstAttachment?.name || '';
+  const parsedAttachmentSize = firstAttachment?.size || '';
+  const parsedAttachmentType = firstAttachment?.type || '';
+  const parsedAttachmentData = firstAttachment?.data || '';
+  const parsedMsgContent = firstAttachment ? (firstAttachment.caption || '') : activeContent;
+
+  const isImageCard = attachments.length > 0 && attachments.every((att) => 
+    att.type.startsWith('image/') ||
+    att.data.startsWith('data:image/') ||
+    att.data.startsWith('http') ||
+    /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.name) ||
+    /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.data)
+  );
+
+  return (
+    <div
+      key={msg.message_id || msg.id || msg.nonce || (msg.created_at ? `${msg.user_id}-${msg.created_at}` : undefined) || `msg-${index}`}
+      id={`msg-${msg.message_id}`}
+      className={`flex message-bubble-container max-w-[88%] sm:max-w-[78%] md:max-w-[70%] lg:max-w-[62%] group relative gap-2 select-none ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
+      data-message-id={msg.message_id}
+      style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+      onTouchStart={() => handleTouchStart(msg)}
+      onClick={(e) => {
+        // Toggle selection mode on desktop double-click or direct tap
+        if (e.detail === 2) {
+          handleTouchStart(msg);
+        }
+      }}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchEnd}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+
+
+      {!isMe && (
+        <div className="flex-shrink-0 mt-auto mb-5 relative z-[60]">
+          <div
+            className="cursor-pointer w-7 h-7 rounded-full bg-velum-800 border border-accent/30 flex items-center justify-center font-bold text-accent text-[10px] overflow-hidden hover:bg-text-primary/5 transition-colors"
+            onClick={async (e) => {
+              e.stopPropagation();
+              setPopoverPeer({
+                userId: msg.user_id,
+                username: cleanName,
+                messageId: msg.message_id,
+                displayName: cleanName,
+                avatar: msg.avatar || "",
+                bio: "",
+                location: "",
+                joinedDate: "",
+                isMuted: false,
+                isBlocked: false
+              });
+              try {
+                const sId = getSessionId();
+                const res = await fetch(`/v2/user/${msg.user_id}/profile`, {
+                  headers: { 'Authorization': `Bearer ${sId}` }
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setPopoverPeer((prev: any) => {
+                    if (prev && prev.userId === msg.user_id && prev.messageId === msg.message_id) {
+                      return {
+                        ...prev,
+                        displayName: data.displayName || cleanName,
+                        bio: data.bio || "",
+                        location: data.location || "",
+                        joinedDate: data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : "",
+                        status: data.status || "Active",
+                        isMuted: !!data.isMuted,
+                        isBlocked: !!data.isBlocked,
+                        avatar: data.avatar || "",
+                        stats: data.stats || { loungesCount: 0, connectionsCount: 0 }
+                      };
+                    }
+                    return prev;
+                  });
+                }
+              } catch (err) {}
+            }}
+          >
+            {msg.avatar ? (
+              <img src={msg.avatar} alt={cleanName} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider">{cleanName.slice(0, 2).toUpperCase()}</span>
+            )}
+          </div>
+          {popoverPeer && popoverPeer.messageId === msg.message_id && (
+            <div className="absolute top-1/2 left-full -translate-y-1/2 ml-3" onClick={(e) => e.stopPropagation()}>
+              <ProfileCard
+                user={{
+                  userId: popoverPeer.userId,
+                  username: popoverPeer.username,
+                  displayName: popoverPeer.displayName,
+                  avatarUrl: popoverPeer.avatar || "",
+                  bio: popoverPeer.bio || "",
+                  location: popoverPeer.location || "",
+                  joinedDate: popoverPeer.joinedDate || "",
+                  status: popoverPeer.status || "Active",
+                  isMuted: !!popoverPeer.isMuted,
+                  isBlocked: !!popoverPeer.isBlocked,
+                  stats: popoverPeer.stats || {
+                    loungesCount: 0,
+                    connectionsCount: 0
+                  }
+                }}
+                variant="popover"
+                onClose={() => setPopoverPeer(null)}
+                onReport={async () => {
+                  const reason = prompt(`Specify the misconduct reason to report ${popoverPeer.username}:`);
+                  if (reason === null) return;
+                  if (!reason.trim()) {
+                    alert("Reporting cancelled: A reason is mandatory.");
+                    return;
+                  }
+                  try {
+                    const sId = getSessionId();
+                    const res = await fetch('/v2/user/report', {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${sId}`,
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({ targetUserId: popoverPeer.userId, reason: reason.trim() })
+                    });
+                    if (res.ok) {
+                      alert("User reported successfully to system administrators.");
+                    } else {
+                      const errData = await res.json();
+                      alert(errData.error || "Failed to submit report.");
+                    }
+                  } catch {
+                    alert("Error reporting user.");
+                  }
+                  setPopoverPeer(null);
+                }}
+                onMessage={() => {
+                  setPopoverPeer(null);
+                }}
+                onMute={async () => {
+                  try {
+                    const sId = getSessionId();
+                    const res = await fetch(`/v2/user/${popoverPeer.userId}/mute`, {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${sId}` }
+                    });
+                    if (res.ok) {
+                      const willBeMuted = !popoverPeer.isMuted;
+                      setPopoverPeer({ ...popoverPeer, isMuted: willBeMuted });
+                      if (willBeMuted) {
+                        alert(`Muted ${popoverPeer.username}. They can no longer disturb you.`);
+                      } else {
+                        alert(`Unmuted ${popoverPeer.username}.`);
+                      }
+                    }
+                  } catch (e) {}
+                }}
+                onBlock={async () => {
+                  try {
+                    const sId = getSessionId();
+                    const res = await fetch(`/v2/user/${popoverPeer.userId}/block`, {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${sId}` }
+                    });
+                    if (res.ok) {
+                      const willBeBlocked = !popoverPeer.isBlocked;
+                      setPopoverPeer({ ...popoverPeer, isBlocked: willBeBlocked });
+                      if (willBeBlocked) {
+                        alert(`Blocked ${popoverPeer.username}. This peer is now permanently purged from your view.`);
+                        if (onBackToDeck) onBackToDeck();
+                      } else {
+                        alert(`Unblocked ${popoverPeer.username}.`);
+                      }
+                    }
+                  } catch (e) {}
+                }}
+                onDeleteChat={async () => {
+                  try {
+                    const sId = getSessionId();
+                    const res = await fetch(`/v2/user/${popoverPeer.userId}/chat`, {
+                      method: 'DELETE',
+                      headers: { 'Authorization': `Bearer ${sId}` }
+                    });
+                    if (res.ok) {
+                      alert(`Chat with ${popoverPeer.username} securely deleted and purged.`);
+                      if (onBackToDeck) onBackToDeck();
+                    }
+                  } catch (e) {}
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
+        {/* Content Bubble Card */}
+        <div className={
+          isVoiceNote || isImageCard
+            ? "relative font-sans text-[13px] select-none"
+            : `px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed break-words font-sans relative select-none ${
+                isSpecialTheme && customBubbleClass
+                  ? customBubbleClass
+                  : isMe 
+                    ? 'bg-bubble-me text-bubble-me-text border border-bubble-me-border shadow-sm' 
+                    : 'bg-bubble-peer text-bubble-peer-text border border-bubble-peer-border shadow-sm'
+              } ${msg.deleted ? 'italic text-text-secondary opacity-60 font-mono text-[10px]' : ''}`
+        }>
+          {msg.deleted ? (
+            'Message deleted by sender'
+          ) : (
+            <>
+              {msg.reply_to && (() => {
+                const repliedMsg = conversationMessages.find(
+                  m => String(m.db_message_id) === String(msg.reply_to) || String(m.message_id) === String(msg.reply_to)
+                );
+                let replyName = 'User';
+                let replyText = 'Original message';
+                if (repliedMsg) {
+                  replyName = getSenderIdentity(repliedMsg).cleanName;
+                  replyText = getDecryptedText(repliedMsg);
+                } else if (msg.reply_preview) {
+                  replyName = stripAt(msg.reply_preview.username || 'User');
+                  replyText = msg.reply_preview.content;
+                }
+                return (
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onScrollToMessage(String(msg.reply_to));
+                    }}
+                    className="bg-black/25 border-l-2 border-accent p-2 rounded-r-xl mb-2 text-[10px] text-text-secondary cursor-pointer hover:bg-black/35 transition max-w-full select-none"
+                  >
+                    <div className="font-bold text-[8.5px] uppercase tracking-wider text-accent mb-0.5">{replyName}</div>
+                    <div className="truncate opacity-85">{replyText}</div>
+                  </div>
+                );
+              })()}
+              {isVoiceNote ? (
+                <AudioMessagePlayer content={activeContent} isMe={isMe} />
+              ) : isImageCard ? (
+                <div className={`grid gap-1.5 ${attachments.length > 1 ? 'grid-cols-2 max-w-[280px]' : 'grid-cols-1'}`}>
+                  {attachments.map((att, idx) => (
+                    <SecureImageCard
+                      key={idx}
+                      src={att.data}
+                      name={att.name}
+                      size={att.size}
+                      caption={idx === attachments.length - 1 ? (att.caption || parsedMsgContent) : ''}
+                      isMe={isMe}
+                      timestamp={safeFormatTimeOnly(msg.timestamp) || 'Just now'}
+                    >
+                      <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+                      <MessageStatusTicks
+                        status={msg.status}
+                        isMe={isMe}
+                        onRetry={() => {
+                          if (msg.status === 'failed') {
+                            onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                            onDeleteMessage?.(msg.message_id, msg.room_id || roomId);
+                          }
+                        }}
+                      />
+                    </SecureImageCard>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {/* Attachment Badge capsule if present */}
+                  {isAttachment && (
+                    <div className="mb-2.5">
+                      {parsedAttachmentData ? (
+                        <div
+                          className="flex items-center gap-3 p-3 bg-velum-900/40 border border-white-5 rounded-xl mb-2.5 select-none text-left cursor-pointer hover:bg-velum-900/60 transition"
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = parsedAttachmentData;
+                            link.download = parsedAttachmentName;
+                            link.click();
+                          }}
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                            <FileIcon className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[11px] font-bold text-white block truncate">{parsedAttachmentName}</span>
+                            <span className="text-[8.5px] font-mono text-text-secondary block uppercase">{parsedAttachmentSize} • Click to download</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3 p-3 bg-velum-900/40 border border-white-5 rounded-xl mb-2.5 select-none text-left">
+                          <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                            <FileIcon className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[11px] font-bold text-white block truncate">{parsedAttachmentName}</span>
+                            <span className="text-[8.5px] font-mono text-text-secondary block uppercase">{parsedAttachmentSize} • attachment</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {parsedMsgContent && (
+                    <div>
+                      <p className="whitespace-pre-wrap message-content-wrap selectable-text">
+                        {parsedMsgContent}
+                        {msg.is_edited && (
+                          <span className="text-[10px] opacity-45 ml-1.5 select-none font-sans lowercase" title={msg.edited_at ? `Edited at ${safeFormatTimeOnly(msg.edited_at)}` : 'Edited'}>
+                            (edited)
+                          </span>
+                        )}
+                      </p>
+                      {(() => {
+                        const urlRegex = /(https?:\/\/[^\s]+)/g;
+                        const matchedUrls = parsedMsgContent.match(urlRegex) || [];
+                        if (matchedUrls.length > 0) {
+                          return (
+                            <div className="flex flex-col gap-2 mt-1">
+                              {matchedUrls.map((url, uIdx) => (
+                                <LinkPreviewCard key={uIdx} url={url} />
+                              ))}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                      {(() => {
+                        const keyMatch = parsedMsgContent.match(/`([a-f0-9A-F\-_\:]{12,})`/);
+                        const keyString = keyMatch ? keyMatch[1] : null;
+                        if (keyString) {
+                          const isCopied = copiedMessageId === msg.message_id;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(keyString);
+                                setCopiedMessageId(msg.message_id);
+                                setTimeout(() => setCopiedMessageId(null), 2000);
+                              }}
+                              className="mt-3.5 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-status-online-bg text-[10px] font-sans font-bold text-status-online hover:bg-status-online-bg hover:text-text-primary transition cursor-pointer uppercase tracking-wider"
+                            >
+                              {isCopied ? (
+                                <>
+                                  <Check className="w-3 h-3 text-alert-success" />
+                                  <span>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 text-alert-success font-bold" />
+                                  <span>Copy Recovery Key</span>
+                                </>
+                              )}
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {/* Render Reactions */}
+          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2.5">
+              {Object.entries(msg.reactions).map(([emoji, users]) => (
+                users.length > 0 && (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => onSendReaction?.(msg.db_message_id ? String(msg.db_message_id) : msg.message_id, msg.room_id || roomId, emoji)}
+                    className="bg-text-primary/5 border border-white-5 hover:bg-text-primary/10 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-mono transition cursor-pointer"
+                    title={users.join(', ')}
+                  >
+                    <span className="emoji-font">{emoji}</span>
+                    <span className="text-[8px] opacity-70">{users.length}</span>
+                  </button>
+                )
+              ))}
+            </div>
+          )}
+
+
+
+          {/* Animated Emoji Reaction Drawer overlays */}
+          {showEmojisForMsg === msg.message_id && (
+            <ReactionPicker
+              isMe={isMe}
+              onSelectReaction={(reaction) => {
+                if (onSendReaction) onSendReaction(msg.db_message_id ? String(msg.db_message_id) : msg.message_id, msg.room_id || roomId, reaction);
+                setShowEmojisForMsg(null);
+              }}
+            />
+          )}
+        </div>
+
+        {/* Message Meta (Below Bubble) */}
+        <div className={`flex items-center gap-1 mt-0.5 mb-1.5 text-[10px] font-medium text-text-secondary ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+          <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+          {msg.is_pinned && (
+            <span title="Pinned message" className="flex items-center">
+              <Pin className="w-2.5 h-2.5 text-accent shrink-0" />
+            </span>
+          )}
+          <MessageStatusTicks 
+            status={msg.status} 
+            isMe={isMe} 
+            onRetry={() => {
+              if (msg.status === 'failed') {
+                onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                onDeleteMessage?.(msg.message_id, msg.room_id || roomId);
+              }
+            }}
+          />
+
+          {!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
+            <div className="hidden group-hover:flex items-center gap-1 ml-2">
+              <button
+                type="button"
+                onClick={() => onRoomMute?.(msg.user_id, true)}
+                className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
+              >
+                Mute
+              </button>
+              <button
+                type="button"
+                onClick={() => onRoomKick?.(msg.user_id)}
+                className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
+              >
+                Kick
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

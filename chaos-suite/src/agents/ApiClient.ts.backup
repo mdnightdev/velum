@@ -1,0 +1,74 @@
+import { AgentCredentials } from './Agent';
+
+export class ApiClient {
+  private baseUrl = 'http://localhost:3000/v2';
+  private credentials: AgentCredentials;
+
+  constructor(credentials: AgentCredentials) {
+    this.credentials = credentials;
+  }
+
+  public async register(): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: this.credentials.username,
+        password: this.credentials.password,
+      }),
+    });
+    if (!response.ok) throw new Error(`Registration failed: ${response.statusText}`);
+    const data = await response.json();
+    return data.token;
+  }
+
+  public async login(): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: this.credentials.username,
+        password: this.credentials.password,
+      }),
+    });
+    if (!response.ok) throw new Error(`Login failed: ${response.statusText}`);
+    const data = await response.json();
+    return data.token;
+  }
+
+  public async sendMessage(loungeId: string, message: string, token: string): Promise<void> {
+    await fetch(`${this.baseUrl}/lounges/${loungeId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ message }),
+    });
+  }
+
+  public async getMessages(loungeId: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/lounges/${loungeId}/messages`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    return res.json();
+  }
+
+  public async createTicket(subject: string, description: string, token: string): Promise<void> {
+    await fetch(`${this.baseUrl}/tickets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ subject, description }),
+    });
+  }
+
+  public async getTickets(token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/tickets`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    return res.json();
+  }
+}
