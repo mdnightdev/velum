@@ -5,6 +5,7 @@ import { parseAttachment } from '../../../utils/messageParser';
 export function useMessageActions() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [longPressedMsgId, setLongPressedMsgId] = useState<string | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showEmojisForMsg, setShowEmojisForMsg] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
@@ -13,12 +14,14 @@ export function useMessageActions() {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFiredRef = useRef(false);
 
-  const handleTouchStart = (msgId: string) => {
+  const handleTouchStart = (msg: Message) => {
     longPressFiredRef.current = false;
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
       longPressFiredRef.current = true;
-      setLongPressedMsgId((prev) => (prev === msgId ? null : msgId));
+      setSelectedMessage((prev) => (prev?.message_id === msg.message_id ? null : msg));
+      setLongPressedMsgId((prev) => (prev === msg.message_id ? null : msg.message_id));
+      setShowEmojisForMsg(msg.message_id);
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(15);
       }
@@ -32,17 +35,29 @@ export function useMessageActions() {
     }
   };
 
+  const handleSelectMessage = (msg: Message | null) => {
+    setSelectedMessage(msg);
+  };
+
   useEffect(() => {
-    if (!longPressedMsgId) return;
-    const dismiss = (e: TouchEvent) => {
+    if (!longPressedMsgId && !selectedMessage && !showEmojisForMsg) return;
+    const dismiss = (e: TouchEvent | MouseEvent) => {
       const target = e.target as HTMLElement;
       const container = target.closest('[data-message-id]') as HTMLElement | null;
-      if (container && container.dataset.messageId === longPressedMsgId) return;
+      const header = target.closest('.border-b') as HTMLElement | null;
+      const reactionPicker = target.closest('[data-reaction-picker]') as HTMLElement | null;
+      if (header || reactionPicker) return;
       setLongPressedMsgId(null);
+      setShowEmojisForMsg(null);
+      setSelectedMessage(null);
     };
     document.addEventListener('touchstart', dismiss);
-    return () => document.removeEventListener('touchstart', dismiss);
-  }, [longPressedMsgId]);
+    document.addEventListener('mousedown', dismiss);
+    return () => {
+      document.removeEventListener('touchstart', dismiss);
+      document.removeEventListener('mousedown', dismiss);
+    };
+  }, [longPressedMsgId, selectedMessage, showEmojisForMsg]);
 
   const handleCopyMessage = (msgId: string, text: string) => {
     navigator.clipboard.writeText(text);
@@ -73,6 +88,9 @@ export function useMessageActions() {
     setEditingMessageId,
     longPressedMsgId,
     setLongPressedMsgId,
+    selectedMessage,
+    setSelectedMessage,
+    handleSelectMessage,
     showEmojisForMsg,
     setShowEmojisForMsg,
     copiedMessageId,

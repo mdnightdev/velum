@@ -45,7 +45,7 @@ export default function ProfileMigration({
   const handleMigrationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password || !safeWord || !panicPhrase) {
-      setErrorMsg('All fields must be completely populated to update the cryptographic key state.');
+      setErrorMsg('All fields must be completed.');
       return;
     }
 
@@ -61,20 +61,16 @@ export default function ProfileMigration({
     try {
       const saltRes = await fetch(`/v2/auth/user-salt?username=${encodeURIComponent(migrationUsername.trim())}`);
       if (!saltRes.ok) {
-        setErrorMsg('Fail: Cryptographic credentials map not found for account.');
+        setErrorMsg('Authentication failed.');
         setIsSubmitting(false);
         return;
       }
       const { salt } = await saltRes.json();
       if (!salt) {
-        setErrorMsg('Fail: Cryptographic parameters trace invalid.');
+        setErrorMsg('Invalid parameters.');
         setIsSubmitting(false);
         return;
       }
-
-      const hashedPassword = await computeClientHash(password.trim(), salt);
-      const hashedSafeWord = await computeClientHash(safeWord.trim(), salt);
-      const hashedPanicPhrase = await computeClientHash(panicPhrase.trim(), salt);
 
       const res = await fetch('/v2/auth/migrate-legacy', {
         method: 'POST',
@@ -82,9 +78,9 @@ export default function ProfileMigration({
         body: JSON.stringify({
           userId: migrationUserId,
           username: migrationUsername,
-          password: hashedPassword,
-          safeWord: hashedSafeWord,
-          panicPhrase: hashedPanicPhrase
+          password: password.trim(),
+          safeWord: safeWord.trim(),
+          panicPhrase: panicPhrase.trim()
         })
       });
 

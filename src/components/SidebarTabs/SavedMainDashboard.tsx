@@ -62,7 +62,7 @@ export default function SavedMainDashboard({
             className="w-full py-2.5 bg-accent hover:bg-accent-hover text-velum-900 text-xs font-bold uppercase rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer font-sans shadow-md"
           >
             <Key className="w-3.5 h-3.5" />
-            <span>Save to Vault</span>
+            <span>Save</span>
           </button>
         </form>
 

@@ -280,7 +280,8 @@ export class ImprovedAgent {
       const messages = this.getPersonaMessages();
       const randomMessage = messages[Math.floor(Math.random() * messages.length)];
       
-      await this.client.sendMessage(randomLounge.id || randomLounge.lounge_id, randomMessage);
+      await this.client.sendMessage('Velum Lounge', randomMessage);
+      
     }
   }
 

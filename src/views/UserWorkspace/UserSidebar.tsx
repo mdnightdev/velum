@@ -280,7 +280,7 @@ export default function UserSidebar({
   ).length;
 
   return (
-    <div className={`h-full max-h-dvh flex flex-col ${isDark ? 'bg-transparent text-text-primary' : 'bg-transparent text-velum-900'} select-none font-sans relative`}>
+    <div className={`h-full max-h-dvh flex flex-col overflow-x-hidden ${isDark ? 'bg-transparent text-text-primary' : 'bg-transparent text-velum-900'} select-none font-sans relative`}>
       
       {/* Toggle Collapse button (Desktop only) */}
       

@@ -1,46 +1,12 @@
 {
-  "totalAgents": 5,
-  "personaDistribution": {
-    "SOCIAL_BUTTERFLY": 1,
-    "LURKER": 1,
-    "SPAMMER": 0,
-    "ADMIN_POWER": 1,
-    "SUPPORT_SEEKER": 1,
-    "DRAMA_QUEEN": 0,
-    "TECH_SAVVY": 1,
-    "CASUAL_USER": 0,
-    "NIGHT_OWL": 0,
-    "WEEKEND_WARRIOR": 0
-  },
+  "agentCount": 10,
   "duration": 60000,
-  "maxConcurrentActions": 50,
-  "enableMetricsReporting": true,
-  "metricsReportInterval": 5000,
-  "adminVisibility": {
-    "markAsTestUser": true,
-    "useObviousUsernames": true,
-    "addPrefixToUsernames": true,
-    "usernamePrefix": "[CHAOS]",
-    "addTestProfile": true,
-    "setTestAvatar": false,
-    "addSystemTags": true,
-    "markTestSessions": true,
-    "addSessionMetadata": true,
-    "logTestActivity": true,
-    "separateTestLogs": true,
-    "showInAdminPanel": true,
-    "enableTestMetrics": true,
-    "allowAdminControl": false
-  },
-  "serverSettings": {
-    "baseUrl": "http://localhost:3000/v2",
-    "timeout": 10000
-  },
-  "advancedSettings": {
-    "enableDeviceSwitching": true,
-    "enableIPSpoofing": true,
-    "enableRateLimitTesting": false,
-    "enableEdgeCaseTesting": true,
-    "logLevel": "DEBUG"
+  "baseUrl": "http://localhost:3000/v2",
+  "personaDistribution": {
+    "SOCIAL_BUTTERFLY": 3,
+    "CASUAL_USER": 3,
+    "TECH_SAVVY": 2,
+    "SUPPORT_SEEKER": 1,
+    "DRAMA_QUEEN": 1
   }
 }

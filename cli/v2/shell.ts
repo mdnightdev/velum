@@ -10,7 +10,7 @@ import { reserveRepository } from '../../server/v2/repositories/reserveRepositor
 import { marketRepository } from '../../server/v2/repositories/marketRepository.js';
 import { db, pool } from '../../server/v2/db/client.js';
 import { users, supportAdminNominations } from '../../server/v2/db/schema/users.js';
-import { lounges, messages } from '../../server/v2/db/schema/lounges.js';
+import { lounges, messages, loungeMembers, messageReactions, userUnreadCounts } from '../../server/v2/db/schema/lounges.js';
 import { ensureVelumLoungeSeeded } from '../../server/v2/services/loungeSeeder.js';
 import { SystemBot } from '../../server/v2/services/systemBot.js';
 import { and, or, inArray } from 'drizzle-orm';
@@ -18,9 +18,16 @@ import { wallets, transactions } from '../../server/v2/db/schema/wallets.js';
 import { listings, escrows } from '../../server/v2/db/schema/marketplace.js';
 import { sessions } from '../../server/v2/db/schema/sessions.js';
 import { auditLogs } from '../../server/v2/db/schema/audit_logs.js';
+import { userPrekeys } from '../../server/v2/db/schema/keys.js';
+import { userDevices } from '../../server/v2/db/schema/devices.js';
 import { cards } from '../../server/v2/db/schema/cards.js';
 import { tickets } from '../../server/v2/db/schema/tickets.js';
 import { reserves } from '../../server/v2/db/schema/reserves.js';
+import { userReadCursors } from '../../server/v2/db/schema/read_cursors.js';
+import { loungeMuteSettings } from '../../server/v2/db/schema/lounge_mutes.js';
+import { pushSubscriptions } from '../../server/v2/db/schema/push.js';
+import { relationships } from '../../server/v2/db/schema/relationships.js';
+import { outboxEvents } from '../../server/v2/db/schema/outbox.js';
 import { hashArgon2id } from '../../server/v2/utils/crypto.js';
 import { config } from '../../server/v2/config.js';
 import { currencyConverter } from '../../server/v2/services/currencyConverter.js';
@@ -1532,12 +1539,37 @@ export class VelumV2Shell {
 
       if (sub === 'wipe') {
         try {
+          // 1. Clear message child tables
+          await db.delete(messageReactions);
+          await db.delete(userReadCursors);
+
+          // 2. Clear lounge child tables
+          await db.delete(loungeMembers);
+          await db.delete(userUnreadCounts);
+          await db.delete(loungeMuteSettings);
+
+          // 3. Clear direct user child tables/relations
+          await db.delete(pushSubscriptions);
+          await db.delete(relationships);
+          await db.delete(cards);
+          await db.delete(tickets);
+          await db.delete(reserves);
+          await db.delete(auditLogs);
+          await db.delete(outboxEvents);
+          await db.delete(supportAdminNominations);
+
+          // 4. Clear transactional, core, and messaging tables
           await db.delete(messages);
           await db.delete(escrows);
           await db.delete(listings);
           await db.delete(transactions);
           await db.delete(sessions);
           await db.delete(wallets);
+          await db.delete(userPrekeys);
+          await db.delete(userDevices);
+          await db.delete(lounges);
+
+          // 5. Finally, clear non-admin users
           await db.delete(users).where(sql`${users.role} NOT IN ('CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'ADMIN')`);
           console.log('[OK] Database reset complete - retained admin configuration records.');
         } catch (err) {

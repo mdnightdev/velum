@@ -50,12 +50,18 @@ export async function ensureVelumLoungeSeeded() {
       ALTER TABLE lounges ADD COLUMN IF NOT EXISTS access_level VARCHAR(32) DEFAULT 'ALL' NOT NULL;
       ALTER TABLE lounges ADD COLUMN IF NOT EXISTS type VARCHAR(32) DEFAULT 'user_created' NOT NULL;
       ALTER TABLE lounges ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMP;
+      ALTER TABLE lounges ADD COLUMN IF NOT EXISTS current_sequence_id INTEGER DEFAULT 0 NOT NULL;
       ALTER TABLE lounges ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW() NOT NULL;
       ALTER TABLE lounges ALTER COLUMN owner_id DROP NOT NULL;
 
       DROP TABLE IF EXISTS lounge_rooms;
 
       ALTER TABLE messages DROP COLUMN IF EXISTS room_id;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS client_msg_id VARCHAR(128);
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS sequence_id INTEGER DEFAULT 0 NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_messages_client_msg_id ON messages (sender_id, client_msg_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_lounge_sequence ON messages (lounge_id, sequence_id);
 
       CREATE TABLE IF NOT EXISTS lounge_members (
         id SERIAL PRIMARY KEY,
@@ -65,6 +71,18 @@ export async function ensureVelumLoungeSeeded() {
         status VARCHAR(32) DEFAULT 'active' NOT NULL,
         joined_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS user_read_cursors (
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        lounge_id INTEGER REFERENCES lounges(id) ON DELETE CASCADE NOT NULL,
+        last_read_msg_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+        last_read_seq INTEGER DEFAULT 0 NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        PRIMARY KEY (user_id, lounge_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_user_read_cursors_user ON user_read_cursors (user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_read_cursors_lounge ON user_read_cursors (lounge_id);
 
       CREATE TABLE IF NOT EXISTS messages (
         id SERIAL PRIMARY KEY,

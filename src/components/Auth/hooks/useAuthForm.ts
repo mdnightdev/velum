@@ -82,7 +82,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
       }
       const { salt } = await saltRes.json();
       if (!salt) {
-        setAuthError('Cryptographic handshake failed.');
+        setAuthError('Authentication failed.');
         return;
       }
 
@@ -93,11 +93,9 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
       }
       const { nonce } = await nonceRes.json();
       if (!nonce) {
-        setAuthError('Cryptographic challenge handshake failed.');
+        setAuthError('Authentication failed.');
         return;
       }
-
-      const hashedPassword = await computeClientHash(password.trim(), salt);
 
       if (requiresRegisterPermanentOtp) {
         const res = await fetch('/v2/auth/register-permanent-otp', {
@@ -105,7 +103,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             username: username.trim(),
-            password: hashedPassword,
+            password: password.trim(),
             permanentOtp: adminToken.trim()
           })
         });
@@ -141,7 +139,23 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         if (data.compromised) {
           setIsCompromised(true);
           setCompromiseTicketId(data.ticketId);
-          setShowCompromisedFlow(true);
+          setShowCompromisedFlow(false);
+          if (data.ticketId) {
+            setTicketTrackingId(data.ticketId);
+            try {
+              const tRes = await fetch(`/v2/public/tickets/${data.ticketId}`);
+              if (tRes.ok) {
+                const tData = await tRes.json();
+                if (tData && (tData.ticket || tData.ticket_id || tData.id)) {
+                  setActiveTicket(tData.ticket || tData);
+                }
+              }
+            } catch (err) {
+              // Silently ignore fetch errors
+            }
+            setRecoveryView('track');
+            setShowRecoveryOptions(true);
+          }
           return;
         }
         if (data.needsMigration) {
@@ -216,13 +230,9 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
       }
       const { salt } = await saltRes.json();
       if (!salt) {
-        setAuthError('Cryptographic setup handshake failed.');
+        setAuthError('Setup failed.');
         return;
       }
-
-      const hashedPassword = await computeClientHash(password.trim(), salt);
-      const hashedSafeWord = await computeClientHash(safeWord.trim(), salt);
-      const hashedPanicPhrase = await computeClientHash(panicPhrase.trim(), salt);
 
       const res = await fetch('/v2/auth/register', {
         method: 'POST',
@@ -230,10 +240,10 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         body: JSON.stringify({
           username: formattedUsername,
           password: password,
-          safeWord: hashedSafeWord,
-          panicPhrase: hashedPanicPhrase,
+          safeWord: safeWord.trim(),
+          panicPhrase: panicPhrase.trim(),
           inviteCode: inviteCode.trim() || undefined,
-          deviceFingerprint: 'Velum-Secure-Client-v3',
+          deviceFingerprint: 'Velum-Web-v3',
           salt: salt,
         }),
       });
@@ -271,35 +281,14 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     }
 
     try {
-      const saltRes = await fetch(`/v2/auth/recovery-salt?username=${encodeURIComponent(recoveryUsername.trim())}`);
-      if (!saltRes.ok) {
-        setAuthError('Fail: Cryptographic credentials map not found for account.');
-        return;
-      }
-      const { salt } = await saltRes.json();
-      if (!salt) {
-        setAuthError('Fail: Cryptographic parameters trace invalid.');
-        return;
-      }
-
-      const hashedRecoveryKey = await computeClientHash(recoveryCodeInput.trim(), salt);
-
-      const array = new Uint8Array(32);
-      window.crypto.getRandomValues(array);
-      const newSalt = Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
-
-      const hashedPassword = await computeClientHash(recoveryNewPassword.trim(), newSalt);
-      const hashedSafeWord = await computeClientHash(recoverySafeWord.trim(), newSalt);
-
       const res = await fetch('/v2/auth/restore-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: recoveryUsername.trim(),
-          safeWord: hashedSafeWord,
-          recoveryKey: hashedRecoveryKey,
-          newPassword: hashedPassword,
-          salt: newSalt,
+          safeWord: recoverySafeWord.trim(),
+          recoveryKey: recoveryCodeInput.trim(),
+          newPassword: recoveryNewPassword.trim(),
         }),
       });
 
@@ -335,26 +324,13 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     }
 
     try {
-      const saltRes = await fetch(`/v2/auth/recovery-salt?username=${encodeURIComponent(redeemUsername.trim())}`);
-      if (!saltRes.ok) {
-        setAuthError('Fail: Cryptographic parameters invalid.');
-        return;
-      }
-      const { salt } = await saltRes.json();
-      if (!salt) {
-        setAuthError('Fail: Cryptographic parameters trace invalid.');
-        return;
-      }
-
-      const hashedPassword = await computeClientHash(redeemNewPassword.trim(), salt);
-
       const res = await fetch('/v2/auth/redeem-restore-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: redeemUsername.trim(),
           restoreCode: redeemCode.trim(),
-          newPassword: hashedPassword
+          newPassword: redeemNewPassword.trim()
         })
       });
 
@@ -383,7 +359,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
       const res = await fetch(`/v2/public/tickets/${encodeURIComponent(ticketTrackingId.trim())}`);
       const data = await res.json();
       if (res.ok) {
-        setActiveTicket(data.ticket);
+        setActiveTicket(data.ticket || data);
       } else {
         setAuthError(data.error || 'Ticket not found.');
       }
@@ -396,19 +372,21 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     e.preventDefault();
     if (!ticketReplyText.trim() || !activeTicket) return;
 
+    const targetId = activeTicket.tracking_id || activeTicket.trackingId || activeTicket.ticket_id || activeTicket.id;
+
     try {
-      const res = await fetch(`/v2/public/tickets/${activeTicket.ticket_id}/reply`, {
+      const res = await fetch(`/v2/public/tickets/${targetId}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          replierName: activeTicket.username || 'Client',
+          senderName: activeTicket.username || 'Client',
           content: ticketReplyText.trim(),
         }),
       });
 
       const data = await res.json();
       if (res.ok) {
-        setActiveTicket(data.ticket);
+        setActiveTicket(data.ticket || data);
         setTicketReplyText('');
       } else {
         setAuthError(data.error);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key, Send } from 'lucide-react';
 import { Ticket } from '../../types';
 
 interface AdminTicketsProps {
@@ -62,13 +62,12 @@ export default function AdminTickets({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
           <span className="text-[9px] font-bold text-text-secondary uppercase tracking-widest font-mono">
-            Total Cases Logged
+            Total Tickets
           </span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-black font-mono text-text-primary">
               {tickets.length}
             </span>
-            <span className="text-[10px] text-text-disabled">dossiers</span>
           </div>
           <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
             <div className="h-full bg-accent-secondary rounded-full" style={{ width: '100%' }}></div>
@@ -77,13 +76,12 @@ export default function AdminTickets({
 
         <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
           <span className="text-[9px] font-bold text-status-dnd uppercase tracking-widest font-mono">
-            Active Investigation State
+            Open Tickets
           </span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-black font-mono text-status-dnd">
               {tickets.filter((t) => t.status === 'open' || t.status === 'escalated').length}
             </span>
-            <span className="text-[10px] text-text-disabled">requires review</span>
           </div>
           <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
             <div
@@ -103,13 +101,12 @@ export default function AdminTickets({
 
         <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
           <span className="text-[9px] font-bold text-status-away/80 uppercase tracking-widest font-mono">
-            Pending Decisions Queue
+            Pending Tickets
           </span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-black font-mono text-status-away">
               {tickets.filter((t) => t.status === 'pending').length}
             </span>
-            <span className="text-[10px] text-text-disabled">hold locks</span>
           </div>
           <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
             <div
@@ -127,13 +124,12 @@ export default function AdminTickets({
 
         <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
           <span className="text-[9px] font-bold text-status-online/80 uppercase tracking-widest font-mono">
-            Resolved Case Files
+            Resolved Tickets
           </span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-black font-mono text-status-online">
               {tickets.filter((t) => t.status === 'resolved' || t.status === 'approved').length}
             </span>
-            <span className="text-[10px] text-status-online/60 font-medium">secured dockets</span>
           </div>
           <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
             <div
@@ -161,7 +157,7 @@ export default function AdminTickets({
             <HelpCircle className="w-5 h-5 text-accent" />
             <div>
               <h3 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Case Docket Registry
+                Tickets
               </h3>
             </div>
           </div>
@@ -211,18 +207,18 @@ export default function AdminTickets({
           <table className="w-full text-xs font-sans text-left border-collapse">
             <thead>
               <tr className="text-text-secondary/30 text-[9px] font-black uppercase tracking-widest border-b border-white-5">
-                <th className="py-3.5 pl-4">CASE INDICATOR index</th>
-                <th className="py-3.5">SUBMITTER ACCOUNT</th>
-                <th className="py-3.5">CLASSIFICATION MODULE</th>
-                <th className="py-3.5">SECURITY TRUST SCORE</th>
-                <th className="py-3.5">REGISTERED TIMEFRAME</th>
-                <th className="py-3.5">INCIDENT STATE STATUS</th>
-                <th className="py-3.5 text-right pr-4">OVERSIGHT HANDLER</th>
+                <th className="py-3.5 pl-4">Ticket ID</th>
+                <th className="py-3.5">User</th>
+                <th className="py-3.5">Subject</th>
+                <th className="py-3.5">Trust Score</th>
+                <th className="py-3.5">Created At</th>
+                <th className="py-3.5">Status</th>
+                <th className="py-3.5 text-right pr-4">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.02]">
               {filteredTickets.map((ticket) => {
-                const cleanType = (ticket.issue_type || '').replace(/_/g, ' ');
+                const cleanType = ticket.issue_type?.includes('CRITICAL') ? 'Compromised Account' : (ticket.issue_type || '').replace(/_/g, ' ');
                 let trustBadge = '';
                 if (ticket.credibility_score !== undefined) {
                   trustBadge =
@@ -278,21 +274,20 @@ export default function AdminTickets({
                       {new Date(ticket.created_at).toLocaleString()}
                     </td>
                     <td className="py-3.5">
-                      <span
-                        className={`text-[9px] uppercase px-2.5 py-0.5 rounded-full font-mono font-black ${
-                          ticket.status === 'open'
-                            ? c.statusOpen
-                            : ticket.status === 'pending'
-                            ? c.statusPending
-                            : ticket.status === 'escalated'
-                            ? c.statusEscalated
-                            : ticket.status === 'resolved'
-                            ? c.statusResolved
-                            : 'bg-gray-800'
-                        }`}
-                      >
-                        {ticket.status}
-                      </span>
+                      <div className="flex items-center gap-2" title={ticket.status}>
+                        <div
+                          className={`w-2 h-2 rounded-full shadow-sm ${
+                            (ticket.status || '').toLowerCase() === 'open'
+                              ? 'bg-status-dnd shadow-status-dnd/20'
+                              : (ticket.status || '').toLowerCase() === 'resolved'
+                              ? 'bg-status-online shadow-status-online/20'
+                              : 'bg-status-away shadow-status-away/20'
+                          }`}
+                        />
+                        <span className="text-xs text-text-secondary capitalize font-mono">
+                          {ticket.status}
+                        </span>
+                      </div>
                     </td>
                     <td className="py-3.5 text-right pr-4">
                       <button
@@ -302,7 +297,7 @@ export default function AdminTickets({
                         }}
                         className="inline-flex items-center gap-1 bg-accent-10 text-accent hover:bg-accent hover:text-text-primary px-3 py-1.5 rounded-lg text-[9.5px] font-black uppercase font-mono tracking-wider border border-accent-20 transition duration-150 cursor-pointer"
                       >
-                        <span>Inspect Case</span>
+                        <span>Inspect</span>
                         <ChevronRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
                       </button>
                     </td>
@@ -316,7 +311,7 @@ export default function AdminTickets({
                     colSpan={7}
                     className="py-20 text-center text-text-disabled font-mono text-[10px] uppercase font-bold tracking-widest bg-black/10"
                   >
-                    No dispute tickets match filter criteria
+                    No tickets match filter criteria
                   </td>
                 </tr>
               )}
@@ -342,28 +337,23 @@ export default function AdminTickets({
             {/* Fixed Panel Header */}
             <div className="p-5 border-b border-white-5 bg-velum-850 flex items-center justify-between flex-shrink-0">
               <div className="space-y-1">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-3">
                   <span className="font-mono text-xs font-black text-accent uppercase tracking-wider bg-accent-10 px-2.5 py-0.5 rounded-full">
-                    {(activeTicket.issue_type || '').replace(/_/g, ' ')}
+                    {activeTicket.issue_type?.includes('CRITICAL') ? 'Compromised Account' : (activeTicket.issue_type || '').replace(/_/g, ' ')}
                   </span>
-                  <span
-                    className={`text-[8.5px] uppercase px-2 py-0.5 rounded font-mono font-bold border ${
-                      activeTicket.status === 'open'
-                        ? c.statusOpen
-                        : activeTicket.status === 'pending'
-                        ? c.statusPending
-                        : activeTicket.status === 'escalated'
-                        ? c.statusEscalated
-                        : activeTicket.status === 'resolved'
-                        ? c.statusResolved
-                        : 'bg-gray-800'
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full shadow-sm ${
+                      (activeTicket.status || '').toLowerCase() === 'open'
+                        ? 'bg-status-dnd shadow-status-dnd/20'
+                        : (activeTicket.status || '').toLowerCase() === 'resolved'
+                        ? 'bg-status-online shadow-status-online/20'
+                        : 'bg-status-away shadow-status-away/20'
                     }`}
-                  >
-                    {activeTicket.status}
-                  </span>
+                    title={activeTicket.status}
+                  />
                 </div>
                 <h2 className="text-sm font-black tracking-widest text-text-primary font-mono mt-1">
-                  AUDIT INTERACTION DISPATCH // CASE-ID: #{activeTicket.ticket_id}
+                  TICKET #{activeTicket.ticket_id}
                 </h2>
               </div>
               <button
@@ -387,254 +377,206 @@ export default function AdminTickets({
             </div>
 
             {/* Main Content Area (Split into Correspondence History Timeline, logs & details) */}
-            <div className="flex-1 overflow-y-auto space-y-4 p-6 min-h-0 divide-y divide-white/[0.03]">
-              {/* Metadata and Threat level scorecard logs layout */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
-                <div className="space-y-2">
-                  <span className="text-[8.5px] uppercase font-bold text-text-secondary tracking-wider font-mono block">
-                    Dossier Audit Coordinates
-                  </span>
-                  <div className="bg-velum-750 border border-white-5 p-3 rounded-lg space-y-1.5 font-mono text-[10px]">
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">CLIENT USER SYSTEM ID:</span>{' '}
-                      <span className="text-text-primary font-bold">{activeTicket.user_id}</span>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0 flex flex-col">
+              {/* User Details & Trust Score */}
+              <div className="bg-velum-800 border border-white-5 p-4 rounded-xl mb-6">
+                <div className="flex flex-col sm:flex-row justify-between gap-4 font-mono text-xs">
+                  <div className="space-y-2 text-text-secondary">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[9px] uppercase tracking-wider">Tracking ID:</span>
+                      <span className="text-text-primary break-all">{activeTicket.tracking_id || activeTicket.tracking_id || 'N/A'}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">IDENTITY HANDLE:</span>{' '}
-                      <span className="text-accent font-black">
-                        @{activeTicket.username || 'Anonymous'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">REGISTRATION TIMEFRAME:</span>{' '}
-                      <span className="text-text-secondary">
-                        {new Date(activeTicket.created_at).toLocaleString()}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[9px] uppercase tracking-wider">User:</span>
+                      <span className="text-text-primary">{activeTicket.user_id} (@{activeTicket.username || 'Anonymous'})</span>
                     </div>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-[8.5px] uppercase font-bold text-text-secondary tracking-wider font-mono block">
-                    System Trust Credibility Meter
-                  </span>
-                  <div className="bg-velum-750 border border-white-5 p-3 rounded-lg flex flex-col justify-between h-[64px]">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-mono text-text-secondary">
-                        CVP INTEGRITY MATRIX:
-                      </span>
+                  
+                  <div className="space-y-2 text-text-secondary sm:text-right">
+                    <div className="flex items-center sm:justify-end gap-2">
+                      <span className="font-bold text-[9px] uppercase tracking-wider">Created:</span>
+                      <span className="text-text-primary">{new Date(activeTicket.created_at).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center sm:justify-end gap-2">
+                      <span className="font-bold text-[9px] uppercase tracking-wider">Trust Score:</span>
                       <span
-                        className={`text-[10px] font-mono font-bold ${
-                          activeTicket.credibility_score !== undefined &&
-                          activeTicket.credibility_score >= 85
-                            ? 'text-status-online'
-                            : 'text-status-dnd'
+                        className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+                          activeTicket.credibility_score !== undefined && activeTicket.credibility_score >= 85
+                            ? 'bg-status-online-bg text-status-online'
+                            : 'bg-status-dnd-bg text-status-dnd'
                         }`}
                       >
                         {activeTicket.credibility_score !== undefined
-                          ? `${activeTicket.credibility_score}% TRUST SCORE`
-                          : 'UNKNOWN'}
+                          ? `${activeTicket.credibility_score}%`
+                          : 'N/A'}
                       </span>
-                    </div>
-                    <div className="h-1.5 bg-text-primary-2 rounded-full overflow-hidden mt-1.5">
-                      <div
-                        className={`h-full rounded-full ${
-                          activeTicket.credibility_score !== undefined &&
-                          activeTicket.credibility_score >= 85
-                            ? 'bg-status-online'
-                            : 'bg-status-dnd'
-                        }`}
-                        style={{
-                          width: `${
-                            activeTicket.credibility_score !== undefined
-                              ? activeTicket.credibility_score
-                              : 40
-                          }%`,
-                        }}
-                      ></div>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Operational Timeline / Interactive Chat Log Stream */}
-              <div className="pt-4 space-y-3">
-                <span className="text-[8.5px] uppercase font-bold text-text-secondary tracking-wider font-mono block mb-1">
-                  Case Tracking Correspondence Timeline
-                </span>
-
-                <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1.5 scrollbar-thin">
-                  {(activeTicket.messages || []).map((m, idx) => {
-                    const isAdminSender =
-                      m.sender_name.includes('ADMIN') ||
-                      m.sender_name.includes('SUPPORT') ||
-                      m.sender_id === adminId;
-                    return (
+              <div className="flex-1 space-y-4 overflow-y-auto pr-2 scrollbar-thin">
+                {(activeTicket.messages || []).map((m, idx) => {
+                  const isAdminSender =
+                    m.sender_name.includes('ADMIN') ||
+                    m.sender_name.includes('SUPPORT') ||
+                    m.sender_name === 'System' ||
+                    m.sender_name === 'SYSTEM' ||
+                    m.sender_id === adminId ||
+                    m.sender_id === 0;
+                  
+                  return (
+                    <div
+                      key={idx}
+                      className={`flex flex-col ${isAdminSender ? 'items-end' : 'items-start'}`}
+                    >
                       <div
-                        key={idx}
-                        className={`p-3.5 rounded-xl border text-[11px] leading-relaxed transition-all ${
+                        className={`max-w-[85%] sm:max-w-[75%] p-3.5 rounded-2xl text-[13px] leading-relaxed relative ${
                           isAdminSender
-                            ? 'bg-velum-800 border-accent-20 text-text-primary ml-6 relative before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-accent before:rounded-l-xl'
-                            : 'bg-velum-850 border-white-5 text-text-primary mr-6'
+                            ? 'bg-accent/10 border border-accent/20 text-text-primary rounded-tr-sm'
+                            : 'bg-velum-800 border border-white-5 text-text-primary rounded-tl-sm'
                         }`}
                       >
-                        <div className="flex justify-between items-center mb-1.5 font-mono text-[9px] tracking-wide">
-                          <span
-                            className={`font-black ${
-                              isAdminSender ? 'text-accent' : 'text-text-secondary'
-                            }`}
-                          >
-                            {isAdminSender ? ' CENTRAL OVERSIGHT' : ' END-USER SENDER'} &bull;{' '}
+                        <div className="flex justify-between items-center mb-1 font-mono text-[9px] tracking-wide gap-4">
+                          <span className={`font-black ${isAdminSender ? 'text-accent' : 'text-text-secondary'}`}>
                             {m.sender_name}
                           </span>
-                          <span className="opacity-45 text-text-secondary">
-                            {new Date(m.timestamp).toLocaleTimeString()}
+                          <span className="opacity-45 text-text-secondary whitespace-nowrap">
+                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        <p className="font-normal whitespace-pre-wrap font-sans text-xs">
+                        <p className="font-normal whitespace-pre-wrap font-sans">
                           {m.content}
                         </p>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Active administrative restoration panel */}
               {activeTicket.status !== 'resolved' &&
-                activeTicket.issue_type === 'recovery_request' && (
-                  <div className="pt-4">
-                    <div className="p-4 bg-accent/5 border border-accent-20 rounded-xl space-y-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <Key className="w-4 h-4 text-accent animate-pulse" />
-                        <span className="text-[10px] font-mono font-black text-accent uppercase tracking-wider">
-                          Quarantine Access Controls Gate
+                (activeTicket.issue_type === 'recovery_request' || String(activeTicket.issue_type).includes('CRITICAL')) && (
+                  <div className="mt-6 p-4 bg-accent/5 border border-accent-20 rounded-xl space-y-3">
+                    <div className="flex items-center gap-1.5">
+                      <Key className="w-4 h-4 text-accent" />
+                      <span className="text-xs font-bold text-text-primary tracking-wide">
+                        Compromised Account
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">
+                      Verify request authenticity. Restoring accounts grants instant recovery tokens bypass.
+                    </p>
+
+                    {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
+                      <div className="bg-status-away-bg text-status-away p-3 rounded-lg text-xs text-center font-semibold">
+                        INSUFFICIENT PERMISSIONS
+                      </div>
+                    ) : activeTicket.credibility_score !== undefined &&
+                      activeTicket.credibility_score < 85 ? (
+                      <div className="bg-status-dnd-bg text-status-dnd p-3 rounded-lg text-xs text-center font-semibold">
+                        BLOCKED: TRUST SCORE TOO LOW
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          approveQuarantineAccess(activeTicket.user_id.toString(), 'approve')
+                        }
+                        className="w-full bg-accent hover:bg-accent-hover text-text-primary font-bold py-2.5 px-4 rounded-xl text-xs transition-colors"
+                      >
+                        RESTORE ACCOUNT
+                      </button>
+                    )}
+
+                    {restoreCode && (
+                      <div className="p-3 bg-status-online-bg text-status-online text-xs text-center rounded-xl font-mono">
+                        RECOVERY CODE GENERATED:
+                        <span className="text-text-primary font-bold select-all ml-1.5">
+                          {restoreCode}
                         </span>
                       </div>
-                      <p className="text-[10px] text-text-secondary leading-relaxed">
-                        Verify request authenticity, transaction metadata logs, and credibility matrix.
-                        Restoring accounts grants instant recovery tokens bypass.
-                      </p>
-
-                      {adminRole !== 'LOGIN_ADMIN' ? (
-                        <div className="bg-status-away-bg text-status-away p-3 rounded-lg text-[9px] font-mono text-center font-bold tracking-wide uppercase">
-                          APPROVAL LOCKED: INSUFFICIENT ACCESS PRIVILEGES (LOGIN_ADMIN NEEDED).
-                        </div>
-                      ) : activeTicket.credibility_score !== undefined &&
-                        activeTicket.credibility_score < 85 ? (
-                        <div className="bg-status-dnd-bg text-status-dnd p-3 rounded-lg text-[9px] font-mono text-center font-bold tracking-wide uppercase">
-                          AUTHORIZATION BLOCKED: HIGH SYSTEM RISK (TRUST METER UNDER REGULATORY MINIMUM).
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            approveQuarantineAccess(activeTicket.user_id.toString(), 'approve')
-                          }
-                          className="w-full bg-accent hover:bg-accent-hover text-text-primary font-extrabold py-2.5 px-4 rounded-xl text-[10px] uppercase tracking-wider cursor-pointer text-center transition-all border-0 shadow-lg shadow-accent-20"
-                        >
-                          RESTORE SYSTEM COMPROMISED ACCOUNT
-                        </button>
-                      )}
-
-                      {restoreCode && (
-                        <div className="p-3 bg-status-online-bg text-status-online font-mono text-[10px] text-center rounded-xl animate-pulse">
-                          AUTHENTICATED RECOVERY CREDENTIAL CODE GENERATED:
-                          <span className="text-text-primary font-mono font-extrabold select-all ml-1.5 bg-velum-900/60 px-2 py-1 rounded">
-                            {restoreCode}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 )}
             </div>
 
             {/* Operations Base: Fixed Decision Response Input form */}
-            <div className="p-5 border-t border-white-5 bg-velum-850 flex-shrink-0 space-y-4">
+            <div className="p-4 sm:p-5 border-t border-white-5 bg-velum-850 flex-shrink-0">
               {activeTicket.status !== 'resolved' ? (
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[9px] uppercase font-bold text-text-secondary font-mono tracking-widest">
-                      Type Case Reply Notes or Dispatch correspondence
-                    </label>
-                    <span className="text-[9px] text-text-secondary font-mono font-bold">
-                      {activeTicket.status} &bull; action state
-                    </span>
+                  <div className="relative flex">
+                    <textarea
+                      rows={1}
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleTicketReply(false, false);
+                        }
+                      }}
+                      placeholder="Type a message..."
+                      className={`flex-1 text-sm rounded-xl py-3 pl-4 pr-12 outline-none resize-none transition-all ${c.bgInput} border border-white-5 focus:border-accent-40`}
+                    />
+                    <button
+                      onClick={() => handleTicketReply(false, false)}
+                      className="absolute right-2 bottom-2 bg-accent hover:bg-accent-hover text-text-primary p-1.5 rounded-lg cursor-pointer transition-colors flex items-center justify-center"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
                   </div>
 
-                  <textarea
-                    rows={3}
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    placeholder=""
-                    className={`w-full text-xs rounded-xl p-3 outline-none resize-none transition-all font-mono ${c.bgInput} border border-white-5 focus:border-accent-40`}
-                  />
-
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <div className="flex gap-2.5">
-                      <button
-                        onClick={() => handleTicketReply(false, false)}
-                        className="bg-accent hover:bg-accent-hover text-text-primary font-extrabold px-5 py-2.5 rounded-xl cursor-pointer text-xs uppercase tracking-wider transition-all shadow-md border-0"
-                      >
-                        Respond
-                      </button>
-
-                      {adminRole === 'SUPPORT_ADMIN' ? (
+                    <div className="flex gap-2">
+                      {adminRole === 'SUPPORT_ADMIN' && (
                         <button
                           onClick={() => handleTicketReply(false, true)}
-                          className="bg-violet-600 hover:bg-violet-750 text-text-primary font-extrabold px-5 py-2.5 rounded-xl cursor-pointer text-xs uppercase tracking-wider transition-all shadow-md border-0"
+                          className="bg-violet-600 hover:bg-violet-750 text-white font-bold px-4 py-2 rounded-xl cursor-pointer text-xs transition-colors"
                         >
                           Escalate
                         </button>
-                      ) : (
-                        <div className="font-extrabold px-3 py-2.5 rounded-xl border text-center flex items-center justify-center text-text-disabled border-white-5 text-[10px] uppercase font-mono tracking-wider">
-                          Executive Desk Level
-                        </div>
                       )}
 
                       <button
                         onClick={() => handleTicketReply(true, false)}
-                        className="bg-status-online hover:bg-status-online/80 text-text-primary font-extrabold px-4 py-2.5 rounded-xl cursor-pointer text-xs uppercase tracking-wider transition-all shadow-md border-0"
+                        className="bg-status-online hover:bg-status-online/80 text-white font-bold px-4 py-2 rounded-xl cursor-pointer text-xs transition-colors"
                       >
-                        Close Case
+                        Close
                       </button>
                     </div>
 
-                    {(adminRole === 'LOGIN_ADMIN' || user?.role === 'CLI_ADMIN') && (
+                    {(adminRole === 'LOGIN_ADMIN' || adminRole === 'CLI_ADMIN') && (
                       <button
                         onClick={async () => {
                           try {
                             const res = await adminFetch(
-                              `/v2/admin/tickets/${activeTicket.ticket_id}/delete`,
+                              `/v2/admin/tickets/${activeTicket.ticket_id}`,
                               {
-                                method: 'POST',
+                                method: 'DELETE',
                               }
                             );
                             if (res.ok) {
                               setActiveTicket(null);
                               fetchData();
-                            } else {
-                              const errData = await res.json();
-                              console.error(errData.error || 'Failed to delete ticket.');
                             }
                           } catch (err) {
                             console.error('Network error deleting ticket:', err);
                           }
                         }}
-                        className="p-2.5 rounded-xl bg-status-dnd-bg hover:bg-status-dnd text-status-dnd hover:text-text-primary transition duration-150 cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-                        title="Delete Case Dossier File"
+                        className="p-2 rounded-xl bg-status-dnd-bg hover:bg-status-dnd text-status-dnd hover:text-text-primary transition-colors cursor-pointer flex items-center justify-center"
+                        title="Delete Ticket"
                       >
-                        <Trash2 className="w-4 h-4" />
-                        <span>Delete Ticket</span>
+                        <Trash2 className="w-5 h-5" />
                       </button>
                     )}
                   </div>
                 </div>
               ) : (
-                <div className="bg-status-online-bg text-status-online text-center py-4 px-6 rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2">
+                <div className="bg-status-online-bg text-status-online text-center py-3 px-6 rounded-xl text-xs font-semibold flex items-center justify-center gap-2">
                   <CheckCircle className="w-4 h-4" />
-                  <span>[ Case Containment Secured Successfully ]</span>
+                  <span>Ticket Resolved</span>
                 </div>
               )}
             </div>

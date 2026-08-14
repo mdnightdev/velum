@@ -190,11 +190,18 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v2/friends/requests - Send friend request
-friendRouter.post('/requests', async (req: Request, res: Response) => {
+// GET /v2/friends - Get relationships alias
+friendRouter.get('/', (req, res, next) => {
+  // handle get relationships
+  res.redirect(307, '/v2/friends/relationships');
+});
+
+// POST /v2/friends/request & /requests - Send friend request
+const handleSendFriendRequest = async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
-    const { targetUserId, receiverUsername } = req.body;
+    const { targetUserId } = req.body;
+    const receiverUsername = req.body.receiverUsername || req.body.username;
     
     let targetUser;
     if (receiverUsername) {
@@ -238,6 +245,28 @@ friendRouter.post('/requests', async (req: Request, res: Response) => {
   } catch (err) {
     res.status(500).json({ error: 'Failed to send friend request.' });
   }
+};
+
+friendRouter.post('/requests', handleSendFriendRequest);
+friendRouter.post('/request', handleSendFriendRequest);
+
+// POST /v2/friends/accept/:requestId and /reject/:requestId aliases
+friendRouter.post('/accept/:requestId', async (req: Request, res: Response) => {
+  req.body.action = 'accepted';
+  const relId = parseInt(req.params.requestId, 10);
+  const relList = await db.select().from(relationships).where(eq(relationships.id, relId)).limit(1);
+  if (!relList.length) {
+    return res.status(404).json({ error: 'Friend request not found.' });
+  }
+  await db.update(relationships).set({ status: 'accepted', updatedAt: new Date() }).where(eq(relationships.id, relId));
+  res.json({ success: true, message: 'Friend request accepted.' });
+});
+
+friendRouter.post('/reject/:requestId', async (req: Request, res: Response) => {
+  req.body.action = 'rejected';
+  const relId = parseInt(req.params.requestId, 10);
+  await db.delete(relationships).where(eq(relationships.id, relId));
+  res.json({ success: true, message: 'Friend request rejected.' });
 });
 
 // POST /v2/friends/requests/:requestId/respond - Accept/decline friend request

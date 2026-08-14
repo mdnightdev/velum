@@ -1,11 +1,12 @@
 import 'dotenv/config';
 
-const defaultDbUrl = 'postgresql://neondb_owner:npg_7d1BLlsUWFRz@ep-silent-paper-azmc0w9y-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require';
-
 const getCleanUrl = () => {
-  const raw = (process.env.DATABASE_URL || process.env.CLOUD_DATABASE_URL || defaultDbUrl).trim().replace(/\s+/g, '');
-  const clean = raw.replace(/(&|\?)channel_binding=[^&]+/g, '');
-  return clean.replace('-pooler', '');
+  const raw = (process.env.DATABASE_URL || process.env.CLOUD_DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/velum').trim().replace(/\s+/g, '');
+  let clean = raw.replace(/(&|\?)channel_binding=[^&]+/g, '').replace('-pooler', '');
+  if (!clean.includes('uselibpqcompat=true')) {
+    clean += (clean.includes('?') ? '&' : '?') + 'uselibpqcompat=true';
+  }
+  return clean;
 };
 
 export default {
@@ -13,8 +14,10 @@ export default {
   out: './server/v2/db/migrations',
   dialect: 'postgresql',
   dbCredentials: {
-    url: getCleanUrl()
+    url: getCleanUrl(),
+    ssl: { rejectUnauthorized: false }
   }
 };
+
 
 

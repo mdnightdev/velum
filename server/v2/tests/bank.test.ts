@@ -38,7 +38,7 @@ describe('V2 Banking Endpoints Integration Tests', () => {
       .post('/v2/bank/transfer')
       .set('Authorization', `Bearer ${senderToken}`)
       .send({
-        recipientUserId: recipientId,
+        recipientUsername: recipientUser,
         amount: '500.00'
       });
 

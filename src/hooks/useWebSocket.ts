@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
-import { getLocalMessages, saveLocalMessages } from '../utils/indexedDb';
+import { getLocalMessages, saveLocalMessages, rotateAndReEncryptLocalMessages } from '../utils/indexedDb';
+import { LocalVaultEncryption } from '../services/localVaultEncryption';
+import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -9,6 +11,7 @@ interface UseWebSocketParams {
   isAuthenticated: boolean;
   activeRoomId: string;
   onMessageReceived?: (message: Message) => void;
+  onSessionCompromised?: () => void;
 }
 
 export function useWebSocket({
@@ -16,10 +19,31 @@ export function useWebSocket({
   sessionId,
   isAuthenticated,
   activeRoomId,
-  onMessageReceived
+  onMessageReceived,
+  onSessionCompromised
 }: UseWebSocketParams) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
+
+  // Background Periodic Key Rotation for Message History Forward Secrecy
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    let isMounted = true;
+    const runRotationCheck = async () => {
+      try {
+        const needsRotation = await LocalVaultEncryption.checkAndRotatePeriodically();
+        if (needsRotation && isMounted) {
+          console.log('[useWebSocket] Triggering periodic message history key rotation...');
+          await rotateAndReEncryptLocalMessages();
+        }
+      } catch (err) {
+        console.error('[useWebSocket] Rotation check failed:', err);
+      }
+    };
+
+    runRotationCheck();
+  }, [isAuthenticated]);
 
   // 1. Instantly render cached messages when switching rooms or reconnecting
   useEffect(() => {
@@ -102,7 +126,7 @@ export function useWebSocket({
         }
       }
     } catch (err) {
-      console.error('Failed to fetch conversations summary:', err);
+      // Silently handle transient network fetch errors during initialization
     }
 
     // Fetch Redis-based unread counts
@@ -121,7 +145,7 @@ export function useWebSocket({
         }
       }
     } catch (err) {
-      console.error('Failed to fetch Redis unread counts:', err);
+      // Silently handle transient network fetch errors during initialization
     }
   };
 
@@ -171,6 +195,24 @@ export function useWebSocket({
         ws.send(JSON.stringify({ type: 'join_room', room_id: activeRoomIdRef.current }));
       }
 
+      // Automatically drain persistent IndexedDB outbox queue upon socket restoration
+      drainOutboxQueue((item) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'send_message',
+            room_id: item.room_id,
+            content: item.content,
+            is_encrypted: item.is_encrypted,
+            expires_in: item.expires_in,
+            reply_to: item.reply_to,
+            client_msg_id: item.client_msg_id,
+            nonce: item.client_msg_id
+          }));
+          return true;
+        }
+        return false;
+      });
+
       pingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'ping', sentAt: Date.now() }));
@@ -193,6 +235,15 @@ export function useWebSocket({
             window.velumDebug.averagePing = currentPing === 0
               ? rtt
               : Math.round((currentPing * 0.8) + (rtt * 0.2));
+          }
+          return;
+        }
+
+        if (data.type === 'multi_device_sync') {
+          if (data.action === 'read_cursor_update' || data.action === 'mark_all_read') {
+            if (data.room_id) {
+              setUnreadCounts(prev => ({ ...prev, [data.room_id]: 0 }));
+            }
           }
           return;
         }
@@ -236,6 +287,9 @@ export function useWebSocket({
           alert(`Account suspended. Reason: ${data.reason}`);
         } else if (data.type === 'compromised_alert' || data.type === 'panic_triggered') {
           alert('Your session has ended. Please log in again.');
+          if (onSessionCompromised) {
+            onSessionCompromised();
+          }
         } else if (data.type === 'presence_update') {
           window.dispatchEvent(new CustomEvent('velum-presence-change'));
         } else if (data.type === 'typing_start') {
@@ -250,6 +304,34 @@ export function useWebSocket({
             console.warn('Suppressed socket connection payload alert:', data.message);
           } else {
             alert(`Error: ${data.message}`);
+          }
+        } else if (data.type === 'message_ack') {
+          const ackNonce = data.client_msg_id || data.nonce;
+          if (ackNonce) {
+            removeOutboxMessage(ackNonce);
+          }
+          setMessages(prev => prev.map(m => {
+            if (m.nonce === ackNonce || m.client_msg_id === ackNonce || m.message_id === ackNonce) {
+              return {
+                ...m,
+                message_id: data.message_id ? String(data.message_id) : m.message_id,
+                db_message_id: data.db_message_id,
+                sequence_id: data.sequence_id,
+                client_msg_id: ackNonce,
+                status: 'sent'
+              };
+            }
+            return m;
+          }));
+        } else if (data.type === 'sync_response') {
+          if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
+            setMessages(prev => {
+              const existingIds = new Set(prev.map(m => String(m.db_message_id || m.message_id)));
+              const newMsgs = data.messages.filter((m: Message) => !existingIds.has(String(m.db_message_id || m.message_id)));
+              if (newMsgs.length === 0) return prev;
+              const merged = [...prev, ...newMsgs];
+              return merged.sort((a, b) => (a.sequence_id || 0) - (b.sequence_id || 0));
+            });
           }
         } else if (data.type === 'reaction_update') {
           setMessages(prev => prev.map(m => {
@@ -280,16 +362,44 @@ export function useWebSocket({
             return m;
           }));
         } else if (data.type === 'message_read') {
+          const readerId = data.reader_id || data.user_id;
+          const lastReadSeq = data.last_read_seq;
+          const targetMsgId = data.last_read_msg_id || data.message_id;
+
           setMessages(prev => prev.map(m => {
-            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
-              return { ...m, status: 'read' as 'sent' | 'delivered' | 'read' };
+            let isReadTarget = false;
+            if (lastReadSeq && m.sequence_id) {
+              isReadTarget = m.sequence_id <= lastReadSeq;
+            } else if (targetMsgId) {
+              isReadTarget = String(m.message_id) === String(targetMsgId) || String(m.db_message_id) === String(targetMsgId);
+            }
+
+            if (isReadTarget) {
+              const currentReadBy = typeof m.read_by === 'string' ? m.read_by.split(',') : (Array.isArray(m.read_by) ? m.read_by : []);
+              if (readerId && !currentReadBy.map(String).includes(String(readerId))) {
+                currentReadBy.push(String(readerId));
+              }
+              return {
+                ...m,
+                read_by: currentReadBy.join(','),
+                status: 'read' as 'sent' | 'delivered' | 'read'
+              };
             }
             return m;
           }));
         } else if (data.type === 'message_delivered') {
+          const receiverId = data.receiver_id || data.user_id;
           setMessages(prev => prev.map(m => {
-            if ((String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) && m.status !== 'read') {
-              return { ...m, status: 'delivered' as 'sent' | 'delivered' | 'read' };
+            if ((String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id))) {
+              const currentDel = typeof m.delivered_to === 'string' ? m.delivered_to.split(',') : (Array.isArray(m.delivered_to) ? m.delivered_to : []);
+              if (receiverId && !currentDel.map(String).includes(String(receiverId))) {
+                currentDel.push(String(receiverId));
+              }
+              return {
+                ...m,
+                delivered_to: currentDel.join(','),
+                status: m.status === 'read' ? 'read' : ('delivered' as 'sent' | 'delivered' | 'read')
+              };
             }
             return m;
           }));
@@ -317,23 +427,29 @@ export function useWebSocket({
             setMessages(prev => {
               const newMessage = data as Message;
               // Check if we have an optimistic message to replace by nonce
-          if (newMessage.nonce) {
-            const optIdx = prev.findIndex(m => m.nonce === newMessage.nonce);
-            if (optIdx !== -1) {
-              const originalPlaintext = prev[optIdx].plaintext;
-              const newArr = [...prev];
-              newArr[optIdx] = {
-                ...newMessage,
-                plaintext: originalPlaintext || newMessage.plaintext,
-                status: newMessage.status || 'sent'
-              };
-              if (onMessageReceived) {
-                onMessageReceived(newArr[optIdx]);
+              const targetKey = newMessage.client_msg_id || newMessage.nonce || newMessage.message_id;
+              const optIdx = prev.findIndex(m => 
+                (targetKey && (m.client_msg_id === targetKey || m.nonce === targetKey || m.message_id === targetKey)) ||
+                (newMessage.client_msg_id && (m.client_msg_id === newMessage.client_msg_id || m.nonce === newMessage.client_msg_id || m.message_id === newMessage.client_msg_id)) ||
+                (newMessage.nonce && (m.client_msg_id === newMessage.nonce || m.nonce === newMessage.nonce || m.message_id === newMessage.nonce))
+              );
+              if (optIdx !== -1) {
+                const originalPlaintext = prev[optIdx].plaintext;
+                const newArr = [...prev];
+                newArr[optIdx] = {
+                  ...newMessage,
+                  plaintext: originalPlaintext || newMessage.plaintext,
+                  status: newMessage.status || 'sent'
+                };
+                if (onMessageReceived) {
+                  onMessageReceived(newArr[optIdx]);
+                }
+                return newArr;
               }
-              return newArr;
-            }
-          }
-              const exists = prev.some(m => m.message_id === data.message_id);
+              const exists = prev.some(m => 
+                (data.message_id && String(m.message_id) === String(data.message_id)) ||
+                (data.db_message_id && String(m.db_message_id) === String(data.db_message_id))
+              );
               if (exists) return prev;
               if (onMessageReceived) {
                 onMessageReceived(newMessage);
@@ -370,8 +486,13 @@ export function useWebSocket({
         if (window.velumDebug) {
           window.velumDebug.reconnectCount = reconnectAttemptsRef.current;
         }
-        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 15000);
-        console.log(`Socket closed or errored. Reconnecting in ${Math.round(delay)}ms... (Attempt ${reconnectAttemptsRef.current})`);
+        // Full random jitter backoff: t = min(max_backoff, base * 1.5^attempt + jitter)
+        const base = 1000;
+        const max = 15000;
+        const jitter = Math.random() * 1000;
+        const delay = Math.min(max, base * Math.pow(1.5, reconnectAttemptsRef.current) + jitter);
+
+        console.log(`Socket closed or errored. Reconnecting in ${Math.round(delay)}ms... (Attempt ${reconnectAttemptsRef.current}, jitter: ${Math.round(jitter)}ms)`);
         
         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = setTimeout(() => {
@@ -391,8 +512,7 @@ export function useWebSocket({
     };
   };
 
-  const sendMessage = async (text: string, burnSeconds: number | null, isEncrypted: boolean, targetRoomId?: string, replyTo?: string | number) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+  const sendMessage = async (text: string, burnSeconds: number | null, isEncrypted: boolean, targetRoomId?: string, replyTo?: string | number, clientPlaintext?: string) => {
     const destRoomId = targetRoomId || activeRoomId;
     const isOfficialChannel = [
       'general',
@@ -418,11 +538,12 @@ export function useWebSocket({
     const optMessage: Message = {
       message_id: nonce,
       nonce: nonce,
+      client_msg_id: nonce,
       room_id: destRoomId,
-      user_id: userId || 0, // Note: using userId from params
-      username: 'You', // This will be overwritten by server, just a placeholder
+      user_id: userId || 0,
+      username: 'You',
       content: finalContent,
-      plaintext: text,
+      plaintext: clientPlaintext || text,
       is_encrypted: shouldEncrypt,
       status: 'sending',
       reply_to: replyTo ? String(replyTo) : null,
@@ -432,16 +553,34 @@ export function useWebSocket({
     if (destRoomId === activeRoomId) {
       setMessages(prev => [...prev, optMessage]);
     }
- 
-    wsRef.current.send(JSON.stringify({
-      type: 'send_message',
+
+    const outboxPayload = {
+      client_msg_id: nonce,
       room_id: destRoomId,
       content: finalContent,
       is_encrypted: shouldEncrypt,
       expires_in: burnSeconds,
-      reply_to: replyTo || null,
-      nonce: nonce
-    }));
+      reply_to: replyTo ? String(replyTo) : null,
+      timestamp: optMessage.timestamp,
+      retryCount: 0
+    };
+
+    // Enqueue in IndexedDB outbox queue
+    await enqueueOutboxMessage(outboxPayload);
+
+    // If socket is open, send frame immediately
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'send_message',
+        room_id: destRoomId,
+        content: finalContent,
+        is_encrypted: shouldEncrypt,
+        expires_in: burnSeconds,
+        reply_to: replyTo || null,
+        client_msg_id: nonce,
+        nonce: nonce
+      }));
+    }
     
     // Add a timeout to transition 'sending' to 'failed' if no ACK after 10s
     setTimeout(() => {
@@ -562,6 +701,15 @@ export function useWebSocket({
     wsRef.current.send(JSON.stringify({ type: 'leave', room_id: roomId }));
   };
 
+  const requestSync = (roomId: string, sinceSeq: number) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      type: 'sync_request',
+      room_id: roomId,
+      since_seq: sinceSeq
+    }));
+  };
+
   const disconnect = () => {
     if (wsRef.current) {
       wsRef.current.close();
@@ -606,6 +754,7 @@ export function useWebSocket({
     markAsRead,
     markAllAsRead,
     markDelivered,
+    requestSync,
     disconnect,
     connectWebSocket,
     refetchSummary: fetchConversationsSummary

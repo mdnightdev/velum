@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, Menu } from 'lucide-react';
+import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, Menu, ChevronLeft, Search, Clock, Info } from 'lucide-react';
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { useResponsiveLayout } from '../../hooks/useResponsive';
 
 interface TicketsMainDashboardProps {
   currentUserId: number;
@@ -15,18 +16,26 @@ export default function TicketsMainDashboard({
   onToggleSidebar
 }: TicketsMainDashboardProps) {
   const { t } = useLanguage();
+  const { isMobile: _isMobile, isTablet } = useResponsiveLayout();
+  const isMobile = _isMobile || isTablet;
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
   const [reason, setReason] = useState('');
   const [issueType, setIssueType] = useState('general_support');
   const [credentials, setCredentials] = useState('');
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [expandedTickets, setExpandedTickets] = useState<Record<string, boolean>>({});
-  const [confirmAction, setConfirmAction] = useState<{ type: 'close' | 'delete'; ticketId: string } | null>(null);
+  
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
+  
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
   const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum-sessionId') || '';
 
   const categories = [
@@ -37,7 +46,7 @@ export default function TicketsMainDashboard({
     { value: 'wallet_payments', label: 'Wallet & Payments' }
   ];
 
-  const stripLarpNoise = (str?: string | null): string => {
+  const stripSystemTags = (str?: string | null): string => {
     if (!str) return '';
     return str.replace(/\[Forwarded Details \/ Encrypted Metadata\]:\s*/gi, '').trim();
   };
@@ -78,11 +87,19 @@ export default function TicketsMainDashboard({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Scroll to bottom when messages change for active ticket
+  const activeTicket = tickets.find(t => t.ticket_id === activeTicketId);
+  useEffect(() => {
+    if (activeTicketId && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [activeTicket?.messages]);
+
+
   const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reason.trim()) return;
     setIsSubmitting(true);
-
     try {
       const sId = fetchSessionId();
       const res = await fetch('/v2/tickets', {
@@ -97,13 +114,14 @@ export default function TicketsMainDashboard({
           credentialsForwarded: credentials.trim() || null
         })
       });
-
+      
       if (res.ok) {
         setReason('');
         setCredentials('');
         setIssueType('general_support');
         showToast('Support ticket submitted successfully.');
-        loadTickets();
+        await loadTickets();
+        setIsCreating(false);
       } else {
         const data = await res.json();
         showToast(data.error || 'Failed to submit ticket.');
@@ -115,418 +133,376 @@ export default function TicketsMainDashboard({
     }
   };
 
-  const executeDeleteTicket = async (ticketId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleReply = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && e.currentTarget.value.trim() && activeTicketId) {
+      const val = e.currentTarget.value.trim();
+      e.currentTarget.value = '';
+      const sId = fetchSessionId();
+      try {
+        const res = await fetch(`/v2/user/tickets/${activeTicketId}/reply`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: val })
+        });
+        if (res.ok) {
+          loadTickets();
+        } else {
+          const data = await res.json();
+          alert(data.error || 'Failed to submit reply.');
+        }
+      } catch (err) {
+        alert('Network error occurred while submitting reply.');
+      }
+    }
+  };
+
+  const executeDeleteTicket = async (ticketId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this ticket?")) return;
     try {
       const sId = fetchSessionId();
-      const res = await fetch(`/v2/user/tickets/${ticketId}`, {
+      const res = await fetch(`/v2/admin/tickets/${ticketId}`, {
         method: 'DELETE',
-        headers: { 
-          'Authorization': `Bearer ${sId}`,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Authorization': `Bearer ${sId}` }
       });
-      setConfirmAction(null);
       if (res.ok) {
-        showToast('Ticket deleted successfully.');
+        showToast('Ticket deleted permanently.');
+        if (activeTicketId === ticketId) setActiveTicketId(null);
         loadTickets();
       } else {
         const data = await res.json();
         showToast(data.error || 'Failed to delete ticket.');
       }
-    } catch {
+    } catch (err) {
       showToast('Network error occurred while deleting ticket.');
     }
   };
 
-  const executeCloseTicket = async (ticketId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const sId = fetchSessionId();
-      const res = await fetch(`/v2/user/tickets/${ticketId}/close`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${sId}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      setConfirmAction(null);
-      if (res.ok) {
-        showToast('Ticket marked as closed.');
-        loadTickets();
-      } else {
-        const data = await res.json();
-        showToast(data.error || 'Failed to close ticket.');
-      }
-    } catch {
-      showToast('Network error occurred while closing ticket.');
+  // --- RENDERING ---
+
+  const renderTicketList = () => (
+    <div className={`flex flex-col h-full bg-velum-850 border-r border-white/5 ${isMobile && (activeTicketId || isCreating) ? 'hidden' : 'w-full md:w-80 flex-shrink-0'}`}>
+      <div className="p-4 border-b border-white/5 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          {onToggleSidebar && isMobile && (
+            <button 
+              onClick={onToggleSidebar} 
+              className="p-1.5 -ml-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+          <h2 className="text-sm font-bold uppercase tracking-widest text-text-primary">Support Tickets</h2>
+        </div>
+        <button 
+          onClick={() => { setIsCreating(true); setActiveTicketId(null); }}
+          className="p-1.5 rounded-lg text-text-secondary hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+          title="New Ticket"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto scrollbar-none p-3 space-y-2">
+        {loading ? (
+          <div className="text-xs font-mono text-text-secondary/50 p-4 text-center">Loading...</div>
+        ) : tickets.length === 0 ? (
+          <div className="text-center py-10">
+            <MessageSquare className="w-8 h-8 text-white/10 mx-auto mb-3" />
+            <div className="text-xs font-semibold text-text-secondary">No open tickets</div>
+          </div>
+        ) : (
+          tickets.map(t => {
+            const isActive = activeTicketId === t.ticket_id && !isCreating;
+            const category = categories.find(c => c.value === t.issue_type)?.label || 'Support';
+            const cleanReason = stripSystemTags(t.reason);
+            const lastMsg = t.messages && t.messages.length > 0 ? t.messages[t.messages.length - 1] : null;
+
+            return (
+              <button
+                key={t.ticket_id}
+                onClick={() => { setActiveTicketId(t.ticket_id); setIsCreating(false); }}
+                className={`w-full text-left p-3 rounded-xl transition-colors ${
+                  isActive ? 'bg-white/10 shadow-sm' : 'hover:bg-white/5'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${t.status === 'resolved' ? 'bg-status-offline' : t.status === 'escalated' ? 'bg-accent' : 'bg-status-online'}`} />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                      {category}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-text-secondary/60">
+                    {t.created_at ? new Date(t.created_at).toLocaleDateString() : ''}
+                  </span>
+                </div>
+                
+                <div className={`text-xs font-semibold line-clamp-1 mb-1 ${isActive ? 'text-white' : 'text-text-primary'}`}>
+                  {cleanReason}
+                </div>
+
+                {lastMsg && (
+                  <div className="text-[11px] text-text-secondary line-clamp-1 flex items-center gap-1.5">
+                    <MessageCircle className="w-3 h-3 shrink-0" />
+                    <span>{lastMsg.sender_name === 'Support operator' ? 'Operator: ' : ''}{stripSystemTags(lastMsg.content)}</span>
+                  </div>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+
+  const renderActiveTicket = () => {
+    if (isCreating) return renderCreateForm();
+    if (!activeTicket) {
+      if (isMobile) return null;
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center bg-velum-900 border-l border-white/5">
+          <MessageSquare className="w-12 h-12 text-white/5 mb-4" />
+          <h3 className="text-sm font-bold text-text-primary uppercase tracking-widest">Support Center</h3>
+          <p className="text-xs text-text-secondary mt-2">Select a ticket from the list or create a new one.</p>
+        </div>
+      );
     }
+
+    const cleanReason = stripSystemTags(activeTicket.reason);
+
+    return (
+      <div className={`flex-1 flex flex-col h-full bg-velum-900 border-l border-white/5 ${isMobile && !activeTicketId && !isCreating ? 'hidden' : 'flex'}`}>
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between shrink-0 bg-velum-850">
+          <div className="flex items-center gap-4">
+            {isMobile && (
+              <button 
+                onClick={() => setActiveTicketId(null)}
+                className="p-1.5 -ml-2 rounded-lg text-text-secondary hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`w-2 h-2 rounded-full ${activeTicket.status === 'resolved' ? 'bg-status-offline' : activeTicket.status === 'escalated' ? 'bg-accent' : 'bg-status-online'}`} />
+                <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">
+                  Ticket #{activeTicket.ticket_id.slice(0, 8)}
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-mono text-text-secondary uppercase tracking-widest">
+                <span>{categories.find(c => c.value === activeTicket.issue_type)?.label || 'Support'}</span>
+                {activeTicket.tracking_id && (
+                  <>
+                    <span>•</span>
+                    <span className="text-accent/80">TRK: {activeTicket.tracking_id}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => executeDeleteTicket(activeTicket.ticket_id)}
+              className="p-2 rounded-lg text-text-secondary hover:text-status-dnd hover:bg-status-dnd/10 transition-colors cursor-pointer"
+              title="Delete Ticket"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto scrollbar-none p-5 space-y-6">
+          {/* Initial Ticket Request */}
+          <div className="flex flex-col max-w-[85%] bg-velum-800 border border-white/5 rounded-2xl rounded-tl-sm p-4 text-xs sm:text-sm space-y-2 mr-auto shadow-sm">
+            <div className="flex justify-between gap-4 text-xs text-text-secondary/80">
+              <span className="font-bold text-white">Initial Request</span>
+              <span className="text-[10px] font-mono">{new Date(activeTicket.created_at).toLocaleString()}</span>
+            </div>
+            <p className="text-text-primary font-sans break-words leading-relaxed whitespace-pre-wrap">
+              {cleanReason}
+            </p>
+          </div>
+
+          {/* Messages Thread */}
+          {(activeTicket.messages || []).map((msg, idx) => {
+            const isOp = msg.sender_name === 'Support operator' || msg.sender_name === 'Admin';
+            const isSys = msg.sender_name === 'System' || msg.sender_name === 'SYSTEM';
+            const cleanContent = stripSystemTags(msg.content);
+            
+            if (isSys) {
+              return (
+                <div key={idx} className="flex justify-center py-2">
+                  <span className="text-[10px] font-bold text-text-secondary/60 bg-velum-850 px-4 py-1.5 rounded-full border border-white/5 uppercase tracking-widest">
+                    {cleanContent}
+                  </span>
+                </div>
+              );
+            }
+
+            return (
+              <div 
+                key={idx} 
+                className={`flex flex-col max-w-[85%] rounded-2xl p-4 text-xs sm:text-sm shadow-sm ${
+                  isOp 
+                    ? 'bg-accent/10 border border-accent/20 rounded-tl-sm mr-auto' 
+                    : 'bg-velum-800 border border-white/5 rounded-tr-sm ml-auto'
+                }`}
+              >
+                <div className="flex justify-between gap-4 text-[10px] font-bold text-text-secondary/80 mb-1.5 uppercase tracking-wider">
+                  <span className={isOp ? 'text-accent' : 'text-white'}>{msg.sender_name}</span>
+                  <span className="font-mono">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <p className="text-text-primary font-sans break-words leading-relaxed">
+                  {cleanContent}
+                </p>
+              </div>
+            );
+          })}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Area */}
+        {activeTicket.status !== 'resolved' ? (
+          <div className="p-4 bg-velum-850 border-t border-white/5 shrink-0">
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="Type your reply and press Enter..."
+                className="w-full bg-velum-900 border border-white/10 rounded-full pl-5 pr-12 py-3.5 text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none placeholder:text-text-secondary/40 transition-all"
+                onKeyDown={handleReply}
+              />
+              <button 
+                className="absolute right-2 p-2 rounded-full text-text-secondary hover:text-white hover:bg-white/10 transition-colors"
+                onClick={(e) => {
+                  const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                  if (input && input.value.trim()) {
+                    handleReply({ key: 'Enter', currentTarget: input } as any);
+                  }
+                }}
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 bg-velum-850 border-t border-white/5 shrink-0 flex justify-center">
+            <span className="text-[10px] font-bold text-status-offline uppercase tracking-widest font-mono">
+              Ticket Resolved & Closed
+            </span>
+          </div>
+        )}
+      </div>
+    );
   };
 
-  const toggleTicket = (id: string) => {
-    setExpandedTickets(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
+  const renderCreateForm = () => {
+    return (
+      <div className={`flex-1 flex flex-col h-full bg-velum-900 border-l border-white/5 overflow-y-auto scrollbar-none ${isMobile && !isCreating ? 'hidden' : 'flex'}`}>
+        <div className="px-5 py-4 border-b border-white/5 flex items-center gap-4 shrink-0 sticky top-0 bg-velum-900/90 backdrop-blur z-10">
+          {isMobile && (
+            <button 
+              onClick={() => setIsCreating(false)}
+              className="p-1.5 -ml-2 rounded-lg text-text-secondary hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
+          <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">
+            Create Ticket
+          </h3>
+        </div>
 
-  const getCategoryStyles = (type?: string) => {
-    switch (type) {
-      case 'escrow_dispute':
-        return {
-          border: 'border-l-4 border-l-status-away border-t border-r border-b border-white/10',
-          badge: 'bg-status-away-bg text-status-away'
-        };
-      case 'account_sanction':
-        return {
-          border: 'border-l-4 border-l-status-dnd border-t border-r border-b border-white/10',
-          badge: 'bg-status-dnd-bg text-status-dnd'
-        };
-      case 'marketplace_listing':
-        return {
-          border: 'border-l-4 border-l-status-indigo border-t border-r border-b border-white/10',
-          badge: 'bg-status-indigo-bg text-status-indigo'
-        };
-      case 'wallet_payments':
-        return {
-          border: 'border-l-4 border-l-status-online border-t border-r border-b border-white/10',
-          badge: 'bg-status-online-bg text-status-online'
-        };
-      case 'general_support':
-      default:
-        return {
-          border: 'border-l-4 border-l-status-sky border-t border-r border-b border-white/10',
-          badge: 'bg-status-sky-bg text-status-sky'
-        };
-    }
+        <div className="p-6 max-w-2xl mx-auto w-full">
+          <form onSubmit={handleSubmitTicket} className="space-y-6">
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-text-secondary uppercase tracking-widest block">Issue Category</label>
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="w-full bg-velum-800 border border-white/10 hover:border-white/20 rounded-xl px-4 py-3.5 text-sm text-text-primary focus:outline-none flex items-center justify-between transition-all"
+                >
+                  <span className="font-semibold">{categories.find(c => c.value === issueType)?.label || 'Select Category'}</span>
+                  <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform duration-200 ${isDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
+                </button>
+                {isDropdownOpen && (
+                  <div className="absolute left-0 right-0 mt-2 bg-[#121212] border border-white/20 rounded-xl shadow-2xl z-50 overflow-hidden font-sans">
+                    {categories.map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => {
+                          setIssueType(c.value);
+                          setIsDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center justify-between ${
+                          issueType === c.value ? 'bg-accent/10 text-accent font-semibold' : 'text-text-primary hover:bg-white/5'
+                        }`}
+                      >
+                        {c.label}
+                        {issueType === c.value && <Check className="w-4 h-4" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-text-secondary uppercase tracking-widest block">Description</label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                required
+                rows={5}
+                className="w-full bg-velum-800 border border-white/10 rounded-xl p-4 text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none transition-all resize-none placeholder:text-text-secondary/40"
+                placeholder="Explain the issue in detail..."
+              />
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-text-secondary uppercase tracking-widest block flex items-center justify-between">
+                <span>Additional Details (Optional)</span>
+                
+              </label>
+              <textarea
+                value={credentials}
+                onChange={(e) => setCredentials(e.target.value)}
+                rows={2}
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none transition-all resize-none font-mono placeholder:text-text-secondary/40 placeholder:font-sans"
+                placeholder="Provide any transaction IDs, wallet addresses, or verification details here..."
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting || !reason.trim()}
+              className="w-full py-4 bg-accent text-velum-900 font-bold rounded-xl hover:bg-accent-hover transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-widest text-xs"
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit'}
+              {!isSubmitting && <Send className="w-4 h-4" />}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div id="tickets_dashboard" className="flex-1 bg-transparent p-4 sm:p-6 lg:p-8 space-y-6 font-sans">
-      {onToggleSidebar && (
-        <div className="md:hidden pb-2 border-b border-white-5 flex items-center gap-2">
-          <button
-            onClick={onToggleSidebar}
-            className="p-2 rounded-xl border border-white-5 text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
-            aria-label="Open sidebar menu"
-            title="Open Navigation"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <span className="text-xs font-bold uppercase tracking-widest text-text-secondary">Support Tickets</span>
-        </div>
-      )}
+    <div className="flex h-full w-full bg-velum-900 overflow-hidden relative">
+      {/* Toast Notification */}
       {toastMessage && (
-        <div className="bg-accent/15 border border-accent/40 text-accent px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-2">
-          <span>{toastMessage}</span>
-          <button type="button" onClick={() => setToastMessage(null)} className="text-accent hover:text-white transition p-1 cursor-pointer">
-            ✕
-          </button>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-velum-800 border border-white/10 shadow-2xl rounded-full px-5 py-2.5 flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
+          <Info className="w-4 h-4 text-accent" />
+          <span className="text-xs font-semibold text-text-primary">{toastMessage}</span>
         </div>
       )}
-      
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Create Ticket Form */}
-        <form onSubmit={handleSubmitTicket} className="bg-velum-800 border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl lg:col-span-5">
-          <h3 className="text-sm font-semibold tracking-wide text-accent flex items-center gap-2">
-            <Plus className="w-4 h-4 text-accent" />
-            <span>Create Support Ticket</span>
-          </h3>
 
-          <div className="space-y-2 relative" ref={dropdownRef}>
-            <label className="block text-xs font-semibold text-text-secondary">
-              Ticket Category
-            </label>
-            <button
-              type="button"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="w-full bg-velum-750 border border-white/10 rounded-xl px-4 py-3 text-xs sm:text-sm text-text-primary hover:border-accent/50 focus:border-accent focus:ring-1 focus:ring-accent/40 focus:outline-none flex items-center justify-between cursor-pointer transition shadow-sm font-sans"
-            >
-              <span className="font-medium text-text-primary">{categories.find(c => c.value === issueType)?.label || 'Select Category'}</span>
-              <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform duration-200 ${isDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
-            </button>
-            {isDropdownOpen && (
-              <div className="absolute left-0 right-0 mt-1.5 bg-velum-750 border border-white/15 rounded-xl shadow-2xl z-50 overflow-hidden font-sans divide-y divide-white/5">
-                {categories.map((c) => (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => {
-                      setIssueType(c.value);
-                      setIsDropdownOpen(false);
-                    }}
-                    className={`w-full text-left px-4 py-3 text-xs sm:text-sm transition-colors flex items-center justify-between cursor-pointer ${
-                      issueType === c.value ? 'bg-accent/15 text-accent font-semibold' : 'text-text-primary hover:bg-white/5'
-                    }`}
-                  >
-                    <span>{c.label}</span>
-                    {issueType === c.value && <Check className="w-4 h-4 text-accent" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold text-text-secondary">
-              Description of the Issue
-            </label>
-            <textarea
-              id="ticket_reason"
-              required
-              rows={4}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Please describe your issue or question in detail..."
-              className="w-full bg-velum-750 border border-white/10 rounded-xl p-3.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none resize-none font-sans leading-relaxed placeholder:text-text-disabled"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold text-text-secondary">
-              Supporting Details / Logs (Optional)
-            </label>
-            <textarea
-              id="ticket_credentials"
-              rows={3}
-              value={credentials}
-              onChange={(e) => setCredentials(e.target.value)}
-              placeholder="Provide transaction IDs, error logs, or relevant details..."
-              className="w-full bg-velum-750 border border-white/10 rounded-xl p-3.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none resize-none font-sans leading-relaxed placeholder:text-text-disabled"
-            />
-          </div>
-
-          <button
-            id="ticket_submit_btn"
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-3 bg-accent hover:bg-accent-hover text-velum-900 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-md font-sans hover:shadow-accent/20"
-          >
-            <Send className="w-4 h-4" />
-            <span>{isSubmitting ? 'Submitting Ticket...' : 'Submit Ticket'}</span>
-          </button>
-        </form>
-
-        {/* Existing Tickets list */}
-        <div className="lg:col-span-7 space-y-4">
-          <h3 className="text-sm font-semibold tracking-wide text-text-secondary flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-text-secondary" />
-            <span>Your Support Tickets ({tickets.length})</span>
-          </h3>
-
-          {loading ? (
-            <div className="text-xs text-text-secondary animate-pulse p-4">Loading tickets...</div>
-          ) : tickets.length === 0 ? (
-            <div className="text-xs sm:text-sm text-text-secondary leading-relaxed bg-velum-800 border border-white/10 rounded-2xl p-8 text-center shadow-md">
-              You currently have no support tickets.
-            </div>
-          ) : (
-            <div className="space-y-3.5">
-              {tickets.map((t) => {
-                const styles = getCategoryStyles(t.issue_type);
-                const isExpanded = !!expandedTickets[t.ticket_id];
-                const lastMessage = t.messages && t.messages[t.messages.length - 1];
-                const cleanReason = stripLarpNoise(t.reason || (t.messages && t.messages[0] && t.messages[0].content));
-
-                return (
-                  <div 
-                    key={t.ticket_id} 
-                    onClick={() => toggleTicket(t.ticket_id)}
-                    className={`bg-velum-800 border rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-md relative ${styles.border} hover:border-white/20 hover:bg-velum-700`}
-                  >
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="text-xs font-semibold text-text-secondary">
-                            Ticket #{t.ticket_id.slice(0, 8)}
-                          </span>
-                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold flex items-center gap-1.5 ${styles.badge}`}>
-                            <Tag className="w-3 h-3" />
-                            {categories.find(c => c.value === t.issue_type)?.label || 'General Support'}
-                          </span>
-                        </div>
-                        
-                        {!isExpanded ? (
-                          <div className="pt-1">
-                            <p className="text-xs sm:text-sm text-text-primary font-sans leading-relaxed line-clamp-2">
-                              {cleanReason}
-                            </p>
-                            {lastMessage && lastMessage.sender_name === 'Support operator' && (
-                              <p className="text-xs text-accent font-medium flex items-center gap-1.5 mt-2">
-                                <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-                                <span>Support operator replied: "{stripLarpNoise(lastMessage.content).slice(0, 60)}..."</span>
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="pt-3 space-y-4" onClick={(e) => e.stopPropagation()}>
-                            <div className="bg-velum-750 p-4 rounded-xl border border-white/10">
-                              <p className="text-xs sm:text-sm text-text-primary font-sans leading-relaxed whitespace-pre-wrap">
-                                {cleanReason}
-                              </p>
-                            </div>
-
-                            {/* Message Thread */}
-                            <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                              {(t.messages || []).map((msg, idx) => {
-                                const isOp = msg.sender_name === 'Support operator';
-                                const isSys = msg.sender_name === 'System' || msg.sender_name === 'SYSTEM';
-                                const cleanContent = stripLarpNoise(msg.content);
-                                
-                                if (isSys) {
-                                  return (
-                                    <div key={idx} className="text-center py-1">
-                                      <span className="text-xs font-medium text-text-secondary bg-velum-750 px-3 py-1 rounded-full border border-white/5">
-                                        {cleanContent}
-                                      </span>
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div 
-                                    key={idx} 
-                                    className={`flex flex-col max-w-[88%] rounded-xl p-3 text-xs sm:text-sm space-y-1.5 ${
-                                      isOp 
-                                        ? 'bg-accent/10 border-l-2 border-l-accent mr-auto' 
-                                        : 'bg-velum-750 ml-auto border-r-2 border-r-text-secondary/50'
-                                    }`}
-                                  >
-                                    <div className="flex justify-between gap-4 text-xs text-text-secondary">
-                                      <span className="font-semibold">{msg.sender_name}</span>
-                                      <span className="text-[11px] opacity-80">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                    </div>
-                                    <p className="text-text-primary font-sans break-words leading-relaxed">{cleanContent}</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Reply Input Form */}
-                            {t.status !== 'resolved' && (
-                              <div className="pt-1">
-                                <input
-                                  type="text"
-                                  placeholder="Type your reply and press Enter..."
-                                  className="w-full bg-velum-750 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-text-primary focus:border-accent/60 focus:ring-1 focus:ring-accent/30 focus:outline-none"
-                                  onKeyDown={async (e) => {
-                                    if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                                      const val = e.currentTarget.value.trim();
-                                      e.currentTarget.value = '';
-                                      const sId = fetchSessionId();
-                                      try {
-                                        const res = await fetch(`/v2/user/tickets/${t.ticket_id}/reply`, {
-                                          method: 'POST',
-                                          headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ content: val })
-                                        });
-                                        if (res.ok) {
-                                          loadTickets();
-                                        } else {
-                                          const data = await res.json();
-                                          alert(data.error || 'Failed to submit reply.');
-                                        }
-                                      } catch (err) {
-                                        alert('Network error occurred while submitting reply.');
-                                      }
-                                    }
-                                  }}
-                                />
-                              </div>
-                            )}
-
-                            {t.credentials_forwarded && (
-                              <div className="bg-velum-750 border border-white/10 p-3.5 rounded-xl space-y-1">
-                                <div className="text-xs font-semibold text-text-secondary">
-                                  Supporting Details / Attachments
-                                </div>
-                                <pre className="text-xs font-mono text-text-primary break-all overflow-x-auto whitespace-pre-wrap">
-                                  {t.credentials_forwarded}
-                                </pre>
-                              </div>
-                            )}
-
-                            <div className="flex justify-between items-center text-xs text-text-secondary border-t border-white/10 pt-3">
-                              <span>Created: {new Date(t.created_at).toLocaleString()}</span>
-                            </div>
-
-                            {/* Actions buttons */}
-                            {confirmAction?.ticketId === t.ticket_id ? (
-                              <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10 bg-white/5 p-3 rounded-xl" onClick={(e) => e.stopPropagation()}>
-                                <span className="text-xs font-medium text-text-primary">
-                                  {confirmAction.type === 'close' ? 'Close this ticket?' : 'Delete this ticket permanently?'}
-                                </span>
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => confirmAction.type === 'close' ? executeCloseTicket(t.ticket_id, e) : executeDeleteTicket(t.ticket_id, e)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold text-white transition cursor-pointer ${
-                                      confirmAction.type === 'close' ? 'bg-status-away hover:bg-status-away/80' : 'bg-status-dnd hover:bg-status-dnd/80'
-                                    }`}
-                                  >
-                                    {confirmAction.type === 'close' ? 'Yes, Close Ticket' : 'Yes, Delete'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setConfirmAction(null); }}
-                                    className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-text-primary rounded-lg text-xs font-semibold transition cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex gap-2 pt-2 justify-end border-t border-white/10">
-                                {t.status !== 'resolved' && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setConfirmAction({ type: 'close', ticketId: t.ticket_id });
-                                    }}
-                                    className="px-3 py-1.5 bg-white/10 hover:bg-white/15 rounded-lg text-xs font-semibold text-text-primary transition cursor-pointer"
-                                  >
-                                    Close Ticket
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setConfirmAction({ type: 'delete', ticketId: t.ticket_id });
-                                  }}
-                                  className="px-3 py-1.5 bg-status-dnd-bg hover:bg-status-dnd-bg/80 text-status-dnd border border-status-dnd-border rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Delete</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-col items-end gap-2">
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-semibold uppercase ${
-                          t.status === 'resolved' ? 'bg-status-online-bg text-status-online' :
-                          t.status === 'denied' ? 'bg-status-dnd-bg text-status-dnd' :
-                          'bg-status-away-bg text-status-away'
-                        }`}>
-                          {t.status}
-                        </span>
-                        
-                        <div className="text-text-secondary hover:text-text-primary transition p-1">
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
+      {renderTicketList()}
+      {renderActiveTicket()}
     </div>
   );
 }

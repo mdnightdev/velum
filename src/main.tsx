@@ -2,38 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { SecureStorage } from './utils/SecureStorage.ts';
 
-// Sync sessionStorage with localStorage for velum- keys to prevent PWA/tab hibernate logout
-const velumKeys = ['velum-user', 'velum-sessionId', 'velum-deviceId'];
-for (const key of velumKeys) {
-  try {
-    const localVal = localStorage.getItem(key);
-    const sessionVal = sessionStorage.getItem(key);
-    if (localVal && !sessionVal) {
-      sessionStorage.setItem(key, localVal);
-    } else if (sessionVal && !localVal) {
-      localStorage.setItem(key, sessionVal);
-    }
-  } catch (_) {}
-}
-
-try {
-  const originalSetItem = sessionStorage.setItem;
-  sessionStorage.setItem = function(key, value) {
-    originalSetItem.call(sessionStorage, key, value);
-    if (velumKeys.includes(key)) {
-      localStorage.setItem(key, value);
-    }
-  };
-
-  const originalRemoveItem = sessionStorage.removeItem;
-  sessionStorage.removeItem = function(key) {
-    originalRemoveItem.call(sessionStorage, key);
-    if (velumKeys.includes(key)) {
-      localStorage.removeItem(key);
-    }
-  };
-} catch (_) {}
+// Sync sessionStorage with localStorage for velum- keys securely
+SecureStorage.initializeOverrides();
 
 
 // Programmatic site cache reset handler (very helpful for mobile devices)
@@ -42,23 +14,44 @@ if (urlParams.has('clear') || urlParams.has('reset')) {
   localStorage.clear();
   sessionStorage.clear();
   
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      const unregisterPromises = registrations.map(reg => reg.unregister());
-      Promise.all(unregisterPromises).then(() => {
-        if (window.caches) {
-          caches.keys().then((keys) => {
-            Promise.all(keys.map(key => caches.delete(key))).then(() => {
-              window.location.href = window.location.origin;
+  const reload = () => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        const unregisterPromises = registrations.map(reg => reg.unregister());
+        Promise.all(unregisterPromises).then(() => {
+          if (window.caches) {
+            caches.keys().then((keys) => {
+              Promise.all(keys.map(key => caches.delete(key))).then(() => {
+                window.location.href = window.location.origin;
+              });
             });
-          });
-        } else {
-          window.location.href = window.location.origin;
-        }
+          } else {
+            window.location.href = window.location.origin;
+          }
+        });
       });
-    });
-  } else {
-    window.location.href = window.location.origin;
+    } else {
+      window.location.href = window.location.origin;
+    }
+  };
+
+  try {
+    let completed = 0;
+    const checkDone = () => {
+      completed++;
+      if (completed === 2) reload();
+    };
+    const r1 = window.indexedDB.deleteDatabase('velum_local_storage');
+    const r2 = window.indexedDB.deleteDatabase('velum_crypto_vault');
+    r1.onsuccess = checkDone;
+    r1.onerror = checkDone;
+    r1.onblocked = checkDone;
+    r2.onsuccess = checkDone;
+    r2.onerror = checkDone;
+    r2.onblocked = checkDone;
+  } catch (e) {
+    console.error('Failed to delete indexedDB', e);
+    reload();
   }
 }
 

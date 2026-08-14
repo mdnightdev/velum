@@ -21,6 +21,7 @@ import AdminSystem from './Admin/AdminSystem';
 import AdminBank from './Admin/AdminBank';
 import AdminProfile from './Admin/AdminProfile';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
+import SystemHealthTab from '../views/AdminControlDesk/SystemHealthTab';
 
 import logoSvg from '../assets/logo.svg?raw';
 import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report, ClientDiagnosticLog } from '../types';
@@ -75,7 +76,8 @@ export default function AdminPanel({
   };
 
   // Sidebar controls
-  const { isMobile } = useResponsiveLayout();
+  const { isMobile: _isMobile, isTablet } = useResponsiveLayout();
+  const isMobile = _isMobile || isTablet;
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
@@ -231,7 +233,8 @@ export default function AdminPanel({
   }, [activeTab]);
 
   const handleTicketReply = async (close: boolean, escalate: boolean) => {
-    if (!activeTicket || !replyText.trim()) return;
+    if (!activeTicket) return;
+    if (!close && !escalate && !replyText.trim()) return;
 
     try {
       const res = await adminFetch(`/v2/admin/tickets/${activeTicket.ticket_id}/reply`, {
@@ -319,6 +322,7 @@ export default function AdminPanel({
   ];
 
   const systemGates = [
+    { id: 'health', label: 'System Health', icon: <Activity className="w-4 h-4 text-accent" />, roles: ['ADMIN', 'SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'system', label: 'System Config', icon: <Sliders className="w-4 h-4" />, roles: ['ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'logs', label: 'Diagnostics & Logs', icon: <Activity className="w-4 h-4" />, roles: ['ADMIN', 'SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
     { id: 'bank', label: 'Central Bank', icon: <Landmark className="w-4 h-4" />, roles: ['ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'] },
@@ -344,7 +348,8 @@ export default function AdminPanel({
   const avatarSrc = localAvatarUrl || adminProfile?.avatar || user?.avatar || '';
 
   const renderSidebarContent = (expanded: boolean) => (
-    <div className="flex flex-col justify-between h-full p-4 space-y-6">
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-6">
       <div className="space-y-6">
         <div className="flex flex-col gap-4">
           {!isMobile && (
@@ -482,7 +487,8 @@ export default function AdminPanel({
         </div>
       </div>
 
-      <div className="space-y-3.5 pt-2">
+      </div>
+      <div className="p-4 shrink-0 border-t border-white-5 space-y-3.5">
         <button
           onClick={onLogout}
           className={`flex items-center text-status-dnd hover:text-white transition duration-150 cursor-pointer min-h-[40px] ${expanded ? 'w-full gap-3 px-3.5 py-2' : 'w-10 h-10 mx-auto justify-center rounded-xl hover:bg-white-5'
@@ -497,7 +503,7 @@ export default function AdminPanel({
   );
 
   return (
-    <div className="flex flex-col md:flex-row h-full w-full bg-velum-900 text-text-primary overflow-hidden font-sans">
+    <div className="flex flex-col lg:flex-row h-full w-full bg-velum-900 text-text-primary overflow-hidden font-sans">
 
 
       {/* Mobile Slide-Over Off-Canvas Drawer */}
@@ -549,7 +555,7 @@ export default function AdminPanel({
         ) : (
           <PullToRefresh>
             <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
-              <div className="md:hidden flex items-center justify-between pb-4 mb-4 border-b border-white-5 shrink-0">
+              <div className="lg:hidden flex items-center justify-between pb-4 mb-4 border-b border-white-5 shrink-0">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setIsMobileDrawerOpen(true)}
@@ -639,6 +645,13 @@ export default function AdminPanel({
             {activeTab === 'verifications' && (
               <AdminVerificationView
                 adminRole={adminRole as any}
+                c={c}
+              />
+            )}
+
+            {activeTab === 'health' && (
+              <SystemHealthTab
+                adminFetch={adminFetch}
                 c={c}
               />
             )}

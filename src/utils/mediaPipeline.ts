@@ -139,13 +139,18 @@ export const streamFileDirectToCloudStorage = async (
     });
 
     if (tokenNegotiator.ok) {
-      const { uploadUrl, relativeDbPath }: UploadConfig = await tokenNegotiator.json();
+      const data = await tokenNegotiator.json();
+      const uploadUrl = data.presigned?.uploadUrl || data.uploadUrl;
+      const relativeDbPath = data.presigned?.relativePath || data.relativeDbPath;
 
       if (uploadUrl && uploadUrl.startsWith('http')) {
-        // Stream binary payload directly to Cloudflare R2 / S3 edge
+        // Stream binary payload directly to Cloudflare R2 / S3 edge or direct upload handler
         const httpPipe = await fetch(uploadUrl, {
           method: "PUT",
-          headers: { "Content-Type": processedBlob.type || "application/octet-stream" },
+          headers: {
+            "Content-Type": processedBlob.type || "application/octet-stream",
+            ...(data.presigned?.headers || {})
+          },
           body: processedBlob
         });
 

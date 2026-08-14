@@ -5,11 +5,13 @@ import { useAudioRecorder } from './useAudioRecorder';
 const mockGetTracks = vi.fn(() => [{ stop: vi.fn() }]);
 const mockStream = { getTracks: mockGetTracks };
 
+vi.stubGlobal('MediaStream', class MediaStream {});
 vi.stubGlobal('navigator', {
   mediaDevices: {
     getUserMedia: vi.fn(async () => mockStream),
   },
 });
+
 
 class MockMediaRecorder {
   state = 'inactive';

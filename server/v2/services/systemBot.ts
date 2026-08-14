@@ -52,6 +52,40 @@ export class SystemBot {
       }
     });
   }
+
+  dispatchHealthAlert(level: 'INFO' | 'WARNING' | 'CRITICAL', message: string, details?: any) {
+    const alertMessage = {
+      type: 'system_health_alert',
+      level,
+      message,
+      details,
+      timestamp: new Date().toISOString()
+    };
+    this.sendSystemAlert('admin_control_desk', `[HEALTH_${level}] ${message}`);
+  }
+
+  dispatchPanicAlert(userId: number, ticketId: string, reason: string) {
+    const panicEvent = {
+      type: 'duress_panic_alert',
+      userId,
+      ticketId,
+      reason,
+      timestamp: new Date().toISOString()
+    };
+    this.sendSystemAlert('admin_control_desk', `[DURESS_ALERT] User ${userId} triggered panic protocol. Ticket: ${ticketId}`);
+    this.sendToUser(userId, `[SECURITY_SYSTEM] Emergency panic protocol executed. Reference ticket: ${ticketId}`);
+  }
+
+  dispatchAdminEscalation(ticketId: string, priority: string, details: string) {
+    const escalationEvent = {
+      type: 'admin_escalation',
+      ticketId,
+      priority,
+      details,
+      timestamp: new Date().toISOString()
+    };
+    this.sendSystemAlert('admin_control_desk', `[ESCALATION_${priority}] Ticket ${ticketId}: ${details}`);
+  }
   
   async sendToUser(userId: number, message: string) {
     const roomId = `dm_velum_${userId}`;

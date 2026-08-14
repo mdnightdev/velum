@@ -431,9 +431,9 @@ export default function LoungeMainDashboard({
       )}
       
       {showCreateLoungeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-start justify-center modal-backdrop pt-20 px-4 animate-fade-in">
           <div 
-            className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl backdrop-blur-[var(--blur-backdrop-xl)] transition-all duration-300 ${
+            className={`w-full max-w-sm rounded-2xl p-5 border shadow-2xl backdrop-blur-[var(--blur-backdrop-xl)] transition-all duration-300 ${
               isDark 
                 ? 'bg-velum-900 border-white-10 text-white shadow-black-60' 
                 : 'bg-white-10 border-velum-600 text-velum-900 shadow-xl'

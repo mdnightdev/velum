@@ -1,4 +1,4 @@
-import React, { RefObject, useEffect } from 'react';
+import React, { RefObject, useEffect, useState, useRef } from 'react';
 import {
   Mic,
   Pause,
@@ -7,7 +7,9 @@ import {
   X,
   Paperclip,
   Reply,
-  Plus
+  Plus,
+  Image as ImageIcon,
+  FileText
 } from 'lucide-react';
 import { Message, stripAt } from '../../types';
 import { Attachment } from './hooks/useMessageInput';
@@ -32,6 +34,8 @@ export interface ChatInputProps {
   onToggleRecording: () => void;
   micError: string | null;
   setMicError: (val: string | null) => void;
+  fileErrorAlert?: string | null;
+  setFileErrorAlert?: (val: string | null) => void;
 
   // System broadcast / nomination
   roomId: string;
@@ -53,9 +57,12 @@ export interface ChatInputProps {
   currentUserRole?: string;
   chatTitle?: string;
   t: (key: string, fallback: string) => string;
+  isSending?: boolean;
   onSend: (e: React.FormEvent) => void;
   onSendVoiceNote: (voiceContent: string) => void;
-  onTriggerFileInput: () => void;
+  onTriggerFileInput?: () => void;
+  onTriggerPhotoInput?: () => void;
+  onTriggerDocInput?: () => void;
   isPrivateSublounge?: boolean;
 }
 
@@ -76,6 +83,8 @@ export function ChatInput({
   onToggleRecording,
   micError,
   setMicError,
+  fileErrorAlert,
+  setFileErrorAlert,
   roomId,
   currentUserId,
   activeChatPeer,
@@ -91,11 +100,30 @@ export function ChatInput({
   currentUserRole = 'USER',
   chatTitle,
   t,
+  isSending = false,
   onSend,
   onSendVoiceNote,
   onTriggerFileInput,
+  onTriggerPhotoInput,
+  onTriggerDocInput,
   isPrivateSublounge
 }: ChatInputProps) {
+  const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
+  const attachmentMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node)) {
+        setIsAttachmentMenuOpen(false);
+      }
+    }
+    if (isAttachmentMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isAttachmentMenuOpen]);
   useEffect(() => {
     if (textareaRef && textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -114,6 +142,20 @@ export function ChatInput({
             <button
               type="button"
               onClick={() => setMicError(null)}
+              className="text-text-secondary hover:text-white font-mono font-bold cursor-pointer transition uppercase mt-0.5 shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* File Error Alert Banner */}
+        {fileErrorAlert && (
+          <div className="mb-3 p-3 rounded-xl bg-alert-error-bg flex items-start justify-between gap-4 font-mono text-[10px] text-alert-error">
+            <span className="whitespace-normal break-words flex-1 leading-relaxed">{fileErrorAlert}</span>
+            <button
+              type="button"
+              onClick={() => setFileErrorAlert && setFileErrorAlert(null)}
               className="text-text-secondary hover:text-white font-mono font-bold cursor-pointer transition uppercase mt-0.5 shrink-0"
             >
               Dismiss
@@ -302,20 +344,55 @@ export function ChatInput({
             )}
             {roomAccessLevel === 'ANNOUNCE' && !['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(currentUserRole) ? (
               <div className="w-full bg-velum-800 border border-white-5 rounded-xl p-3 text-center text-[11px] text-text-secondary font-mono tracking-widest uppercase">
-                🔒 Admins Only
+                Admins Only
               </div>
             ) : (
-              <form onSubmit={onSend} className="flex gap-3 items-center">
-                <button
-                  type="button"
-                  onClick={onTriggerFileInput}
-                  className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 text-text-secondary hover:text-white hover:bg-velum-800 transition flex items-center justify-center shrink-0 cursor-pointer"
-                  title="Attach File"
-                >
-                  <Plus className="w-5 h-5" />
-                </button>
+              <form onSubmit={onSend} className="w-full flex gap-3 items-center min-w-0">
+                <div className="relative" ref={attachmentMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsAttachmentMenuOpen((prev) => !prev)}
+                    className={`w-10 h-10 rounded-full border border-white-5 text-text-secondary hover:text-white transition flex items-center justify-center shrink-0 cursor-pointer ${
+                      isAttachmentMenuOpen ? 'bg-accent text-black font-bold rotate-45' : 'bg-velum-800 hover:bg-velum-800'
+                    }`}
+                    title="Attach File"
+                  >
+                    <Plus className="w-5 h-5 transition-transform duration-200" />
+                  </button>
 
-                <div className="flex-1 relative flex items-end">
+                  {/* Popover Menu */}
+                  {isAttachmentMenuOpen && (
+                    <div className="absolute bottom-12 left-0 z-50 bg-velum-850 border border-white-10 rounded-2xl p-1.5 shadow-2xl flex flex-col gap-1 w-48 animate-fadeIn">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAttachmentMenuOpen(false);
+                          if (onTriggerPhotoInput) onTriggerPhotoInput();
+                          else if (onTriggerFileInput) onTriggerFileInput();
+                        }}
+                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs text-text-primary hover:text-white hover:bg-white-5 transition cursor-pointer font-sans"
+                      >
+                        <ImageIcon className="w-4 h-4 text-accent shrink-0" />
+                        <span className="font-semibold text-[13px]">Photo & Video</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAttachmentMenuOpen(false);
+                          if (onTriggerDocInput) onTriggerDocInput();
+                          else if (onTriggerFileInput) onTriggerFileInput();
+                        }}
+                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs text-text-primary hover:text-white hover:bg-white-5 transition cursor-pointer font-sans"
+                      >
+                        <FileText className="w-4 h-4 text-status-away shrink-0" />
+                        <span className="font-semibold text-[13px]">Document & File</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 relative flex items-end min-w-0">
                   <textarea
                     ref={textareaRef}
                     rows={1}
@@ -324,7 +401,7 @@ export function ChatInput({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        onSend(e);
+                        if (!isSending) onSend(e);
                       }
                     }}
                     placeholder={chatTitle ? t('chat.message_peer', 'Message {name}').replace('{name}', chatTitle) : t('chat.message_placeholder', 'Message...')}
@@ -336,13 +413,22 @@ export function ChatInput({
                       <button
                         type="button"
                         onClick={onToggleRecording}
-                        className={`absolute inset-0 flex items-center justify-center text-text-secondary hover:text-accent transition-all duration-200 cursor-pointer ${inputText.length > 0 ? 'opacity-0 scale-50 pointer-events-none' : 'opacity-100 scale-100'}`}
+                        className={`absolute inset-0 flex items-center justify-center text-text-secondary hover:text-accent transition-all duration-200 cursor-pointer ${
+                          inputText.length > 0 || selectedAttachment ? 'opacity-0 scale-50 pointer-events-none' : 'opacity-100 scale-100'
+                        }`}
                       >
                         <Mic className="w-5 h-5" />
                       </button>
                       <button
                         type="submit"
-                        className={`absolute inset-0 flex items-center justify-center bg-accent text-black rounded-full transition-all duration-200 shadow-md cursor-pointer ${inputText.length > 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-50 pointer-events-none'}`}
+                        disabled={isSending || (!inputText.trim() && !selectedAttachment)}
+                        className={`absolute inset-0 flex items-center justify-center bg-accent text-black rounded-full transition-all duration-200 shadow-md ${
+                          inputText.length > 0 || selectedAttachment
+                            ? isSending
+                              ? 'opacity-60 cursor-not-allowed pointer-events-none scale-100'
+                              : 'opacity-100 scale-100 cursor-pointer'
+                            : 'opacity-0 scale-50 pointer-events-none'
+                        }`}
                       >
                         <Send className="w-4 h-4 ml-0.5" />
                       </button>

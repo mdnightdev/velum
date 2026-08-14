@@ -21,6 +21,7 @@ export const lounges = pgTable('lounges', {
   lastMessageAt: timestamp('last_message_at'),
   lastMessageText: text('last_message_text'),
   lastMessageSenderId: integer('last_message_sender_id').references(() => users.id, { onDelete: 'set null' }),
+  currentSequenceId: integer('current_sequence_id').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => [
@@ -54,6 +55,8 @@ export const messages = pgTable('messages', {
     .references(() => users.id, { onDelete: 'cascade' })
     .notNull(),
   content: text('content').notNull(),
+  clientMsgId: varchar('client_msg_id', { length: 128 }),
+  sequenceId: integer('sequence_id').default(0).notNull(),
   encrypted: boolean('encrypted').default(false).notNull(),
   deliveredTo: text('delivered_to').default(''),
   readBy: text('read_by').default(''),
@@ -66,7 +69,9 @@ export const messages = pgTable('messages', {
   index('idx_messages_lounge_id').on(table.loungeId),
   index('idx_messages_sender_id').on(table.senderId),
   index('idx_messages_created_at').on(table.createdAt),
-  index('idx_messages_lounge_created').on(table.loungeId, table.createdAt)
+  index('idx_messages_lounge_created').on(table.loungeId, table.createdAt),
+  index('idx_messages_client_msg_id').on(table.senderId, table.clientMsgId),
+  index('idx_messages_lounge_sequence').on(table.loungeId, table.sequenceId)
 ]);
 
 export const userUnreadCounts = pgTable('user_unread_counts', {

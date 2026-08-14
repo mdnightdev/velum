@@ -2,6 +2,9 @@ import React, { RefObject } from 'react';
 import { streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
 import { Attachment } from './useMessageInput';
 
+export const MAX_ATTACHMENT_BATCH = 5;
+export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
+
 export function compressImageToBlob(file: File): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -34,39 +37,105 @@ export function compressImageToBlob(file: File): Promise<Blob> {
 }
 
 export function useAttachmentActions({
-  fileInputRef,
+  photoInputRef,
+  docInputRef,
   setSelectedAttachment,
+  setCroppingImage,
+  setFileErrorAlert,
   onSendMessage,
 }: {
-  fileInputRef: RefObject<HTMLInputElement | null>;
+  photoInputRef?: RefObject<HTMLInputElement | null>;
+  docInputRef?: RefObject<HTMLInputElement | null>;
   setSelectedAttachment: (att: Attachment | null) => void;
+  setCroppingImage?: (data: { src: string; fileName: string; file: File } | null) => void;
+  setFileErrorAlert?: (msg: string | null) => void;
   onSendMessage: (content: string, peerUserId?: number | null, isVoice?: boolean, messageType?: string, replyToMessageId?: string | null) => void;
 }) {
-  const handleTriggerFileInput = () => {
-    fileInputRef.current?.click();
+  const handleTriggerPhotoInput = () => {
+    if (setFileErrorAlert) setFileErrorAlert(null);
+    photoInputRef?.current?.click();
+  };
+
+  const handleTriggerDocInput = () => {
+    if (setFileErrorAlert) setFileErrorAlert(null);
+    docInputRef?.current?.click();
   };
 
   const handleDismissAttachment = () => {
     setSelectedAttachment(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (photoInputRef?.current) photoInputRef.current.value = '';
+    if (docInputRef?.current) docInputRef.current.value = '';
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    if (setFileErrorAlert) setFileErrorAlert(null);
+
+    // 1. Check batch count limit
+    if (files.length > MAX_ATTACHMENT_BATCH) {
+      if (setFileErrorAlert) {
+        setFileErrorAlert(
+          `Batch limit exceeded: You can select a maximum of ${MAX_ATTACHMENT_BATCH} attachments per message (selected ${files.length}). Please select fewer items.`
+        );
+      }
+      e.target.value = '';
+      return;
+    }
+
+    const fileList = Array.from(files);
+
+    // 2. Check file size limits
+    for (const file of fileList) {
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        if (setFileErrorAlert) {
+          setFileErrorAlert(
+            `File too large: '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 25 MB limit.`
+          );
+        }
+        e.target.value = '';
+        return;
+      }
+    }
+
+    // 3. If single image -> open ImageCropperModal
+    if (fileList.length === 1 && fileList[0].type.startsWith('image/')) {
+      const file = fileList[0];
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const src = evt.target?.result as string;
+        if (src && setCroppingImage) {
+          setCroppingImage({
+            src,
+            fileName: file.name,
+            file,
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+      return;
+    }
+
+    // 4. Multiple files or documents (up to 5) -> process safely
     const payloadParts: string[] = [];
 
-    for (const file of Array.from(files)) {
+    for (const file of fileList) {
       try {
-        const blob = await compressImageToBlob(file);
-        const url = await streamFileDirectToCloudStorage(blob, 'media', 'jpg');
-        const sizeStr = `${(blob.size / 1024).toFixed(0)} KB`;
-        payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:image/jpeg url:${url}]`);
+        if (file.type.startsWith('image/')) {
+          const blob = await compressImageToBlob(file);
+          const url = await streamFileDirectToCloudStorage(blob, 'media', 'jpg');
+          const sizeStr = `${(blob.size / 1024).toFixed(0)} KB`;
+          payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:image/jpeg url:${url}]`);
+        } else {
+          // Document / non-image attachment
+          const url = await streamFileDirectToCloudStorage(file, 'media', file.name.split('.').pop() || 'bin');
+          const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${(file.size / 1024).toFixed(0)} KB`;
+          payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:${file.type || 'application/octet-stream'} url:${url}]`);
+        }
       } catch (err) {
-        console.error('Upload failed:', err);
+        console.error('Upload failed for file:', file.name, err);
       }
     }
 
@@ -74,13 +143,12 @@ export function useAttachmentActions({
       onSendMessage(payloadParts.join(' '), null, false);
     }
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    e.target.value = '';
   };
 
   return {
-    handleTriggerFileInput,
+    handleTriggerPhotoInput,
+    handleTriggerDocInput,
     handleDismissAttachment,
     handleFileSelect,
   };

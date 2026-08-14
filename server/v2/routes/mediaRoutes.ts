@@ -1,0 +1,223 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import { createAuthMiddleware, hashSessionToken } from '../middleware/auth.js';
+import { userRepository } from '../repositories/userRepository.js';
+import {
+  validateUploadParameters,
+  generatePresignedUpload,
+  verifyFileSha256
+} from '../services/media/presignedUploadService.js';
+
+const auth = createAuthMiddleware(async (hashedToken) => {
+  if (process.env.NODE_ENV === 'test' && hashedToken === hashSessionToken('mock-token')) {
+    return {
+      user: {
+        userId: 1,
+        username: 'testuser',
+        role: 'USER',
+        duress_active: false
+      },
+      expiresAt: new Date(Date.now() + 3600 * 1000)
+    };
+  }
+  const result = await userRepository.findSessionByTokenHash(hashedToken);
+  if (!result) return null;
+  const { session, user } = result;
+  return {
+    user: {
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+      duress_active: user.duressActive
+    },
+    expiresAt: session.expiresAt
+  };
+});
+export const mediaRouter = Router();
+
+// ---------------------------------------------------------------------------
+// Upload validation helpers
+// ---------------------------------------------------------------------------
+
+const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'webm', 'mp4']);
+
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+type MagicSignature = { bytes: number[]; offset?: number };
+
+const MAGIC_BYTES: Record<string, MagicSignature[]> = {
+  png: [{ bytes: [0x89, 0x50, 0x4e, 0x47] }],
+  jpg: [{ bytes: [0xff, 0xd8, 0xff] }],
+  jpeg: [{ bytes: [0xff, 0xd8, 0xff] }],
+  gif: [{ bytes: [0x47, 0x49, 0x46, 0x38] }],
+  webp: [{ bytes: [0x52, 0x49, 0x46, 0x46] }], // 'RIFF' — WEBP marker sits at offset 8, checked below
+  mp4: [{ bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }], // 'ftyp' at offset 4
+  webm: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3] }]
+};
+
+/**
+ * Returns the extension (no dot, lowercased) if it's on the whitelist, else null.
+ * Using path.extname on the basename means a double-extension trick like
+ * "invoice.pdf.php" naturally resolves to "php" and gets rejected — no
+ * special-casing needed for that bypass.
+ */
+function getSafeExtension(rawFilename: string): string | null {
+  const base = path.basename((rawFilename || '').replace(/\0/g, ''));
+  const ext = path.extname(base).replace('.', '').toLowerCase();
+  if (!ext || !ALLOWED_EXTENSIONS.has(ext)) return null;
+  return ext;
+}
+
+function matchesMagicBytes(buffer: Buffer, ext: string): boolean {
+  const signatures = MAGIC_BYTES[ext];
+  if (!signatures) return false;
+
+  const basicMatch = signatures.some(({ bytes, offset = 0 }) => {
+    if (buffer.length < offset + bytes.length) return false;
+    return bytes.every((b, i) => buffer[offset + i] === b);
+  });
+  if (!basicMatch) return false;
+
+  // WEBP needs a second check: RIFF is a shared container header, the actual
+  // WEBP marker lives at offset 8.
+  if (ext === 'webp') {
+    if (buffer.length < 12) return false;
+    const marker = buffer.subarray(8, 12).toString('ascii');
+    return marker === 'WEBP';
+  }
+
+  return true;
+}
+
+/**
+ * Cheap guard against HTML/JS/PHP polyglots that happen to start with a
+ * valid magic-byte prefix (a crafted GIF/PNG can still carry a script tag
+ * further into the file). Scans only the first slice of the buffer.
+ */
+function containsScriptContent(buffer: Buffer): boolean {
+  const sample = buffer.subarray(0, Math.min(buffer.length, 4096)).toString('utf8').toLowerCase();
+  return /<script[\s>]/.test(sample) || /<\?php/.test(sample) || /<html[\s>]/.test(sample);
+}
+
+function safeUploadFolder(rawFolder: string | undefined): string {
+  const cleaned = (rawFolder || 'media').replace(/[^a-zA-Z0-9_-]/g, '');
+  return cleaned || 'media';
+}
+
+// ---------------------------------------------------------------------------
+// POST /v2/media/presigned-upload & /api/v2/media/presigned-upload
+// ---------------------------------------------------------------------------
+
+const handlePresignedUpload = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.userId;
+    const { filename, mime_type, file_size_bytes, sha256_checksum, folder } = req.body;
+
+    const validation = validateUploadParameters({
+      filename,
+      mimeType: mime_type || req.body.mimeType,
+      fileSizeBytes: Number(file_size_bytes || req.body.fileSizeBytes),
+      sha256Checksum: sha256_checksum || req.body.sha256Checksum,
+      folder
+    });
+
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    const hostHeader = req.get('host') || 'localhost:3000';
+    const presignedData = await generatePresignedUpload(
+      {
+        filename,
+        mimeType: mime_type || req.body.mimeType,
+        fileSizeBytes: Number(file_size_bytes || req.body.fileSizeBytes),
+        sha256Checksum: sha256_checksum || req.body.sha256Checksum,
+        folder
+      },
+      userId,
+      hostHeader
+    );
+
+    res.json({
+      status: 'ok',
+      presigned: presignedData
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+mediaRouter.post('/media/presigned-upload', auth, handlePresignedUpload);
+mediaRouter.post('/storage/upload-token', auth, handlePresignedUpload);
+
+// ---------------------------------------------------------------------------
+// PUT/POST /v2/media/upload - Direct binary stream upload with SHA-256 check
+// ---------------------------------------------------------------------------
+
+const handleDirectUpload = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const contentLength = Number(req.headers['content-length'] || 0);
+    if (contentLength > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
+    }
+
+    const rawFilename = (req.query.filename as string) || `upload_${Date.now()}.bin`;
+    const folder = safeUploadFolder(req.query.folder as string);
+    const expectedSha = (req.headers['x-amz-checksum-sha256'] as string) || (req.query.sha256 as string);
+
+    const bodyBuffer = req.body as Buffer;
+    if (!bodyBuffer || !Buffer.isBuffer(bodyBuffer) || bodyBuffer.length === 0) {
+      return res.status(400).json({ error: 'No binary payload received.' });
+    }
+
+    if (bodyBuffer.length > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
+    }
+
+    const ext = getSafeExtension(rawFilename);
+    if (!ext) {
+      return res.status(400).json({ error: 'File type not allowed.' });
+    }
+
+    if (!matchesMagicBytes(bodyBuffer, ext)) {
+      return res.status(400).json({ error: 'File content does not match a valid file of this type.' });
+    }
+
+    if (containsScriptContent(bodyBuffer)) {
+      return res.status(400).json({ error: 'File content rejected: embedded script content detected.' });
+    }
+
+    if (expectedSha && !verifyFileSha256(bodyBuffer, expectedSha)) {
+      return res.status(422).json({ error: 'SHA-256 checksum mismatch. Payload corrupted during transit.' });
+    }
+
+    const publicUploadDir = path.join(process.cwd(), 'public', 'uploads', folder);
+    if (!fs.existsSync(publicUploadDir)) {
+      fs.mkdirSync(publicUploadDir, { recursive: true });
+    }
+
+    // Server-generated filename — only the validated extension survives from
+    // client input. Removes any residual filename-based attack surface.
+    const generatedFilename = `upload_${req.user!.userId}_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}.${ext}`;
+    const targetPath = path.join(publicUploadDir, generatedFilename);
+    await fs.promises.writeFile(targetPath, bodyBuffer);
+
+    const relativeUrl = `/uploads/${folder}/${generatedFilename}`;
+
+    res.json({
+      status: 'ok',
+      url: relativeUrl,
+      relative_path: relativeUrl,
+      bytes_received: bodyBuffer.length
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+mediaRouter.put('/media/upload', auth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
+mediaRouter.post('/media/upload', auth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);

@@ -1,6 +1,16 @@
 export function formatMessageTimestamp(timestamp: string | number | null | undefined): string {
   if (!timestamp) return '';
-  const date = new Date(timestamp);
+  let date: Date;
+  if (typeof timestamp === 'number') {
+    date = new Date(timestamp);
+  } else {
+    const num = Number(timestamp);
+    if (!isNaN(num) && String(num) === String(timestamp).trim()) {
+      date = new Date(num);
+    } else {
+      date = new Date(timestamp);
+    }
+  }
   if (isNaN(date.getTime())) return '';
 
   const now = new Date();
@@ -27,3 +37,26 @@ export function formatMessageTimestamp(timestamp: string | number | null | undef
     return `${date.getDate()} ${months[date.getMonth()]}`;
   }
 }
+
+export function safeFormatTimeOnly(timestamp: string | number | null | undefined): string {
+  if (!timestamp) return '';
+  let date: Date;
+  if (typeof timestamp === 'number') {
+    date = new Date(timestamp);
+  } else {
+    const num = Number(timestamp);
+    if (!isNaN(num) && String(num) === String(timestamp).trim()) {
+      date = new Date(num);
+    } else {
+      date = new Date(timestamp);
+    }
+  }
+  if (isNaN(date.getTime())) return '';
+  let hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'pm' : 'am';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
+

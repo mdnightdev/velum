@@ -3,13 +3,12 @@ import {
   User, Lock, X, Check, Upload, Bell, Volume2, 
   Type, ShieldCheck, CheckCircle, AlertTriangle, Palette, 
   Laptop, Monitor, Trash2, Camera, Mic, Image as ImageIcon, 
-  Sparkles, Globe, Clock, Shield, Zap, Play, LogOut, Info, Ticket, ChevronRight, Activity
+  Sparkles, Globe, Clock, Shield, Zap, Play, LogOut, Info, ChevronRight, Activity
 } from 'lucide-react';
 import PasswordInput from '../../components/PasswordInput';
 import { SettingsPrivacyTab } from './SettingsTabs/SettingsPrivacyTab';
 import { SettingsAccountTab } from './SettingsTabs/SettingsAccountTab';
 
-import TicketsMainDashboard from '../../components/SidebarTabs/TicketsMainDashboard';
 import { useResponsive } from '../../hooks/useResponsive';
 import { useBuildVersion } from '../../hooks/useBuildVersion';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -21,6 +20,7 @@ import { getLocalMedia, saveLocalMedia, deleteLocalMedia } from '../../utils/ind
 import { FULL_BUILD_VERSION } from '../../version';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { LegalDocModal, LegalDocType } from '../../components/LegalDocModal';
+import { ImageCropperModal } from '../../components/ImageCropperModal';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -368,36 +368,36 @@ export default function SettingsDrawer({
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const compressedBlob = await captureAndCompressPhoto(e);
-      setAvatarFile(compressedBlob);
-      
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setAvatarPreview(event.target?.result as string);
-        setAvatarColor('custom');
-      };
-      reader.readAsDataURL(compressedBlob);
-    } catch (err) {
-      console.error("Image processing error:", err);
-    }
+  const [croppingConfig, setCroppingConfig] = useState<{
+    src: string;
+    fileName: string;
+    type: 'avatar' | 'banner';
+  } | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result) {
+        setCroppingConfig({ src: reader.result as string, fileName: file.name, type: 'avatar' });
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
-  const handleBannerFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const compressedBlob = await captureAndCompressPhoto(e);
-      setBannerFile(compressedBlob);
-      
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setBannerPreview(event.target?.result as string);
-        setBannerColor('custom');
-      };
-      reader.readAsDataURL(compressedBlob);
-    } catch (err) {
-      console.error("Banner image processing error:", err);
-    }
+  const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result) {
+        setCroppingConfig({ src: reader.result as string, fileName: file.name, type: 'banner' });
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleRemovePhoto = () => {
@@ -759,7 +759,6 @@ export default function SettingsDrawer({
                 <div className="space-y-1">
                   <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">More</div>
                   {[
-                    { id: 'tickets', label: t('settings.tickets', 'Support Tickets'), icon: Ticket },
                     { id: 'diagnostics', label: t('settings.diagnostics', 'Diagnostics'), icon: Activity },
                     { id: 'about', label: t('settings.about', 'About Velum'), icon: Info }
                   ].map((cat) => {
@@ -1068,14 +1067,7 @@ export default function SettingsDrawer({
               </div>
             )}
 
-            {activeView === 'tickets' && (
-              <div className="w-full max-w-4xl">
-                <TicketsMainDashboard
-                  currentUserId={currentUserId}
-                  isDark={isDark}
-                />
-              </div>
-            )}
+
 
             {activeView === 'diagnostics' && (
               <div className="w-full max-w-4xl space-y-6">
@@ -1185,6 +1177,27 @@ export default function SettingsDrawer({
 
       {/* In-App Legal Document Modal */}
       <LegalDocModal docType={activeLegalDoc} onClose={() => setActiveLegalDoc(null)} />
+
+      {croppingConfig && (
+        <ImageCropperModal
+          imageSrc={croppingConfig.src}
+          fileName={croppingConfig.fileName}
+          aspectRatio={croppingConfig.type === 'avatar' ? '1:1' : '16:9'}
+          onCancel={() => setCroppingConfig(null)}
+          onCropComplete={(croppedDataUrl, croppedFile) => {
+            if (croppingConfig.type === 'avatar') {
+              setAvatarFile(croppedFile);
+              setAvatarPreview(croppedDataUrl);
+              setAvatarColor('custom');
+            } else {
+              setBannerFile(croppedFile);
+              setBannerPreview(croppedDataUrl);
+              setBannerColor('custom');
+            }
+            setCroppingConfig(null);
+          }}
+        />
+      )}
 
       {/* Hidden File Input for local photo upload */}
       <input 

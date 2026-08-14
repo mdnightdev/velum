@@ -68,8 +68,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 8,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 3,
-      logout: 2
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 2000,
@@ -102,8 +102,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 30,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 8,
-      logout: 5
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 5000,
@@ -136,7 +136,7 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 2,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 3,
+      login: 0, // Eliminate login/logout loops
       logout: 0
     },
     timingPatterns: {
@@ -170,8 +170,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 8,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 2,
-      logout: 1
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 3000,
@@ -204,8 +204,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 5,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 5,
-      logout: 3
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 4000,
@@ -238,8 +238,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 10,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 4,
-      logout: 2
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 2500,
@@ -272,8 +272,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 12,
       compromiseAccount: 2,
       requestDeletion: 1,
-      login: 2,
-      logout: 2
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 3000,
@@ -306,8 +306,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 10,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 6,
-      logout: 4
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 4000,
@@ -340,8 +340,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 10,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 4,
-      logout: 3
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 3000,
@@ -374,8 +374,8 @@ export const PERSONAS: Record<PersonaType, PersonaConfig> = {
       viewProfile: 15,
       compromiseAccount: 0,
       requestDeletion: 0,
-      login: 3,
-      logout: 2
+      login: 0, // Eliminate login/logout loops
+      logout: 0
     },
     timingPatterns: {
       minActionInterval: 2500,

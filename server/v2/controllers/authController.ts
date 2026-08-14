@@ -1,17 +1,20 @@
 import type { Request, Response } from 'express';
 import { userRepository } from '../repositories/userRepository.js';
-import { hashArgon2id, deriveKeyAsync, generateRandomToken, safeCompare } from '../utils/crypto.js';
+import { hashArgon2id, deriveKeyAsync, generateRandomToken, safeCompare, verifyArgon2id, getClientIp } from '../utils/crypto.js';
 import { hashSessionToken } from '../middleware/auth.js';
 import { db } from '../db/client.js';
 import { tickets } from '../db/schema/tickets.js';
-import { eq } from 'drizzle-orm';
-import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError } from '../utils/errors.js';
+import { eq, and } from 'drizzle-orm';
+import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, ForbiddenError } from '../utils/errors.js';
 import type { RegisterInput, LoginInput, UpdateProfileInput } from '../schemas/auth.js';
 import { deviceFingerprintService } from '../services/deviceFingerprint.js';
 import { ensureAdminSeeded } from '../services/adminSeeder.js';
 import { systemBot } from '../services/systemBot.js';
 
 import crypto from 'node:crypto';
+
+import { executePanicCascade } from '../services/duress/panicService.js';
+import { checkDuressOnLogin } from '../services/duress/duressAuth.js';
 
 export class AuthController {
   async getUserSalt(req: Request, res: Response): Promise<void> {
@@ -80,42 +83,126 @@ export class AuthController {
   }
 
   async restoreAccount(req: Request, res: Response): Promise<void> {
-    const { username, newPassword, salt, ticketId } = req.body;
+    const { username, safeWord, recoveryKey, newPassword, salt } = req.body;
     const user = await userRepository.findByUsername(username);
     if (!user) {
-      throw new NotFoundError('Account not found.');
+      throw new NotFoundError('User handle not found in databases.');
     }
     
-    // Verify this is a compromised account recovery
-    if (!user.isCompromised || user.compromiseTicketId !== ticketId) {
-      throw new BadRequestError('Invalid recovery request. Account not compromised or invalid ticket ID.');
+    if (user.isCompromised) {
+      throw new ForbiddenError('CRITICAL QUARANTINE: Account recovery is deactivated for compromised locks. Contact Support portal for Login Admin review.');
     }
     
-    const passwordHash = await hashArgon2id(newPassword, Buffer.from(salt, 'hex'));
+    const isSafeWordMatch = await verifyArgon2id(safeWord, user.salt, user.passcodeHash);
+    if (!isSafeWordMatch) {
+      throw new BadRequestError('Invalid Safe Word entered.');
+    }
     
-    await db.transaction(async (tx) => {
-      // Reset password and clear compromised status
-      await userRepository.update(user.id, {
-        passwordHash,
-        salt,
-        isCompromised: false,
-        compromiseTicketId: null,
-        duressActive: false
-      });
-      
-      // Update ticket status
-      const ticketResult = await tx.select().from(tickets)
-        .where(eq(tickets.userId, user.id))
-        .limit(1);
-      
-      if (ticketResult.length > 0) {
-        await tx.update(tickets)
-          .set({ status: 'RESOLVED' })
-          .where(eq(tickets.id, ticketResult[0].id));
-      }
+    const isRecoveryKeyMatch = await verifyArgon2id(recoveryKey, user.salt, user.recoveryKeyHash || user.loginRecoveryKeyHash);
+    if (!isRecoveryKeyMatch) {
+      throw new BadRequestError('Invalid Recovery Key entered.');
+    }
+    
+    const newSalt = salt || generateRandomToken(16);
+    const newSaltBuf = Buffer.from(newSalt, 'hex');
+    const passHashHex = await hashArgon2id(newPassword, newSaltBuf);
+    const swHashHex = safeWord ? await hashArgon2id(safeWord, newSaltBuf) : user.passcodeHash;
+    
+    await userRepository.update(user.id, {
+      passwordHash: `argon2id:${passHashHex}`,
+      salt: newSalt,
+      passcodeHash: swHashHex ? `argon2id:${swHashHex}` : user.passcodeHash,
+      isCompromised: false,
+      duressActive: false
     });
     
-    res.status(200).json({ message: 'Account recovered successfully.' });
+    await userRepository.deleteAllSessionsForUser(user.id);
+    res.status(200).json({ success: true, message: 'Account successfully restored. You can now log in with your new password.' });
+  }
+
+  async recoverSafeword(req: Request, res: Response): Promise<void> {
+    const { username, safeWord, newPassword } = req.body;
+    const user = await userRepository.findByUsername(username);
+    if (!user) {
+      throw new NotFoundError('User handle not found in databases.');
+    }
+
+    if (user.isCompromised) {
+      throw new ForbiddenError('CRITICAL QUARANTINE: Account recovery is deactivated for compromised locks. Contact Support portal for Login Admin review.');
+    }
+
+    const isSafeWordMatch = await verifyArgon2id(safeWord, user.salt, user.passcodeHash);
+    if (!isSafeWordMatch) {
+      throw new BadRequestError('Invalid Safe Word entered.');
+    }
+
+    const newSalt = generateRandomToken(16);
+    const newSaltBuf = Buffer.from(newSalt, 'hex');
+    const passHashHex = await hashArgon2id(newPassword, newSaltBuf);
+    const swHashHex = await hashArgon2id(safeWord, newSaltBuf);
+
+    await userRepository.update(user.id, {
+      passwordHash: `argon2id:${passHashHex}`,
+      salt: newSalt,
+      passcodeHash: `argon2id:${swHashHex}`,
+      isCompromised: false,
+      duressActive: false
+    });
+
+    await userRepository.deleteAllSessionsForUser(user.id);
+    res.status(200).json({ success: true, message: 'Password reset successful. Try logging in now.' });
+  }
+
+  async redeemRestoreCode(req: Request, res: Response): Promise<void> {
+    const { username, restoreCode, newPassword } = req.body;
+    const user = await userRepository.findByUsername(username);
+    if (!user) {
+      throw new NotFoundError('User handle not found in databases.');
+    }
+
+    const cleanCode = (restoreCode || '').trim();
+    const matchesCode = user.tempRestoreCode && user.tempRestoreCode.trim() === cleanCode;
+    if (!matchesCode) {
+      throw new BadRequestError('Invalid or incorrect restoration code.');
+    }
+
+    const newSalt = generateRandomToken(16);
+    const newSaltBuf = Buffer.from(newSalt, 'hex');
+    const passHashHex = await hashArgon2id(newPassword, newSaltBuf);
+
+    await db.transaction(async (tx) => {
+      await userRepository.update(user.id, {
+        passwordHash: `argon2id:${passHashHex}`,
+        salt: newSalt,
+        tempRestoreCode: null,
+        isCompromised: false,
+        duressActive: false
+      });
+
+      const userTickets = await tx.select().from(tickets).where(eq(tickets.userId, user.id));
+      for (const t of userTickets) {
+        if (t.status !== 'resolved' && t.status !== 'closed') {
+          const updatedMessages = Array.isArray(t.messages) ? [...(t.messages as any[])] : [];
+          updatedMessages.push({
+            sender_id: 0,
+            sender_name: 'SYSTEM',
+            content: 'Account restored successfully via Secure Restoration Code redemption channel.',
+            timestamp: new Date().toISOString()
+          });
+
+          await tx.update(tickets)
+            .set({
+              status: 'resolved',
+              messages: updatedMessages,
+              updatedAt: new Date()
+            })
+            .where(eq(tickets.id, t.id));
+        }
+      }
+    });
+
+    await userRepository.deleteAllSessionsForUser(user.id);
+    res.status(200).json({ success: true, message: 'Account successfully restored. You can now log in with your new password.' });
   }
   async register(req: Request<{}, {}, RegisterInput>, res: Response): Promise<void> {
     const { username, password, hashedPassword, passcode, panicPhrase } = req.body;
@@ -125,7 +212,7 @@ export class AuthController {
       throw new ConflictError('Username is already registered.');
     }
 
-    const salt = generateRandomToken(16);
+    const salt = (req.body as any).salt || generateRandomToken(16);
     const passwordHash = hashedPassword || await hashArgon2id(password, Buffer.from(salt, 'hex'));
 
     let passcodeHash: string | undefined = undefined;
@@ -158,12 +245,25 @@ export class AuthController {
     const tokenHash = hashSessionToken(token);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+    const clientIp = getClientIp(req);
+    const userAgentStr = (req.headers['user-agent'] as string) || 'unknown-device';
+    const regFingerprint = crypto.createHash('sha256').update(userAgentStr + clientIp).digest('hex');
+
+    try {
+      await deviceFingerprintService.recordDeviceAccess(newUser.id, regFingerprint, clientIp, {
+        userAgent: userAgentStr,
+        platform: (req.headers['sec-ch-ua-platform'] as string) || 'unknown'
+      });
+    } catch (dfErr) {
+      console.error('[authController] Device record error on register:', dfErr);
+    }
+
     await userRepository.createSession({
       userId: newUser.id,
       tokenHash,
       expiresAt,
-      ipAddress: req.ip || undefined,
-      userAgent: req.headers['user-agent'] || undefined
+      ipAddress: clientIp,
+      userAgent: userAgentStr
     });
 
     await systemBot.sendToUser(newUser.id,
@@ -206,61 +306,28 @@ export class AuthController {
       throw new UnauthorizedError('Invalid credentials.');
     }
 
-    // Check for panic phrase - this triggers compromised account flow
-    if (panicPhrase && user.panicPhraseHash) {
-      const computedPanicHash = await hashArgon2id(panicPhrase, Buffer.from(user.salt, 'hex'));
-      if (safeCompare(computedPanicHash, user.panicPhraseHash)) {
-        // Panic phrase entered - flag account as compromised
-        if (!user.isCompromised) {
-          const ticketId = `TKT-${generateRandomToken(8).toUpperCase()}`;
-          
-          await db.transaction(async (tx) => {
-            // Mark user as compromised
-            await userRepository.update(user.id, { 
-              isCompromised: true,
-              compromiseTicketId: ticketId
-            });
-            
-            // Create support ticket
-            await tx.insert(tickets).values({
-              userId: user.id,
-              subject: 'CRITICAL: ACCOUNT COMPROMISED - PANIC PROTOCOL ACTIVATED',
-              description: `User ${user.username} (ID: ${user.id}) has triggered the panic protocol. Account marked as compromised. User needs admin assistance to restore access.`,
-              status: 'CRITICAL_ALERT'
-            });
-          });
-          
-          // Return special response directing to ticket system
-          res.status(200).json({
-            compromised: true,
-            ticketId,
-            message: 'Account compromised. Please contact support with ticket ID for assistance.',
-            redirectTo: '/auth/ticket-claim'
-          });
-          return;
-        } else {
-          // Already compromised - return existing ticket
-          res.status(200).json({
-            compromised: true,
-            ticketId: user.compromiseTicketId,
-            message: 'Account already compromised. Please contact support with ticket ID for assistance.',
-            redirectTo: '/auth/ticket-claim'
-          });
-          return;
-        }
-      }
+    // Check for panic phrase trigger or compromised account credibility gate
+    const ipAddress = getClientIp(req);
+    const userAgent = (req.headers['user-agent'] as string) || 'unknown-device';
+    const fingerprint = crypto.createHash('sha256').update(userAgent + ipAddress).digest('hex');
+
+    const reqDetails = {
+      userAgent,
+      platform: (req.headers['sec-ch-ua-platform'] as string) || 'unknown'
+    };
+
+    const duressResult = await checkDuressOnLogin(user, password, panicPhrase, fingerprint, ipAddress, reqDetails);
+    if (duressResult.isCompromised && duressResult.shouldShowTicket) {
+      res.status(200).json({
+        compromised: true,
+        ticketId: duressResult.ticketId,
+        message: 'Account under duress quarantine. Ticket tracking enabled.',
+        redirectTo: `/public/tickets/${duressResult.ticketId}`
+      });
+      return;
     }
 
-    const clientHash = crypto.createHash('sha256').update(user.salt + password).digest('hex');
-    const computedPasswordHash = await hashArgon2id(password, Buffer.from(user.salt, 'hex'));
-    const computedFromClientHash = await hashArgon2id(clientHash, Buffer.from(user.salt, 'hex'));
-
-    const isPasswordValid = 
-      safeCompare(computedPasswordHash, user.passwordHash) ||
-      safeCompare('argon2id:' + computedPasswordHash, user.passwordHash) ||
-      safeCompare(computedFromClientHash, user.passwordHash) ||
-      safeCompare('argon2id:' + computedFromClientHash, user.passwordHash) ||
-      safeCompare(password, user.passwordHash);
+    const isPasswordValid = await verifyArgon2id(password, user.salt, user.passwordHash);
 
     if (!isPasswordValid) {
       throw new UnauthorizedError('Invalid credentials.');
@@ -283,13 +350,27 @@ export class AuthController {
       if (safeCompare(computedDuressHash, user.passcodeHash)) {
         isDuressTriggered = true;
         await userRepository.update(user.id, { duressActive: true });
-        await db.insert(tickets).values({
-          userId: user.id,
-          subject: 'CRITICAL: DURESS PROTOCOL ACTIVATED',
-          description: `User ${user.username} (ID: ${user.id}) has logged in using their duress passcode. Account marked as compromised.`,
-          status: 'CRITICAL_ALERT'
-        });
+        
+        const { tickets } = await import('../db/schema/tickets.js');
+        const existingDuress = await db.select().from(tickets)
+          .where(and(eq(tickets.userId, user.id), eq(tickets.status, 'CRITICAL_ALERT')))
+          .limit(1);
+          
+        if (!existingDuress.length) {
+          await db.insert(tickets).values({
+            userId: user.id,
+            subject: 'CRITICAL: DURESS PROTOCOL ACTIVATED',
+            description: `User ${user.username} (ID: ${user.id}) has logged in using their duress passcode. Account marked as compromised.`,
+            status: 'CRITICAL_ALERT'
+          });
+        }
       }
+    }
+
+    try {
+      await deviceFingerprintService.recordDeviceAccess(user.id, fingerprint, ipAddress, reqDetails);
+    } catch (dfErr) {
+      console.error('[authController] Device record error on login:', dfErr);
     }
 
     const token = generateRandomToken(32);
@@ -300,8 +381,8 @@ export class AuthController {
       userId: user.id,
       tokenHash,
       expiresAt,
-      ipAddress: req.ip || undefined,
-      userAgent: req.headers['user-agent'] || undefined
+      ipAddress: ipAddress,
+      userAgent: userAgent
     });
 
     if (!user.recoveryKeyDelivered && user.recoveryKey) {

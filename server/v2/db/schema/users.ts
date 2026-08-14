@@ -14,6 +14,7 @@ export const users = pgTable('users', {
   duressActive: boolean('duress_active').default(false).notNull(),
   isCompromised: boolean('is_compromised').default(false).notNull(),
   compromiseTicketId: varchar('compromise_ticket_id', { length: 32 }),
+  tempRestoreCode: varchar('temp_restore_code', { length: 64 }),
   role: varchar('role', { length: 32 }).default('USER').notNull(),
   displayName: varchar('display_name', { length: 64 }),
   avatarUrl: text('avatar_url'),

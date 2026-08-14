@@ -7,6 +7,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx src/index.ts",
+    "simple": "tsx src/simple-index.ts",
     "build": "tsc",
     "clean": "rm -rf dist chaos-logs chaos-data",
     "help": "tsx src/index.ts --help",
