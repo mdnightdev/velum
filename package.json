@@ -1,6 +1,6 @@
 {
   "name": "velum",
-  "version": "2.2.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --exclude 'server/db/**' --exclude 'server/logs/**' server/index.ts",
@@ -71,5 +71,8 @@
   },
   "overrides": {
     "esbuild": "$esbuild"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-wasm32-wasi": "^1.2.4"
   }
 }
