@@ -4,8 +4,8 @@
  * Using Web Crypto API for cryptographic operations
  */
 
-import { saveSkippedMessageKey, consumeSkippedMessageKey, clearSkippedKeysForPeer } from './skippedKeysStore';
-import { saveLocalKeysToDb, loadLocalKeysFromDb, saveConversationStateToDb, loadConversationStateFromDb, deleteConversationStateFromDb } from './cryptoDbStore';
+import { saveSkippedMessageKey, consumeSkippedMessageKey, clearSkippedKeysForPeer, closeSkippedKeysDatabase } from './skippedKeysStore';
+import { saveLocalKeysToDb, loadLocalKeysFromDb, saveConversationStateToDb, loadConversationStateFromDb, deleteConversationStateFromDb, closeCryptoDatabase } from './cryptoDbStore';
 
 // Types for cryptographic operations
 export interface KeyPair {
@@ -32,6 +32,8 @@ export interface RatchetState {
   receiveChainGeneration: number; // Increments on every DH ratchet step; disambiguates skipped keys across chains
   previousChainLength: number;
   skippedMessageKeys: Map<string, CryptoKey>; // Keyed by `${receiveChainGeneration}:${n}` - real AES-GCM message keys
+  version: number; // State version for validation
+  checksum?: string; // SHA-256 checksum for integrity validation
 }
 
 export interface RatchetHeader {
@@ -57,6 +59,12 @@ class DoubleRatchetService {
     this.localOneTimePrekeys = [];
   }
 
+  public async closeDatabaseConnections(): Promise<void> {
+    await this.forceFlushStateUpdates(); // Flush any pending updates before closing
+    await closeCryptoDatabase();
+    await closeSkippedKeysDatabase();
+  }
+
   private async getMacKey(messageKey: CryptoKey): Promise<CryptoKey> {
     const subtle = window.crypto.subtle;
     const rawKey = await subtle.exportKey('raw', messageKey);
@@ -69,6 +77,84 @@ class DoubleRatchetService {
   private localOneTimePrekeys: KeyPair[] = [];
   private conversationStates: Map<number, RatchetState> = new Map();
   private localUserId: number | null = null;
+  private static readonly STATE_VERSION = 1;
+
+  // State update queue for batching
+  private stateUpdateQueue: Map<number, RatchetState> = new Map();
+  private flushTimer: NodeJS.Timeout | null = null;
+  private readonly FLUSH_DELAY = 100; // 100ms batching window
+
+  /**
+   * Calculate SHA-256 checksum of state for integrity validation
+   */
+  private async calculateStateChecksum(state: RatchetState): Promise<string> {
+    const subtle = window.crypto.subtle;
+    const checksumData = {
+      sendChainLength: state.sendChainLength,
+      receiveChainLength: state.receiveChainLength,
+      receiveChainGeneration: state.receiveChainGeneration,
+      previousChainLength: state.previousChainLength,
+      version: state.version
+    };
+    const dataString = JSON.stringify(checksumData);
+    const dataBytes = new TextEncoder().encode(dataString);
+    const hashBuffer = await subtle.digest('SHA-256', dataBytes);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Queue state update for batched persistence
+   */
+  private queueStateUpdate(peerUserId: number, state: RatchetState): void {
+    this.stateUpdateQueue.set(peerUserId, state);
+    
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+    }
+    
+    this.flushTimer = setTimeout(() => {
+      this.flushStateUpdates();
+    }, this.FLUSH_DELAY);
+  }
+
+  /**
+   * Flush queued state updates to IndexedDB in batch
+   */
+  private async flushStateUpdates(): Promise<void> {
+    if (this.stateUpdateQueue.size === 0) {
+      return;
+    }
+    
+    const updates = Array.from(this.stateUpdateQueue.entries());
+    this.stateUpdateQueue.clear();
+    this.flushTimer = null;
+    
+    const localUserId = this.getLocalUserIdOrThrow();
+    
+    try {
+      await Promise.all(updates.map(([peerUserId, state]) => 
+        saveConversationStateToDb(localUserId, peerUserId, state)
+      ));
+    } catch (err) {
+      console.error('[DoubleRatchet] Failed to flush state updates:', err);
+      // Re-queue failed updates
+      for (const [peerUserId, state] of updates) {
+        this.stateUpdateQueue.set(peerUserId, state);
+      }
+    }
+  }
+
+  /**
+   * Force immediate flush of queued state updates
+   */
+  private async forceFlushStateUpdates(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    await this.flushStateUpdates();
+  }
 
   /**
    * Must be called once after login (or on app init if a session already exists)
@@ -329,7 +415,8 @@ class DoubleRatchetService {
       receiveChainLength: 0,
       receiveChainGeneration: 0,
       previousChainLength: 0,
-      skippedMessageKeys: new Map()
+      skippedMessageKeys: new Map(),
+      version: DoubleRatchetService.STATE_VERSION
     };
   }
 
@@ -376,7 +463,13 @@ class DoubleRatchetService {
     if (!state) {
       state = await loadConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId);
       if (state) {
-        this.conversationStates.set(peerUserId, state);
+        // Validate loaded state version
+        if (state.version !== DoubleRatchetService.STATE_VERSION) {
+          console.warn(`[DoubleRatchet] State version mismatch for peer ${peerUserId}, re-initializing`);
+          state = null;
+        } else {
+          this.conversationStates.set(peerUserId, state);
+        }
       }
     }
     if (!state) {
@@ -391,8 +484,9 @@ class DoubleRatchetService {
 
       const rootKey = await this.x3dhHandshake(peerBundle, usedOneTimePrekey);
       state = await this.initializeRatchetState(peerUserId, rootKey);
+      state.checksum = await this.calculateStateChecksum(state);
       this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
+      await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state);
     }
 
     // Derive message key from send chain key
@@ -428,7 +522,8 @@ class DoubleRatchetService {
 
     // Update state
     this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
+    state.checksum = await this.calculateStateChecksum(state);
+    this.queueStateUpdate(peerUserId, state); // Use batching for ongoing updates
 
     // Build envelope
     const dhPubJwk = await subtle.exportKey('jwk', state.dhRatchetKeyPair!.publicKey);
@@ -474,7 +569,13 @@ class DoubleRatchetService {
     if (!state) {
       state = await loadConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId);
       if (state) {
-        this.conversationStates.set(peerUserId, state);
+        // Validate loaded state version
+        if (state.version !== DoubleRatchetService.STATE_VERSION) {
+          console.warn(`[DoubleRatchet] State version mismatch for peer ${peerUserId}, re-initializing`);
+          state = null;
+        } else {
+          this.conversationStates.set(peerUserId, state);
+        }
       }
     }
     if (!state) {
@@ -486,8 +587,9 @@ class DoubleRatchetService {
 
       const rootKey = await this.x3dhHandshake(peerBundle);
       state = await this.initializeRatchetState(peerUserId, rootKey);
+      state.checksum = await this.calculateStateChecksum(state);
       this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
+      await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state); // Force save for new conversations
     }
 
     // Perform DH ratchet if needed
@@ -521,7 +623,7 @@ class DoubleRatchetService {
       const skippedKey = `${state.receiveChainGeneration}:${envelopeData.header.n}`;
       messageKey = state.skippedMessageKeys.get(skippedKey)!;
       state.skippedMessageKeys.delete(skippedKey);
-      consumeSkippedMessageKey(`dm_${peerUserId}`, peerUserId, envelopeData.header.n, state.receiveChainGeneration).catch(() => {});
+      await consumeSkippedMessageKey(`dm_${peerUserId}`, peerUserId, envelopeData.header.n, state.receiveChainGeneration);
     } else {
       // Try retrieving skipped key from persistent storage
       messageKey = await consumeSkippedMessageKey(`dm_${peerUserId}`, peerUserId, envelopeData.header.n, state.receiveChainGeneration);
@@ -581,7 +683,8 @@ class DoubleRatchetService {
 
       const decoder = new TextDecoder();
       this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
+      state.checksum = await this.calculateStateChecksum(state);
+      this.queueStateUpdate(peerUserId, state); // Use batching for ongoing updates
       return decoder.decode(decryptedBuffer);
     } catch (err) {
       console.error('[DoubleRatchet] Decryption failure:', err);
@@ -597,7 +700,7 @@ class DoubleRatchetService {
       const msgKey = await this.deriveMessageKey(state.receiveChainKey!);
       state.skippedMessageKeys.set(`${state.receiveChainGeneration}:${state.receiveChainLength}`, msgKey);
       if (peerUserId) {
-        saveSkippedMessageKey(`dm_${peerUserId}`, peerUserId, state.receiveChainLength, state.receiveChainGeneration, msgKey).catch(() => {});
+        await saveSkippedMessageKey(`dm_${peerUserId}`, peerUserId, state.receiveChainLength, state.receiveChainGeneration, msgKey);
       }
       state.receiveChainKey = await this.ratchetChainKey(state.receiveChainKey!);
       state.receiveChainLength++;
@@ -664,7 +767,7 @@ class DoubleRatchetService {
     // 3. Purge persisted state and skipped keys from IndexedDB
     await Promise.all([
       deleteConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId),
-      clearSkippedKeysForPeer(peerUserId).catch(() => {})
+      clearSkippedKeysForPeer(peerUserId)
     ]);
 
     // 4. Ensure local keys exist
@@ -681,8 +784,10 @@ class DoubleRatchetService {
     // 6. Perform fresh X3DH handshake and initialize clean ratchet state
     const rootKey = await this.x3dhHandshake(peerBundle);
     const state = await this.initializeRatchetState(peerUserId, rootKey);
+    state.version = DoubleRatchetService.STATE_VERSION; // Ensure current version
+    state.checksum = await this.calculateStateChecksum(state);
     this.conversationStates.set(peerUserId, state);
-    await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
+    await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state); // Force save for re-key
   }
 }
 

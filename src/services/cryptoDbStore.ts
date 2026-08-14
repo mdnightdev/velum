@@ -3,18 +3,45 @@ const DB_VERSION = 26; // bumped: STORE_CONVERSATIONS keyPath changed from peerU
 const STORE_LOCAL_KEYS = 'local_keys';
 const STORE_CONVERSATIONS = 'conversation_states';
 
+// Connection pooling cache
+let dbConnection: IDBDatabase | null = null;
+let dbConnectionPromise: Promise<IDBDatabase> | null = null;
+
 export async function openCryptoDatabaseV2(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  // Return cached connection if available
+  if (dbConnection) {
+    return dbConnection;
+  }
+  
+  // Return existing promise if connection is in progress
+  if (dbConnectionPromise) {
+    return dbConnectionPromise;
+  }
+  
+  // Create new connection promise
+  dbConnectionPromise = new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
+      dbConnectionPromise = null;
       return reject(new Error('IndexedDB is unavailable.'));
     }
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(new Error('Failed to open crypto vault IndexedDB database.'));
+    request.onerror = () => {
+      dbConnectionPromise = null;
+      reject(new Error('Failed to open crypto vault IndexedDB database.'));
+    };
     request.onsuccess = () => {
       const db = request.result;
       db.onversionchange = () => {
         db.close();
+        dbConnection = null;
+        dbConnectionPromise = null;
       };
+      db.onclose = () => {
+        dbConnection = null;
+        dbConnectionPromise = null;
+      };
+      dbConnection = db;
+      dbConnectionPromise = null;
       resolve(db);
     };
     request.onupgradeneeded = (event: any) => {
@@ -36,6 +63,16 @@ export async function openCryptoDatabaseV2(): Promise<IDBDatabase> {
       }
     };
   });
+  
+  return dbConnectionPromise;
+}
+
+export async function closeCryptoDatabase(): Promise<void> {
+  if (dbConnection) {
+    dbConnection.close();
+    dbConnection = null;
+    dbConnectionPromise = null;
+  }
 }
 
 function localKeysRecordId(localUserId: number): string {
@@ -117,7 +154,8 @@ export async function saveConversationStateToDb(localUserId: number, peerUserId:
       sendChainLength: state.sendChainLength,
       receiveChainLength: state.receiveChainLength,
       receiveChainGeneration: state.receiveChainGeneration,
-      previousChainLength: state.previousChainLength
+      previousChainLength: state.previousChainLength,
+      version: state.version || 1
     };
     
     if (state.dhRatchetKeyPair) {
@@ -131,6 +169,33 @@ export async function saveConversationStateToDb(localUserId: number, peerUserId:
       record.dhRatchetPublicKey = await subtle.exportKey('jwk', state.dhRatchetPublicKey);
     }
     
+    // Serialize skippedMessageKeys Map for persistence
+    if (state.skippedMessageKeys && state.skippedMessageKeys.size > 0) {
+      const skippedKeysArray: any[] = [];
+      for (const [key, cryptoKey] of state.skippedMessageKeys.entries()) {
+        const keyJwk = await subtle.exportKey('jwk', cryptoKey);
+        skippedKeysArray.push({
+          key,
+          keyJwk: JSON.stringify(keyJwk)
+        });
+      }
+      record.skippedMessageKeys = skippedKeysArray;
+    }
+    
+    // Calculate and store checksum for integrity validation
+    const checksumData = {
+      sendChainLength: state.sendChainLength,
+      receiveChainLength: state.receiveChainLength,
+      receiveChainGeneration: state.receiveChainGeneration,
+      previousChainLength: state.previousChainLength,
+      version: state.version || 1
+    };
+    const dataString = JSON.stringify(checksumData);
+    const dataBytes = new TextEncoder().encode(dataString);
+    const hashBuffer = await subtle.digest('SHA-256', dataBytes);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    record.checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
     const db = await openCryptoDatabaseV2();
     return new Promise<void>((resolve, reject) => {
       const tx = db.transaction([STORE_CONVERSATIONS], 'readwrite');
@@ -140,6 +205,7 @@ export async function saveConversationStateToDb(localUserId: number, peerUserId:
     });
   } catch (err) {
     console.error('Failed to save conversation state to DB', err);
+    throw err;
   }
 }
 
@@ -155,7 +221,35 @@ export async function loadConversationStateFromDb(localUserId: number, peerUserI
     
     if (!record) return null;
     
-    const subtle = window.crypto.subtle;
+    // Validate checksum if present
+    if (record.checksum) {
+      const checksumData = {
+        sendChainLength: record.sendChainLength,
+        receiveChainLength: record.receiveChainLength,
+        receiveChainGeneration: record.receiveChainGeneration,
+        previousChainLength: record.previousChainLength,
+        version: record.version || 1
+      };
+      const dataString = JSON.stringify(checksumData);
+      const dataBytes = new TextEncoder().encode(dataString);
+      const subtle = window.crypto.subtle;
+      const hashBuffer = await subtle.digest('SHA-256', dataBytes);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const calculatedChecksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      if (calculatedChecksum !== record.checksum) {
+        console.error('[CryptoDbStore] Checksum validation failed for conversation state - possible corruption');
+        return null; // Reject corrupted state
+      }
+    }
+    
+    // Validate version compatibility
+    const currentStateVersion = 1; // Current supported version
+    if (record.version && record.version > currentStateVersion) {
+      console.warn('[CryptoDbStore] State version from database is newer than current implementation');
+      // Continue anyway, but log warning
+    }
+    
     const state: any = {
       rootKey: record.rootKey,
       sendChainKey: record.sendChainKey,
@@ -164,7 +258,8 @@ export async function loadConversationStateFromDb(localUserId: number, peerUserI
       receiveChainLength: record.receiveChainLength,
       receiveChainGeneration: record.receiveChainGeneration,
       previousChainLength: record.previousChainLength,
-      skippedMessageKeys: new Map() // Will be loaded separately or ignored here
+      skippedMessageKeys: new Map(),
+      version: record.version || 1
     };
     
     if (record.dhRatchetKeyPair) {
@@ -176,6 +271,25 @@ export async function loadConversationStateFromDb(localUserId: number, peerUserI
     
     if (record.dhRatchetPublicKey) {
       state.dhRatchetPublicKey = await subtle.importKey('jwk', record.dhRatchetPublicKey, { name: 'ECDH', namedCurve: 'P-256' }, true, []);
+    }
+    
+    // Deserialize skippedMessageKeys Map from persisted array
+    if (record.skippedMessageKeys && Array.isArray(record.skippedMessageKeys)) {
+      for (const skippedKeyRecord of record.skippedMessageKeys) {
+        try {
+          const keyJwk = JSON.parse(skippedKeyRecord.keyJwk);
+          const cryptoKey = await subtle.importKey(
+            'jwk',
+            keyJwk,
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+          );
+          state.skippedMessageKeys.set(skippedKeyRecord.key, cryptoKey);
+        } catch (keyErr) {
+          console.warn('[CryptoDbStore] Failed to deserialize skipped key:', skippedKeyRecord.key, keyErr);
+        }
+      }
     }
     
     return state;

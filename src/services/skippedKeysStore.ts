@@ -1,9 +1,13 @@
 const DB_NAME = 'velum_crypto_vault';
-const DB_VERSION = 1;
+const DB_VERSION = 26; // Match cryptoDbStore version
 const STORE_SKIPPED_KEYS = 'skipped_message_keys';
 
 // In-memory fallback if IndexedDB is blocked or unavailable
 const memoryFallbackMap = new Map<string, SkippedMessageKeyRecord>();
+
+// Connection pooling cache (shared with cryptoDbStore)
+let dbConnection: IDBDatabase | null = null;
+let dbConnectionPromise: Promise<IDBDatabase> | null = null;
 
 export interface SkippedMessageKeyRecord {
   roomId: string;
@@ -15,16 +19,45 @@ export interface SkippedMessageKeyRecord {
 }
 
 function openCryptoDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  // Return cached connection if available
+  if (dbConnection) {
+    return Promise.resolve(dbConnection);
+  }
+  
+  // Return existing promise if connection is in progress
+  if (dbConnectionPromise) {
+    return dbConnectionPromise;
+  }
+  
+  // Create new connection promise
+  dbConnectionPromise = new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
+      dbConnectionPromise = null;
       return reject(new Error('IndexedDB is unavailable.'));
     }
 
     try {
       const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onerror = () => reject(new Error('Failed to open crypto vault IndexedDB database.'));
-      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => {
+        dbConnectionPromise = null;
+        reject(new Error('Failed to open crypto vault IndexedDB database.'));
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+          dbConnection = null;
+          dbConnectionPromise = null;
+        };
+        db.onclose = () => {
+          dbConnection = null;
+          dbConnectionPromise = null;
+        };
+        dbConnection = db;
+        dbConnectionPromise = null;
+        resolve(db);
+      };
 
       request.onupgradeneeded = (event: any) => {
         const db = event.target.result;
@@ -33,9 +66,20 @@ function openCryptoDatabase(): Promise<IDBDatabase> {
         }
       };
     } catch (e) {
+      dbConnectionPromise = null;
       reject(e);
     }
   });
+  
+  return dbConnectionPromise;
+}
+
+export async function closeSkippedKeysDatabase(): Promise<void> {
+  if (dbConnection) {
+    dbConnection.close();
+    dbConnection = null;
+    dbConnectionPromise = null;
+  }
 }
 
 /**
