@@ -156,7 +156,6 @@ userRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
       bio: users.bio,
       location: users.location,
       role: users.role,
-      status: users.status,
       createdAt: users.createdAt
     }).from(users)
     .where(eq(users.role, "USER"))
@@ -165,6 +164,7 @@ userRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     res.json(dbUsers);
   } catch (err) {
+    console.error('[UserRoutes] Error fetching users directory:', err);
     res.status(500).json({ error: 'Failed to fetch users directory.' });
   }
 });

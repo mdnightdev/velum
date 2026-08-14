@@ -6,7 +6,7 @@ dotenv.config();
 const cleanEnvStr = (val?: string) => {
   if (!val) return '';
   const cleaned = val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '').replace(/(&|\?)channel_binding=[^&]+/g, '');
-  return cleaned.replace('-pooler', '');
+  return cleaned;
 };
 
 const isValidPgUrl = (str?: string) => {
