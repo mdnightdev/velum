@@ -71,7 +71,8 @@ export default function DashboardLayout({
   onMarkAsRead,
   onMarkAllAsRead
 }: DashboardLayoutProps) {
-  const { isMobile, isTablet, isDesktop } = useResponsiveLayout();
+  const { isMobile: _isMobile, isTablet, isDesktop } = useResponsiveLayout();
+  const isMobile = _isMobile || isTablet;
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(!isTablet);
@@ -168,21 +169,21 @@ export default function DashboardLayout({
         'Authorization': `Bearer ${sId}`,
         'Content-Type': 'application/json'
       };
-      const [reqRes, relRes, usersRes] = await Promise.all([
+      const [reqRes, relRes, usersRes] = await Promise.allSettled([
         fetch('/v2/friends/requests', { headers }),
         fetch('/v2/friends/relationships', { headers }),
         fetch('/v2/user', { headers })
       ]);
-      if (reqRes.ok) {
-        const reqData = await reqRes.json();
+      if (reqRes.status === 'fulfilled' && reqRes.value.ok) {
+        const reqData = await reqRes.value.json();
         setFriendRequests(reqData.requests || reqData || []);
       }
-      if (relRes.ok) {
-        const relData = await relRes.json();
+      if (relRes.status === 'fulfilled' && relRes.value.ok) {
+        const relData = await relRes.value.json();
         setFriendRelationships(relData);
       }
-      if (usersRes.ok) {
-        const usersData = await usersRes.json();
+      if (usersRes.status === 'fulfilled' && usersRes.value.ok) {
+        const usersData = await usersRes.value.json();
         const normalized = usersData.map((u: any) => ({
           ...u,
           user_id: u.userId !== undefined ? u.userId : u.user_id,
@@ -321,7 +322,7 @@ export default function DashboardLayout({
               className="fixed inset-0 modal-backdrop transition-opacity"
               onClick={closeSidebar}
             />
-            <div className="relative z-10 w-64 max-w-[80vw] h-full bg-velum-850 border-r border-white-5 shadow-2xl flex flex-col animate-in slide-in-from-left duration-200">
+            <div className="relative z-10 w-64 max-w-[80vw] h-full bg-velum-850 border-r border-white-5 shadow-2xl flex flex-col overflow-x-hidden animate-in slide-in-from-left duration-200">
               <UserSidebar
                 friendRequests={friendRequests}
                 currentUserId={user?.userId || 0}
@@ -381,7 +382,7 @@ export default function DashboardLayout({
 
         {/* Desktop / Tablet Navigation Sidebar */}
         {!isMobile && (
-          <aside className={`h-full flex flex-col transition-all duration-300 z-30 bg-velum-850 border-r border-white-5 relative shrink-0 ${
+          <aside className={`h-full flex flex-col transition-all duration-300 z-30 bg-velum-850 border-r border-white-5 relative shrink-0 overflow-x-hidden ${
             isSidebarExpanded ? 'w-60 min-w-[240px]' : 'w-14 min-w-[56px]'
           }`}>
             <UserSidebar
@@ -443,7 +444,7 @@ export default function DashboardLayout({
         <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden glass-panel border-y-0 border-r-0 rounded-none">
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
-            <div className="flex-1 overflow-y-auto relative flex flex-col">
+            <div className="flex-1 overflow-hidden relative flex flex-col">
 
               <WalletMainDashboard
                 currentUserId={user ? user.userId : 0}
@@ -462,7 +463,7 @@ export default function DashboardLayout({
               />
             </div>
           ) : activeCategory === 'tickets' ? (
-            <div className="flex-1 overflow-y-auto relative flex flex-col">
+            <div className="flex-1 overflow-hidden relative flex flex-col">
 
               <TicketsMainDashboard
                 currentUserId={user?.userId || 0}
@@ -525,12 +526,12 @@ export default function DashboardLayout({
               />
             </div>
           ) : activeCategory === 'rooms' ? (
-            <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col">
+            <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col min-w-0">
               
               {activeLoungeId ? (
                 <LoungeWorkspace
                   loungeId={activeLoungeId}
-                  loungeName={activeLoungeName}
+                  loungeName={(!activeLoungeName || activeLoungeName.toUpperCase() === 'TEST') ? 'Velum Lounge' : activeLoungeName}
                   currentUserId={user?.userId || 0}
                   currentUsername={user?.username || 'Guest'}
                   currentUserRole={user?.role || 'USER'}
@@ -538,7 +539,7 @@ export default function DashboardLayout({
                   onRoomSelect={onRoomSelect}
                   onLoungeSelect={(lid, lname) => {
                     setActiveLoungeId(lid);
-                    setActiveLoungeName(lname);
+                    setActiveLoungeName((!lname || lname.toUpperCase() === 'TEST') ? 'Velum Lounge' : lname);
                     onRoomSelect('');
                   }}
                   onBackToDirectory={() => {
@@ -571,7 +572,7 @@ export default function DashboardLayout({
                     isDark={isDark}
                     onLoungeSelect={(loungeId, loungeName) => {
                       setActiveLoungeId(loungeId);
-                      setActiveLoungeName(loungeName);
+                      setActiveLoungeName((!loungeName || loungeName.toUpperCase() === 'TEST') ? 'Velum Lounge' : loungeName);
                     }}
                     unreadCounts={(computedUnreadCounts as any) || {}}
                     lastMessages={(computedLastMessages as any) || {}}
@@ -581,7 +582,7 @@ export default function DashboardLayout({
               )}
             </div>
           ) : activeCategory === 'direct' && !activeChatPeer ? (
-            <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col">
+            <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col min-w-0">
 
               <DirectMainDashboard
                 friendRequests={friendRequests}

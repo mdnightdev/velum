@@ -15,12 +15,12 @@ export default function AuthHeader() {
       </div>
 
       <h1 className="text-2xl font-light tracking-[0.28em] uppercase">Velum</h1>
-      <p className="text-[12px] text-text-secondary mt-1">Secure conversations, refined.</p>
+      <p className="text-[12px] text-text-secondary mt-1">Private conversations.</p>
 
       <div className="grid grid-cols-4 gap-2 w-full pt-3 max-w-xs mx-auto">
         <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-text-primary/[0.012] border border-white-5">
           <ShieldCheck className="w-3.5 h-3.5 mb-1 text-accent" />
-          <span className="text-[9px] uppercase tracking-wider text-text-primary">Secure</span>
+          <span className="text-[9px] uppercase tracking-wider text-text-primary">End-to-End</span>
         </div>
         <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-text-primary/[0.012] border border-white-5">
           <EyeOff className="w-3.5 h-3.5 mb-1 text-accent" />

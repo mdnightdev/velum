@@ -1,13 +1,19 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, startTransition } from 'react';
 import { createLogger } from '../utils/logger';
+import { purgeSkippedMessageKeys } from '../services/skippedKeysStore';
+import { purgeCryptoVault } from '../services/cryptoDbStore';
+import { purgeLocalMessages } from '../utils/indexedDb';
+import { doubleRatchetService } from '../services/doubleRatchetService';
 
 const log = createLogger('AuthContext');
+
 
 interface AuthUser {
   userId: number;
   username: string;
   role: 'CLI_ADMIN' | 'LOGIN_ADMIN' | 'SUPPORT_ADMIN' | 'ADMIN' | 'USER' | 'SYSTEM' | string;
   status: string;
+  duress_active?: boolean;
 }
 
 interface AuthContextType {
@@ -45,6 +51,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = !!user && !!sessionId;
 
   const handleLoginSuccess = (loginUser: AuthUser, sId: string, dId: string, destination: string) => {
+    if (user && user.userId !== loginUser.userId) {
+      log.warn('Cross-identity login detected. Purging crypto vault.');
+      purgeCryptoVault().catch(() => {});
+    purgeLocalMessages().catch(() => {});
+    doubleRatchetService.clearMemoryState();
+    }
+
     setUser(loginUser);
     setSessionId(sId);
     setDeviceId(dId);
@@ -64,9 +77,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = () => {
-    setUser(null);
-    setSessionId(null);
-    setDeviceId(null);
+    // Purge E2EE decryption keys from IndexedDB
+    purgeSkippedMessageKeys().catch(() => {});
+    purgeCryptoVault().catch(() => {});
+    purgeLocalMessages().catch(() => {});
+    doubleRatchetService.clearMemoryState();
+
+    // Purge plaintext saved notes from localStorage for vault safety
+    if (user?.userId) {
+      try {
+        localStorage.removeItem(`velum-notes-${user.userId}`);
+      } catch (e) {}
+    }
+
+    startTransition(() => {
+      setUser(null);
+      setSessionId(null);
+      setDeviceId(null);
+    });
+
     try {
       sessionStorage.removeItem('velum-user');
       sessionStorage.removeItem('velum-sessionId');

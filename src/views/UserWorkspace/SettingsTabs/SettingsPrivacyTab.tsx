@@ -65,14 +65,39 @@ export function SettingsPrivacyTab({
       </form>
 
       <div className="pt-8 border-t border-white-5 space-y-4">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-alert-error font-mono">Danger Zone</h3>
-        <div className="p-4 bg-status-dnd-bg rounded-xl flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-alert-error font-mono">Panic Protocol & Danger Zone</h3>
+        <div className="p-4 bg-status-dnd-bg rounded-xl flex items-center justify-between border border-alert-error/30">
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-white">Delete Account</span>
-            <span className="text-xs text-text-secondary">Permanently delete your account and all data</span>
+            <span className="text-sm font-semibold text-white">Trigger Emergency Panic Protocol</span>
+            <span className="text-xs text-text-secondary">Executes instant WAL cascade deletion of sensitive messages, prekeys, and sessions.</span>
           </div>
-          <button type="button" className="px-4 py-2 bg-alert-error text-white rounded-lg text-xs font-bold uppercase font-mono opacity-50 cursor-not-allowed">
-            Delete
+          <button 
+            type="button" 
+            onClick={async () => {
+              if (window.confirm('CRITICAL WARNING: Are you sure you want to trigger the Panic Protocol? This will immediately perform a WAL cascade purge of your sensitive data and sessions.')) {
+                try {
+                  const token = localStorage.getItem('velum_session_token') || sessionStorage.getItem('velum-sessionId');
+                  const res = await fetch('/api/v2/auth/panic', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    }
+                  });
+                  if (res.ok) {
+                    alert('Panic protocol executed successfully. Session ended.');
+                    sessionStorage.clear();
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                } catch (e) {
+                  alert('Panic trigger request sent.');
+                }
+              }
+            }}
+            className="px-4 py-2 bg-alert-error hover:bg-alert-error/80 text-white rounded-lg text-xs font-bold uppercase font-mono transition cursor-pointer"
+          >
+            Trigger Panic
           </button>
         </div>
       </div>

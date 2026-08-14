@@ -29,8 +29,8 @@ export default function CreateRoomModal({
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center modal-backdrop p-4 animate-fade-in">
-      <div className={`w-full max-w-sm rounded-2xl p-6 border shadow-2xl ${isDark ? 'bg-velum-850 border-white-10 text-white' : 'bg-text-primary border-velum-600 text-velum-900'}`}>
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center modal-backdrop pt-20 px-4 animate-fade-in">
+      <div className={`w-full max-w-xs rounded-xl p-5 border shadow-2xl ${isDark ? 'bg-velum-850 border-white-10 text-white' : 'bg-text-primary border-velum-600 text-velum-900'}`}>
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xs font-bold uppercase tracking-wider">Create Lounge Room</h3>
           <button 

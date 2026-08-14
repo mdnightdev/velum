@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Settings, X, Upload, Loader2 } from 'lucide-react';
 import { captureAndCompressPhoto, streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
+import { ImageCropperModal } from '../ImageCropperModal';
 
 interface ManageLoungeModalProps {
   show: boolean;
@@ -72,28 +73,20 @@ export default function ManageLoungeModal({
   const [isUploadingIcon, setIsUploadingIcon] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [loungeIconFile, setLoungeIconFile] = useState<Blob | null>(null);
+  const [croppingIcon, setCroppingIcon] = useState<{ src: string; fileName: string } | null>(null);
 
-  const handleIconFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleIconFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError('');
-    if (!e.target.files || e.target.files.length === 0) return;
-    setIsUploadingIcon(true);
-    try {
-      const compressedBlob = await captureAndCompressPhoto(e);
-      setLoungeIconFile(compressedBlob);
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-          setEditIconUrl(reader.result);
-        }
-      };
-      reader.readAsDataURL(compressedBlob);
-    } catch (err: any) {
-      console.error('Failed to process lounge icon:', err);
-      setUploadError(err.message || 'Failed to process image. Please ensure file is a valid image (JPEG, PNG, WebP).');
-    } finally {
-      setIsUploadingIcon(false);
-    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result) {
+        setCroppingIcon({ src: reader.result as string, fileName: file.name });
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   if (!show) return null;
@@ -114,13 +107,7 @@ export default function ManageLoungeModal({
         {/* Modal Header */}
         <div className={`p-5 border-b flex justify-between items-center ${isDark ? 'border-white/10' : 'border-velum-600'}`}>
           <div className="flex flex-col">
-            <h3 className="text-sm font-black uppercase tracking-widest text-accent flex items-center gap-2">
-              <Settings className="w-4 h-4 animate-spin-slow" />
-              Lounge Administration Desk
-            </h3>
-            <span className={`text-[10px] uppercase tracking-wider font-mono opacity-60 ${isDark ? 'text-text-secondary' : 'text-text-secondary'}`}>
-              Hub // {loungeName}
-            </span>
+            <h3 className="text-sm font-black uppercase tracking-widest text-text-primary flex items-center gap-2"><Settings className="w-4 h-4" />Settings</h3>
           </div>
           <button 
             onClick={onClose} 
@@ -133,10 +120,10 @@ export default function ManageLoungeModal({
         {/* Modal Navigation Tabs */}
         <div className={`flex border-b text-xs ${isDark ? 'border-white-5 bg-velum-850' : 'border-velum-600 bg-white-10'}`}>
           {[
-            { id: 'settings', label: 'General Settings' },
-            { id: 'members', label: 'Members & Roles' },
+            { id: 'settings', label: 'General' },
+            { id: 'members', label: 'Members' },
             { id: 'requests', label: `Join Applications (${(manageRequests || []).length})` },
-            { id: 'invites', label: 'Invites & Direct Add' }
+            { id: 'invites', label: 'Invites' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -181,27 +168,51 @@ export default function ManageLoungeModal({
                 </div>
               )}
 
-              {/* Live Preview Card */}
-              <div className="p-4 rounded-2xl bg-velum-850/60 border border-white-10 flex items-center gap-4 shadow-md">
-                {editIconUrl ? (
-                  <img
-                    src={editIconUrl}
-                    alt="Lounge Icon"
-                    className="w-12 h-12 rounded-xl object-cover border border-white-10 shadow"
-                    onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-mono font-bold text-lg">
-                    {(editName || loungeName || 'L').slice(0, 2).toUpperCase()}
+              {/* Premium Vetting Settings Layout */}
+              <div className="relative rounded-2xl bg-velum-800 border border-white-10 overflow-hidden shadow-xl mb-6">
+                {/* Banner Area */}
+                <div className="h-28 relative bg-gradient-to-r from-accent/30 via-accent/10 to-transparent">
+                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
+                  {/* Banner Image could go here if Lounge had one */}
+                </div>
+                
+                {/* Profile Details Bar */}
+                <div className="px-6 pb-5 pt-0 relative flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-10">
+                  <div className="flex items-end gap-4">
+                    <div className="relative group shrink-0">
+                      <div className="w-20 h-20 rounded-2xl border-4 border-velum-850 bg-velum-800 flex items-center justify-center font-bold text-3xl text-accent overflow-hidden shadow-2xl">
+                        {(croppingIcon?.src || editIconUrl || loungeIconFile) ? (
+                          <img
+                            src={croppingIcon ? croppingIcon.src : (loungeIconFile ? URL.createObjectURL(loungeIconFile) : editIconUrl)}
+                            alt="Lounge Icon"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span>{(editName || loungeName || 'L').slice(0, 2).toUpperCase()}</span>
+                        )}
+                      </div>
+                      
+                      <label className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 rounded-2xl transition-opacity cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/gif,image/webp"
+                          className="hidden"
+                          onChange={handleIconFileSelect}
+                          disabled={isUploadingIcon}
+                        />
+                        {isUploadingIcon ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-accent" />
+                        ) : (
+                          <Upload className="w-5 h-5 text-text-primary" />
+                        )}
+                      </label>
+                    </div>
+                    
+                    <div className="mb-1">
+                      <h4 className="text-lg font-bold text-text-primary leading-none tracking-widest uppercase">{editName || loungeName || 'Unnamed Lounge'}</h4>
+                      <p className="text-xs font-mono text-accent mt-1">Workspace Configuration</p>
+                    </div>
                   </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-text-primary truncate">
-                    {editName || loungeName || 'Unnamed Lounge'}
-                  </div>
-                  <p className="text-[10px] text-text-secondary truncate mt-0.5">
-                    {editDescription || 'No topic overview provided yet.'}
-                  </p>
                 </div>
               </div>
 
@@ -209,7 +220,7 @@ export default function ManageLoungeModal({
               <div className="space-y-4">
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5 text-text-secondary">
-                    Lounge Designation *
+                    Name
                   </label>
                   <input
                     type="text"
@@ -222,7 +233,7 @@ export default function ManageLoungeModal({
 
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5 text-text-secondary">
-                    Overview & Community Guidelines
+                    Description
                   </label>
                   <textarea
                     value={editDescription}
@@ -232,40 +243,25 @@ export default function ManageLoungeModal({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5 text-text-secondary">
-                    Lounge Avatar / Custom Icon
-                  </label>
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        value={editIconUrl}
-                        onChange={(e) => setEditIconUrl(e.target.value)}
-                        className="w-full p-3 rounded-xl border text-xs outline-none transition font-mono bg-velum-900 border-white-10 text-text-primary focus:border-accent/60 shadow-inner"
-                        placeholder="https://example.com/lounge-icon.png or upload image file"
-                      />
-                    </div>
-                    <label className="px-4 py-3 bg-velum-800 hover:bg-velum-700 border border-white-10 hover:border-accent/40 rounded-xl text-xs font-mono font-bold text-accent uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition shrink-0 active:scale-95">
-                      {isUploadingIcon ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-accent" />
-                      ) : (
-                        <Upload className="w-4 h-4" />
-                      )}
-                      <span>{isUploadingIcon ? 'Uploading...' : 'Upload Image'}</span>
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        onChange={handleIconFileSelect}
-                        disabled={isUploadingIcon}
-                      />
-                    </label>
-                  </div>
-                  {uploadError && (
-                    <div className="text-[10px] text-alert-error font-mono mt-1">{uploadError}</div>
+                
+                {uploadError && (
+                  <div className="text-[10px] text-alert-error font-mono mt-1">{uploadError}</div>
+                )}
+
+
+                  {croppingIcon && (
+                    <ImageCropperModal
+                      imageSrc={croppingIcon.src}
+                      fileName={croppingIcon.fileName}
+                      aspectRatio="1:1"
+                      onCancel={() => setCroppingIcon(null)}
+                      onCropComplete={(croppedDataUrl, croppedFile) => {
+                        setLoungeIconFile(croppedFile);
+                        setEditIconUrl(croppedDataUrl);
+                        setCroppingIcon(null);
+                      }}
+                    />
                   )}
-                </div>
               </div>
 
               <div className="pt-2 flex justify-end">

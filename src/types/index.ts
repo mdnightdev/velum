@@ -92,6 +92,10 @@ export interface Message {
   timestamp: string | number;
   created_at?: string | number;
   nonce?: string;
+  client_msg_id?: string;
+  sequence_id?: number;
+  read_by?: string | string[];
+  delivered_to?: string | string[];
   status?: 'sent' | 'delivered' | 'read' | string;
   deleted?: boolean;
   reactions?: Record<string, string[]>;

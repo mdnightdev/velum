@@ -8,6 +8,52 @@ html, body, #root {
   position: fixed;
   background-color: var(--color-velum-900);
   color: var(--color-text-primary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", "Android Emoji", sans-serif;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Web-App App Lock Selection Rules */
+.select-none-app {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+.selectable-code-block, pre, code, [data-selectable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+.emoji-font {
+  font-family: "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", "Android Emoji", "EmojiOne Color", sans-serif;
+}
+
+/* Zero Horizontal Overflow & Strict Text Wrapping Rules */
+.message-content-wrap {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+  hyphens: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.message-bubble-container {
+  min-width: 0;
+  max-width: 88%;
+}
+
+@media (min-width: 640px) {
+  .message-bubble-container {
+    max-width: 82%;
+  }
 }
 
 @theme {
@@ -71,12 +117,13 @@ html, body, #root {
   --radius-lg:  16px;
   --radius-xl:  24px;
 
-  /* ---- Chat Bubble Color System ---- */
-  --color-bubble-me:            #101218;   /* Elevated charcoal for current user */
-  --color-bubble-me-text:       #F5F2EB;   /* warm ivory text */
-  --color-bubble-peer:          #101218;   /* Elevated charcoal for peer */
-  --color-bubble-peer-text:     #F5F2EB;   /* warm ivory text */
-  --color-bubble-peer-border:   rgba(255, 255, 255, 0.05); /* border color */
+  /* ---- Chat Bubble Color System (Velum Rose Gold & Muted Teal Tokens - Zero Grey) ---- */
+  --color-bubble-me:            rgba(200, 155, 138, 0.22); /* Rose Gold Accent Translucent */
+  --color-bubble-me-border:     rgba(200, 155, 138, 0.40); /* Rose Gold Border */
+  --color-bubble-me-text:       #F5F2EB;                   /* Warm Ivory text */
+  --color-bubble-peer:          rgba(91, 154, 139, 0.16);  /* Muted Teal Accent Translucent */
+  --color-bubble-peer-border:   rgba(91, 154, 139, 0.30);  /* Muted Teal Border */
+  --color-bubble-peer-text:     #F5F2EB;                   /* Warm Ivory text */
 
   /* ---- Payment Card Custom Gradients ---- */
   --color-card-bank-start:      #0C0E12;   /* velum-850 */
@@ -387,14 +434,12 @@ body:has(input:focus, textarea:focus) .bottom-nav {
   animation: loading-sweep 1.3s ease-in-out infinite;
 }
 
-/* Premium WhatsApp-style chat wallpaper background pattern */
+/* Ambient Velum Dark Canvas Texture & Soft Radial Vignette */
 .chat-wallpaper {
-  background-color: var(--color-velum-900);
+  background-color: #111319;
   background-image: 
-    radial-gradient(var(--color-accent-10) 1px, transparent 1px),
-    radial-gradient(var(--color-accent-10) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: 0 0, 12px 12px;
+    radial-gradient(circle at 50% 30%, rgba(22, 25, 34, 0.95), #0d0f14),
+    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23C89B8A' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
   position: relative;
 }
 
@@ -402,7 +447,8 @@ body:has(input:focus, textarea:focus) .bottom-nav {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 50%, transparent 20%, var(--color-velum-900) 90%);
+  background: radial-gradient(circle at 50% 50%, rgba(200, 155, 138, 0.02) 0%, transparent 70%),
+              radial-gradient(circle at 50% 50%, transparent 40%, rgba(11, 13, 18, 0.85) 100%);
   pointer-events: none;
 }
 
@@ -421,21 +467,7 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 
 /* --- Native App Touch Callouts & Selection Control --- */
 /* Disable default web text selection callouts across UI controls, buttons, sidebars, cards, and panels */
-body, 
-button, 
-a, 
-[role="button"], 
-.bottom-nav, 
-.sidebar, 
-.drawer, 
-.card, 
-.control, 
-.badge, 
-.chip, 
-.tab, 
-.panel,
-.glass-panel,
-.glass-card {
+* {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;

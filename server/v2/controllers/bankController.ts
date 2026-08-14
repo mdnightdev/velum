@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { bankRepository } from '../repositories/bankRepository.js';
 import { cardRepository } from '../repositories/cardRepository.js';
+import { userRepository } from '../repositories/userRepository.js';
 import { generateRandomToken } from '../utils/crypto.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { db } from '../db/client.js';
@@ -50,11 +51,23 @@ export class BankController {
 
   async transfer(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
-    const { amount, recipientUserId, description } = req.body;
+    const { amount, recipientUserId, recipientUsername, description } = req.body;
 
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       throw new BadRequestError('Transfer amount must be a positive number.');
+    }
+
+    let targetUserId = recipientUserId;
+    if (!targetUserId && recipientUsername) {
+      const recipientUser = await userRepository.findByUsername(recipientUsername);
+      if (recipientUser) {
+        targetUserId = recipientUser.id;
+      }
+    }
+
+    if (!targetUserId) {
+      throw new BadRequestError('Recipient user ID or valid recipient username is required.');
     }
 
     const result = await db.transaction(async (tx) => {
@@ -68,7 +81,7 @@ export class BankController {
         throw new BadRequestError('Insufficient funds for transfer.');
       }
 
-      const recipientWallet = await bankRepository.findWalletByUserIdForUpdate(recipientUserId, tx);
+      const recipientWallet = await bankRepository.findWalletByUserIdForUpdate(targetUserId, tx);
       if (!recipientWallet) {
         throw new NotFoundError('Recipient wallet not found.');
       }

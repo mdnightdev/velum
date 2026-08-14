@@ -141,13 +141,21 @@ export class DeviceFingerprintService {
       const reasons: string[] = [];
       let riskScore = 0;
       
+      // Check if user has ANY recorded devices in userDevices
+      const userDevicesList = await db.select().from(userDevices)
+        .where(eq(userDevices.userId, userId));
+
+      if (userDevicesList.length === 0) {
+        // First device access for this user - establish baseline
+        await this.recordDeviceAccess(userId, deviceId, ipAddress, {
+          userAgent: 'unknown',
+          platform: 'unknown'
+        });
+        return { isAnomalous: false, reasons: [], riskScore: 0 };
+      }
+
       // Check if device is known
-      const knownDevice = await db.select().from(userDevices)
-        .where(and(
-          eq(userDevices.userId, userId),
-          eq(userDevices.deviceId, deviceId)
-        ))
-        .limit(1);
+      const knownDevice = userDevicesList.filter(d => d.deviceId === deviceId);
       
       if (knownDevice.length === 0) {
         reasons.push('New device detected');

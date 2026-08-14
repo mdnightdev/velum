@@ -4,6 +4,9 @@
  * Using Web Crypto API for cryptographic operations
  */
 
+import { saveSkippedMessageKey, consumeSkippedMessageKey, clearSkippedKeysForPeer, closeSkippedKeysDatabase } from './skippedKeysStore';
+import { saveLocalKeysToDb, loadLocalKeysFromDb, saveConversationStateToDb, loadConversationStateFromDb, deleteConversationStateFromDb, closeCryptoDatabase } from './cryptoDbStore';
+
 // Types for cryptographic operations
 export interface KeyPair {
   privateKey: CryptoKey;
@@ -21,13 +24,16 @@ export interface PrekeyBundle {
 export interface RatchetState {
   dhRatchetKeyPair: KeyPair | null;
   dhRatchetPublicKey: CryptoKey | null;
-  rootKey: CryptoKey | null;
-  sendChainKey: CryptoKey | null;
-  receiveChainKey: CryptoKey | null;
+  rootKey: ArrayBuffer | null;        // Raw bytes for HKDF re-use
+  sendChainKey: ArrayBuffer | null;   // Raw bytes for chain derivation
+  receiveChainKey: ArrayBuffer | null;// Raw bytes for chain derivation
   sendChainLength: number;
   receiveChainLength: number;
+  receiveChainGeneration: number; // Increments on every DH ratchet step; disambiguates skipped keys across chains
   previousChainLength: number;
-  skippedMessageKeys: Map<number, CryptoKey>;
+  skippedMessageKeys: Map<string, CryptoKey>; // Keyed by `${receiveChainGeneration}:${n}` - real AES-GCM message keys
+  version: number; // State version for validation
+  checksum?: string; // SHA-256 checksum for integrity validation
 }
 
 export interface RatchetHeader {
@@ -41,19 +47,163 @@ export interface RatchetMessageEnvelope {
   ivHex: string;
   ciphertextHex: string;
   tagHex: string;
+  hmacHex?: string;
 }
 
 class DoubleRatchetService {
+  
+  public clearMemoryState(): void {
+    this.conversationStates.clear();
+    this.localIdentityKeyPair = null;
+    this.localSignedPrekeyPair = null;
+    this.localOneTimePrekeys = [];
+  }
+
+  public async closeDatabaseConnections(): Promise<void> {
+    await this.forceFlushStateUpdates(); // Flush any pending updates before closing
+    await closeCryptoDatabase();
+    await closeSkippedKeysDatabase();
+  }
+
+  private async getMacKey(messageKey: CryptoKey): Promise<CryptoKey> {
+    const subtle = window.crypto.subtle;
+    const rawKey = await subtle.exportKey('raw', messageKey);
+    const macKeyBytes = await subtle.digest('SHA-256', rawKey);
+    return subtle.importKey('raw', macKeyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+  }
+
   private localIdentityKeyPair: KeyPair | null = null;
   private localSignedPrekeyPair: KeyPair | null = null;
   private localOneTimePrekeys: KeyPair[] = [];
   private conversationStates: Map<number, RatchetState> = new Map();
+  private localUserId: number | null = null;
+  private static readonly STATE_VERSION = 1;
+
+  // State update queue for batching
+  private stateUpdateQueue: Map<number, RatchetState> = new Map();
+  private flushTimer: NodeJS.Timeout | null = null;
+  private readonly FLUSH_DELAY = 100; // 100ms batching window
+
+  /**
+   * Calculate SHA-256 checksum of state for integrity validation
+   */
+  private async calculateStateChecksum(state: RatchetState): Promise<string> {
+    const subtle = window.crypto.subtle;
+    const checksumData = {
+      sendChainLength: state.sendChainLength,
+      receiveChainLength: state.receiveChainLength,
+      receiveChainGeneration: state.receiveChainGeneration,
+      previousChainLength: state.previousChainLength,
+      version: state.version
+    };
+    const dataString = JSON.stringify(checksumData);
+    const dataBytes = new TextEncoder().encode(dataString);
+    const hashBuffer = await subtle.digest('SHA-256', dataBytes);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Queue state update for batched persistence
+   */
+  private queueStateUpdate(peerUserId: number, state: RatchetState): void {
+    this.stateUpdateQueue.set(peerUserId, state);
+    
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+    }
+    
+    this.flushTimer = setTimeout(() => {
+      this.flushStateUpdates();
+    }, this.FLUSH_DELAY);
+  }
+
+  /**
+   * Flush queued state updates to IndexedDB in batch
+   */
+  private async flushStateUpdates(): Promise<void> {
+    if (this.stateUpdateQueue.size === 0) {
+      return;
+    }
+    
+    const updates = Array.from(this.stateUpdateQueue.entries());
+    this.stateUpdateQueue.clear();
+    this.flushTimer = null;
+    
+    const localUserId = this.getLocalUserIdOrThrow();
+    
+    try {
+      await Promise.all(updates.map(([peerUserId, state]) => 
+        saveConversationStateToDb(localUserId, peerUserId, state)
+      ));
+    } catch (err) {
+      console.error('[DoubleRatchet] Failed to flush state updates:', err);
+      // Re-queue failed updates
+      for (const [peerUserId, state] of updates) {
+        this.stateUpdateQueue.set(peerUserId, state);
+      }
+    }
+  }
+
+  /**
+   * Force immediate flush of queued state updates
+   */
+  private async forceFlushStateUpdates(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    await this.flushStateUpdates();
+  }
+
+  /**
+   * Must be called once after login (or on app init if a session already exists)
+   * with the current user's numeric ID. This is the single source of truth for
+   * "who am I" in ratchet chain-key assignment. Do NOT infer it from sessionStorage
+   * shape guesses - a silent parse failure there previously caused every message
+   * to fail HMAC verification for every user, since both sides would default to
+   * the same fallback and independently believe they were "Chain A".
+   */
+  setLocalUserId(userId: number): void {
+    if (!Number.isFinite(userId)) {
+      console.error('[DoubleRatchet] setLocalUserId called with invalid userId:', userId);
+      return;
+    }
+    this.localUserId = userId;
+  }
+
+  private getLocalUserIdOrThrow(): number {
+    if (this.localUserId === null) {
+      const errMsg = '[DoubleRatchet] localUserId not set - call setLocalUserId() after login before sending/receiving encrypted messages.';
+      console.error(errMsg);
+      throw new Error(errMsg);
+    }
+    return this.localUserId;
+  }
 
   /**
    * Initialize local keys for X3DH
    */
   async initializeLocalKeys(): Promise<void> {
+    if (this.localUserId === null) {
+      const errMsg = '[DoubleRatchet] initializeLocalKeys() called before setLocalUserId() - identity keys must be namespaced per account or different logged-in users on the same browser will collide.';
+      console.error(errMsg);
+      throw new Error(errMsg);
+    }
     try {
+      const existingKeys = await loadLocalKeysFromDb(this.localUserId);
+      if (existingKeys) {
+        this.localIdentityKeyPair = existingKeys.identityKeyPair;
+        this.localSignedPrekeyPair = existingKeys.signedPrekeyPair;
+        this.localOneTimePrekeys = existingKeys.oneTimePrekeys;
+        console.log('[DoubleRatchet] Loaded local keys from IndexedDB.');
+        
+        // Ensure they are re-uploaded or the backend knows we exist?
+        // Let's just return to avoid overwriting keys.
+        // wait, we should upload bundle just in case backend restarted.
+        await this.uploadPrekeyBundle();
+        return;
+      }
       const subtle = window.crypto.subtle;
 
       // Generate long-term identity key
@@ -80,6 +230,9 @@ class DoubleRatchetService {
         );
         this.localOneTimePrekeys.push(prekey);
       }
+
+      // Save to IndexedDB
+      await saveLocalKeysToDb(this.localUserId, this.localIdentityKeyPair, this.localSignedPrekeyPair, this.localOneTimePrekeys);
 
       // Upload bundle to server
       await this.uploadPrekeyBundle();
@@ -122,7 +275,7 @@ class DoubleRatchetService {
    * X3DH Initial Key Exchange
    * Derive initial shared secret using identity keys, signed prekey, and one-time prekey
    */
-  private async x3dhHandshake(peerBundle: PrekeyBundle, usedOneTimePrekey?: string): Promise<CryptoKey> {
+  private async x3dhHandshake(peerBundle: PrekeyBundle, usedOneTimePrekey?: string): Promise<ArrayBuffer> {
     const subtle = window.crypto.subtle;
 
     // Import peer keys
@@ -187,17 +340,25 @@ class DoubleRatchetService {
     const salt = new Uint8Array(32);
     const info = new TextEncoder().encode('X3DH');
     
+    const dhOutputs = [dh1, dh2, dh3, dh4];
+    if (dh5) dhOutputs.push(dh5);
+
+    // Sort DH outputs lexicographically so both sides produce the exact same combined buffer
+    dhOutputs.sort((a, b) => {
+      const aArr = new Uint8Array(a);
+      const bArr = new Uint8Array(b);
+      for (let i = 0; i < Math.min(aArr.length, bArr.length); i++) {
+        if (aArr[i] !== bArr[i]) return aArr[i] - bArr[i];
+      }
+      return aArr.length - bArr.length;
+    });
+
     // Combine all DH outputs
-    const combined = new Uint8Array(
-      (dh1.byteLength + dh2.byteLength + dh3.byteLength + dh4.byteLength + (dh5?.byteLength || 0))
-    );
+    const combined = new Uint8Array(dhOutputs.reduce((sum, dh) => sum + dh.byteLength, 0));
     let offset = 0;
-    combined.set(new Uint8Array(dh1), offset); offset += dh1.byteLength;
-    combined.set(new Uint8Array(dh2), offset); offset += dh2.byteLength;
-    combined.set(new Uint8Array(dh3), offset); offset += dh3.byteLength;
-    combined.set(new Uint8Array(dh4), offset); offset += dh4.byteLength;
-    if (dh5) {
-      combined.set(new Uint8Array(dh5), offset);
+    for (const dh of dhOutputs) {
+      combined.set(new Uint8Array(dh), offset);
+      offset += dh.byteLength;
     }
 
     // Derive root key and chain key using HKDF
@@ -206,113 +367,89 @@ class DoubleRatchetService {
       combined,
       'HKDF',
       false,
-      ['deriveKey']
+      ['deriveBits']
     );
 
-    const rootKey = await subtle.deriveKey(
+    const rootKeyBits = await subtle.deriveBits(
       { name: 'HKDF', hash: 'SHA-256', salt, info },
       initialKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
+      256
     );
 
-    return rootKey;
+    return rootKeyBits;
   }
 
   /**
    * Initialize ratchet state for new conversation
    */
-  private async initializeRatchetState(peerUserId: number, rootKey: CryptoKey): Promise<RatchetState> {
+  private async initializeRatchetState(peerUserId: number, rootKey: ArrayBuffer): Promise<RatchetState> {
     const subtle = window.crypto.subtle;
 
-    // Generate new DH ratchet key pair
+    // Generate new local DH ratchet key pair
     const dhRatchetKeyPair = await subtle.generateKey(
       { name: 'ECDH', namedCurve: 'P-256' },
       true,
       ['deriveKey', 'deriveBits']
     );
 
-    // Derive new root key and chain key
-    const dhOutput = await subtle.deriveBits(
-      { name: 'ECDH', public: dhRatchetKeyPair.publicKey },
-      dhRatchetKeyPair.privateKey,
-      256
-    );
+    // Get local user ID to deterministically assign Send/Receive chains.
+    // This MUST match exactly what the peer resolves as *their own* ID for
+    // chain assignment to line up on both sides - never silently default this.
+    const localUserId = this.getLocalUserIdOrThrow();
 
-    const newRootKey = await this.hkdf(rootKey, dhOutput, 'DoubleRatchetRoot');
-    const chainKey = await this.hkdf(rootKey, dhOutput, 'DoubleRatchetChain');
+    const infoSend = localUserId < peerUserId ? 'DoubleRatchetChain_A' : 'DoubleRatchetChain_B';
+    const infoRecv = localUserId < peerUserId ? 'DoubleRatchetChain_B' : 'DoubleRatchetChain_A';
+
+    const zeros = new Uint8Array(32);
+    const newRootKey = await this.hkdfBits(rootKey, zeros, 'DoubleRatchetRoot');
+    const sendChainKey = await this.hkdfBits(rootKey, zeros, infoSend);
+    const receiveChainKey = await this.hkdfBits(rootKey, zeros, infoRecv);
 
     return {
       dhRatchetKeyPair,
-      dhRatchetPublicKey: dhRatchetKeyPair.publicKey,
+      dhRatchetPublicKey: dhRatchetKeyPair.publicKey, // This will be sent on our first message
       rootKey: newRootKey,
-      sendChainKey: chainKey,
-      receiveChainKey: null,
+      sendChainKey: sendChainKey,
+      receiveChainKey: receiveChainKey,
       sendChainLength: 0,
       receiveChainLength: 0,
+      receiveChainGeneration: 0,
       previousChainLength: 0,
-      skippedMessageKeys: new Map()
+      skippedMessageKeys: new Map(),
+      version: DoubleRatchetService.STATE_VERSION
     };
   }
 
   /**
-   * HKDF key derivation
+   * HKDF key derivation returning raw ArrayBuffer
    */
-  private async hkdf(inputKey: CryptoKey, salt: ArrayBuffer, info: string): Promise<CryptoKey> {
+  private async hkdfBits(inputKeyMaterial: ArrayBuffer, salt: ArrayBuffer | Uint8Array, info: string, lengthBytes = 32): Promise<ArrayBuffer> {
     const subtle = window.crypto.subtle;
-    const saltArray = new Uint8Array(salt);
-    const infoArray = new TextEncoder().encode(info);
-
-    const importedKey = await subtle.importKey(
-      'raw',
-      await subtle.exportKey('raw', inputKey),
-      'HKDF',
-      false,
-      ['deriveKey']
-    );
-
-    return subtle.deriveKey(
-      { name: 'HKDF', hash: 'SHA-256', salt: saltArray, info: infoArray },
+    const importedKey = await subtle.importKey('raw', inputKeyMaterial, 'HKDF', false, ['deriveBits']);
+    const saltArray = salt instanceof Uint8Array ? salt : new Uint8Array(salt);
+    return subtle.deriveBits(
+      { name: 'HKDF', hash: 'SHA-256', salt: saltArray as any, info: new TextEncoder().encode(info) },
       importedKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
+      lengthBytes * 8
     );
   }
 
   /**
    * Derive message key from chain key
    */
-  private async deriveMessageKey(chainKey: CryptoKey): Promise<CryptoKey> {
+  private async deriveMessageKey(chainKey: ArrayBuffer): Promise<CryptoKey> {
     const subtle = window.crypto.subtle;
-    const info = new TextEncoder().encode('MessageKey');
     const salt = new Uint8Array(32);
-
-    return subtle.deriveKey(
-      { name: 'HKDF', hash: 'SHA-256', salt, info },
-      chainKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+    const rawKey = await this.hkdfBits(chainKey, salt, 'MessageKey');
+    return subtle.importKey('raw', rawKey, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   }
 
   /**
    * Ratchet the chain key (next message key)
    */
-  private async ratchetChainKey(chainKey: CryptoKey): Promise<CryptoKey> {
-    const subtle = window.crypto.subtle;
-    const info = new TextEncoder().encode('ChainKeyRatchet');
+  private async ratchetChainKey(chainKey: ArrayBuffer): Promise<ArrayBuffer> {
     const salt = new Uint8Array(32);
-
-    return subtle.deriveKey(
-      { name: 'HKDF', hash: 'SHA-256', salt, info },
-      chainKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+    return this.hkdfBits(chainKey, salt, 'ChainKeyRatchet');
   }
 
   /**
@@ -324,6 +461,18 @@ class DoubleRatchetService {
     // Get or initialize conversation state
     let state = this.conversationStates.get(peerUserId);
     if (!state) {
+      state = await loadConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId);
+      if (state) {
+        // Validate loaded state version
+        if (state.version !== DoubleRatchetService.STATE_VERSION) {
+          console.warn(`[DoubleRatchet] State version mismatch for peer ${peerUserId}, re-initializing`);
+          state = null;
+        } else {
+          this.conversationStates.set(peerUserId, state);
+        }
+      }
+    }
+    if (!state) {
       // Perform X3DH handshake
       const peerBundle = await this.fetchPeerPrekeyBundle(peerUserId);
       if (!peerBundle) {
@@ -331,17 +480,26 @@ class DoubleRatchetService {
       }
 
       // Use one-time prekey if available
-      const usedOneTimePrekey = peerBundle.oneTimePrekeys.length > 0 
-        ? peerBundle.oneTimePrekeys[0] 
-        : undefined;
+      const usedOneTimePrekey = undefined;
 
       const rootKey = await this.x3dhHandshake(peerBundle, usedOneTimePrekey);
       state = await this.initializeRatchetState(peerUserId, rootKey);
+      state.checksum = await this.calculateStateChecksum(state);
       this.conversationStates.set(peerUserId, state);
+      await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state);
     }
 
     // Derive message key from send chain key
     const messageKey = await this.deriveMessageKey(state.sendChainKey!);
+    if (true) {
+      const rawKeyBytes = await window.crypto.subtle.exportKey('raw', messageKey);
+      console.log('[KEYDEBUG] ENCRYPT', {
+        myUserId: this.localUserId,
+        peerUserId,
+        n: state.sendChainLength,
+        keyHex: Array.from(new Uint8Array(rawKeyBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+      });
+    }
 
     // Ratchet chain key for next message
     state.sendChainKey = await this.ratchetChainKey(state.sendChainKey!);
@@ -364,9 +522,11 @@ class DoubleRatchetService {
 
     // Update state
     this.conversationStates.set(peerUserId, state);
+    state.checksum = await this.calculateStateChecksum(state);
+    this.queueStateUpdate(peerUserId, state); // Use batching for ongoing updates
 
     // Build envelope
-    const dhPubJwk = await subtle.exportKey('jwk', state.dhRatchetPublicKey!);
+    const dhPubJwk = await subtle.exportKey('jwk', state.dhRatchetKeyPair!.publicKey);
     const header: RatchetHeader = {
       dhPublicKey: JSON.stringify(dhPubJwk),
       pn: state.previousChainLength,
@@ -383,6 +543,12 @@ class DoubleRatchetService {
       ciphertextHex: bodyHex,
       tagHex
     };
+
+    const macKey = await this.getMacKey(messageKey);
+    const envelopeString = JSON.stringify(envelope);
+    const hmacBuffer = await subtle.sign('HMAC', macKey, new TextEncoder().encode(envelopeString));
+    const hmacHex = Array.from(new Uint8Array(hmacBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    envelope.hmacHex = hmacHex;
 
     return `ratchet:v2:${JSON.stringify(envelope)}`;
   }
@@ -401,6 +567,18 @@ class DoubleRatchetService {
     // Get or initialize conversation state
     let state = this.conversationStates.get(peerUserId);
     if (!state) {
+      state = await loadConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId);
+      if (state) {
+        // Validate loaded state version
+        if (state.version !== DoubleRatchetService.STATE_VERSION) {
+          console.warn(`[DoubleRatchet] State version mismatch for peer ${peerUserId}, re-initializing`);
+          state = null;
+        } else {
+          this.conversationStates.set(peerUserId, state);
+        }
+      }
+    }
+    if (!state) {
       // For incoming messages, we need to perform X3DH as receiver
       const peerBundle = await this.fetchPeerPrekeyBundle(peerUserId);
       if (!peerBundle) {
@@ -409,12 +587,9 @@ class DoubleRatchetService {
 
       const rootKey = await this.x3dhHandshake(peerBundle);
       state = await this.initializeRatchetState(peerUserId, rootKey);
+      state.checksum = await this.calculateStateChecksum(state);
       this.conversationStates.set(peerUserId, state);
-    }
-
-    // Handle skipped messages (forward secrecy)
-    if (envelopeData.header.pn < state.receiveChainLength) {
-      await this.skipMessageKeys(state, envelopeData.header.pn);
+      await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state); // Force save for new conversations
     }
 
     // Perform DH ratchet if needed
@@ -426,50 +601,75 @@ class DoubleRatchetService {
       []
     );
 
-    if (!state.dhRatchetPublicKey || 
-        await this.keysEqual(peerDhPub, state.dhRatchetPublicKey)) {
-      // Need to perform DH ratchet
-      const dhOutput = await subtle.deriveBits(
-        { name: 'ECDH', public: peerDhPub },
-        state.dhRatchetKeyPair!.privateKey,
-        256
-      );
-
-      const newRootKey = await this.hkdf(state.rootKey!, dhOutput, 'DoubleRatchetRoot');
-      const newChainKey = await this.hkdf(state.rootKey!, dhOutput, 'DoubleRatchetChain');
-
-      state.rootKey = newRootKey;
-      state.receiveChainKey = newChainKey;
-      state.receiveChainLength = 0;
+    if (!state.dhRatchetPublicKey || !(await this.keysEqual(peerDhPub, state.dhRatchetPublicKey))) {
+      // Handle skipped messages in the previous chain before we ratchet
+      await this.skipMessageKeys(state, envelopeData.header.pn, peerUserId);
       state.previousChainLength = state.sendChainLength;
       state.dhRatchetPublicKey = peerDhPub;
+    }
 
-      // Generate new DH key pair for next ratchet
-      state.dhRatchetKeyPair = await subtle.generateKey(
-        { name: 'ECDH', namedCurve: 'P-256' },
-        true,
-        ['deriveKey', 'deriveBits']
-      );
+    // Handle skipped messages in the current chain before we derive the message key
+    if (envelopeData.header.n > state.receiveChainLength) {
+      await this.skipMessageKeys(state, envelopeData.header.n, peerUserId);
     }
 
     // Derive message key
-    let messageKey: CryptoKey;
+    let messageKey: CryptoKey | null = null;
     if (envelopeData.header.n === state.receiveChainLength) {
       messageKey = await this.deriveMessageKey(state.receiveChainKey!);
       state.receiveChainKey = await this.ratchetChainKey(state.receiveChainKey!);
       state.receiveChainLength++;
-    } else if (state.skippedMessageKeys.has(envelopeData.header.n)) {
-      messageKey = state.skippedMessageKeys.get(envelopeData.header.n)!;
-      state.skippedMessageKeys.delete(envelopeData.header.n);
+    } else if (state.skippedMessageKeys.has(`${state.receiveChainGeneration}:${envelopeData.header.n}`)) {
+      const skippedKey = `${state.receiveChainGeneration}:${envelopeData.header.n}`;
+      messageKey = state.skippedMessageKeys.get(skippedKey)!;
+      state.skippedMessageKeys.delete(skippedKey);
+      await consumeSkippedMessageKey(`dm_${peerUserId}`, peerUserId, envelopeData.header.n, state.receiveChainGeneration);
     } else {
-      return '[Encrypted Message - Skipped Key Not Found]';
+      // Try retrieving skipped key from persistent storage
+      messageKey = await consumeSkippedMessageKey(`dm_${peerUserId}`, peerUserId, envelopeData.header.n, state.receiveChainGeneration);
+      if (!messageKey) {
+        return '[Encrypted Message - Skipped Key Not Found]';
+      }
+    }
+
+    if (true) {
+      const rawKeyBytes = await window.crypto.subtle.exportKey('raw', messageKey!);
+      console.log('[KEYDEBUG] DECRYPT', {
+        myUserId: this.localUserId,
+        peerUserId,
+        n: envelopeData.header.n,
+        keyHex: Array.from(new Uint8Array(rawKeyBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+      });
+    }
+
+    // Verify HMAC prior to AES-GCM decryption
+    if (envelopeData.hmacHex) {
+      const macKey = await this.getMacKey(messageKey);
+      const envelopeForMac = {
+        header: envelopeData.header,
+        ivHex: envelopeData.ivHex,
+        ciphertextHex: envelopeData.ciphertextHex,
+        tagHex: envelopeData.tagHex
+      };
+      const envelopeString = JSON.stringify(envelopeForMac);
+      const hmacBuffer = await subtle.sign('HMAC', macKey, new TextEncoder().encode(envelopeString));
+      const expectedHmacHex = Array.from(new Uint8Array(hmacBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      if (expectedHmacHex !== envelopeData.hmacHex) {
+        console.error('[DoubleRatchet] HMAC verification failed! Ciphertext authenticity compromised.');
+        return '[Decryption Error - Integrity Check Failed]';
+      }
     }
 
     // Decrypt message
     try {
-      const iv = new Uint8Array(envelopeData.ivHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
-      const body = new Uint8Array(envelopeData.ciphertextHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
-      const tag = new Uint8Array(envelopeData.tagHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+      const ivMatches = envelopeData.ivHex.match(/.{1,2}/g) || [];
+      const bodyMatches = envelopeData.ciphertextHex.match(/.{1,2}/g) || [];
+      const tagMatches = envelopeData.tagHex.match(/.{1,2}/g) || [];
+
+      const iv = new Uint8Array(ivMatches.map(byte => parseInt(byte, 16)));
+      const body = new Uint8Array(bodyMatches.map(byte => parseInt(byte, 16)));
+      const tag = new Uint8Array(tagMatches.map(byte => parseInt(byte, 16)));
 
       const combined = new Uint8Array(body.length + tag.length);
       combined.set(body);
@@ -483,6 +683,8 @@ class DoubleRatchetService {
 
       const decoder = new TextDecoder();
       this.conversationStates.set(peerUserId, state);
+      state.checksum = await this.calculateStateChecksum(state);
+      this.queueStateUpdate(peerUserId, state); // Use batching for ongoing updates
       return decoder.decode(decryptedBuffer);
     } catch (err) {
       console.error('[DoubleRatchet] Decryption failure:', err);
@@ -493,41 +695,99 @@ class DoubleRatchetService {
   /**
    * Skip message keys for forward secrecy
    */
-  private async skipMessageKeys(state: RatchetState, until: number): Promise<void> {
-    const subtle = window.crypto.subtle;
+  private async skipMessageKeys(state: RatchetState, until: number, peerUserId?: number): Promise<void> {
     while (state.receiveChainLength < until) {
-      state.skippedMessageKeys.set(state.receiveChainLength, state.receiveChainKey!);
+      const msgKey = await this.deriveMessageKey(state.receiveChainKey!);
+      state.skippedMessageKeys.set(`${state.receiveChainGeneration}:${state.receiveChainLength}`, msgKey);
+      if (peerUserId) {
+        await saveSkippedMessageKey(`dm_${peerUserId}`, peerUserId, state.receiveChainLength, state.receiveChainGeneration, msgKey);
+      }
       state.receiveChainKey = await this.ratchetChainKey(state.receiveChainKey!);
       state.receiveChainLength++;
     }
   }
 
   /**
-   * Compare two public keys
+   * Compare two public keys safely
    */
   private async keysEqual(key1: CryptoKey, key2: CryptoKey): Promise<boolean> {
-    const subtle = window.crypto.subtle;
-    const jwk1 = await subtle.exportKey('jwk', key1);
-    const jwk2 = await subtle.exportKey('jwk', key2);
-    return JSON.stringify(jwk1) === JSON.stringify(jwk2);
+    try {
+      const subtle = window.crypto.subtle;
+      const jwk1 = await subtle.exportKey('jwk', key1);
+      const jwk2 = await subtle.exportKey('jwk', key2);
+      return jwk1.x === jwk2.x && jwk1.y === jwk2.y && jwk1.crv === jwk2.crv;
+    } catch (e) {
+      return false;
+    }
   }
+
+  private prekeyBundleCache: Map<number, Promise<PrekeyBundle | null>> = new Map();
 
   /**
    * Fetch peer prekey bundle from server
    */
   private async fetchPeerPrekeyBundle(peerUserId: number): Promise<PrekeyBundle | null> {
-    try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
-      const res = await fetch(`/v2/user/${peerUserId}/prekey-bundle`, {
-        headers: { 'Authorization': `Bearer ${sId}` }
-      });
-
-      if (!res.ok) return null;
-      return await res.json();
-    } catch (err) {
-      console.error(`[DoubleRatchet] Error fetching prekey bundle for user ${peerUserId}:`, err);
-      return null;
+    if (this.prekeyBundleCache.has(peerUserId)) {
+      return this.prekeyBundleCache.get(peerUserId)!;
     }
+    const promise = (async () => {
+      try {
+        const sId = sessionStorage.getItem('velum-sessionId') || '';
+        const res = await fetch(`/v2/user/${peerUserId}/prekey-bundle`, {
+          headers: { 'Authorization': `Bearer ${sId}` }
+        });
+
+        if (!res.ok) {
+          this.prekeyBundleCache.delete(peerUserId);
+          return null;
+        }
+        return await res.json();
+      } catch (err) {
+        this.prekeyBundleCache.delete(peerUserId);
+        console.error(`[DoubleRatchet] Error fetching prekey bundle for user ${peerUserId}:`, err);
+        return null;
+      }
+    })();
+    this.prekeyBundleCache.set(peerUserId, promise);
+    return promise;
+  }
+
+  /**
+   * Force re-key a conversation with a peer when state desynchronization occurs.
+   * Purges in-memory and persisted ratchet state, invalidates peer prekey cache,
+   * clears skipped keys, and performs a fresh X3DH handshake.
+   */
+  async forceRekey(peerUserId: number): Promise<void> {
+    // 1. Evict in-memory state
+    this.conversationStates.delete(peerUserId);
+
+    // 2. Invalidate cached peer prekey bundle
+    this.prekeyBundleCache.delete(peerUserId);
+
+    // 3. Purge persisted state and skipped keys from IndexedDB
+    await Promise.all([
+      deleteConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId),
+      clearSkippedKeysForPeer(peerUserId)
+    ]);
+
+    // 4. Ensure local keys exist
+    if (!this.localIdentityKeyPair) {
+      await this.initializeLocalKeys();
+    }
+
+    // 5. Fetch fresh peer prekey bundle
+    const peerBundle = await this.fetchPeerPrekeyBundle(peerUserId);
+    if (!peerBundle) {
+      throw new Error(`Cannot re-key: No prekey bundle available for user ${peerUserId}`);
+    }
+
+    // 6. Perform fresh X3DH handshake and initialize clean ratchet state
+    const rootKey = await this.x3dhHandshake(peerBundle);
+    const state = await this.initializeRatchetState(peerUserId, rootKey);
+    state.version = DoubleRatchetService.STATE_VERSION; // Ensure current version
+    state.checksum = await this.calculateStateChecksum(state);
+    this.conversationStates.set(peerUserId, state);
+    await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state); // Force save for re-key
   }
 }
 

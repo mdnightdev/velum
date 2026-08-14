@@ -11,6 +11,8 @@ server/services/ws.log
 /scripts/
 
 # Ignore local databases, keys, and logs
+bun.lock
+bun.lockb
 data/
 *.sqlite
 *.sqlite-journal

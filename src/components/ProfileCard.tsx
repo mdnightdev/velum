@@ -57,6 +57,7 @@ type ProfileCardProps = {
   onReport?: () => void;
   onViewProfile?: () => void;
   onSearchMessages?: () => void;
+  onForceRekey?: () => void;
   // Lounge actions
   onJoinLeaveLounge?: () => void;
   onLoungeSettings?: () => void;
@@ -76,6 +77,7 @@ export default function ProfileCard({
   onReport,
   onViewProfile,
   onSearchMessages,
+  onForceRekey,
   onJoinLeaveLounge,
   onLoungeSettings,
   isJoinedLounge = false
@@ -162,7 +164,7 @@ export default function ProfileCard({
             {/* Minimal card details vs Full card details */}
             {isMinimal ? (
               <div className="bg-velum-800/40 p-5 rounded-2xl border border-white-5 space-y-4 max-w-md mx-auto w-full text-center">
-                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Minimal Secure Profile</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Profile</div>
                 <div className="text-xs text-text-secondary leading-relaxed">
                   You are viewing a minimal identity card for this private sublounge. Content, messages, and rules are restricted.
                 </div>
@@ -209,7 +211,7 @@ export default function ProfileCard({
                   <ul className="text-xs text-text-primary space-y-2.5 list-disc pl-4 leading-relaxed">
                     <li>Be respectful to all workspace operators.</li>
                     <li>Ensure all shared assets match local compliance standards.</li>
-                    <li>Secure-tunneling information must remain confidential.</li>
+                    <li>Information must remain confidential.</li>
                     <li>Parent lounge rules and cascades apply.</li>
                   </ul>
                 </div>
@@ -593,7 +595,7 @@ export default function ProfileCard({
                 <span>Security Diagnostics Console Active</span>
               </div>
               <p className="text-[10px] text-text-secondary mt-1 font-mono uppercase">
-                Authorized operator session linked to secure communications layer.
+                Session is active.
               </p>
             </div>
           )}

@@ -12,31 +12,49 @@ export type EncryptionContext = {
  */
 
 /**
- * Low-level XOR encryption (for lounge/room messages)
+ * Low-level XOR encryption (for lounge/room messages) - UTF-8 byte safe
  */
 function encryptXOR(content: string, key: string): string {
   if (!content) return '';
-  let result = '';
-  for (let i = 0; i < content.length; i++) {
-    const charCode = content.charCodeAt(i) ^ key.charCodeAt(i % key.length);
-    result += String.fromCharCode(charCode);
+  const encoder = new TextEncoder();
+  const textBytes = encoder.encode(content);
+  const keyBytes = encoder.encode(key || 'VELUM_KEY');
+  const xorBytes = new Uint8Array(textBytes.length);
+
+  for (let i = 0; i < textBytes.length; i++) {
+    xorBytes[i] = textBytes[i] ^ keyBytes[i % keyBytes.length];
   }
-  return btoa(unescape(encodeURIComponent(result)));
+
+  // Convert Uint8Array to base64
+  let binary = '';
+  for (let i = 0; i < xorBytes.length; i++) {
+    binary += String.fromCharCode(xorBytes[i]);
+  }
+  return btoa(binary);
 }
 
 /**
- * Low-level XOR decryption (for lounge/room messages)
+ * Low-level XOR decryption (for lounge/room messages) - UTF-8 byte safe
  */
 function decryptXOR(cipher: string, key: string): string {
   if (!cipher) return '';
   try {
-    const decoded = decodeURIComponent(escape(atob(cipher)));
-    let result = '';
-    for (let i = 0; i < decoded.length; i++) {
-      const charCode = decoded.charCodeAt(i) ^ key.charCodeAt(i % key.length);
-      result += String.fromCharCode(charCode);
+    const binary = atob(cipher);
+    const cipherBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      cipherBytes[i] = binary.charCodeAt(i);
     }
-    return result;
+
+    const encoder = new TextEncoder();
+    const keyBytes = encoder.encode(key || 'VELUM_KEY');
+    const textBytes = new Uint8Array(cipherBytes.length);
+
+    for (let i = 0; i < cipherBytes.length; i++) {
+      textBytes[i] = cipherBytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+
+    const decoder = new TextDecoder('utf-8', { fatal: false });
+    return decoder.decode(textBytes);
   } catch (e) {
     return cipher;
   }
@@ -70,6 +88,8 @@ export async function encryptMessage(content: string, context: EncryptionContext
  * Decrypt message based on content format and context
  * Handles: Double Ratchet (ratchet:v2), Legacy Ratchet (ratchet:v1), Room XOR (VEL_E2EE), Plain text
  */
+const activeHeals = new Set<number>();
+
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
@@ -77,7 +97,29 @@ export async function decryptMessage(content: string, context: EncryptionContext
   if (content.startsWith('ratchet:v2:')) {
     if (context.peerUserId) {
       try {
-        return await doubleRatchetService.decryptDirectMessage(content, context.peerUserId);
+        const decrypted = await doubleRatchetService.decryptDirectMessage(content, context.peerUserId);
+        
+        // Trap decryption errors to trigger auto-healing
+        if (
+          decrypted === '[Encrypted Message - Skipped Key Not Found]' ||
+          decrypted === '[Decryption Error - Integrity Check Failed]' ||
+          decrypted === '[Encrypted Message - No Prekey]'
+        ) {
+          const peerId = context.peerUserId;
+          if (!activeHeals.has(peerId)) {
+            activeHeals.add(peerId);
+            console.warn(`[encryptionService] Trapped decryption failure for peer ${peerId}, triggering auto-heal force rekey`);
+            
+            // Trigger background auto-heal
+            doubleRatchetService.forceRekey(peerId)
+              .catch(e => console.error(`[encryptionService] Auto-heal failed for peer ${peerId}:`, e))
+              .finally(() => {
+                setTimeout(() => activeHeals.delete(peerId), 5000); // 5 second cooldown
+              });
+          }
+        }
+        
+        return decrypted;
       } catch (err) {
         console.error('[encryptionService] Double Ratchet decryption error:', err);
         return '[Encrypted Message]';
@@ -95,7 +137,10 @@ export async function decryptMessage(content: string, context: EncryptionContext
   if (content.startsWith('VEL_E2EE[')) {
     if (context.roomId) {
       try {
-        const cleanCipher = content.substring(9, content.length - 1);
+        let cleanCipher = content.slice(9);
+        if (cleanCipher.endsWith(']')) {
+          cleanCipher = cleanCipher.slice(0, -1);
+        }
         return decryptXOR(cleanCipher, 'VELUM_E2EE_' + context.roomId);
       } catch (err) {
         console.error('[encryptionService] Room XOR decryption error:', err);

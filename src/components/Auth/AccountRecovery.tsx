@@ -93,13 +93,17 @@ export default function AccountRecovery({
             <div className="flex justify-between items-center pb-2 border-b border-white-5">
               <div>
                 <p className="text-[9px] uppercase text-text-secondary font-mono">Ticket ID</p>
-                <p className="font-bold text-white text-xs">{activeTicket.ticket_id.slice(0, 8)}</p>
+                <p className="font-bold text-white text-xs font-mono">
+                  {String(activeTicket.ticket_id || activeTicket.tracking_id || activeTicket.trackingId || activeTicket.id || 'TICKET').slice(0, 18)}
+                </p>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-1">
                 <p className="text-[9px] uppercase text-text-secondary font-mono">Status</p>
-                <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${activeTicket.status === 'open' ? 'bg-status-away-bg text-status-away' : 'bg-status-online-bg text-status-online'}`}>
-                  {activeTicket.status}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${activeTicket.status === 'open' ? 'bg-status-away-bg text-status-away' : 'bg-status-online-bg text-status-online'}`}>
+                    {activeTicket.status}
+                  </span>
+                </div>
               </div>
             </div>
 

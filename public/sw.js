@@ -101,3 +101,50 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// Push Event - Display incoming WebPush notifications
+self.addEventListener('push', (event) => {
+  let data = { title: 'Velum Notification', body: 'New message received', icon: '/icon.png', data: { url: '/' } };
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: data.icon || '/icon.png',
+    badge: '/icon.png',
+    data: data.data || { url: '/' },
+    vibrate: [100, 50, 100],
+    actions: [
+      { action: 'open', title: 'View Message' }
+    ]
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+// Notification Click Event - Focus or open tab with target room URL
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const targetUrl = event.notification.data && event.notification.data.url ? event.notification.data.url : '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});

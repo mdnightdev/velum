@@ -95,7 +95,7 @@ export function CheckoutFlow({ listing, chosenVariant, onCancel, onSuccess, fetc
 
         <div className="space-y-1">
           <span className="text-[10px] font-mono font-bold text-alert-success uppercase tracking-widest flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4" /> Secure Checkout
+            <ShieldCheck className="w-4 h-4" /> Checkout
           </span>
           <h3 className="text-lg font-sans font-black text-white">{listing.title}</h3>
         </div>

@@ -10,7 +10,8 @@ import { getRedisClient } from '../db/redis.js';
 import type { Request, Response } from 'express';
 import { clientDiagnosticsList } from './ticketRoutes.js';
 import { SystemBot } from '../services/systemBot.js';
-import { hashArgon2id } from '../utils/crypto.js';
+import { getAuditLogs, recordAuditEvent } from '../services/auditService.js';
+import { hashArgon2id, generateRandomToken } from '../utils/crypto.js';
 import crypto from 'node:crypto';
 
 export const adminRouter = Router();
@@ -54,6 +55,18 @@ adminRouter.post('/diagnostics/logs/:logId/resolve', async (req: Request, res: R
   }
 });
 
+// GET /v2/admin/audit-logs - Get database audit log records
+adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const logs = await getAuditLogs(limit, offset);
+    res.json({ logs });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch audit logs.' });
+  }
+});
+
 // POST /v2/admin/sanction - Apply sanction
 adminRouter.post('/sanction', async (req: Request, res: Response) => {
   try {
@@ -63,7 +76,16 @@ adminRouter.post('/sanction', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Target user ID and sanction type are required.' });
     }
     
-    // Mock success
+    if (req.user) {
+      await recordAuditEvent({
+        adminId: req.user.userId,
+        adminName: req.user.username,
+        action: `SANCTION_APPLIED_${type.toUpperCase()}`,
+        targetId: String(targetUserId),
+        reason: reason || 'Admin sanction applied'
+      });
+    }
+
     res.json({ success: true, message: `Sanction ${type} applied successfully.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to apply sanction.' });
@@ -540,88 +562,234 @@ adminRouter.post('/users/:id/restore', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v2/admin/recover-approve - Approve account recovery
+export function isSensitiveAccount(user: { role?: string; username?: string } | null | undefined): boolean {
+  if (!user) return false;
+  const role = (user.role || '').toUpperCase();
+  const username = (user.username || '').toLowerCase();
+  return (
+    role === 'CLI_ADMIN' ||
+    role === 'LOGIN_ADMIN' ||
+    role === 'SUPPORT_ADMIN' ||
+    role === 'SYSTEM' ||
+    username === 'velum' ||
+    username === '@velum'
+  );
+}
+
+// GET /v2/admin/tickets - Query all system tickets
+adminRouter.get('/tickets', async (req: Request, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (!['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(admin.role)) {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+
+    const allTickets = await db.select().from(tickets).orderBy(desc(tickets.createdAt));
+    const formatted = await Promise.all(allTickets.map(async (t) => {
+      const [u] = await db.select().from(users).where(eq(users.id, t.userId)).limit(1);
+      return {
+        ...t,
+        id: t.id,
+        ticket_id: String(t.id),
+        user_id: t.userId,
+        username: u ? u.username : 'Anonymous',
+        reason: t.description,
+        issue_type: t.subject || t.issueType,
+        status: t.status,
+        credibility_score: t.credibilityScore,
+        credibilityScore: t.credibilityScore,
+        tracking_id: t.trackingId,
+        trackingId: t.trackingId,
+        created_at: t.createdAt?.toISOString() || new Date().toISOString(),
+        createdAt: t.createdAt?.toISOString() || new Date().toISOString(),
+        messages: t.messages || []
+      };
+    }));
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to query tickets registry.' });
+  }
+});
+
+// POST /v2/admin/tickets/:ticketId/reply - Reply to a ticket thread
+adminRouter.post('/tickets/:ticketId/reply', async (req: Request, res: Response) => {
+  try {
+    const admin = req.user!;
+    const { ticketId } = req.params;
+    const { content, closeTicket, escalate } = req.body;
+
+    if (!['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(admin.role)) {
+      return res.status(403).json({ error: 'Unauthorized.' });
+    }
+
+    const ticketList = await db.select().from(tickets).where(or(eq(tickets.id, parseInt(ticketId, 10) || 0), eq(tickets.trackingId, ticketId))).limit(1);
+    if (ticketList.length === 0) {
+      return res.status(404).json({ error: 'Ticket not found.' });
+    }
+    const ticket = ticketList[0];
+
+    // Check if target user is sensitive
+    const [targetUser] = await db.select().from(users).where(eq(users.id, ticket.userId)).limit(1);
+    if (targetUser && isSensitiveAccount(targetUser) && admin.role === 'SUPPORT_ADMIN') {
+      return res.status(403).json({ error: 'Restricted: SUPPORT_ADMIN role is strictly forbidden from targeting administrative or system accounts.' });
+    }
+
+    const senderName = admin.role === 'SUPPORT_ADMIN' ? 'SUPPORT (ID: 0)' : admin.username;
+    const updatedMessages = Array.isArray(ticket.messages) ? [...(ticket.messages as any[])] : [];
+    updatedMessages.push({
+      sender_id: admin.userId,
+      sender_name: senderName,
+      content,
+      timestamp: new Date().toISOString()
+    });
+
+    let newStatus = ticket.status;
+    let resolvedAt = ticket.status === 'resolved' ? new Date() : null;
+
+    if (closeTicket) {
+      newStatus = 'resolved';
+      resolvedAt = new Date();
+    } else if (escalate && admin.role === 'SUPPORT_ADMIN') {
+      newStatus = 'escalated';
+    } else {
+      newStatus = 'pending';
+    }
+
+    const [updatedTicket] = await db.update(tickets)
+      .set({
+        messages: updatedMessages,
+        status: newStatus,
+        updatedAt: new Date()
+      })
+      .where(eq(tickets.id, ticket.id))
+      .returning();
+
+    const [u] = await db.select().from(users).where(eq(users.id, updatedTicket.userId)).limit(1);
+
+    res.json({
+      ...updatedTicket,
+      id: updatedTicket.id,
+      ticket_id: String(updatedTicket.id),
+      user_id: updatedTicket.userId,
+      username: u ? u.username : 'Anonymous',
+      reason: updatedTicket.description,
+      issue_type: updatedTicket.subject || updatedTicket.issueType,
+      status: updatedTicket.status,
+      credibility_score: updatedTicket.credibilityScore,
+      credibilityScore: updatedTicket.credibilityScore,
+      tracking_id: updatedTicket.trackingId,
+      trackingId: updatedTicket.trackingId,
+      created_at: updatedTicket.createdAt?.toISOString() || new Date().toISOString(),
+      createdAt: updatedTicket.createdAt?.toISOString() || new Date().toISOString(),
+      messages: updatedTicket.messages || []
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to process ticket reply.' });
+  }
+});
+
+// DELETE /v2/admin/tickets/:ticketId - Purge a ticket
+adminRouter.delete('/tickets/:ticketId', async (req: Request, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (admin.role !== 'CLI_ADMIN' && admin.role !== 'LOGIN_ADMIN') {
+      return res.status(403).json({ error: 'FAIL: Only CLI_ADMIN and LOGIN_ADMIN possess delete authorization.' });
+    }
+
+    const { ticketId } = req.params;
+    const tId = parseInt(ticketId, 10) || 0;
+    
+    await db.delete(tickets).where(or(eq(tickets.id, tId), eq(tickets.trackingId, ticketId)));
+    res.json({ success: true, message: `Ticket Case #${ticketId} purged successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete ticket.' });
+  }
+});
+
+// POST /v2/admin/recover-approve - Approve account recovery and issue LGN-REC-XXXX
 adminRouter.post('/recover-approve', async (req: Request, res: Response) => {
   try {
+    const admin = req.user!;
     const { targetUserId, action } = req.body;
-    
-    if (!targetUserId || !action) {
-      return res.status(400).json({ error: 'Target user ID and action are required.' });
+
+    if (admin.role !== 'LOGIN_ADMIN' && admin.role !== 'CLI_ADMIN') {
+      return res.status(403).json({ error: 'High security risk approvals require LOGIN_ADMIN or CLI_ADMIN role.' });
     }
-    
+
+    const tUserId = parseInt(String(targetUserId), 10);
+    const [targetUser] = await db.select().from(users).where(eq(users.id, tUserId)).limit(1);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User target not found.' });
+    }
+
+    const userTickets = await db.select().from(tickets).where(eq(tickets.userId, targetUser.id));
+    const activeTicket = userTickets.find(t => t.status !== 'resolved' && t.status !== 'closed');
+
     if (action === 'approve') {
-      const tempCode = `REC-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      return res.json({ success: true, tempCode });
+      if (activeTicket && activeTicket.credibilityScore !== undefined && activeTicket.credibilityScore < 85) {
+        return res.status(400).json({ error: 'CREDIBILITY INSUFFICIENT: Level below 85% threshold.' });
+      }
+
+      const tempCode = `LGN-REC-${generateRandomToken(4).toUpperCase()}`;
+
+      await db.update(users)
+        .set({
+          tempRestoreCode: tempCode,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, targetUser.id));
+
+      if (activeTicket) {
+        const updatedMessages = Array.isArray(activeTicket.messages) ? [...(activeTicket.messages as any[])] : [];
+        updatedMessages.push({
+          sender_id: admin.userId,
+          sender_name: admin.username,
+          content: `Ticket approved.\n\nUse the temporary restoration credential below to unlock your account and set a new password:\n\n\`${tempCode}\``,
+          timestamp: new Date().toISOString()
+        });
+
+        await db.update(tickets)
+          .set({
+            status: 'approved',
+            providedRecoveryKey: tempCode,
+            messages: updatedMessages,
+            updatedAt: new Date()
+          })
+          .where(eq(tickets.id, activeTicket.id));
+      }
+
+      await recordAuditEvent({
+        adminId: admin.userId,
+        adminName: admin.username,
+        action: 'RECOVERY_APPROVED',
+        targetId: String(targetUser.id),
+        reason: `Account access restored by Executive Administrator. Code issued: ${tempCode}`
+      });
+
+      return res.json({ success: true, tempCode, message: 'Recovery request approved successfully.' });
     }
-    
+
+    if (activeTicket) {
+      await db.update(tickets)
+        .set({ status: 'closed', updatedAt: new Date() })
+        .where(eq(tickets.id, activeTicket.id));
+    }
+
     res.json({ success: true, message: 'Recovery request denied.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to process recovery approval.' });
   }
 });
 
-// POST /v2/admin/reports/:id/status - Update report status
-adminRouter.post('/reports/:id/status', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    
-    if (!status) {
-      return res.status(400).json({ error: 'Status is required.' });
-    }
-    
-    // Mock success
-    res.json({ success: true, message: `Report status updated to ${status}.` });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update report status.' });
-  }
-});
-
-// POST /v2/admin/reports/:id/delete - Delete report
-adminRouter.post('/reports/:id/delete', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    
-    // Mock success
-    res.json({ success: true, message: 'Report deleted successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete report.' });
-  }
-});
-
-// POST /v2/admin/update-settings - Update admin settings
-adminRouter.post('/update-settings', async (req: Request, res: Response) => {
-  try {
-    const { safeWord, panicPhrase } = req.body;
-    
-    // Mock success - in production this would update admin settings
-    res.json({ success: true, message: 'Admin settings updated successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update admin settings.' });
-  }
-});
-
-// POST /v2/admin/rename-executive - Rename executive account
-adminRouter.post('/rename-executive', async (req: Request, res: Response) => {
-  try {
-    const { newUsername, newPassword } = req.body;
-    
-    if (!newUsername || !newPassword) {
-      return res.status(400).json({ error: 'New username and password are required.' });
-    }
-    
-    // Mock success
-    res.json({ success: true, message: 'Executive credentials updated successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to rename executive account.' });
-  }
-});
-
 // POST /v2/admin/invites - Create invite
 adminRouter.post('/invites', async (req: Request, res: Response) => {
   try {
+    const admin = req.user!;
+    if (admin.role !== 'LOGIN_ADMIN' && admin.role !== 'CLI_ADMIN') {
+      return res.status(403).json({ error: 'Only EXECUTIVE Login Admins and CLI Admins can emit system validation invites.' });
+    }
+
     const { lounge_id, max_uses, expires_in_days } = req.body;
-    
     if (!lounge_id) {
       return res.status(400).json({ error: 'Lounge ID is required.' });
     }
@@ -642,14 +810,17 @@ adminRouter.post('/invites', async (req: Request, res: Response) => {
 // POST /v2/admin/verifications/:id/review - Review verification
 adminRouter.post('/verifications/:id/review', async (req: Request, res: Response) => {
   try {
+    const admin = req.user!;
+    if (admin.role === 'SUPPORT_ADMIN') {
+      return res.status(403).json({ error: 'Access denied. Support Operators are restricted from verification controls.' });
+    }
+
     const { id } = req.params;
     const { status } = req.body;
-    
     if (!status) {
       return res.status(400).json({ error: 'Review status is required.' });
     }
     
-    // Mock success
     res.json({ success: true, message: `Verification ${status === 'approved' ? 'approved' : 'rejected'}.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to review verification.' });

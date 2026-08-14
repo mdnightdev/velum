@@ -64,7 +64,7 @@ export function parseVoiceNote(content: string): VoiceNotePayload | null {
   if (urlMatch) {
     url = urlMatch[1];
   } else if (dataMatch) {
-    url = `data:${dataMatch[1]}`;
+    url = dataMatch[1].startsWith('data:') ? dataMatch[1] : `data:${dataMatch[1]}`;
   }
 
   return { duration, url };

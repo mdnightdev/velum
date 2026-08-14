@@ -15,7 +15,7 @@ const isValidPgUrl = (str?: string) => {
   return (cleaned.startsWith('postgres://') || cleaned.startsWith('postgresql://'));
 };
 
-const defaultDbUrl = 'postgresql://neondb_owner:npg_7d1BLlsUWFRz@ep-silent-paper-azmc0w9y-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require';
+const defaultLocalDbUrl = 'postgres://postgres:postgres@localhost:5432/velum';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -27,7 +27,7 @@ const envSchema = z.object({
     if (isValidPgUrl(envDb)) return envDb;
     const cloudDb = cleanEnvStr(process.env.CLOUD_DATABASE_URL);
     if (isValidPgUrl(cloudDb)) return cloudDb;
-    return defaultDbUrl;
+    return defaultLocalDbUrl;
   }),
   CLOUD_DATABASE_URL: z.string().optional().transform(cleanEnvStr).default(''),
   APP_URL: z.string().optional().default(''),

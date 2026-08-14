@@ -58,7 +58,8 @@ export default function UserWorkspace({
   const [activeCategory, setActiveCategory] = useState<'rooms' | 'direct' | 'market' | 'tickets' | 'saved' | 'people' | 'notifications' | 'settings'>('rooms');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const { isMobile, isTablet } = useResponsive();
+  const { isMobile: _isMobile, isTablet } = useResponsive();
+  const isMobile = _isMobile || isTablet;
   const useSlidingPanes = isMobile || isTablet;
 
   // Sync panel selection based on routing selection changes
@@ -180,7 +181,7 @@ export default function UserWorkspace({
           </div>
 
           {/* Panel C: Workspace Active stream */}
-          <div className="w-[100vw] h-full flex-shrink-0 flex flex-col">
+          <div className="w-[100vw] h-full flex-shrink-0 flex flex-col min-w-0 overflow-hidden">
             {activeRoomId || activeChatPeer ? (
               <ChatArea
                 currentUserId={user ? user.userId : 0}
@@ -263,7 +264,7 @@ export default function UserWorkspace({
           </div>
 
           {/* Column 2: Full-Fidelity Active Chat Stream Canvas / Workspace Desk (Right Column, flex-1) */}
-          <div className={`flex-1 h-full flex flex-col overflow-hidden`}>
+          <div className={`flex-1 h-full flex flex-col overflow-hidden min-w-0`}>
             {activeRoomId || activeChatPeer ? (
               <ChatArea
                 currentUserId={user ? user.userId : 0}

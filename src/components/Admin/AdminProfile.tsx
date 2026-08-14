@@ -3,6 +3,7 @@ import { User, Plus, RefreshCw } from 'lucide-react';
 import PasswordInput from '../PasswordInput';
 import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
 import { getLocalMedia, saveLocalMedia } from '../../utils/indexedDb';
+import { ImageCropperModal } from '../ImageCropperModal';
 
 interface AdminProfileProps {
   adminId: number;
@@ -47,18 +48,19 @@ export default function AdminProfile({
     }
   }, [adminId]);
 
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const compressedBlob = await captureAndCompressPhoto(e);
-      setAvatarFile(compressedBlob);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarPreview(reader.result as string);
-      };
-      reader.readAsDataURL(compressedBlob);
-    } catch (err) {
-      console.error('Error processing avatar image:', err);
-    }
+  const [croppingAvatar, setCroppingAvatar] = useState<{ src: string; fileName: string } | null>(null);
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result) {
+        setCroppingAvatar({ src: reader.result as string, fileName: file.name });
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const uploadAdminAvatar = async () => {
@@ -209,6 +211,20 @@ export default function AdminProfile({
                   onChange={handleAvatarChange}
                 />
               </div>
+
+              {croppingAvatar && (
+                <ImageCropperModal
+                  imageSrc={croppingAvatar.src}
+                  fileName={croppingAvatar.fileName}
+                  aspectRatio="1:1"
+                  onCancel={() => setCroppingAvatar(null)}
+                  onCropComplete={(croppedDataUrl, croppedFile) => {
+                    setAvatarFile(croppedFile);
+                    setAvatarPreview(croppedDataUrl);
+                    setCroppingAvatar(null);
+                  }}
+                />
+              )}
 
               <div className="text-center space-y-1">
                 <span className="text-sm font-extrabold text-text-primary">

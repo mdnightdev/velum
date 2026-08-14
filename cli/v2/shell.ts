@@ -10,7 +10,7 @@ import { reserveRepository } from '../../server/v2/repositories/reserveRepositor
 import { marketRepository } from '../../server/v2/repositories/marketRepository.js';
 import { db, pool } from '../../server/v2/db/client.js';
 import { users, supportAdminNominations } from '../../server/v2/db/schema/users.js';
-import { lounges, messages } from '../../server/v2/db/schema/lounges.js';
+import { lounges, messages, loungeMembers, messageReactions, userUnreadCounts } from '../../server/v2/db/schema/lounges.js';
 import { ensureVelumLoungeSeeded } from '../../server/v2/services/loungeSeeder.js';
 import { SystemBot } from '../../server/v2/services/systemBot.js';
 import { and, or, inArray } from 'drizzle-orm';
@@ -18,9 +18,16 @@ import { wallets, transactions } from '../../server/v2/db/schema/wallets.js';
 import { listings, escrows } from '../../server/v2/db/schema/marketplace.js';
 import { sessions } from '../../server/v2/db/schema/sessions.js';
 import { auditLogs } from '../../server/v2/db/schema/audit_logs.js';
+import { userPrekeys } from '../../server/v2/db/schema/keys.js';
+import { userDevices } from '../../server/v2/db/schema/devices.js';
 import { cards } from '../../server/v2/db/schema/cards.js';
 import { tickets } from '../../server/v2/db/schema/tickets.js';
 import { reserves } from '../../server/v2/db/schema/reserves.js';
+import { userReadCursors } from '../../server/v2/db/schema/read_cursors.js';
+import { loungeMuteSettings } from '../../server/v2/db/schema/lounge_mutes.js';
+import { pushSubscriptions } from '../../server/v2/db/schema/push.js';
+import { relationships } from '../../server/v2/db/schema/relationships.js';
+import { outboxEvents } from '../../server/v2/db/schema/outbox.js';
 import { hashArgon2id } from '../../server/v2/utils/crypto.js';
 import { config } from '../../server/v2/config.js';
 import { currencyConverter } from '../../server/v2/services/currencyConverter.js';
@@ -1227,6 +1234,16 @@ export class VelumV2Shell {
         return;
       }
 
+      if (sub === 'cat' || sub === 'show') {
+        const id = parseInt(rawArgs[0], 10);
+        if (isNaN(id)) { console.log('Usage: cat <ticket_id>'); return; }
+        const ticket = await ticketRepository.findById(id);
+        if (!ticket) { console.log('Ticket not found.'); return; }
+        const user = await userRepository.findById(ticket.userId);
+        console.log(JSON.stringify({ ...ticket, username: user?.username || 'unknown' }, null, 2));
+        return;
+      }
+
       if (sub === 'delete') {
         const id = parseInt(rawArgs[0], 10);
         if (isNaN(id)) { console.log('Usage: delete <ticket_id>'); return; }
@@ -1271,19 +1288,97 @@ export class VelumV2Shell {
         return;
       }
 
-      if (sub === 'orphans') {
-        console.log('\n=== Scanning Relational Tables for Orphaned Records ===');
-        console.log('Scanning orphaned sessions... 0 found.');
-        console.log('Scanning orphaned transactions... 0 found.');
-        console.log('Scanning orphaned escrows... 0 found.');
-        console.log('[OK] Scan complete: 0 orphaned entities detected.');
-        return;
+    if (sub === 'orphans') {
+      console.log('\n=== Scanning Relational Tables for Orphaned Records ===');
+      try {
+        const res = await pool.query(`
+          SELECT 'lounges (orphaned owners)' as name, count(*)::int FROM lounges WHERE (owner_id NOT IN (SELECT id FROM users) OR owner_id IS NULL) AND is_official = false AND is_system = false
+          UNION ALL
+          SELECT 'relationships (invalid users)', count(*)::int FROM relationships WHERE user_id NOT IN (SELECT id FROM users) OR friend_id NOT IN (SELECT id FROM users)
+          UNION ALL
+          SELECT 'lounge_members (invalid references)', count(*)::int FROM lounge_members WHERE lounge_id NOT IN (SELECT id FROM lounges) OR user_id NOT IN (SELECT id FROM users)
+          UNION ALL
+          SELECT 'messages (invalid references)', count(*)::int FROM messages WHERE lounge_id NOT IN (SELECT id FROM lounges) OR sender_id NOT IN (SELECT id FROM users)
+          UNION ALL
+          SELECT 'sublounges (invalid parent)', count(*)::int FROM lounges WHERE parent_lounge_id IS NOT NULL AND parent_lounge_id NOT IN (SELECT id FROM lounges)
+        `);
+        let total = 0;
+        for (const row of res.rows) {
+          console.log(`Scanning orphaned ${row.name} ... ${row.count} found.`);
+          total += row.count;
+        }
+        console.log(`[OK] Scan complete: ${total} orphaned entities detected.`);
+        await this.logAudit('/db/orphans', 'SYSTEM', `Scanned for orphaned entities, found ${total}`);
+      } catch (err) {
+        console.log(`[ERROR] Orphan scan failed: ${(err as Error).message}`);
       }
+      return;
+    }
 
       if (sub === 'clean') {
-        await db.delete(sessions);
-        console.log('[OK] Purged dead session registries and cleaned volatile state.');
-        await this.logAudit('/db/clean', 'SESSIONS', 'Purged dead sessions');
+        try {
+          console.log('\n=== Purging Orphaned Records & Dead Sessions ===');
+          
+          // 1. Clean up orphaned memberships
+          const cleanMembers = await db.execute(sql`
+            DELETE FROM lounge_members 
+            WHERE lounge_id NOT IN (SELECT id FROM lounges)
+               OR user_id NOT IN (SELECT id FROM users)
+          `);
+          const membersCount = cleanMembers.rowCount || 0;
+          console.log(`- Cleaned ${membersCount} orphaned membership entries.`);
+
+          // 2. Clean up orphaned messages
+          const cleanMessages = await db.execute(sql`
+            DELETE FROM messages 
+            WHERE lounge_id NOT IN (SELECT id FROM lounges)
+               OR sender_id NOT IN (SELECT id FROM users)
+          `);
+          const messagesCount = cleanMessages.rowCount || 0;
+          console.log(`- Cleaned ${messagesCount} orphaned chat messages.`);
+
+          // 3. Clean up orphaned sublounges
+          const cleanSublounges = await db.execute(sql`
+            DELETE FROM lounges 
+            WHERE parent_lounge_id IS NOT NULL 
+              AND parent_lounge_id NOT IN (SELECT id FROM lounges)
+          `);
+          const subloungesCount = cleanSublounges.rowCount || 0;
+          console.log(`- Cleaned ${subloungesCount} orphaned sub-lounges.`);
+
+          // 4. Clean up orphaned relationships (where user_id or friend_id doesn't exist)
+          const cleanRelationships = await db.execute(sql`
+            DELETE FROM relationships
+            WHERE user_id NOT IN (SELECT id FROM users)
+               OR friend_id NOT IN (SELECT id FROM users)
+          `);
+          const relationshipsCount = cleanRelationships.rowCount || 0;
+          console.log(`- Cleaned ${relationshipsCount} orphaned relationships.`);
+
+          // 5. Clean up user-created lounges that are ownerless (orphaned by deleted users)
+          const cleanOwnerlessLounges = await db.execute(sql`
+            DELETE FROM lounges
+            WHERE (owner_id NOT IN (SELECT id FROM users) OR owner_id IS NULL)
+              AND is_official = false
+              AND is_system = false
+          `);
+          const ownerlessCount = cleanOwnerlessLounges.rowCount || 0;
+          console.log(`- Cleaned ${ownerlessCount} orphaned user-created lounges (owner deleted).`);
+
+          // 6. Purge expired sessions
+          const cleanSessions = await db.execute(sql`
+            DELETE FROM sessions
+            WHERE expires_at < NOW()
+          `);
+          const sessionsCount = cleanSessions.rowCount || 0;
+          console.log(`- Cleaned ${sessionsCount} expired/dead sessions.`);
+
+          console.log('[OK] SYSTEM CLEANUP COMPLETE.');
+          
+          await this.logAudit('/db/clean', 'SYSTEM', `Purged orphaned records (members: ${membersCount}, messages: ${messagesCount}, sublounges: ${subloungesCount}, relationships: ${relationshipsCount}, lounges: ${ownerlessCount}, sessions: ${sessionsCount})`);
+        } catch (err) {
+          console.log(`[ERROR] Cleanup failed: ${(err as Error).message}`);
+        }
         return;
       }
 
@@ -1444,12 +1539,37 @@ export class VelumV2Shell {
 
       if (sub === 'wipe') {
         try {
+          // 1. Clear message child tables
+          await db.delete(messageReactions);
+          await db.delete(userReadCursors);
+
+          // 2. Clear lounge child tables
+          await db.delete(loungeMembers);
+          await db.delete(userUnreadCounts);
+          await db.delete(loungeMuteSettings);
+
+          // 3. Clear direct user child tables/relations
+          await db.delete(pushSubscriptions);
+          await db.delete(relationships);
+          await db.delete(cards);
+          await db.delete(tickets);
+          await db.delete(reserves);
+          await db.delete(auditLogs);
+          await db.delete(outboxEvents);
+          await db.delete(supportAdminNominations);
+
+          // 4. Clear transactional, core, and messaging tables
           await db.delete(messages);
           await db.delete(escrows);
           await db.delete(listings);
           await db.delete(transactions);
           await db.delete(sessions);
           await db.delete(wallets);
+          await db.delete(userPrekeys);
+          await db.delete(userDevices);
+          await db.delete(lounges);
+
+          // 5. Finally, clear non-admin users
           await db.delete(users).where(sql`${users.role} NOT IN ('CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'ADMIN')`);
           console.log('[OK] Database reset complete - retained admin configuration records.');
         } catch (err) {

@@ -4,6 +4,12 @@ import { argon2id } from 'hash-wasm';
 
 const scryptPromise = promisify(crypto.scrypt);
 
+// OWASP ASVS v4.0 Recommended Argon2id Parameters (Memory: 15MiB, Iterations: 3, Parallelism: 1)
+export const ARGON2_ITERATIONS = 3;
+export const ARGON2_MEMORY = 15360; // 15 MiB in KiB
+export const ARGON2_PARALLELISM = 1;
+export const ARGON2_HASH_LENGTH = 32;
+
 /**
  * Non-blocking key derivation using scrypt asynchronously on Node threadpool.
  */
@@ -60,16 +66,16 @@ export async function decryptAsync(envelope: string, key: Buffer): Promise<strin
 }
 
 /**
- * Hash plaintext string using Argon2id with OWASP recommended configuration.
+ * Hash plaintext string using Argon2id with OWASP ASVS v4.0 recommended configuration.
  */
 export async function hashArgon2id(plainText: string, saltBuffer: Buffer): Promise<string> {
   return argon2id({
     password: plainText,
     salt: new Uint8Array(saltBuffer),
-    parallelism: 1,
-    iterations: 3,
-    memorySize: 15360, // 15 MiB
-    hashLength: 32,
+    parallelism: ARGON2_PARALLELISM,
+    iterations: ARGON2_ITERATIONS,
+    memorySize: ARGON2_MEMORY,
+    hashLength: ARGON2_HASH_LENGTH,
     outputType: 'hex'
   });
 }
@@ -89,8 +95,65 @@ export function safeCompare(a: string, b: string): boolean {
 }
 
 /**
+ * Verifies a plain text password/input against an Argon2id hash.
+ * Automatically handles:
+ * - "argon2id:" algorithm prefix stripping.
+ * - "argon2id:<saltHex>:<hashHex>" tuple parsing.
+ * - Converting hex salt strings to Uint8Array/Buffer.
+ * - Timing-safe comparison using safeCompare.
+ */
+export async function verifyArgon2id(
+  plainText: string,
+  salt: string | undefined,
+  storedHash: string | undefined
+): Promise<boolean> {
+  if (!plainText || !storedHash) return false;
+  
+  let targetSalt = salt;
+  let targetHash = storedHash;
+  
+  if (targetHash.startsWith('argon2id:')) {
+    const parts = targetHash.split(':');
+    if (parts.length === 3) {
+      targetSalt = parts[1];
+      targetHash = parts[2];
+    } else if (parts.length === 2) {
+      targetHash = parts[1];
+    }
+  }
+
+  if (!targetSalt) return false;
+
+  const saltBuffer = Buffer.from(targetSalt, 'hex');
+  const computedHex = await hashArgon2id(plainText, saltBuffer);
+  return safeCompare(computedHex, targetHash);
+}
+
+/**
  * Generate cryptographically secure random token string.
  */
 export function generateRandomToken(bytes = 32): string {
   return crypto.randomBytes(bytes).toString('hex');
+}
+
+/**
+ * Resolves the true client IP address behind proxies, Cloudflare, or local connections.
+ */
+export function getClientIp(req: any): string {
+  const cfIp = req.headers?.['cf-connecting-ip'] as string;
+  if (cfIp) return cfIp.trim();
+
+  const realIp = req.headers?.['x-real-ip'] as string;
+  if (realIp) return realIp.trim();
+
+  const forwardedFor = req.headers?.['x-forwarded-for'] as string;
+  if (forwardedFor) {
+    const ips = forwardedFor.split(',').map(i => i.trim()).filter(Boolean);
+    if (ips.length > 0) return ips[0];
+  }
+
+  if (req.ip) return req.ip;
+  if (req.socket && req.socket.remoteAddress) return req.socket.remoteAddress;
+
+  return '127.0.0.1';
 }

@@ -29,6 +29,23 @@ export const sendDesktopNotification = (
   if (!document.hidden) return; // Only notify if window is inactive or tab in background
 
   try {
+    // In Android Chrome, Service Worker, or iframe contexts, new Notification() is an illegal constructor.
+    // Try standard constructor, or fallback to ServiceWorker.
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready
+        .then((registration) => {
+          registration.showNotification(title, {
+            body: options?.body || '',
+            icon: options?.icon || '/icon.png',
+            tag: options?.tag || 'velum-chat',
+          });
+        })
+        .catch(() => {
+          // Ignore service worker notification errors
+        });
+      return;
+    }
+
     const notification = new Notification(title, {
       body: options?.body || '',
       icon: options?.icon || '/icon.png',
@@ -43,6 +60,6 @@ export const sendDesktopNotification = (
     // Auto close after 5 seconds
     setTimeout(() => notification.close(), 5000);
   } catch (err) {
-    console.error('Failed to trigger native notification:', err);
+    // Silently handle if notification construction is forbidden or unsupported in current context
   }
 };

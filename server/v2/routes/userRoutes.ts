@@ -116,10 +116,10 @@ userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Re
         role: users.role,
         createdAt: users.createdAt
       }).from(users)
-      .where(or(
+      .where(and(eq(users.role, "USER"), or(
         ilike(users.username, `%${query}%`),
         ilike(users.displayName, `%${query}%`)
-      ))
+    )))
       .limit(50);
     } else {
       dbUsers = await db.select({
@@ -132,6 +132,7 @@ userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Re
         role: users.role,
         createdAt: users.createdAt
       }).from(users)
+      .where(eq(users.role, "USER"))
       .orderBy(desc(users.createdAt))
       .limit(50);
     }

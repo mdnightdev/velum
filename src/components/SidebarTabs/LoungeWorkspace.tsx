@@ -4,6 +4,7 @@ import { useResponsive } from '../../hooks/useResponsive';
 import { ChevronLeft, ChevronRight, Plus, Settings, Menu } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
 import { LoungeWorkspaceProps } from '../Lounge/types';
+import LoungeOverview from '../Lounge/LoungeOverview';
 import { useLoungeData } from '../Lounge/hooks/useLoungeData';
 import RoomsList from '../Lounge/RoomsList';
 import MembersList from '../Lounge/MembersList';
@@ -13,7 +14,8 @@ import SanctionDialog from '../Lounge/SanctionDialog';
 import PrivateSubloungeBanner from '../Lounge/PrivateSubloungeBanner';
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
-  const { isMobile } = useResponsive();
+  const { isMobile: _isMobile, isTablet } = useResponsive();
+  const isMobile = _isMobile || isTablet;
   const [isSubloungeCollapsed, setIsSubloungeCollapsed] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'rooms' | 'members' | 'about'>('rooms');
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
@@ -192,6 +194,8 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   });
 
   const isMasterLounge = props.loungeId === 'velum_master_lounge';
+  const rawLoungeTitle = loungeData.loungeDetails?.name || props.loungeName;
+  const effectiveLoungeName = (!rawLoungeTitle || rawLoungeTitle.toUpperCase() === 'TEST') ? 'Velum Lounge' : rawLoungeTitle;
 
   const getRoomLastMessageTime = (room: any) => {
     const roomId = getRoomId(room);
@@ -227,7 +231,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   ) : false;
 
   const isOfficialLounge = loungeData.loungeDetails?.is_official || loungeData.loungeDetails?.is_system || props.loungeId === 'velum_master_lounge';
-  const canCreateSublounge = isOfficialLounge ? loungeData.isSystemAdmin : (loungeData.isParentAdmin || isLoungeCreator);
+  const canCreateSublounge = !isOfficialLounge && (loungeData.isParentAdmin || isLoungeCreator);
 
   const handleMarkAsRead = (messageId: string, roomId: string) => {
     props.onMarkAsRead?.(messageId, roomId);
@@ -264,7 +268,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 <div className="flex items-center gap-1.5 min-w-0">
                   <button
                     onClick={props.onBackToDirectory}
-                    className="p-1 rounded-lg text-text-secondary hover:text-white hover:bg-white-10 transition-colors cursor-pointer shrink-0"
+                    className="p-2 -ml-1 rounded-lg text-text-secondary hover:text-white hover:bg-white-10 transition-colors cursor-pointer shrink-0"
                     title="Back to Directory"
                   >
                     <ChevronLeft className="w-5 h-5" />
@@ -350,7 +354,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           </div>
 
           {/* Right Content Panel (Chat Area) */}
-          <div className="flex-1 min-w-0 relative min-h-0 flex flex-col h-full bg-velum-900">
+          <div className="flex-1 min-w-0 relative min-h-0 flex flex-col h-full bg-velum-900 overflow-hidden">
             <PrivateSubloungeBanner
               activeRoom={activeRoom}
               isPrivateSublounge={isPrivateSublounge}
@@ -383,9 +387,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 isPrivateSublounge={isPrivateSublounge}
               />
             ) : (
-              <div className="flex-1 flex items-center justify-center text-text-secondary text-xs uppercase tracking-widest min-h-0 select-none">
-                Select a room to join the conversation
-              </div>
+              <LoungeOverview
+                loungeName={effectiveLoungeName}
+                loungeDetails={loungeData.loungeDetails}
+                memberCount={loungeData.members.length}
+                isDark={props.isDark}
+                isLoungeCreator={isLoungeCreator}
+                handleCopyInvite={handleCopyInvite}
+                copiedInvite={copiedInvite}
+              />
             )}
           </div>
           
@@ -555,7 +565,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
   if (props.activeRoomId) {
     return (
-      <div className="w-full h-full relative flex flex-col min-h-0">
+      <div className="w-full h-full relative flex flex-col min-h-0 min-w-0 overflow-hidden">
         <PrivateSubloungeBanner
           activeRoom={activeRoom}
           isPrivateSublounge={isPrivateSublounge}
@@ -616,7 +626,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 onClick={() => setShowLoungeProfile(true)}
                 className="text-lg font-black uppercase tracking-widest text-accent truncate cursor-pointer hover:underline"
               >
-                {props.loungeName}
+                {effectiveLoungeName}
               </h1>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -629,6 +639,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                   <Settings className="w-4 h-4" />
                 </button>
               )}
+              {canCreateSublounge && (
               <button
                 onClick={() => {
                   loungeData.setStatusMessage('');
@@ -639,6 +650,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               >
                 <Plus className="w-4 h-4" />
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -684,23 +696,15 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
             />
           )}
           {mobileTab === 'about' && (
-            <div className="p-6 flex flex-col gap-6">
-              <div className="text-center text-text-secondary text-xs uppercase tracking-widest">About {props.loungeName}</div>
-              {isLoungeCreator && loungeData.loungeDetails?.invite_code && (
-                <div className="p-4 bg-velum-800 border border-white-5 rounded-2xl flex flex-col gap-2 max-w-sm mx-auto w-full shadow-lg">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-secondary select-none">Lounge Invite Code</div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-mono text-sm font-bold text-accent tracking-widest select-all">{loungeData.loungeDetails.invite_code}</span>
-                    <button
-                      onClick={handleCopyInvite}
-                      className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-accent-10 hover:bg-accent-20 text-accent rounded-xl transition active:scale-95 cursor-pointer shrink-0"
-                    >
-                      {copiedInvite ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <LoungeOverview
+              loungeName={effectiveLoungeName}
+              loungeDetails={loungeData.loungeDetails}
+              memberCount={loungeData.members.length}
+              isDark={props.isDark}
+              isLoungeCreator={isLoungeCreator}
+              handleCopyInvite={handleCopyInvite}
+              copiedInvite={copiedInvite}
+            />
           )}
         </div>
       </div>
@@ -822,7 +826,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               type="lounge"
               lounge={{
                 loungeId: loungeData.loungeDetails?.lounge_id || props.loungeId,
-                name: loungeData.loungeDetails?.name || props.loungeName,
+                name: effectiveLoungeName,
                 description: loungeData.loungeDetails?.description || 'Operational hub and workspace.',
                 ownerId: Number(loungeData.loungeDetails?.owner_id || 999),
                 ownerUsername: loungeData.loungeDetails?.owner_username || 'velum',

@@ -9,6 +9,8 @@ import type { Request, Response } from 'express';
 
 export const ticketRouter = Router();
 
+import { generateRandomToken } from '../utils/crypto.js';
+
 const authMiddleware = createAuthMiddleware(async (tokenHash) => {
   const result = await userRepository.findSessionByTokenHash(tokenHash);
   if (!result) return null;
@@ -27,36 +29,32 @@ const authMiddleware = createAuthMiddleware(async (tokenHash) => {
 
 ticketRouter.use(authMiddleware);
 
-ticketRouter.get('/admin/tickets', authMiddleware, async (req: Request, res: Response) => {
-  const allTickets = await db.select().from(tickets).orderBy(desc(tickets.createdAt));
-  
-  const formatted = allTickets.map((t: Ticket) => ({
-    id: t.id,
-    ticket_id: String(t.id),
-    user_id: t.userId,
-    username: req.user!.username,
-    reason: t.subject,
-    issue_type: t.subject,
-    status: t.status,
-    created_at: t.createdAt?.toISOString() || new Date().toISOString(),
-    createdAt: t.createdAt?.toISOString() || new Date().toISOString(),
-    messages: []
-  }));
-  
-  res.json(formatted);
-});
+
 
 ticketRouter.post('/tickets', authMiddleware, async (req: Request, res: Response) => {
   const { reason, issueType, credentialsForwarded } = req.body;
+
+    const [recent] = await db.select().from(tickets)
+      .where(eq(tickets.userId, req.user!.userId))
+      .orderBy(desc(tickets.createdAt))
+      .limit(1);
+
+    if (recent && recent.createdAt && (Date.now() - new Date(recent.createdAt).getTime() < 60000)) {
+      return res.status(429).json({ error: "Too many tickets. Please wait 60s." });
+    }
+
   
   if (!reason) {
     return res.status(400).json({ error: 'Reason is required.' });
   }
   
+  const trackingUuid = `TK-${generateRandomToken(12).toUpperCase()}`;
+
   const [newTicket] = await db.insert(tickets).values({
     userId: req.user!.userId,
     subject: issueType || 'general_support',
     description: reason,
+    trackingId: trackingUuid,
     status: 'OPEN'
   }).returning();
   
@@ -66,9 +64,11 @@ ticketRouter.post('/tickets', authMiddleware, async (req: Request, res: Response
     reason: newTicket.description,
     issue_type: newTicket.subject,
     status: newTicket.status,
+    tracking_id: newTicket.trackingId,
+    trackingId: newTicket.trackingId,
     created_at: newTicket.createdAt?.toISOString() || new Date().toISOString(),
     createdAt: newTicket.createdAt?.toISOString() || new Date().toISOString(),
-    messages: []
+    messages: Array.isArray(newTicket.messages) ? newTicket.messages : []
   };
   
   res.status(201).json(formatted);
@@ -86,8 +86,10 @@ ticketRouter.get('/user/tickets', authMiddleware, async (req: Request, res: Resp
     status: t.status,
     created_at: t.createdAt?.toISOString() || new Date().toISOString(),
     createdAt: t.createdAt?.toISOString() || new Date().toISOString(),
+    tracking_id: t.trackingId,
+    trackingId: t.trackingId,
     credentials_forwarded: null,
-    messages: []
+    messages: Array.isArray(t.messages) ? t.messages : []
   }));
   
   res.json(formatted);
@@ -140,66 +142,24 @@ ticketRouter.post('/user/tickets/:ticketId/reply', authMiddleware, async (req: R
     return res.status(404).json({ error: 'Ticket not found.' });
   }
   
-  await db.update(tickets).set({ updatedAt: new Date() }).where(eq(tickets.id, ticketId));
+  const currentTicket = ticket[0];
+  const updatedMessages = Array.isArray(currentTicket.messages) ? [...(currentTicket.messages as any[])] : [];
+  updatedMessages.push({
+    sender_id: req.user!.userId,
+    sender_name: req.user!.username,
+    content,
+    timestamp: new Date().toISOString()
+  });
+
+  await db.update(tickets).set({ 
+    messages: updatedMessages,
+    updatedAt: new Date() 
+  }).where(eq(tickets.id, ticketId));
   
-  res.json({ message: 'Reply submitted successfully.' });
+  res.json({ message: 'Reply submitted successfully.', messages: updatedMessages });
 });
 
-ticketRouter.post('/admin/tickets/:ticketId/reply', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const ticketId = parseInt(req.params.ticketId, 10);
-    const { closeTicket, escalate } = req.body;
 
-    const ticketList = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1);
-    if (!ticketList.length) {
-      return res.status(404).json({ error: 'Ticket not found.' });
-    }
-
-    let newStatus = 'OPEN';
-    if (closeTicket) {
-      newStatus = 'RESOLVED';
-    } else if (escalate) {
-      newStatus = 'ESCALATED';
-    } else {
-      newStatus = 'IN_PROGRESS';
-    }
-
-    const [updated] = await db.update(tickets).set({
-      status: newStatus,
-      updatedAt: new Date()
-    }).where(eq(tickets.id, ticketId)).returning();
-
-    const formatted = {
-      id: updated.id,
-      ticket_id: String(updated.id),
-      user_id: updated.userId,
-      username: req.user!.username,
-      reason: updated.subject,
-      issue_type: updated.subject,
-      status: updated.status,
-      created_at: updated.createdAt?.toISOString() || new Date().toISOString(),
-      createdAt: updated.createdAt?.toISOString() || new Date().toISOString(),
-      messages: []
-    };
-
-    res.json(formatted);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to submit ticket reply.' });
-  }
-});
-
-ticketRouter.post('/admin/tickets/:ticketId/delete', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    if (req.user!.role !== 'CLI_ADMIN' && req.user!.role !== 'SUPPORT_ADMIN' && req.user!.role !== 'LOGIN_ADMIN') {
-      return res.status(403).json({ error: 'Forbidden.' });
-    }
-    const ticketId = parseInt(req.params.ticketId, 10);
-    await db.delete(tickets).where(eq(tickets.id, ticketId));
-    res.json({ success: true, message: 'Ticket deleted successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete ticket.' });
-  }
-});
 
 export const clientDiagnosticsList: any[] = [];
 

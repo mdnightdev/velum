@@ -69,7 +69,8 @@ function AppContent() {
     activeRoomId,
     onMessageReceived: (msg) => {
       // Message received event callback if needed
-    }
+    },
+    onSessionCompromised: handleLogout
   });
 
 

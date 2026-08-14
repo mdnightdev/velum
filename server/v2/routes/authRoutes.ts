@@ -10,6 +10,8 @@ import { eq } from 'drizzle-orm';
 import { hashArgon2id, generateRandomToken } from '../utils/crypto.js';
 import { systemBot } from '../services/systemBot.js';
 
+import { executePanicCascade } from '../services/duress/panicService.js';
+
 export const authRouter = Router();
 
 const authMiddleware = createAuthMiddleware(async (tokenHash) => {
@@ -52,6 +54,14 @@ authRouter.post('/restore-account', (req, res, next) => {
   authController.restoreAccount(req, res).catch(next);
 });
 
+authRouter.post('/recover-safeword', (req, res, next) => {
+  authController.recoverSafeword(req, res).catch(next);
+});
+
+authRouter.post('/redeem-restore-code', (req, res, next) => {
+  authController.redeemRestoreCode(req, res).catch(next);
+});
+
 authRouter.post('/device-fingerprint', (req, res, next) => {
   authController.recordDeviceFingerprint(req, res).catch(next);
 });
@@ -66,6 +76,21 @@ authRouter.get('/ip-history', authMiddleware, (req, res, next) => {
 
 authRouter.post('/purge-data', authMiddleware, (req, res, next) => {
   authController.purgeUserData(req, res).catch(next);
+});
+
+// POST /v2/auth/panic - Instant WAL Cascade Deletion Panic Protocol Trigger
+authRouter.post('/panic', authMiddleware, async (req, res, next) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const result = await executePanicCascade(currentUserId, 'MANUAL_PANIC_TRIGGER');
+    res.json({
+      success: true,
+      ticketId: result.ticketId,
+      message: 'Panic protocol executed. Instant WAL cascade deletion completed.'
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 authRouter.post('/register', validate({ body: registerSchema }), (req, res, next) => {
