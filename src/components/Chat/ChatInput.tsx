@@ -133,7 +133,7 @@ export function ChatInput({
   }, [inputText, textareaRef]);
 
   return (
-    <div className="p-4 border-t flex-shrink-0 bg-black/10 border-white-5">
+    <div className="p-2 sm:p-4 border-t flex-shrink-0 bg-black/10 border-white-5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <div className="max-w-5xl mx-auto">
         {/* Mic Error Banner */}
         {micError && (

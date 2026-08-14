@@ -65,27 +65,33 @@ export function useWebSocket({
         }
       }
 
-      // b. Fetch missing (delta) messages from backend
-      try {
-        const sessionToken = sessionStorage.getItem('velum-sessionId') || '';
-        const url = lastTimestamp
-          ? `/v2/lounges/${activeRoomId}/messages?since=${encodeURIComponent(lastTimestamp)}`
-          : `/v2/lounges/${activeRoomId}/messages`;
+      // b. Fetch missing (delta) messages from backend for lounge channels
+      if (!activeRoomId.startsWith('dm_')) {
+        try {
+          const sessionToken = sessionStorage.getItem('velum-sessionId') || '';
+          const url = lastTimestamp
+            ? `/v2/lounges/${activeRoomId}/messages?since=${encodeURIComponent(lastTimestamp)}`
+            : `/v2/lounges/${activeRoomId}/messages`;
 
-        const res = await fetch(url, {
-          headers: { 'x-session-token': sessionToken }
-        });
-        const data = await res.json();
-
-        if (data.messages && data.messages.length > 0) {
-          setMessages((prev) => {
-            const existingIds = new Set(prev.map((m: any) => m.id || m.message_id));
-            const fresh = data.messages.filter((m: any) => !existingIds.has(m.id || m.message_id));
-            return [...prev, ...fresh];
+          const res = await fetch(url, {
+            headers: {
+              'x-session-token': sessionToken,
+              'Authorization': `Bearer ${sessionToken}`
+            }
           });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+              setMessages((prev) => {
+                const existingIds = new Set(prev.map((m: any) => m.id || m.message_id));
+                const fresh = data.messages.filter((m: any) => !existingIds.has(m.id || m.message_id));
+                return [...prev, ...fresh];
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[Sync] Failed to fetch delta messages:', err);
         }
-      } catch (err) {
-        console.warn('[Sync] Failed to fetch delta messages:', err);
       }
     };
 

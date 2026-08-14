@@ -115,6 +115,8 @@ export async function startServer() {
     (async () => {
       try {
         await ensureAdminSeeded();
+        const { ensureVelumLoungeSeeded } = await import('./v2/services/loungeSeeder.js');
+        await ensureVelumLoungeSeeded();
         SystemBot.getInstance();
         console.log('[Server] Velum Bot system activated');
         await currencyConverter.loadRatesFromDb();

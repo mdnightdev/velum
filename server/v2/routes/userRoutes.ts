@@ -143,6 +143,32 @@ userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Re
   }
 });
 
+// GET /v2/user - Directory user listing for authenticated users
+userRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const dbUsers = await db.select({
+      id: users.id,
+      userId: users.id,
+      username: users.username,
+      displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
+      avatar: users.avatarUrl,
+      bio: users.bio,
+      location: users.location,
+      role: users.role,
+      status: users.status,
+      createdAt: users.createdAt
+    }).from(users)
+    .where(eq(users.role, "USER"))
+    .orderBy(desc(users.createdAt))
+    .limit(100);
+
+    res.json(dbUsers);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users directory.' });
+  }
+});
+
 userRouter.get('/:id/profile', authMiddleware, (req, res, next) => {
   userController.getProfile(req, res).catch(next);
 });

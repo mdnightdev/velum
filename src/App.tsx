@@ -17,37 +17,32 @@ function AppContent() {
   const [activeChatPeer, setActiveChatPeer] = useState<{ userId: number; username: string; avatar?: string } | null>(null);
   const [migrationUser, setMigrationUser] = useState<{ userId: number; username: string } | null>(null);
 
-  // Set up visual viewport height tracking to handle mobile keyboard resizing properly
+  // Lock mobile viewport and ensure page never scrolls or offsets on virtual keyboard
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const updateHeight = () => {
-      const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-      document.documentElement.style.setProperty('--viewport-height', `${height}px`);
+    const preventScrollOffset = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
     };
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', updateHeight);
-      window.visualViewport.addEventListener('scroll', updateHeight);
+      window.visualViewport.addEventListener('resize', preventScrollOffset);
+      window.visualViewport.addEventListener('scroll', preventScrollOffset);
     } else {
-      window.addEventListener('resize', updateHeight);
+      window.addEventListener('resize', preventScrollOffset);
     }
     
-    updateHeight();
-
-    // Run updateHeight after small timeouts to ensure correct initial dimensions and stable height
-    const timer1 = setTimeout(updateHeight, 150);
-    const timer2 = setTimeout(updateHeight, 450);
+    preventScrollOffset();
 
     return () => {
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', updateHeight);
-        window.visualViewport.removeEventListener('scroll', updateHeight);
+        window.visualViewport.removeEventListener('resize', preventScrollOffset);
+        window.visualViewport.removeEventListener('scroll', preventScrollOffset);
       } else {
-        window.removeEventListener('resize', updateHeight);
+        window.removeEventListener('resize', preventScrollOffset);
       }
-      clearTimeout(timer1);
-      clearTimeout(timer2);
     };
   }, []);
 
