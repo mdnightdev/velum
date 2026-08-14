@@ -152,7 +152,12 @@ utilityRouter.get('/admin/reports', (req, res) => {
   ]);
 });
 
-utilityRouter.get('/public/version', (req, res) => res.json({ version: '2.0.0', latestIncrement: 0 }));
+utilityRouter.get('/public/version', (req, res) => res.json({ 
+  version: process.env.APP_VERSION || '1.0.0', 
+  buildNumber: parseInt(process.env.BUILD_NUMBER || '1', 10),
+  fullVersion: `v${process.env.APP_VERSION || '1.0.0'}.b${process.env.BUILD_NUMBER || '1'}`,
+  displayVersion: `v${process.env.APP_VERSION || '1.0.0'}.${process.env.BUILD_NUMBER || '1'}`
+}));
 
 utilityRouter.get('/payments/currencies', (req, res) => {
   const currencies = ['USDT', 'VLM', 'USD', 'EUR', 'GBP'];
