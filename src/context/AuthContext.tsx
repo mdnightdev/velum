@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, startTransition } from 'react';
 import { createLogger } from '../utils/logger';
 import { purgeSkippedMessageKeys } from '../services/skippedKeysStore';
+import { purgeCryptoVault } from '../services/cryptoDbStore';
+import { purgeLocalMessages } from '../utils/indexedDb';
+import { doubleRatchetService } from '../services/doubleRatchetService';
 
 const log = createLogger('AuthContext');
+
 
 interface AuthUser {
   userId: number;
@@ -47,6 +51,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = !!user && !!sessionId;
 
   const handleLoginSuccess = (loginUser: AuthUser, sId: string, dId: string, destination: string) => {
+    if (user && user.userId !== loginUser.userId) {
+      log.warn('Cross-identity login detected. Purging crypto vault.');
+      purgeCryptoVault().catch(() => {});
+    purgeLocalMessages().catch(() => {});
+    doubleRatchetService.clearMemoryState();
+    }
+
     setUser(loginUser);
     setSessionId(sId);
     setDeviceId(dId);
@@ -68,6 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const handleLogout = () => {
     // Purge E2EE decryption keys from IndexedDB
     purgeSkippedMessageKeys().catch(() => {});
+    purgeCryptoVault().catch(() => {});
+    purgeLocalMessages().catch(() => {});
+    doubleRatchetService.clearMemoryState();
 
     // Purge plaintext saved notes from localStorage for vault safety
     if (user?.userId) {

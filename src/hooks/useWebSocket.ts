@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
-import { getLocalMessages, saveLocalMessages } from '../utils/indexedDb';
+import { getLocalMessages, saveLocalMessages, rotateAndReEncryptLocalMessages } from '../utils/indexedDb';
+import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 
 interface UseWebSocketParams {
@@ -23,6 +24,26 @@ export function useWebSocket({
 }: UseWebSocketParams) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
+
+  // Background Periodic Key Rotation for Message History Forward Secrecy
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    let isMounted = true;
+    const runRotationCheck = async () => {
+      try {
+        const needsRotation = await LocalVaultEncryption.checkAndRotatePeriodically();
+        if (needsRotation && isMounted) {
+          console.log('[useWebSocket] Triggering periodic message history key rotation...');
+          await rotateAndReEncryptLocalMessages();
+        }
+      } catch (err) {
+        console.error('[useWebSocket] Rotation check failed:', err);
+      }
+    };
+
+    runRotationCheck();
+  }, [isAuthenticated]);
 
   // 1. Instantly render cached messages when switching rooms or reconnecting
   useEffect(() => {

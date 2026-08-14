@@ -1,5 +1,6 @@
+import { LocalVaultEncryption } from '../services/localVaultEncryption';
 const DB_NAME = 'velum_local_storage';
-const DB_VERSION = 3;
+const DB_VERSION = 25;
 const STORE_MEDIA = 'media_blobs';
 const STORE_MESSAGES = 'messages';
 const STORE_OUTBOX = 'outbox_messages';
@@ -122,4 +123,72 @@ export async function deleteLocalMedia(key: string): Promise<void> {
   } catch (err) {
     console.warn('[IndexedDB] Local database deletion failed:', err);
   }
+}
+
+export async function rotateAndReEncryptLocalMessages(): Promise<void> {
+  try {
+    const db = await openDatabase();
+    const allRecords = await new Promise<{ key: IDBValidKey, value: any }[]>((resolve, reject) => {
+      const tx = db.transaction([STORE_MESSAGES], 'readonly');
+      const store = tx.objectStore(STORE_MESSAGES);
+      const req = store.getAll();
+      const keysReq = store.getAllKeys();
+      
+      req.onsuccess = () => {
+        keysReq.onsuccess = () => {
+          const records = keysReq.result.map((key, i) => ({ key, value: req.result[i] }));
+          resolve(records);
+        };
+      };
+      req.onerror = () => reject(new Error('Failed to fetch messages for re-encryption'));
+    });
+
+    const decryptedData = [];
+    // Decrypt all possible records with the current key
+    for (const record of allRecords) {
+      if (record.value._encrypted) {
+        const str = await LocalVaultEncryption.decryptPayload(record.value);
+        if (str) {
+          decryptedData.push({ key: record.key, plaintext: str });
+        }
+      } else if (Array.isArray(record.value)) {
+        decryptedData.push({ key: record.key, plaintext: JSON.stringify(record.value) });
+      }
+    }
+
+    // Now rotate the key
+    await LocalVaultEncryption.rotateVaultKey();
+
+    // Re-encrypt and overwrite
+    const tx = db.transaction([STORE_MESSAGES], 'readwrite');
+    const store = tx.objectStore(STORE_MESSAGES);
+
+    for (const data of decryptedData) {
+      const encrypted = await LocalVaultEncryption.encryptPayload(data.plaintext);
+      store.put({ _encrypted: true, ...encrypted }, data.key);
+    }
+    
+    // We can also return a promise for the transaction completion if needed.
+  } catch (err) {
+    console.error('[IndexedDB] Failed to rotate and re-encrypt local messages', err);
+  }
+}
+
+
+export function purgeLocalMessages(): Promise<void> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const db = await openDatabase();
+      const tx = db.transaction([STORE_MESSAGES, STORE_MEDIA], 'readwrite');
+      const storeMsgs = tx.objectStore(STORE_MESSAGES);
+      const storeMedia = tx.objectStore(STORE_MEDIA);
+      storeMsgs.clear();
+      storeMedia.clear();
+      
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
