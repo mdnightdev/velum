@@ -57,6 +57,7 @@ type ProfileCardProps = {
   onReport?: () => void;
   onViewProfile?: () => void;
   onSearchMessages?: () => void;
+  onForceRekey?: () => void;
   // Lounge actions
   onJoinLeaveLounge?: () => void;
   onLoungeSettings?: () => void;
@@ -76,6 +77,7 @@ export default function ProfileCard({
   onReport,
   onViewProfile,
   onSearchMessages,
+  onForceRekey,
   onJoinLeaveLounge,
   onLoungeSettings,
   isJoinedLounge = false

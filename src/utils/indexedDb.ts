@@ -18,7 +18,11 @@ function openDatabase(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => {
-      resolve(request.result);
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+      };
+      resolve(db);
     };
 
     request.onupgradeneeded = (event: any) => {

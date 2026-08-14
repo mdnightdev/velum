@@ -1,3 +1,14 @@
+CREATE TABLE "support_admin_nominations" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"nominated_user_id" integer NOT NULL,
+	"nominated_by" integer NOT NULL,
+	"status" varchar(32) DEFAULT 'pending' NOT NULL,
+	"admin_account_id" integer,
+	"credentials" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "users" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"username" varchar(32) NOT NULL,
@@ -7,13 +18,17 @@ CREATE TABLE "users" (
 	"panic_phrase_hash" text,
 	"recovery_key_hash" text,
 	"login_recovery_key_hash" text,
+	"recovery_key" text,
+	"recovery_key_delivered" boolean DEFAULT false NOT NULL,
 	"duress_active" boolean DEFAULT false NOT NULL,
 	"is_compromised" boolean DEFAULT false NOT NULL,
 	"compromise_ticket_id" varchar(32),
+	"temp_restore_code" varchar(64),
 	"role" varchar(32) DEFAULT 'USER' NOT NULL,
 	"display_name" varchar(64),
 	"avatar_url" text,
 	"bio" text,
+	"location" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "users_username_unique" UNIQUE("username")
@@ -99,10 +114,23 @@ CREATE TABLE "lounges" (
 	"invite_code" varchar(64),
 	"access_level" varchar(32) DEFAULT 'ALL' NOT NULL,
 	"type" varchar(32) DEFAULT 'user_created' NOT NULL,
+	"avatar_url" varchar(512),
 	"last_message_at" timestamp,
+	"last_message_text" text,
+	"last_message_sender_id" integer,
+	"current_sequence_id" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "lounges_slug_unique" UNIQUE("slug")
+);
+--> statement-breakpoint
+CREATE TABLE "message_reactions" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"message_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"emoji" varchar(32) NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "unique_message_user_emoji" UNIQUE("message_id","user_id","emoji")
 );
 --> statement-breakpoint
 CREATE TABLE "messages" (
@@ -110,8 +138,24 @@ CREATE TABLE "messages" (
 	"lounge_id" integer NOT NULL,
 	"sender_id" integer NOT NULL,
 	"content" text NOT NULL,
+	"client_msg_id" varchar(128),
+	"sequence_id" integer DEFAULT 0 NOT NULL,
 	"encrypted" boolean DEFAULT false NOT NULL,
+	"delivered_to" text DEFAULT '',
+	"read_by" text DEFAULT '',
+	"is_edited" boolean DEFAULT false NOT NULL,
+	"edited_at" timestamp,
+	"is_pinned" boolean DEFAULT false NOT NULL,
+	"reply_to" integer,
 	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "user_unread_counts" (
+	"user_id" integer NOT NULL,
+	"lounge_id" integer NOT NULL,
+	"unread_count" integer DEFAULT 0 NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_unread_counts_user_id_lounge_id_pk" PRIMARY KEY("user_id","lounge_id")
 );
 --> statement-breakpoint
 CREATE TABLE "outbox_events" (
@@ -128,7 +172,12 @@ CREATE TABLE "tickets" (
 	"user_id" integer NOT NULL,
 	"subject" varchar(255) NOT NULL,
 	"description" text NOT NULL,
-	"status" varchar(32) DEFAULT 'OPEN' NOT NULL,
+	"issue_type" varchar(32) DEFAULT 'recovery_request' NOT NULL,
+	"status" varchar(32) DEFAULT 'open' NOT NULL,
+	"credibility_score" integer DEFAULT 95 NOT NULL,
+	"tracking_id" varchar(64),
+	"provided_recovery_key" varchar(32),
+	"messages" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -213,6 +262,56 @@ CREATE TABLE "exchange_rates" (
 	"effective_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "relationships" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"friend_id" integer NOT NULL,
+	"status" varchar(32) DEFAULT 'pending' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "user_prekeys" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"identity_key" text NOT NULL,
+	"signed_prekey" text NOT NULL,
+	"signed_prekey_signature" text NOT NULL,
+	"one_time_prekeys" text DEFAULT '[]' NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_prekeys_user_id_unique" UNIQUE("user_id")
+);
+--> statement-breakpoint
+CREATE TABLE "user_read_cursors" (
+	"user_id" integer NOT NULL,
+	"lounge_id" integer NOT NULL,
+	"last_read_msg_id" integer,
+	"last_read_seq" integer DEFAULT 0 NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_read_cursors_user_id_lounge_id_pk" PRIMARY KEY("user_id","lounge_id")
+);
+--> statement-breakpoint
+CREATE TABLE "push_subscriptions" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"endpoint" text NOT NULL,
+	"p256dh" text NOT NULL,
+	"auth" text NOT NULL,
+	"user_agent" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "push_subscriptions_endpoint_unique" UNIQUE("endpoint")
+);
+--> statement-breakpoint
+CREATE TABLE "lounge_mute_settings" (
+	"user_id" integer NOT NULL,
+	"lounge_id" integer NOT NULL,
+	"mute_rule" varchar(32) DEFAULT 'off' NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "lounge_mute_settings_user_id_lounge_id_pk" PRIMARY KEY("user_id","lounge_id")
+);
+--> statement-breakpoint
+ALTER TABLE "support_admin_nominations" ADD CONSTRAINT "support_admin_nominations_nominated_user_id_users_id_fk" FOREIGN KEY ("nominated_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "support_admin_nominations" ADD CONSTRAINT "support_admin_nominations_nominated_by_users_id_fk" FOREIGN KEY ("nominated_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_wallet_id_wallets_id_fk" FOREIGN KEY ("wallet_id") REFERENCES "public"."wallets"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "wallets" ADD CONSTRAINT "wallets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -224,12 +323,28 @@ ALTER TABLE "lounge_members" ADD CONSTRAINT "lounge_members_lounge_id_lounges_id
 ALTER TABLE "lounge_members" ADD CONSTRAINT "lounge_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lounges" ADD CONSTRAINT "lounges_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lounges" ADD CONSTRAINT "lounges_parent_lounge_id_lounges_id_fk" FOREIGN KEY ("parent_lounge_id") REFERENCES "public"."lounges"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lounges" ADD CONSTRAINT "lounges_last_message_sender_id_users_id_fk" FOREIGN KEY ("last_message_sender_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "message_reactions" ADD CONSTRAINT "message_reactions_message_id_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."messages"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "message_reactions" ADD CONSTRAINT "message_reactions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "messages" ADD CONSTRAINT "messages_lounge_id_lounges_id_fk" FOREIGN KEY ("lounge_id") REFERENCES "public"."lounges"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "messages" ADD CONSTRAINT "messages_sender_id_users_id_fk" FOREIGN KEY ("sender_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "user_unread_counts" ADD CONSTRAINT "user_unread_counts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "user_unread_counts" ADD CONSTRAINT "user_unread_counts_lounge_id_lounges_id_fk" FOREIGN KEY ("lounge_id") REFERENCES "public"."lounges"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tickets" ADD CONSTRAINT "tickets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "cards" ADD CONSTRAINT "cards_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ip_addresses" ADD CONSTRAINT "ip_addresses_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_devices" ADD CONSTRAINT "user_devices_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "relationships" ADD CONSTRAINT "relationships_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "relationships" ADD CONSTRAINT "relationships_friend_id_users_id_fk" FOREIGN KEY ("friend_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "user_prekeys" ADD CONSTRAINT "user_prekeys_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "user_read_cursors" ADD CONSTRAINT "user_read_cursors_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "user_read_cursors" ADD CONSTRAINT "user_read_cursors_lounge_id_lounges_id_fk" FOREIGN KEY ("lounge_id") REFERENCES "public"."lounges"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "user_read_cursors" ADD CONSTRAINT "user_read_cursors_last_read_msg_id_messages_id_fk" FOREIGN KEY ("last_read_msg_id") REFERENCES "public"."messages"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "push_subscriptions" ADD CONSTRAINT "push_subscriptions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lounge_mute_settings" ADD CONSTRAINT "lounge_mute_settings_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lounge_mute_settings" ADD CONSTRAINT "lounge_mute_settings_lounge_id_lounges_id_fk" FOREIGN KEY ("lounge_id") REFERENCES "public"."lounges"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_nominations_user" ON "support_admin_nominations" USING btree ("nominated_user_id");--> statement-breakpoint
+CREATE INDEX "idx_nominations_status" ON "support_admin_nominations" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "idx_sessions_user_id" ON "sessions" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_sessions_expires_at" ON "sessions" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "idx_tx_wallet_id" ON "transactions" USING btree ("wallet_id");--> statement-breakpoint
@@ -244,9 +359,16 @@ CREATE INDEX "idx_lounge_members_lounge_user" ON "lounge_members" USING btree ("
 CREATE INDEX "idx_lounges_owner_id" ON "lounges" USING btree ("owner_id");--> statement-breakpoint
 CREATE INDEX "idx_lounges_parent_lounge_id" ON "lounges" USING btree ("parent_lounge_id");--> statement-breakpoint
 CREATE INDEX "idx_lounges_slug" ON "lounges" USING btree ("slug");--> statement-breakpoint
+CREATE INDEX "idx_lounges_last_message_at" ON "lounges" USING btree ("last_message_at");--> statement-breakpoint
+CREATE INDEX "idx_message_reactions_message" ON "message_reactions" USING btree ("message_id");--> statement-breakpoint
 CREATE INDEX "idx_messages_lounge_id" ON "messages" USING btree ("lounge_id");--> statement-breakpoint
 CREATE INDEX "idx_messages_sender_id" ON "messages" USING btree ("sender_id");--> statement-breakpoint
 CREATE INDEX "idx_messages_created_at" ON "messages" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX "idx_messages_lounge_created" ON "messages" USING btree ("lounge_id","created_at");--> statement-breakpoint
+CREATE INDEX "idx_messages_client_msg_id" ON "messages" USING btree ("sender_id","client_msg_id");--> statement-breakpoint
+CREATE INDEX "idx_messages_lounge_sequence" ON "messages" USING btree ("lounge_id","sequence_id");--> statement-breakpoint
+CREATE INDEX "idx_user_unread_counts_user" ON "user_unread_counts" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_user_unread_counts_lounge" ON "user_unread_counts" USING btree ("lounge_id");--> statement-breakpoint
 CREATE INDEX "idx_cards_user_id" ON "cards" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_cards_token" ON "cards" USING btree ("card_token");--> statement-breakpoint
 CREATE INDEX "idx_devices_device_id" ON "devices" USING btree ("device_id");--> statement-breakpoint
@@ -255,4 +377,12 @@ CREATE INDEX "idx_ip_addresses_user_id" ON "ip_addresses" USING btree ("user_id"
 CREATE INDEX "idx_ip_addresses_ip" ON "ip_addresses" USING btree ("ip_address");--> statement-breakpoint
 CREATE INDEX "idx_user_devices_user_id" ON "user_devices" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_user_devices_device_id" ON "user_devices" USING btree ("device_id");--> statement-breakpoint
-CREATE INDEX "idx_exchange_rates_pair" ON "exchange_rates" USING btree ("base_currency","quote_currency");
+CREATE INDEX "idx_exchange_rates_pair" ON "exchange_rates" USING btree ("base_currency","quote_currency");--> statement-breakpoint
+CREATE INDEX "idx_relationships_user_friend" ON "relationships" USING btree ("user_id","friend_id");--> statement-breakpoint
+CREATE INDEX "idx_relationships_status" ON "relationships" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_user_prekeys_user_id" ON "user_prekeys" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_user_read_cursors_user" ON "user_read_cursors" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_user_read_cursors_lounge" ON "user_read_cursors" USING btree ("lounge_id");--> statement-breakpoint
+CREATE INDEX "idx_push_subscriptions_user" ON "push_subscriptions" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_lounge_mutes_user" ON "lounge_mute_settings" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_lounge_mutes_lounge" ON "lounge_mute_settings" USING btree ("lounge_id");

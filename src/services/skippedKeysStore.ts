@@ -1,5 +1,5 @@
-import { openCryptoDatabaseV2 } from './cryptoDbStore';
-
+const DB_NAME = 'velum_crypto_vault';
+const DB_VERSION = 1;
 const STORE_SKIPPED_KEYS = 'skipped_message_keys';
 
 // In-memory fallback if IndexedDB is blocked or unavailable
@@ -12,6 +12,30 @@ export interface SkippedMessageKeyRecord {
   chainLength: number;
   keyJwk: string; // Serialized CryptoKey in JWK format
   createdAt: string;
+}
+
+function openCryptoDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      return reject(new Error('IndexedDB is unavailable.'));
+    }
+
+    try {
+      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onerror = () => reject(new Error('Failed to open crypto vault IndexedDB database.'));
+      request.onsuccess = () => resolve(request.result);
+
+      request.onupgradeneeded = (event: any) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_SKIPPED_KEYS)) {
+          db.createObjectStore(STORE_SKIPPED_KEYS, { keyPath: 'id' });
+        }
+      };
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 /**
@@ -41,7 +65,7 @@ export async function saveSkippedMessageKey(
 
     memoryFallbackMap.set(id, record);
 
-    const db = await openCryptoDatabaseV2();
+    const db = await openCryptoDatabase();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORE_SKIPPED_KEYS], 'readwrite');
       const store = tx.objectStore(STORE_SKIPPED_KEYS);
@@ -68,7 +92,7 @@ export async function consumeSkippedMessageKey(
     let record: SkippedMessageKeyRecord | null = null;
 
     try {
-      const db = await openCryptoDatabaseV2();
+      const db = await openCryptoDatabase();
       record = await new Promise<SkippedMessageKeyRecord | null>((resolve, reject) => {
         const tx = db.transaction([STORE_SKIPPED_KEYS], 'readonly');
         const store = tx.objectStore(STORE_SKIPPED_KEYS);
@@ -110,13 +134,47 @@ export async function consumeSkippedMessageKey(
   }
 }
 
+export async function clearSkippedKeysForPeer(peerUserId: number): Promise<void> {
+  const prefix = `dm_${peerUserId}_`;
+  for (const key of memoryFallbackMap.keys()) {
+    if (key.startsWith(prefix)) {
+      memoryFallbackMap.delete(key);
+    }
+  }
+
+  try {
+    const db = await openCryptoDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_SKIPPED_KEYS], 'readwrite');
+      const store = tx.objectStore(STORE_SKIPPED_KEYS);
+      const req = store.openCursor();
+      req.onsuccess = (e: any) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          const key = cursor.key as string;
+          if (key.startsWith(prefix)) {
+            cursor.delete();
+          }
+          cursor.continue();
+        }
+      };
+      req.onerror = () => {
+        resolve(); // resolve on error instead of throwing to prevent crashing the flow
+      };
+      tx.oncomplete = () => resolve();
+    });
+  } catch (err) {
+    console.error('[SKIPPED_KEYS_STORE] Error clearing skipped keys for peer:', err);
+  }
+}
+
 /**
  * Purges all local skipped keys from storage (e.g., during duress or logout)
  */
 export async function purgeSkippedMessageKeys(): Promise<void> {
   memoryFallbackMap.clear();
   try {
-    const db = await openCryptoDatabaseV2();
+    const db = await openCryptoDatabase();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORE_SKIPPED_KEYS], 'readwrite');
       const store = tx.objectStore(STORE_SKIPPED_KEYS);

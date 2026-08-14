@@ -12,6 +12,7 @@ interface ChatHeaderProps {
   peerPresence: string;
   conversationMessages: Message[];
   onSearchToggle?: () => void;
+  onForceRekey?: () => void;
   // Selection Mode Props
   selectedMessage?: Message | null;
   getDecryptedText?: (msg: Message) => string;
@@ -35,6 +36,7 @@ export function ChatHeader({
   peerPresence,
   conversationMessages,
   onSearchToggle,
+  onForceRekey,
   selectedMessage,
   getDecryptedText,
   onClearSelection,
@@ -203,16 +205,18 @@ export function ChatHeader({
           </div>
         </div>
       </div>
-      {onSearchToggle && (
-        <button
-          type="button"
-          onClick={onSearchToggle}
-          className="w-11 h-11 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
-          title="Search messages"
-        >
-          <Search className="w-5 h-5" />
-        </button>
-      )}
+      <div className="flex items-center gap-1">
+        {onSearchToggle && (
+          <button
+            type="button"
+            onClick={onSearchToggle}
+            className="w-11 h-11 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            title="Search messages"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

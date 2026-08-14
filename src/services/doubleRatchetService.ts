@@ -4,8 +4,8 @@
  * Using Web Crypto API for cryptographic operations
  */
 
-import { saveSkippedMessageKey, consumeSkippedMessageKey } from './skippedKeysStore';
-import { saveLocalKeysToDb, loadLocalKeysFromDb, saveConversationStateToDb, loadConversationStateFromDb } from './cryptoDbStore';
+import { saveSkippedMessageKey, consumeSkippedMessageKey, clearSkippedKeysForPeer } from './skippedKeysStore';
+import { saveLocalKeysToDb, loadLocalKeysFromDb, saveConversationStateToDb, loadConversationStateFromDb, deleteConversationStateFromDb } from './cryptoDbStore';
 
 // Types for cryptographic operations
 export interface KeyPair {
@@ -68,13 +68,44 @@ class DoubleRatchetService {
   private localSignedPrekeyPair: KeyPair | null = null;
   private localOneTimePrekeys: KeyPair[] = [];
   private conversationStates: Map<number, RatchetState> = new Map();
+  private localUserId: number | null = null;
+
+  /**
+   * Must be called once after login (or on app init if a session already exists)
+   * with the current user's numeric ID. This is the single source of truth for
+   * "who am I" in ratchet chain-key assignment. Do NOT infer it from sessionStorage
+   * shape guesses - a silent parse failure there previously caused every message
+   * to fail HMAC verification for every user, since both sides would default to
+   * the same fallback and independently believe they were "Chain A".
+   */
+  setLocalUserId(userId: number): void {
+    if (!Number.isFinite(userId)) {
+      console.error('[DoubleRatchet] setLocalUserId called with invalid userId:', userId);
+      return;
+    }
+    this.localUserId = userId;
+  }
+
+  private getLocalUserIdOrThrow(): number {
+    if (this.localUserId === null) {
+      const errMsg = '[DoubleRatchet] localUserId not set - call setLocalUserId() after login before sending/receiving encrypted messages.';
+      console.error(errMsg);
+      throw new Error(errMsg);
+    }
+    return this.localUserId;
+  }
 
   /**
    * Initialize local keys for X3DH
    */
   async initializeLocalKeys(): Promise<void> {
+    if (this.localUserId === null) {
+      const errMsg = '[DoubleRatchet] initializeLocalKeys() called before setLocalUserId() - identity keys must be namespaced per account or different logged-in users on the same browser will collide.';
+      console.error(errMsg);
+      throw new Error(errMsg);
+    }
     try {
-      const existingKeys = await loadLocalKeysFromDb();
+      const existingKeys = await loadLocalKeysFromDb(this.localUserId);
       if (existingKeys) {
         this.localIdentityKeyPair = existingKeys.identityKeyPair;
         this.localSignedPrekeyPair = existingKeys.signedPrekeyPair;
@@ -115,7 +146,7 @@ class DoubleRatchetService {
       }
 
       // Save to IndexedDB
-      await saveLocalKeysToDb(this.localIdentityKeyPair, this.localSignedPrekeyPair, this.localOneTimePrekeys);
+      await saveLocalKeysToDb(this.localUserId, this.localIdentityKeyPair, this.localSignedPrekeyPair, this.localOneTimePrekeys);
 
       // Upload bundle to server
       await this.uploadPrekeyBundle();
@@ -275,13 +306,10 @@ class DoubleRatchetService {
       ['deriveKey', 'deriveBits']
     );
 
-    // Get local user ID to deterministically assign Send/Receive chains
-    // If we can't parse it, we default to 0. (In practice, this should be available)
-    let localUserIdStr = '0';
-    if (typeof sessionStorage !== 'undefined') {
-      localUserIdStr = sessionStorage.getItem('velum-userId') || '0';
-    }
-    const localUserId = parseInt(localUserIdStr, 10) || 0;
+    // Get local user ID to deterministically assign Send/Receive chains.
+    // This MUST match exactly what the peer resolves as *their own* ID for
+    // chain assignment to line up on both sides - never silently default this.
+    const localUserId = this.getLocalUserIdOrThrow();
 
     const infoSend = localUserId < peerUserId ? 'DoubleRatchetChain_A' : 'DoubleRatchetChain_B';
     const infoRecv = localUserId < peerUserId ? 'DoubleRatchetChain_B' : 'DoubleRatchetChain_A';
@@ -346,7 +374,7 @@ class DoubleRatchetService {
     // Get or initialize conversation state
     let state = this.conversationStates.get(peerUserId);
     if (!state) {
-      state = await loadConversationStateFromDb(peerUserId);
+      state = await loadConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId);
       if (state) {
         this.conversationStates.set(peerUserId, state);
       }
@@ -364,11 +392,20 @@ class DoubleRatchetService {
       const rootKey = await this.x3dhHandshake(peerBundle, usedOneTimePrekey);
       state = await this.initializeRatchetState(peerUserId, rootKey);
       this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(peerUserId, state).catch(e => console.error(e));
+      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
     }
 
     // Derive message key from send chain key
     const messageKey = await this.deriveMessageKey(state.sendChainKey!);
+    if (true) {
+      const rawKeyBytes = await window.crypto.subtle.exportKey('raw', messageKey);
+      console.log('[KEYDEBUG] ENCRYPT', {
+        myUserId: this.localUserId,
+        peerUserId,
+        n: state.sendChainLength,
+        keyHex: Array.from(new Uint8Array(rawKeyBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+      });
+    }
 
     // Ratchet chain key for next message
     state.sendChainKey = await this.ratchetChainKey(state.sendChainKey!);
@@ -391,7 +428,7 @@ class DoubleRatchetService {
 
     // Update state
     this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(peerUserId, state).catch(e => console.error(e));
+      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
 
     // Build envelope
     const dhPubJwk = await subtle.exportKey('jwk', state.dhRatchetKeyPair!.publicKey);
@@ -435,7 +472,7 @@ class DoubleRatchetService {
     // Get or initialize conversation state
     let state = this.conversationStates.get(peerUserId);
     if (!state) {
-      state = await loadConversationStateFromDb(peerUserId);
+      state = await loadConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId);
       if (state) {
         this.conversationStates.set(peerUserId, state);
       }
@@ -450,7 +487,7 @@ class DoubleRatchetService {
       const rootKey = await this.x3dhHandshake(peerBundle);
       state = await this.initializeRatchetState(peerUserId, rootKey);
       this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(peerUserId, state).catch(e => console.error(e));
+      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
     }
 
     // Perform DH ratchet if needed
@@ -491,6 +528,16 @@ class DoubleRatchetService {
       if (!messageKey) {
         return '[Encrypted Message - Skipped Key Not Found]';
       }
+    }
+
+    if (true) {
+      const rawKeyBytes = await window.crypto.subtle.exportKey('raw', messageKey!);
+      console.log('[KEYDEBUG] DECRYPT', {
+        myUserId: this.localUserId,
+        peerUserId,
+        n: envelopeData.header.n,
+        keyHex: Array.from(new Uint8Array(rawKeyBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+      });
     }
 
     // Verify HMAC prior to AES-GCM decryption
@@ -534,7 +581,7 @@ class DoubleRatchetService {
 
       const decoder = new TextDecoder();
       this.conversationStates.set(peerUserId, state);
-      saveConversationStateToDb(peerUserId, state).catch(e => console.error(e));
+      saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
       return decoder.decode(decryptedBuffer);
     } catch (err) {
       console.error('[DoubleRatchet] Decryption failure:', err);
@@ -600,6 +647,42 @@ class DoubleRatchetService {
     })();
     this.prekeyBundleCache.set(peerUserId, promise);
     return promise;
+  }
+
+  /**
+   * Force re-key a conversation with a peer when state desynchronization occurs.
+   * Purges in-memory and persisted ratchet state, invalidates peer prekey cache,
+   * clears skipped keys, and performs a fresh X3DH handshake.
+   */
+  async forceRekey(peerUserId: number): Promise<void> {
+    // 1. Evict in-memory state
+    this.conversationStates.delete(peerUserId);
+
+    // 2. Invalidate cached peer prekey bundle
+    this.prekeyBundleCache.delete(peerUserId);
+
+    // 3. Purge persisted state and skipped keys from IndexedDB
+    await Promise.all([
+      deleteConversationStateFromDb(this.getLocalUserIdOrThrow(), peerUserId),
+      clearSkippedKeysForPeer(peerUserId).catch(() => {})
+    ]);
+
+    // 4. Ensure local keys exist
+    if (!this.localIdentityKeyPair) {
+      await this.initializeLocalKeys();
+    }
+
+    // 5. Fetch fresh peer prekey bundle
+    const peerBundle = await this.fetchPeerPrekeyBundle(peerUserId);
+    if (!peerBundle) {
+      throw new Error(`Cannot re-key: No prekey bundle available for user ${peerUserId}`);
+    }
+
+    // 6. Perform fresh X3DH handshake and initialize clean ratchet state
+    const rootKey = await this.x3dhHandshake(peerBundle);
+    const state = await this.initializeRatchetState(peerUserId, rootKey);
+    this.conversationStates.set(peerUserId, state);
+    await saveConversationStateToDb(this.getLocalUserIdOrThrow(), peerUserId, state).catch(e => console.error(e));
   }
 }
 

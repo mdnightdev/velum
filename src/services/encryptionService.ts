@@ -88,6 +88,8 @@ export async function encryptMessage(content: string, context: EncryptionContext
  * Decrypt message based on content format and context
  * Handles: Double Ratchet (ratchet:v2), Legacy Ratchet (ratchet:v1), Room XOR (VEL_E2EE), Plain text
  */
+const activeHeals = new Set<number>();
+
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
@@ -95,7 +97,29 @@ export async function decryptMessage(content: string, context: EncryptionContext
   if (content.startsWith('ratchet:v2:')) {
     if (context.peerUserId) {
       try {
-        return await doubleRatchetService.decryptDirectMessage(content, context.peerUserId);
+        const decrypted = await doubleRatchetService.decryptDirectMessage(content, context.peerUserId);
+        
+        // Trap decryption errors to trigger auto-healing
+        if (
+          decrypted === '[Encrypted Message - Skipped Key Not Found]' ||
+          decrypted === '[Decryption Error - Integrity Check Failed]' ||
+          decrypted === '[Encrypted Message - No Prekey]'
+        ) {
+          const peerId = context.peerUserId;
+          if (!activeHeals.has(peerId)) {
+            activeHeals.add(peerId);
+            console.warn(`[encryptionService] Trapped decryption failure for peer ${peerId}, triggering auto-heal force rekey`);
+            
+            // Trigger background auto-heal
+            doubleRatchetService.forceRekey(peerId)
+              .catch(e => console.error(`[encryptionService] Auto-heal failed for peer ${peerId}:`, e))
+              .finally(() => {
+                setTimeout(() => activeHeals.delete(peerId), 5000); // 5 second cooldown
+              });
+          }
+        }
+        
+        return decrypted;
       } catch (err) {
         console.error('[encryptionService] Double Ratchet decryption error:', err);
         return '[Encrypted Message]';

@@ -22,7 +22,13 @@ function openOutboxDb(): Promise<IDBDatabase> {
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => reject(new Error('Failed to open outbox database.'));
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+      };
+      resolve(db);
+    };
 
     request.onupgradeneeded = (event: any) => {
       const db = event.target.result;

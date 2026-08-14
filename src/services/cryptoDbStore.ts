@@ -1,5 +1,5 @@
 const DB_NAME = 'velum_crypto_vault';
-const DB_VERSION = 25;
+const DB_VERSION = 26; // bumped: STORE_CONVERSATIONS keyPath changed from peerUserId -> id (namespaced by local user)
 const STORE_LOCAL_KEYS = 'local_keys';
 const STORE_CONVERSATIONS = 'conversation_states';
 
@@ -10,15 +10,26 @@ export async function openCryptoDatabaseV2(): Promise<IDBDatabase> {
     }
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
     request.onerror = () => reject(new Error('Failed to open crypto vault IndexedDB database.'));
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+      };
+      resolve(db);
+    };
     request.onupgradeneeded = (event: any) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains(STORE_LOCAL_KEYS)) {
         db.createObjectStore(STORE_LOCAL_KEYS, { keyPath: 'id' });
       }
-      if (!db.objectStoreNames.contains(STORE_CONVERSATIONS)) {
-        db.createObjectStore(STORE_CONVERSATIONS, { keyPath: 'peerUserId' });
+      // STORE_CONVERSATIONS previously used keyPath 'peerUserId', which meant every
+      // logged-in account on this browser origin shared the SAME conversation-state
+      // record for a given peer. Recreate with keyPath 'id' = `${localUserId}_${peerUserId}`.
+      if (db.objectStoreNames.contains(STORE_CONVERSATIONS)) {
+        db.deleteObjectStore(STORE_CONVERSATIONS);
       }
+      db.createObjectStore(STORE_CONVERSATIONS, { keyPath: 'id' });
+
       // Make sure old stores exist so we don't break skippedKeysStore
       if (!db.objectStoreNames.contains('skipped_message_keys')) {
         db.createObjectStore('skipped_message_keys', { keyPath: 'id' });
@@ -27,8 +38,16 @@ export async function openCryptoDatabaseV2(): Promise<IDBDatabase> {
   });
 }
 
+function localKeysRecordId(localUserId: number): string {
+  return `local_keys_${localUserId}`;
+}
+
+function conversationRecordId(localUserId: number, peerUserId: number): string {
+  return `${localUserId}_${peerUserId}`;
+}
+
 // Storing Raw/JWK representations is best to avoid Structured Clone issues across browsers
-export async function saveLocalKeysToDb(identityKeyPair: any, signedPrekeyPair: any, oneTimePrekeys: any[]) {
+export async function saveLocalKeysToDb(localUserId: number, identityKeyPair: any, signedPrekeyPair: any, oneTimePrekeys: any[]) {
   try {
     const subtle = window.crypto.subtle;
     const exportKeyPair = async (kp: any) => ({
@@ -37,7 +56,8 @@ export async function saveLocalKeysToDb(identityKeyPair: any, signedPrekeyPair: 
     });
     
     const record = {
-      id: 'local_keys',
+      id: localKeysRecordId(localUserId),
+      localUserId,
       identityKeyPair: await exportKeyPair(identityKeyPair),
       signedPrekeyPair: await exportKeyPair(signedPrekeyPair),
       oneTimePrekeys: await Promise.all(oneTimePrekeys.map(exportKeyPair))
@@ -55,12 +75,12 @@ export async function saveLocalKeysToDb(identityKeyPair: any, signedPrekeyPair: 
   }
 }
 
-export async function loadLocalKeysFromDb(): Promise<any> {
+export async function loadLocalKeysFromDb(localUserId: number): Promise<any> {
   try {
     const db = await openCryptoDatabaseV2();
     const record = await new Promise<any>((resolve, reject) => {
       const tx = db.transaction([STORE_LOCAL_KEYS], 'readonly');
-      const req = tx.objectStore(STORE_LOCAL_KEYS).get('local_keys');
+      const req = tx.objectStore(STORE_LOCAL_KEYS).get(localKeysRecordId(localUserId));
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(new Error('Failed to load local keys'));
     });
@@ -84,10 +104,12 @@ export async function loadLocalKeysFromDb(): Promise<any> {
   }
 }
 
-export async function saveConversationStateToDb(peerUserId: number, state: any) {
+export async function saveConversationStateToDb(localUserId: number, peerUserId: number, state: any) {
   try {
     const subtle = window.crypto.subtle;
     const record: any = {
+      id: conversationRecordId(localUserId, peerUserId),
+      localUserId,
       peerUserId,
       rootKey: state.rootKey,
       sendChainKey: state.sendChainKey,
@@ -121,12 +143,12 @@ export async function saveConversationStateToDb(peerUserId: number, state: any) 
   }
 }
 
-export async function loadConversationStateFromDb(peerUserId: number): Promise<any> {
+export async function loadConversationStateFromDb(localUserId: number, peerUserId: number): Promise<any> {
   try {
     const db = await openCryptoDatabaseV2();
     const record = await new Promise<any>((resolve, reject) => {
       const tx = db.transaction([STORE_CONVERSATIONS], 'readonly');
-      const req = tx.objectStore(STORE_CONVERSATIONS).get(peerUserId);
+      const req = tx.objectStore(STORE_CONVERSATIONS).get(conversationRecordId(localUserId, peerUserId));
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(new Error('Failed to load conversation state'));
     });
@@ -161,6 +183,29 @@ export async function loadConversationStateFromDb(peerUserId: number): Promise<a
     console.error('Failed to load conversation state from DB', err);
     return null;
   }
+}
+
+export async function deleteConversationStateFromDb(localUserId: number, peerUserId: number): Promise<void> {
+  const db = await openCryptoDatabaseV2();
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction([STORE_CONVERSATIONS], 'readwrite');
+      const store = tx.objectStore(STORE_CONVERSATIONS);
+      const req = store.delete(conversationRecordId(localUserId, peerUserId));
+      req.onsuccess = () => resolve();
+      req.onerror = () => {
+        console.warn(`[CryptoDbStore] Failed to delete conversation state for peer ${peerUserId}`, req.error);
+        resolve();
+      };
+      tx.oncomplete = () => {
+        try { db.close(); } catch (_) {}
+      };
+    } catch (e) {
+      console.warn(`[CryptoDbStore] Error deleting conversation state for peer ${peerUserId}:`, e);
+      try { db.close(); } catch (_) {}
+      resolve();
+    }
+  });
 }
 
 export async function purgeCryptoVault(): Promise<void> {

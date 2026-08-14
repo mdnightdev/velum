@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, FileIcon, Check, Copy } from 'lucide-react';
+import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, FileIcon, Check, Copy, ShieldCheck } from 'lucide-react';
 import { Message, stripAt } from '../../types';
 import ProfileCard from '../ProfileCard';
 import { AudioMessagePlayer } from '../AudioMessagePlayer';
@@ -409,7 +409,13 @@ export function MessageItem({
                       )}
                     </div>
                   )}
-                  {parsedMsgContent && (
+                  {parsedMsgContent === '[Decryption Error - Integrity Check Failed]' || parsedMsgContent === '[Encrypted Message - Skipped Key Not Found]' ? (
+                    <div className="flex items-center gap-3">
+                      <p className="whitespace-pre-wrap message-content-wrap selectable-text text-alert-error italic font-mono text-[11px]">
+                        {parsedMsgContent}
+                      </p>
+                    </div>
+                  ) : parsedMsgContent && (
                     <div>
                       <p className="whitespace-pre-wrap message-content-wrap selectable-text">
                         {parsedMsgContent}
