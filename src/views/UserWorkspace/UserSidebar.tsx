@@ -72,6 +72,7 @@ export default function UserSidebar({
 }: UserSidebarProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<string>('rooms');
+  const [lockedFeatureToast, setLockedFeatureToast] = useState<string | null>(null);
 
   // Database states
 
@@ -89,6 +90,13 @@ export default function UserSidebar({
       setActiveTab(activeCategory);
     }
   }, [activeCategory]);
+
+  useEffect(() => {
+    if (lockedFeatureToast) {
+      const timer = setTimeout(() => setLockedFeatureToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [lockedFeatureToast]);
   
   // Creation forms
   const [newLoungeName, setNewLoungeName] = useState('');
@@ -332,6 +340,7 @@ export default function UserSidebar({
             { id: 'friends', label: t('nav.friends', 'Friends'), icon: <Users className="w-4.5 h-4.5" /> },
             { id: 'saved', label: t('nav.saved', 'Saved Notes'), icon: <Bookmark className="w-4.5 h-4.5" />, isCyan: true },
           ].map((it) => {
+            const isLocked = ['market', 'notifications', 'wallet', 'saved'].includes(it.id);
             let isSelected = false;
             if (it.id === 'directs') {
               isSelected = activeCategory === 'direct';
@@ -348,6 +357,10 @@ export default function UserSidebar({
                 key={it.id}
                 type="button"
                 onClick={() => {
+                  if (isLocked) {
+                    setLockedFeatureToast('Feature in development. Coming soon!');
+                    return;
+                  }
                   if (it.id === 'directs') {
                     if (onCategoryChange) onCategoryChange('direct');
                     onRoomSelect('');
@@ -363,21 +376,23 @@ export default function UserSidebar({
                   }
                   if (typeof onCloseSidebar !== 'undefined' && onCloseSidebar) onCloseSidebar();
                 }}
-                className={`w-full text-left flex items-center transition duration-150 cursor-pointer select-none ${
+                className={`w-full text-left flex items-center transition duration-150 select-none ${
+                  isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                } ${
                   isSidebarExpanded 
                     ? 'px-4 py-3 justify-between rounded-2xl min-h-[44px]' 
                     : 'w-11 h-11 mx-auto justify-center rounded-xl'
                 } ${
-                  isSelected
+                  isSelected && !isLocked
                     ? it.isCyan ? 'bg-cyan-950/40 text-cyan-400 font-medium border border-cyan-500/30 shadow-sm' : 'bg-white-10 text-white font-medium shadow-sm' 
                     : it.isCyan
                       ? 'text-cyan-400 hover:bg-cyan-950/20 hover:text-cyan-300'
                       : 'text-text-secondary hover:bg-white-5 hover:text-white'
                 }`}
-                title={!isSidebarExpanded ? it.label : undefined}
+                title={isLocked ? `${it.label} (Coming soon)` : (!isSidebarExpanded ? it.label : undefined)}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isSelected ? (it.isCyan ? 'text-cyan-400' : 'text-accent') : (it.isCyan ? 'text-cyan-400' : 'text-text-secondary')}`}>
+                  <div className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isSelected && !isLocked ? (it.isCyan ? 'text-cyan-400' : 'text-accent') : (it.isCyan ? 'text-cyan-400' : 'text-text-secondary')}`}>
                     {it.icon}
                   </div>
                   {isSidebarExpanded && <span className={`text-sm font-semibold ${it.isCyan ? 'text-cyan-400' : ''}`}>{it.label}</span>}
@@ -493,6 +508,23 @@ export default function UserSidebar({
               className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
             >
               Verify Code
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Alert for Locked / Coming Soon Features */}
+      {lockedFeatureToast && (
+        <div className="fixed bottom-6 left-6 z-[999999] animate-fadeIn">
+          <div className="bg-velum-850 border border-accent/40 text-accent text-xs font-mono px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+            <span className="font-semibold">{lockedFeatureToast}</span>
+            <button 
+              type="button"
+              onClick={() => setLockedFeatureToast(null)}
+              className="ml-2 text-text-secondary hover:text-white cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
