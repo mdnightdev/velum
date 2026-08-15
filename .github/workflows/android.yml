@@ -47,6 +47,7 @@ jobs:
           APP_VERSION: '1.0.0'
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
+          gradle wrapper
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
