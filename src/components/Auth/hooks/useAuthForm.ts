@@ -250,7 +250,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
 
       const data = await res.json();
       if (res.ok) {
-        setRecoverySuccessMessage('Registration complete. Check your Velum Bot DM for your recovery key.');
+        setRecoverySuccessMessage('Registration complete.');
         setUsername('');
         setPassword('');
         setSafeWord('');

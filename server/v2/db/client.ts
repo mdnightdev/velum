@@ -6,7 +6,7 @@ let pgPool: pg.Pool | null = null;
 
 export function getPgPool(): pg.Pool {
   if (!pgPool) {
-    const databaseUrl = (config.DATABASE_URL || '').trim().replace(/\s+/g, '').replace('-pooler', '');
+    const databaseUrl = (config.DATABASE_URL || '').trim().replace(/\s+/g, '');
     
     // Explicit disable check for local postgres setups (e.g., localhost, 127.0.0.1, or sslmode=disable)
     const isExplicitDisable =

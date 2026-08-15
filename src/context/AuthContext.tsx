@@ -33,7 +33,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
       const cached = sessionStorage.getItem('velum-user');
-      return cached ? JSON.parse(cached) : null;
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.userId) {
+          doubleRatchetService.setLocalUserId(Number(parsed.userId));
+        }
+        return parsed;
+      }
+      return null;
     } catch (_) { return null; }
   });
   const [sessionId, setSessionId] = useState<string | null>(() => {
@@ -51,11 +58,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = !!user && !!sessionId;
 
   const handleLoginSuccess = (loginUser: AuthUser, sId: string, dId: string, destination: string) => {
+    doubleRatchetService.setLocalUserId(Number(loginUser.userId));
+
     if (user && user.userId !== loginUser.userId) {
       log.warn('Cross-identity login detected. Purging crypto vault.');
       purgeCryptoVault().catch(() => {});
-    purgeLocalMessages().catch(() => {});
-    doubleRatchetService.clearMemoryState();
+      purgeLocalMessages().catch(() => {});
+      doubleRatchetService.clearMemoryState();
+      doubleRatchetService.setLocalUserId(Number(loginUser.userId));
     }
 
     setUser(loginUser);

@@ -89,6 +89,14 @@ export default function SettingsDrawer({
   const [fontAdjustment, setFontAdjustment] = useState<'small' | 'medium' | 'large'>('medium');
   const [reducedMotion, setReducedMotion] = useState<boolean>(false);
   const [appearanceMsg, setAppearanceMsg] = useState<string | null>(null);
+  const [lockedFeatureToast, setLockedFeatureToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (lockedFeatureToast) {
+      const timer = setTimeout(() => setLockedFeatureToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [lockedFeatureToast]);
 
   // Notifications states
   const [desktopPopups, setDesktopPopups] = useState(true);
@@ -733,18 +741,28 @@ export default function SettingsDrawer({
                     { id: 'media', label: t('settings.voice_audio', 'Voice & Audio'), icon: Volume2 },
                     { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
                   ].map((cat) => {
+                    const isLocked = cat.id === 'appearance';
                     const Icon = cat.icon;
                     const active = activeView === cat.id;
                     return (
                       <button
                         key={cat.id}
                         type="button"
-                        onClick={() => setActiveView(cat.id as SettingCategory)}
-                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                          active 
-                            ? 'bg-accent/10 text-accent' 
-                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
+                        onClick={() => {
+                          if (isLocked) {
+                            setLockedFeatureToast('Feature in development. Coming soon!');
+                            return;
+                          }
+                          setActiveView(cat.id as SettingCategory);
+                        }}
+                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none ${
+                          isLocked
+                            ? 'opacity-50 cursor-not-allowed text-text-secondary'
+                            : active 
+                              ? 'bg-accent/10 text-accent cursor-pointer' 
+                              : 'text-text-secondary hover:bg-white-5 hover:text-text-primary cursor-pointer'
                         }`}
+                        title={isLocked ? `${cat.label} (Coming soon)` : undefined}
                       >
                         <div className="flex items-center gap-3">
                           <Icon className="w-4 h-4 shrink-0" />
@@ -1207,6 +1225,23 @@ export default function SettingsDrawer({
         accept="image/*" 
         className="hidden" 
       />
+      {/* Toast Alert for Locked Features */}
+      {lockedFeatureToast && (
+        <div className="fixed bottom-6 right-6 z-[999999] animate-fadeIn">
+          <div className="bg-velum-850 border border-accent/40 text-accent text-xs font-mono px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+            <span className="font-semibold">{lockedFeatureToast}</span>
+            <button 
+              type="button"
+              onClick={() => setLockedFeatureToast(null)}
+              className="ml-2 text-text-secondary hover:text-white cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -221,6 +221,8 @@ export async function loadConversationStateFromDb(localUserId: number, peerUserI
     
     if (!record) return null;
     
+    const subtle = window.crypto.subtle;
+
     // Validate checksum if present
     if (record.checksum) {
       const checksumData = {
@@ -232,7 +234,6 @@ export async function loadConversationStateFromDb(localUserId: number, peerUserI
       };
       const dataString = JSON.stringify(checksumData);
       const dataBytes = new TextEncoder().encode(dataString);
-      const subtle = window.crypto.subtle;
       const hashBuffer = await subtle.digest('SHA-256', dataBytes);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const calculatedChecksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');

@@ -111,60 +111,75 @@ export function ImageCropperModal({
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   };
 
+  const animFrameRef = useRef<number | null>(null);
+
   const handlePointerMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
     if (!drag) return;
     const { x: cx, y: cy } = clientToContainer(e.clientX, e.clientY);
 
-    if (drag.mode === 'pan') {
-      setPan({ x: drag.startPan.x + (cx - drag.startX), y: drag.startPan.y + (cy - drag.startY) });
-      return;
+    if (animFrameRef.current !== null) {
+      cancelAnimationFrame(animFrameRef.current);
     }
 
-    const ratio = ASPECT_RATIOS[aspect];
-    const sc = drag.startCrop;
-    const right = sc.x + sc.w;
-    const bottom = sc.y + sc.h;
-    let { x, y, w, h } = sc;
+    animFrameRef.current = requestAnimationFrame(() => {
+      if (!dragRef.current) return;
+      if (drag.mode === 'pan') {
+        setPan({ x: drag.startPan.x + (cx - drag.startX), y: drag.startPan.y + (cy - drag.startY) });
+        return;
+      }
 
-    switch (drag.handle) {
-      case 'tl': {
-        let nx = Math.max(0, Math.min(cx, right - MIN_CROP));
-        let ny = Math.max(0, Math.min(cy, bottom - MIN_CROP));
-        let nw = right - nx, nh = bottom - ny;
-        if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; nx = right - nw; ny = bottom - nh; }
-        x = nx; y = ny; w = nw; h = nh; break;
+      const ratio = ASPECT_RATIOS[aspect];
+      const sc = drag.startCrop;
+      const right = sc.x + sc.w;
+      const bottom = sc.y + sc.h;
+      let { x, y, w, h } = sc;
+
+      switch (drag.handle) {
+        case 'tl': {
+          let nx = Math.max(0, Math.min(cx, right - MIN_CROP));
+          let ny = Math.max(0, Math.min(cy, bottom - MIN_CROP));
+          let nw = right - nx, nh = bottom - ny;
+          if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; nx = right - nw; ny = bottom - nh; }
+          x = nx; y = ny; w = nw; h = nh; break;
+        }
+        case 'tr': {
+          let nx2 = Math.min(containerSize.w, Math.max(cx, sc.x + MIN_CROP));
+          let ny = Math.max(0, Math.min(cy, bottom - MIN_CROP));
+          let nw = nx2 - sc.x, nh = bottom - ny;
+          if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; ny = bottom - nh; }
+          x = sc.x; y = ny; w = nw; h = nh; break;
+        }
+        case 'bl': {
+          let nx = Math.max(0, Math.min(cx, right - MIN_CROP));
+          let ny2 = Math.min(containerSize.h, Math.max(cy, sc.y + MIN_CROP));
+          let nw = right - nx, nh = ny2 - sc.y;
+          if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; nx = right - nw; }
+          x = nx; y = sc.y; w = nw; h = nh; break;
+        }
+        case 'br': {
+          let nx2 = Math.min(containerSize.w, Math.max(cx, sc.x + MIN_CROP));
+          let ny2 = Math.min(containerSize.h, Math.max(cy, sc.y + MIN_CROP));
+          let nw = nx2 - sc.x, nh = ny2 - sc.y;
+          if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; }
+          x = sc.x; y = sc.y; w = nw; h = nh; break;
+        }
+        case 't': { let ny = Math.max(0, Math.min(cy, bottom - MIN_CROP)); y = ny; h = bottom - ny; x = sc.x; w = sc.w; break; }
+        case 'b': { let ny2 = Math.min(containerSize.h, Math.max(cy, sc.y + MIN_CROP)); h = ny2 - sc.y; y = sc.y; x = sc.x; w = sc.w; break; }
+        case 'l': { let nx = Math.max(0, Math.min(cx, right - MIN_CROP)); x = nx; w = right - nx; y = sc.y; h = sc.h; break; }
+        case 'r': { let nx2 = Math.min(containerSize.w, Math.max(cx, sc.x + MIN_CROP)); w = nx2 - sc.x; x = sc.x; y = sc.y; h = sc.h; break; }
       }
-      case 'tr': {
-        let nx2 = Math.min(containerSize.w, Math.max(cx, sc.x + MIN_CROP));
-        let ny = Math.max(0, Math.min(cy, bottom - MIN_CROP));
-        let nw = nx2 - sc.x, nh = bottom - ny;
-        if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; ny = bottom - nh; }
-        x = sc.x; y = ny; w = nw; h = nh; break;
-      }
-      case 'bl': {
-        let nx = Math.max(0, Math.min(cx, right - MIN_CROP));
-        let ny2 = Math.min(containerSize.h, Math.max(cy, sc.y + MIN_CROP));
-        let nw = right - nx, nh = ny2 - sc.y;
-        if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; nx = right - nw; }
-        x = nx; y = sc.y; w = nw; h = nh; break;
-      }
-      case 'br': {
-        let nx2 = Math.min(containerSize.w, Math.max(cx, sc.x + MIN_CROP));
-        let ny2 = Math.min(containerSize.h, Math.max(cy, sc.y + MIN_CROP));
-        let nw = nx2 - sc.x, nh = ny2 - sc.y;
-        if (ratio) { if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio; }
-        x = sc.x; y = sc.y; w = nw; h = nh; break;
-      }
-      case 't': { let ny = Math.max(0, Math.min(cy, bottom - MIN_CROP)); y = ny; h = bottom - ny; x = sc.x; w = sc.w; break; }
-      case 'b': { let ny2 = Math.min(containerSize.h, Math.max(cy, sc.y + MIN_CROP)); h = ny2 - sc.y; y = sc.y; x = sc.x; w = sc.w; break; }
-      case 'l': { let nx = Math.max(0, Math.min(cx, right - MIN_CROP)); x = nx; w = right - nx; y = sc.y; h = sc.h; break; }
-      case 'r': { let nx2 = Math.min(containerSize.w, Math.max(cx, sc.x + MIN_CROP)); w = nx2 - sc.x; x = sc.x; y = sc.y; h = sc.h; break; }
-    }
-    setCrop({ x, y, w, h });
+      setCrop({ x, y, w, h });
+    });
   };
 
-  const handlePointerUp = () => { dragRef.current = null; };
+  const handlePointerUp = () => { 
+    if (animFrameRef.current !== null) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    dragRef.current = null; 
+  };
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -200,7 +215,7 @@ export function ImageCropperModal({
     const ctx = outputCanvas.getContext('2d');
     if (!ctx) return;
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingQuality = 'medium';
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
 
     const croppedDataUrl = outputCanvas.toDataURL('image/png');
@@ -245,8 +260,8 @@ export function ImageCropperModal({
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onLoad={handleImgLoad}
-              className="absolute cursor-grab active:cursor-grabbing"
-              style={{ width: dispW, height: dispH, left: imgLeft, top: imgTop }}
+              className="absolute cursor-grab active:cursor-grabbing will-change-transform"
+              style={{ width: dispW, height: dispH, left: imgLeft, top: imgTop, transform: 'translate3d(0,0,0)' }}
             />
           )}
           {!naturalSize.w && (
@@ -255,7 +270,7 @@ export function ImageCropperModal({
 
           {/* Darkened mask outside crop box */}
           <div
-            className="absolute pointer-events-none border border-white/40"
+            className="absolute pointer-events-none border border-white/40 will-change-transform"
             style={{ left: crop.x, top: crop.y, width: crop.w, height: crop.h, boxShadow: '0 0 0 9999px rgba(0,0,0,0.7)' }}
           >
             <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-30">
@@ -314,29 +329,16 @@ export function ImageCropperModal({
           </button>
         </div>
 
-        {/* Bottom strip — aspect pills + rotate, no border/box, just floating on black */}
-        <div className="flex items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-1">
-            {(['free', '1:1', '4:3', '16:9'] as const).map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setAspect(r)}
-                className={`px-2.5 py-1 rounded-full text-[10px] font-mono capitalize transition cursor-pointer ${
-                  aspect === r ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
+        {/* Bottom strip — clean rotate action */}
+        <div className="flex items-center justify-center px-5 py-4">
           <button
             type="button"
             onClick={() => setRotation((r) => (r + 90) % 360)}
-            className="text-white/80 hover:text-white transition cursor-pointer p-1"
+            className="text-white/80 hover:text-white transition cursor-pointer p-2 rounded-full hover:bg-white/10 flex items-center gap-2 text-xs font-mono"
             title="Rotate 90°"
           >
-            <RotateCcw className="w-5 h-5" />
+            <RotateCcw className="w-4 h-4" />
+            <span>Rotate</span>
           </button>
         </div>
       </div>

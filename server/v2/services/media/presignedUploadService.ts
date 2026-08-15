@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export interface PresignedUploadRequest {
   filename: string;
@@ -49,6 +51,26 @@ export function validateUploadParameters(params: PresignedUploadRequest): { vali
   return { valid: true };
 }
 
+function getS3Client(): S3Client | null {
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  const endpoint = process.env.R2_ENDPOINT || process.env.S3_ENDPOINT;
+  const region = process.env.R2_REGION || process.env.AWS_REGION || 'auto';
+
+  if (!accessKeyId || !secretAccessKey || !endpoint) {
+    return null;
+  }
+
+  return new S3Client({
+    region,
+    endpoint,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+}
+
 export async function generatePresignedUpload(
   params: PresignedUploadRequest,
   userId: number,
@@ -59,20 +81,33 @@ export async function generatePresignedUpload(
   const randomToken = crypto.randomBytes(16).toString('hex');
   const mediaId = `media_${Date.now()}_${randomToken.slice(0, 8)}`;
   const cleanFilename = `${mediaId}${ext}`;
-
   const relativePath = `/uploads/${folder}/${cleanFilename}`;
 
-  // Check if S3 / R2 env vars are present, or fallback to server direct upload endpoint
-  const s3Bucket = process.env.S3_BUCKET_NAME || process.env.R2_BUCKET_NAME;
-  const s3Endpoint = process.env.S3_ENDPOINT || process.env.R2_ENDPOINT;
+  const s3Client = getS3Client();
+  const s3Bucket = process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME;
 
   let uploadUrl = '';
   let fileUrl = '';
 
-  if (s3Bucket && s3Endpoint) {
-    // S3 / R2 Presigned PUT URL format
-    uploadUrl = `${s3Endpoint}/${s3Bucket}/${folder}/${cleanFilename}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&token=${randomToken}`;
-    fileUrl = `${process.env.CDN_BASE_URL || s3Endpoint}/${s3Bucket}/${folder}/${cleanFilename}`;
+  if (s3Client && s3Bucket) {
+    const key = `${folder}/${cleanFilename}`;
+    const command = new PutObjectCommand({
+      Bucket: s3Bucket,
+      Key: key,
+      ContentType: params.mimeType,
+      Metadata: {
+        uploader: String(userId),
+      },
+    });
+
+    uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 });
+    const cdnBase = process.env.CDN_BASE_URL || process.env.R2_PUBLIC_URL || process.env.R2_PUBLIC_DOMAIN;
+    if (cdnBase) {
+      const cleanBase = cdnBase.replace(/\/+$/, '');
+      fileUrl = `${cleanBase}/${key}`;
+    } else {
+      fileUrl = `${process.env.R2_ENDPOINT || process.env.S3_ENDPOINT}/${s3Bucket}/${key}`;
+    }
   } else {
     // Local / direct server endpoint fallback
     const protocol = hostHeader.includes('localhost') || hostHeader.includes('127.0.0.1') ? 'http' : 'https';

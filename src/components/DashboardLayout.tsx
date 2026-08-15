@@ -198,6 +198,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (user?.userId) {
+      doubleRatchetService.setLocalUserId(Number(user.userId));
       doubleRatchetService.initializeLocalKeys().catch(console.error);
       loadPeopleAndRequests();
       const interval = setInterval(loadPeopleAndRequests, 12000);
@@ -301,7 +302,7 @@ export default function DashboardLayout({
 
   try {
     return (
-      <div className="flex flex-col md:flex-row w-full h-[var(--viewport-height,100dvh)] bg-velum-900 text-text-primary overflow-hidden relative font-sans">
+      <div className="flex flex-col md:flex-row w-full h-full bg-velum-900 text-text-primary overflow-hidden relative font-sans">
         <SettingsDrawer
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
