@@ -142,7 +142,7 @@ export function MessageItem({
     >
 
 
-      {!isMe && (
+      {!isMe && (msg.content || activeContent) && (
         <div className="flex-shrink-0 mt-auto mb-5 relative z-[60]">
           <div
             className="cursor-pointer w-7 h-7 rounded-full bg-velum-800 border border-accent/30 flex items-center justify-center font-bold text-accent text-[10px] overflow-hidden hover:bg-text-primary/5 transition-colors"

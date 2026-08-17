@@ -2,13 +2,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import wasm from 'vite-plugin-wasm';
 import { visualizer } from "rollup-plugin-visualizer";
 
 export default defineConfig({
   define: {
     'import.meta.env.VITE_BUILD_TIME': JSON.stringify(new Date().toISOString()),
   },
-  plugins: [react(), tailwindcss()],
+  plugins: [wasm(), react(), tailwindcss()],
   server: {
     port: 3000,
     host: '0.0.0.0',
@@ -21,6 +22,8 @@ export default defineConfig({
     watch: process.env.DISABLE_HMR === 'true' ? null : {},
   },
   test: {
+    globals: true,
+    environment: 'node',
     testTimeout: 20000,
   },
   resolve: {
@@ -29,6 +32,7 @@ export default defineConfig({
     },
   },
   build: {
+    target: 'esnext',
     sourcemap: false,
     rollupOptions: {
       output: {
@@ -37,6 +41,7 @@ export default defineConfig({
         assetFileNames: 'assets/[name].[hash].[ext]',
         manualChunks(id) {
           if (id.includes('node_modules')) {
+            if (id.includes('@signalapp/libsignal-client') || id.includes('hash-wasm') || id.includes('idb')) return 'vendor-crypto';
             if (id.includes('react') || id.includes('react-dom')) return 'vendor-react';
             if (id.includes('lucide-react')) return 'vendor-icons';
             return 'vendor-utils';

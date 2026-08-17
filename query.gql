@@ -1,0 +1,11 @@
+mutation {
+  serviceUpdate(
+    id: "cd322968-b799-454b-8748-e1108be2fd88",
+    input: {
+      name: "velum"
+    }
+  ) {
+    id
+    name
+  }
+}

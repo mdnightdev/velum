@@ -32,36 +32,26 @@ const authMiddleware = createAuthMiddleware(async (tokenHash) => {
   };
 });
 
+import { publishPrekeyBundle, fetchPrekeyBundle } from '../services/crypto/prekeyVaultService.js';
+
 userRouter.post('/keys/prekey-bundle', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { identityKey, signedPrekey, signedPrekeySignature, oneTimePrekeys } = req.body;
+    const { identityKey, signedPrekey, signedPrekeySignature, oneTimePrekeys, registrationId, deviceId, signedPrekeyId } = req.body;
 
-    if (!identityKey || !signedPrekey || !signedPrekeySignature) {
+    if (!identityKey || !signedPrekey) {
       return res.status(400).json({ error: 'Missing required prekey parameters.' });
     }
 
-    const existing = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, userId)).limit(1);
-    const oneTimeStr = typeof oneTimePrekeys === 'string' ? oneTimePrekeys : JSON.stringify(oneTimePrekeys || []);
-
-    if (existing.length === 0) {
-      await db.insert(userPrekeys).values({
-        userId,
-        identityKey,
-        signedPrekey,
-        signedPrekeySignature,
-        oneTimePrekeys: oneTimeStr,
-        updatedAt: new Date()
-      });
-    } else {
-      await db.update(userPrekeys).set({
-        identityKey,
-        signedPrekey,
-        signedPrekeySignature,
-        oneTimePrekeys: oneTimeStr,
-        updatedAt: new Date()
-      }).where(eq(userPrekeys.userId, userId));
-    }
+    await publishPrekeyBundle(userId, {
+      identityKey,
+      signedPrekey,
+      signedPrekeySignature,
+      signedPrekeyId,
+      registrationId,
+      deviceId,
+      oneTimePrekeys
+    });
 
     res.json({ message: 'Prekey bundle uploaded successfully.' });
   } catch (err) {
@@ -76,25 +66,21 @@ userRouter.get('/:id/prekey-bundle', authMiddleware, async (req: Request, res: R
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
 
-    const prekeyRecord = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, targetUserId)).limit(1);
-    if (prekeyRecord.length === 0) {
+    const bundle = await fetchPrekeyBundle(targetUserId);
+    if (!bundle) {
       return res.status(404).json({ error: 'Prekey bundle not found for user.' });
     }
 
-    let parsedOneTime = [];
-    try {
-      parsedOneTime = JSON.parse(prekeyRecord[0].oneTimePrekeys || '[]');
-    } catch (e) {
-      parsedOneTime = [];
-    }
-
     res.json({
-      userId: prekeyRecord[0].userId,
-      identityKey: prekeyRecord[0].identityKey,
-      signedPrekey: prekeyRecord[0].signedPrekey,
-      signedPrekeySignature: prekeyRecord[0].signedPrekeySignature,
-      oneTimePrekeys: parsedOneTime,
-      updatedAt: prekeyRecord[0].updatedAt
+      userId: bundle.userId,
+      registrationId: bundle.registrationId,
+      deviceId: bundle.deviceId,
+      identityKey: bundle.identityKey,
+      signedPrekeyId: bundle.signedPrekeyId,
+      signedPrekey: bundle.signedPrekey,
+      signedPrekeySignature: bundle.signedPrekeySignature,
+      oneTimePrekey: bundle.oneTimePrekey,
+      oneTimePrekeysLeft: bundle.oneTimePrekeysLeft
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch prekey bundle.' });

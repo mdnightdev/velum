@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { config } from '../config.js';
+import * as fs from 'fs';
 
 let pgPool: pg.Pool | null = null;
 
@@ -29,7 +30,10 @@ export function getPgPool(): pg.Pool {
 
     pgPool = new pg.Pool({
       connectionString: databaseUrl || undefined,
-      ssl: useSsl ? { rejectUnauthorized: false } : false,
+      ssl: useSsl ? { 
+        rejectUnauthorized: true,
+        ca: process.env.DATABASE_CA_CERT ? fs.readFileSync(process.env.DATABASE_CA_CERT) : undefined
+      } : false,
       max: Number(process.env.PG_MAX_POOL) || 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 15000,

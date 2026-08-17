@@ -24,23 +24,49 @@ const auth = createAuthMiddleware(async (hashedToken) => {
     expiresAt: session.expiresAt
   };
 });
+
 export const cryptoRouter = Router();
 
 // POST /v2/crypto/prekeys - Publish or refresh prekey bundle
 cryptoRouter.post('/crypto/prekeys', auth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
-    const { identityKey, signedPrekey, signedPrekeySignature, oneTimePrekeys } = req.body;
+    const {
+      registrationId,
+      deviceId,
+      identityKey,
+      signedPrekey,
+      signedPrekeyId,
+      signedPrekeySignature,
+      oneTimePrekeys
+    } = req.body;
 
-    if (!identityKey || !signedPrekey || !signedPrekeySignature) {
-      return res.status(400).json({ error: 'Missing identityKey, signedPrekey, or signedPrekeySignature.' });
+    if (!identityKey) {
+      return res.status(400).json({ error: 'Missing identityKey.' });
+    }
+
+    if (!signedPrekey) {
+      return res.status(400).json({ error: 'Missing signedPrekey.' });
+    }
+
+    if (typeof signedPrekey === 'object' && signedPrekey !== null) {
+      if (!signedPrekey.publicKey || !signedPrekey.signature) {
+        return res.status(400).json({ error: 'Invalid signedPrekey structure. publicKey and signature are required.' });
+      }
+    } else if (typeof signedPrekey === 'string') {
+      if (!signedPrekeySignature) {
+        return res.status(400).json({ error: 'Missing signedPrekeySignature.' });
+      }
     }
 
     await publishPrekeyBundle(userId, {
-      identityKey,
+      registrationId: registrationId !== undefined ? Number(registrationId) : 1,
+      deviceId: deviceId !== undefined ? Number(deviceId) : 1,
+      identityKey: String(identityKey),
+      signedPrekeyId: signedPrekeyId !== undefined ? Number(signedPrekeyId) : undefined,
       signedPrekey,
       signedPrekeySignature,
-      oneTimePrekeys
+      oneTimePrekeys: Array.isArray(oneTimePrekeys) || typeof oneTimePrekeys === 'string' ? oneTimePrekeys : []
     });
 
     res.json({ status: 'ok', message: 'Prekey bundle published successfully.' });
@@ -57,7 +83,9 @@ cryptoRouter.get('/crypto/prekeys/:userId', auth, async (req: Request, res: Resp
       return res.status(400).json({ error: 'Invalid userId parameter.' });
     }
 
-    const bundle = await fetchPrekeyBundle(targetUserId);
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId as string, 10) : 1;
+
+    const bundle = await fetchPrekeyBundle(targetUserId, deviceId);
     if (!bundle) {
       return res.status(404).json({ error: 'Prekey bundle not found for user.' });
     }
@@ -78,9 +106,11 @@ cryptoRouter.post('/crypto/safety-number', auth, async (req: Request, res: Respo
 
     if (!peerKey && peer_user_id) {
       const targetId = parseInt(peer_user_id, 10);
-      const [peerRecord] = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, targetId)).limit(1);
-      if (peerRecord) {
-        peerKey = peerRecord.identityKey;
+      if (!isNaN(targetId)) {
+        const [peerRecord] = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, targetId)).limit(1);
+        if (peerRecord) {
+          peerKey = peerRecord.identityKey;
+        }
       }
     }
 

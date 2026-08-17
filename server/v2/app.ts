@@ -1,5 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import cors from 'cors';
 import { config } from './config.js';
 import { globalErrorHandler } from './utils/errors.js';
 
@@ -29,6 +31,49 @@ app.set('trust proxy', true);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Rate limiting middleware
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per window
+  message: 'Too many authentication attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Apply security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    }
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
+
+// Configure CORS
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
+};
+
+app.use(cors(corsOptions));
+
 // Public health endpoints (no auth required)
 app.get('/health', (_req, res) => {
   res.status(200).json({
@@ -51,30 +96,30 @@ app.use('/api/public', userPublicRouter);
 app.use('/v2/public', userPublicRouter);
 app.use('/api/v2/public', userPublicRouter);
 
-// Authenticated routes
-app.use('/v2/auth', duressRouter);
-app.use('/api/v2/auth', duressRouter);
-app.use('/v2/auth', v2AuthRouter);
-app.use('/api/v2/auth', v2AuthRouter);
+// Authenticated routes with rate limiting
+app.use('/v2/auth', authLimiter, duressRouter);
+app.use('/api/v2/auth', authLimiter, duressRouter);
+app.use('/v2/auth', authLimiter, v2AuthRouter);
+app.use('/api/v2/auth', authLimiter, v2AuthRouter);
 
-app.use('/v2/bank', v2BankRouter);
-app.use('/v2/marketplace', v2MarketRouter);
-app.use('/v2/user', v2UserRouter);
-app.use('/v2/lounges', v2LoungeRouter);
-app.use('/v2', messagingRouter);
-app.use('/v2', mediaRouter);
-app.use('/api/v2', mediaRouter);
-app.use('/v2', cryptoRouter);
-app.use('/api/v2', cryptoRouter);
-app.use('/v2/notifications', notificationRouter);
-app.use('/api/v2/notifications', notificationRouter);
-app.use('/v2/cards', v2CardRouter);
-app.use('/v2/payments', v2PaymentRouter);
-app.use('/v2', ticketRouter);
-app.use('/v2/friends', friendRouter);
-app.use('/v2/admin', adminRouter);
-app.use('/api/v2/admin', adminRouter);
-app.use('/v2', utilityRouter);
+app.use('/v2/bank', apiLimiter, v2BankRouter);
+app.use('/v2/marketplace', apiLimiter, v2MarketRouter);
+app.use('/v2/user', apiLimiter, v2UserRouter);
+app.use('/v2/lounges', apiLimiter, v2LoungeRouter);
+app.use('/v2', apiLimiter, messagingRouter);
+app.use('/v2', apiLimiter, mediaRouter);
+app.use('/api/v2', apiLimiter, mediaRouter);
+app.use('/v2', apiLimiter, cryptoRouter);
+app.use('/api/v2', apiLimiter, cryptoRouter);
+app.use('/v2/notifications', apiLimiter, notificationRouter);
+app.use('/api/v2/notifications', apiLimiter, notificationRouter);
+app.use('/v2/cards', apiLimiter, v2CardRouter);
+app.use('/v2/payments', apiLimiter, v2PaymentRouter);
+app.use('/v2', apiLimiter, ticketRouter);
+app.use('/v2/friends', apiLimiter, friendRouter);
+app.use('/v2/admin', apiLimiter, adminRouter);
+app.use('/api/v2/admin', apiLimiter, adminRouter);
+app.use('/v2', apiLimiter, utilityRouter);
 
 // Fallback for unmounted endpoints to prevent HTML responses
 app.use('/v2/*', (req, res) => {
