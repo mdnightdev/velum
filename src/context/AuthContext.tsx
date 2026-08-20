@@ -31,19 +31,19 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
-      const cached = sessionStorage.getItem('velum-user');
+      const cached = localStorage.getItem('velum-user') || sessionStorage.getItem('velum-user');
       return cached ? JSON.parse(cached) : null;
     } catch (_) { return null; }
   });
   const [sessionId, setSessionId] = useState<string | null>(() => {
-    return sessionStorage.getItem('velum-sessionId');
+    return localStorage.getItem('velum-sessionId') || sessionStorage.getItem('velum-sessionId');
   });
   const [deviceId, setDeviceId] = useState<string | null>(() => {
-    return sessionStorage.getItem('velum-deviceId');
+    return localStorage.getItem('velum-deviceId') || sessionStorage.getItem('velum-deviceId');
   });
   const [isLoadingSession, setIsLoadingSession] = useState<boolean>(() => {
-    const hasCachedUser = sessionStorage.getItem('velum-sessionId') &&
-                          sessionStorage.getItem('velum-user');
+    const hasCachedUser = (localStorage.getItem('velum-sessionId') || sessionStorage.getItem('velum-sessionId')) &&
+                          (localStorage.getItem('velum-user') || sessionStorage.getItem('velum-user'));
     return !hasCachedUser;
   });
 
@@ -62,12 +62,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDeviceId(dId);
     
     try {
-      sessionStorage.setItem('velum-user', JSON.stringify(loginUser));
+      const uJson = JSON.stringify(loginUser);
+      localStorage.setItem('velum-user', uJson);
+      localStorage.setItem('velum-sessionId', sId);
+      localStorage.setItem('velum-deviceId', dId);
+      sessionStorage.setItem('velum-user', uJson);
       sessionStorage.setItem('velum-sessionId', sId);
       sessionStorage.setItem('velum-deviceId', dId);
     } catch (e) {
-      log.warn('Session storage write warning', { error: (e as Error).message });
+      log.warn('Persistent storage write warning', { error: (e as Error).message });
     }
+
+    statelessE2eeService.setLocalUserId(loginUser.userId);
+    statelessE2eeService.initLocalIdentityKeys(loginUser.userId).catch(() => {});
 
     if (window.velumDebug) {
       window.velumDebug.userId = loginUser.userId;
@@ -95,11 +102,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     try {
+      localStorage.removeItem('velum-user');
+      localStorage.removeItem('velum-sessionId');
+      localStorage.removeItem('velum-deviceId');
       sessionStorage.removeItem('velum-user');
       sessionStorage.removeItem('velum-sessionId');
       sessionStorage.removeItem('velum-deviceId');
     } catch (e) {
-      log.warn('Session storage clear warning', { error: (e as Error).message });
+      log.warn('Persistent storage clear warning', { error: (e as Error).message });
     }
 
     if (window.velumDebug) {
@@ -115,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Boot Session Verification Hook
   useEffect(() => {
     const verifySessionOnBoot = async () => {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = localStorage.getItem('velum-sessionId') || sessionStorage.getItem('velum-sessionId');
       if (!sId) {
         handleLogout();
         setIsLoadingSession(false);
