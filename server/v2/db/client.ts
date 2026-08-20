@@ -2,6 +2,7 @@ import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { config } from '../config.js';
 import * as fs from 'fs';
+import { logger } from '../utils/logger.js';
 
 let pgPool: pg.Pool | null = null;
 
@@ -31,7 +32,7 @@ export function getPgPool(): pg.Pool {
     pgPool = new pg.Pool({
       connectionString: databaseUrl || undefined,
       ssl: useSsl ? { 
-        rejectUnauthorized: true,
+        rejectUnauthorized: config.NODE_ENV === 'production',
         ca: process.env.DATABASE_CA_CERT ? fs.readFileSync(process.env.DATABASE_CA_CERT) : undefined
       } : false,
       max: Number(process.env.PG_MAX_POOL) || 20,
@@ -43,7 +44,7 @@ export function getPgPool(): pg.Pool {
     });
 
     pgPool.on('error', (err) => {
-      console.error('[DB v2] Unexpected PostgreSQL pool error:', err.message || err);
+      logger.error('PostgreSQL pool error', { error: err.message || err });
     });
   }
   return pgPool;
@@ -84,7 +85,12 @@ export async function executeWithRetry<T>(
         msg.includes('socket hung up');
 
       if (isTransient && attempt < maxRetries) {
-        console.warn(`[DB v2] Transient connection issue detected (${code || 'transient_err'}). Retrying attempt ${attempt}/${maxRetries} in ${delayMs * attempt}ms...`);
+        logger.warn('Transient connection issue detected', { 
+          code: code || 'transient_err', 
+          attempt, 
+          maxRetries, 
+          delayMs: delayMs * attempt 
+        });
         await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
       } else {
         throw error;

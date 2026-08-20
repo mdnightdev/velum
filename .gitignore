@@ -1,20 +1,20 @@
 node_modules/
 *.sqlite
 .env
+.env.encrypted
+.secrets.key
 dist/
-.env
 .superdesign
 data/server.log
 data/velum_state_v3.bin
 server/services/ws.log
-
-/scripts/
+logs/
+scripts/
 
 # Ignore local databases, keys, and logs
 bun.lock
 bun.lockb
 data/
-*.sqlite
 *.sqlite-journal
 *.log
 bank-log.txt

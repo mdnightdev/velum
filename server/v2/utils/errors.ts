@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
+import { logger } from './logger.js';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -84,7 +85,7 @@ export const globalErrorHandler: ErrorRequestHandler = (
     (err as any)?.code === 'ECONNREFUSED';
 
   if (isDbConnError) {
-    console.error('[DATABASE CONNECTIVITY ERROR]', err.message || err);
+    logger.error('Database connectivity error', { error: err.message || err });
     res.status(503).json({
       error: 'Database connection is temporarily unavailable. Please try again shortly.',
       code: 'DB_CONNECTIVITY_ERROR'
@@ -92,7 +93,7 @@ export const globalErrorHandler: ErrorRequestHandler = (
     return;
   }
 
-  console.error('[SERVER UNHANDLED ERROR]', err);
+  logger.error('Unhandled server error', { error: err.message || err, stack: err.stack });
   res.status(500).json({
     error: 'An internal server error occurred.'
   });

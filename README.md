@@ -47,3 +47,9 @@ Validate performance and endpoints under load:
 ```bash
 k6 run stress-tests/load_test.ts
 ```
+
+# Normal operation (less verbose)
+LOG_LEVEL=info npm run dev
+
+# Debug mode (full request details)
+LOG_LEVEL=debug npm run dev

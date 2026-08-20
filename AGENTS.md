@@ -136,3 +136,7 @@ src/
 * **No Hand-Holding:** Never ask the user to guide, train, or hold your hand through a problem.
 * **Direct Output:** Skip basic explanations, conversational filler, and superficial summaries. Get straight to the fully built answer on the first try.
 * **Production-Ready Implementation:** Deliver complete, fully built solutions. Provide the complete implementation without cutting corners or using placeholders whenever code or complex logic is required.
+
+## XII. Future Technical Considerations
+
+* **Logging Architecture**: CLI (`cli/v2/logger.ts`) and server (`server/v2/utils/logger.ts`) currently use separate logging implementations. CLI uses simple console-based logging with prefix support, while server uses Winston with industry-standard features (file rotation, structured JSON, sensitive data redaction, correlation IDs). Future consideration: Consolidate to Winston across both for consistency, or maintain separation given their different use cases (CLI simplicity vs production server requirements).

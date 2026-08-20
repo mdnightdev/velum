@@ -184,6 +184,8 @@ async function getSecret(secretName: string) {
 }
 ```
 
+**Status:** ✅ **RESOLVED** - Implemented encrypted secrets manager with AES-256-GCM encryption. Master key (`/data/data/com.termux/files/home/velum/.secrets.key`) for secure sharing with collaborators. CLI commands: `npm run secrets:set/get/list/generate-env/status`. See `SECRETS_MANAGER_GUIDE.md` for usage.
+
 ---
 
 ## Priority 2: Operational Gaps
@@ -228,6 +230,8 @@ app.use((req, res, next) => {
   next();
 });
 ```
+
+**Status:** ✅ **RESOLVED** - Implemented industry-standard Winston logger with sensitive data redaction, correlation IDs, environment-aware formats (dev: human-readable, prod: JSON), and request logging middleware. See `server/v2/utils/logger.ts`
 
 ---
 
@@ -361,7 +365,11 @@ async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 ### Authentication
 - Implement JWT rotation for session tokens
 - Add device fingerprinting validation
-- Implement OAuth 2.0 for third-party integrations
+- **OAuth 2.0 / Passkey / Biometric Authentication** (FUTURE - Deferred until infrastructure is stable)
+  - OAuth 2.0 for third-party integrations
+  - Passkey/WebAuthn support
+  - FaceID/Fingerprint biometric authentication
+  - Note: Will require third-party libraries (@simplewebauthn/browser, passport.js, platform-specific SDKs)
 
 ### Deployment
 - Add CI/CD pipeline (GitHub Actions, GitLab CI)

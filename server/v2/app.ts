@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import { config } from './config.js';
 import { globalErrorHandler } from './utils/errors.js';
+import { requestLogger, logger } from './utils/logger.js';
 
 // V2 Routes
 import { authRouter as v2AuthRouter } from './routes/authRoutes.js';
@@ -27,12 +28,14 @@ import { healthRouter } from './routes/healthRoutes.js';
 import { currencyConverter } from './services/currencyConverter.js';
 
 export const app = express();
-app.set('trust proxy', true);
+// app.set('trust proxy', true);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting middleware
-const authLimiter = rateLimit({
+// Rate limiting middleware (disabled in development)
+const isDevelopment = config.NODE_ENV === 'development';
+
+const authLimiter = isDevelopment ? (_req, res, next) => next() : rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // 5 attempts per window
   message: 'Too many authentication attempts, please try again later.',
@@ -40,7 +43,7 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
-const apiLimiter = rateLimit({
+const apiLimiter = isDevelopment ? (_req, res, next) => next() : rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   standardHeaders: true,
@@ -52,7 +55,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      connectSrc: ["'self'", "ws:", "wss:", "http:", "https:"],
       objectSrc: ["'none'"],
       imgSrc: ["'self'", "data:", "https:"],
     }
@@ -73,6 +77,9 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// Request logging middleware
+app.use(requestLogger);
 
 // Public health endpoints (no auth required)
 app.get('/health', (_req, res) => {
@@ -135,6 +142,6 @@ app.use(globalErrorHandler);
 
 export function startV2Server(port = config.PORT) {
   return app.listen(port, () => {
-    console.log(`[SERVER v2] Running on port ${port} in ${config.NODE_ENV} mode.`);
+    logger.info(`V2 Server started`, { port, environment: config.NODE_ENV });
   });
 }
