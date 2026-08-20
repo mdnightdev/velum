@@ -513,10 +513,13 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
         }
       });
 
+      const isoTime = insertedMessage.createdAt ? insertedMessage.createdAt.toISOString() : new Date().toISOString();
       enrichedMessage.db_message_id = insertedMessage.id;
       enrichedMessage.sequence_id = insertedMessage.sequenceId;
       enrichedMessage.reply_to = validReplyTo;
       enrichedMessage.reply_preview = replyPreview;
+      enrichedMessage.createdAt = isoTime;
+      enrichedMessage.timestamp = isoTime;
 
       const ackPayload = {
         type: 'message_ack',

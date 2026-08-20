@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../../../types';
 import { decryptMessage, encryptMessage, EncryptionContext } from '../../../services/encryptionService';
+import { statelessE2eeService } from '../../../services/statelessE2eeService';
 import { parseAttachment } from '../../../utils/messageParser';
 import { saveLocalMessages } from '../../../utils/indexedDb';
 
@@ -20,10 +21,13 @@ export function useMessageDecryption({
 
   useEffect(() => {
     let isMounted = true;
+    if (currentUserId) {
+      statelessE2eeService.setLocalUserId(currentUserId);
+    }
 
     const processDecryption = async () => {
       const pending: Array<{
-        id: string;
+        keys: string[];
         ciphertext: string;
         context: EncryptionContext;
       }> = [];
@@ -31,25 +35,42 @@ export function useMessageDecryption({
       const syncDecrypted: Record<string, string> = {};
 
       for (const m of messages) {
-        const msgKey = m.message_id || m.client_msg_id || m.nonce;
-        if (!m.content || !msgKey) continue;
+        const keys = [m.message_id, m.id, m.client_msg_id, m.nonce, (m as any).db_message_id]
+          .filter(Boolean)
+          .map(String);
+
+        if (!m.content || keys.length === 0) continue;
 
         const isOutgoing = !!(currentUserId && m.user_id === currentUserId);
 
-        // 1. If plaintext already attached or cached, use it immediately
+        // 1. If plaintext already attached in memory, map to all key aliases immediately
         if (m.plaintext) {
-          cacheRef.current[msgKey] = { ciphertext: m.content, plaintext: m.plaintext };
-          syncDecrypted[msgKey] = m.plaintext;
+          for (const k of keys) {
+            cacheRef.current[k] = { ciphertext: m.content, plaintext: m.plaintext };
+            syncDecrypted[k] = m.plaintext;
+          }
           continue;
         }
 
-        const cached = cacheRef.current[msgKey];
-        if (cached && cached.ciphertext === m.content) {
-          syncDecrypted[msgKey] = cached.plaintext;
+        // 2. Check if cached under any alias
+        let cachedPlaintext: string | null = null;
+        for (const k of keys) {
+          const cached = cacheRef.current[k];
+          if (cached && cached.ciphertext === m.content) {
+            cachedPlaintext = cached.plaintext;
+            break;
+          }
+        }
+
+        if (cachedPlaintext) {
+          for (const k of keys) {
+            cacheRef.current[k] = { ciphertext: m.content, plaintext: cachedPlaintext };
+            syncDecrypted[k] = cachedPlaintext;
+          }
           continue;
         }
 
-        // 2. Do not attempt to run inbound ratchet decryption on our own outgoing messages
+        // 3. Outgoing ratchet messages cannot be decrypted with receiver ratchet
         if (isOutgoing && activeChatPeer) {
           continue;
         }
@@ -63,16 +84,16 @@ export function useMessageDecryption({
         };
 
         pending.push({
-          id: msgKey,
+          keys,
           ciphertext: m.content,
           context
         });
       }
 
-      // Bound cache size to max 2000 items to prevent memory leaks
+      // Bound cache size to max 3000 items
       const cacheKeys = Object.keys(cacheRef.current);
-      if (cacheKeys.length > 2000) {
-        const keysToRemove = cacheKeys.slice(0, cacheKeys.length - 1500);
+      if (cacheKeys.length > 3000) {
+        const keysToRemove = cacheKeys.slice(0, cacheKeys.length - 2000);
         for (const k of keysToRemove) {
           delete cacheRef.current[k];
         }
@@ -90,23 +111,34 @@ export function useMessageDecryption({
 
         try {
           const decrypted = await decryptMessage(item.ciphertext, item.context);
-          cacheRef.current[item.id] = { ciphertext: item.ciphertext, plaintext: decrypted };
-          if (isMounted) {
-            setDecryptedMap((prev) => ({ ...prev, [item.id]: decrypted }));
+          const newMapEntries: Record<string, string> = {};
+
+          for (const k of item.keys) {
+            cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: decrypted };
+            newMapEntries[k] = decrypted;
           }
+
+          if (isMounted) {
+            setDecryptedMap((prev) => ({ ...prev, ...newMapEntries }));
+          }
+
           // Persist to local storage so page refresh retains plaintext
           saveLocalMessages([{
-            id: item.id,
-            message_id: item.id,
+            id: item.keys[0],
+            message_id: item.keys[0],
             room_id: item.context.roomId,
             loungeId: item.context.roomId,
             plaintext: decrypted,
             content: item.ciphertext
           }], currentUserId).catch(() => {});
         } catch {
-          cacheRef.current[item.id] = { ciphertext: item.ciphertext, plaintext: '[Decryption Error]' };
+          const errorEntries: Record<string, string> = {};
+          for (const k of item.keys) {
+            cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: '[Decryption Error]' };
+            errorEntries[k] = '[Decryption Error]';
+          }
           if (isMounted) {
-            setDecryptedMap((prev) => ({ ...prev, [item.id]: '[Decryption Error]' }));
+            setDecryptedMap((prev) => ({ ...prev, ...errorEntries }));
           }
         }
       }
@@ -119,36 +151,28 @@ export function useMessageDecryption({
     };
   }, [messages, activeChatPeer?.userId, roomId, currentUserId]);
 
-  const getDecryptedText = (msg: Message) => {
-    const msgKey = msg.message_id || msg.client_msg_id || msg.nonce || '';
-    const cached = decryptedMap[msgKey];
-      const val = msg.plaintext || (msg as any).client_plaintext || cached;
-    if (val) {
-      if (val.startsWith('[Voice Note')) return 'Voice Note';
-      if (val.includes('[Attachment:')) {
-        const parsed = parseAttachment(val);
-        return parsed && parsed.length > 0 ? parsed[0].name || 'Attachment' : 'Attachment';
-      }
-      return val;
+  const getDecryptedText = (msg: Message): string => {
+    if (msg.plaintext) return msg.plaintext;
+    const keys = [msg.message_id, msg.id, msg.client_msg_id, msg.nonce, (msg as any).db_message_id]
+      .filter(Boolean)
+      .map(String);
+    for (const k of keys) {
+      if (decryptedMap[k]) return decryptedMap[k];
+      if (cacheRef.current[k]) return cacheRef.current[k].plaintext;
     }
-    const isCiphertext = msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('VEL_E2EE[');
-    if (isCiphertext) return '···';
-    return msg.content || 'Empty message';
+    return '';
   };
 
-  const encryptOutgoingMessage = async (text: string, context: EncryptionContext) => {
-    return await encryptMessage(text, context);
-  };
-
-  const preCachePlaintext = (msgKey: string, plaintext: string) => {
-    cacheRef.current[msgKey] = { ciphertext: '', plaintext };
-    setDecryptedMap((prev) => ({ ...prev, [msgKey]: plaintext }));
+  const encryptOutgoingMessage = async (
+    textToSend: string,
+    context: EncryptionContext
+  ): Promise<string> => {
+    return await encryptMessage(textToSend, context);
   };
 
   return {
     decryptedMap,
     getDecryptedText,
     encryptOutgoingMessage,
-    preCachePlaintext,
   };
 }

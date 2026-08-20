@@ -75,37 +75,38 @@ export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDataba
       }
     },
     blocking() {
-      const db = dbInstances.get(userId);
+      const db = dbInstances.get(targetUserId);
       if (db) {
         db.close();
-        dbInstances.delete(userId);
-        dbPromises.delete(userId);
+        dbInstances.delete(targetUserId);
+        dbPromises.delete(targetUserId);
       }
     },
     terminated() {
-      dbInstances.delete(userId);
-      dbPromises.delete(userId);
+      dbInstances.delete(targetUserId);
+      dbPromises.delete(targetUserId);
     }
   }).then((db) => {
-    dbInstances.set(userId, db);
-    dbPromises.delete(userId);
+    dbInstances.set(targetUserId, db);
+    dbPromises.delete(targetUserId);
     return db;
   }).catch((err) => {
-    dbPromises.delete(userId);
+    dbPromises.delete(targetUserId);
     throw err;
   });
 
-  dbPromises.set(userId, promise);
+  dbPromises.set(targetUserId, promise);
   return promise;
 }
 
 export async function closeCryptoDatabase(userId?: number): Promise<void> {
   if (userId !== undefined) {
-    const db = dbInstances.get(userId);
+    const targetUserId = (userId && !isNaN(userId)) ? userId : 0;
+    const db = dbInstances.get(targetUserId);
     if (db) {
       db.close();
-      dbInstances.delete(userId);
-      dbPromises.delete(userId);
+      dbInstances.delete(targetUserId);
+      dbPromises.delete(targetUserId);
     }
   } else {
     for (const [, db] of dbInstances.entries()) {

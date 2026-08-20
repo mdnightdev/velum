@@ -11,6 +11,8 @@ export interface OutboxPayload {
   retryCount: number;
 }
 
+let isDraining = false;
+
 /**
  * Enqueue an outgoing message frame into the offline persistent outbox
  */
@@ -54,19 +56,25 @@ export async function removeOutboxMessage(clientMsgId: string, userId?: number):
  * Drains and re-transmits outbox messages sequentially over an active WebSocket connection
  */
 export async function drainOutboxQueue(sendWebSocketFrame: (payload: OutboxPayload) => boolean, userId?: number): Promise<number> {
-  const pending = await getQueuedOutboxMessages(userId);
-  if (pending.length === 0) return 0;
+  if (isDraining) return 0;
+  isDraining = true;
+  try {
+    const pending = await getQueuedOutboxMessages(userId);
+    if (pending.length === 0) return 0;
 
-  let drainedCount = 0;
-  for (const item of pending) {
-    const success = sendWebSocketFrame(item);
-    if (success) {
-      await removeOutboxMessage(item.client_msg_id, userId);
-      drainedCount++;
-    } else {
-      break; // Socket unable to send, stop draining
+    let drainedCount = 0;
+    for (const item of pending) {
+      const success = sendWebSocketFrame(item);
+      if (success) {
+        await removeOutboxMessage(item.client_msg_id, userId);
+        drainedCount++;
+      } else {
+        break; // Socket unable to send, stop draining
+      }
     }
-  }
 
-  return drainedCount;
+    return drainedCount;
+  } finally {
+    isDraining = false;
+  }
 }

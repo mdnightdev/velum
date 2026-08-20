@@ -734,12 +734,15 @@ export async function getLoungeMessages(rawId: string, currentUserId: number | n
       }
     }
 
+    const isoCreatedAt = m.createdAt instanceof Date ? m.createdAt.toISOString() : (m.createdAt ? new Date(m.createdAt).toISOString() : new Date().toISOString());
     return {
       ...m,
       message_id: String(m.id),
       db_message_id: m.id,
       sequence_id: m.sequenceId,
       client_msg_id: m.clientMsgId,
+      createdAt: isoCreatedAt,
+      timestamp: isoCreatedAt,
       status: isDM ? status : undefined
     };
   });

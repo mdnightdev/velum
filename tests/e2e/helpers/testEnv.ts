@@ -4,9 +4,8 @@
  */
 
 import { MockIndexedDBFactory } from './mockIndexedDB';
-import { doubleRatchetService } from '../../../src/services/doubleRatchetService';
+import { statelessE2eeService } from '../../../src/services/statelessE2eeService';
 import { purgeCryptoVault, closeCryptoDatabase } from '../../../src/services/cryptoDbStore';
-import { purgeSkippedMessageKeys, closeSkippedKeysDatabase } from '../../../src/services/skippedKeysStore';
 import { OutboxPayload } from '../../../src/services/outboxEngine';
 
 export interface MockPrekeyBundle {
@@ -134,10 +133,9 @@ export function setupTestCryptoEnvironment(): void {
 }
 
 export async function resetTestCryptoEnvironment(): Promise<void> {
-  await doubleRatchetService.closeDatabaseConnections();
-  doubleRatchetService.clearMemoryState();
+  await closeCryptoDatabase();
+  statelessE2eeService.clearCache();
   await purgeCryptoVault();
-  await purgeSkippedMessageKeys();
   mockServerVault.clear();
   if (mockIdbFactory) {
     mockIdbFactory._clearAll();
@@ -150,20 +148,20 @@ export async function resetTestCryptoEnvironment(): Promise<void> {
  */
 export async function asUser<T>(userId: number, action: () => Promise<T>): Promise<T> {
   // Flush previous state
-  await doubleRatchetService.closeDatabaseConnections();
-  doubleRatchetService.clearMemoryState();
+  await closeCryptoDatabase();
+  statelessE2eeService.clearCache();
 
   // Set session ID header for fetch
   window.sessionStorage.setItem('velum-sessionId', `user_${userId}`);
-  doubleRatchetService.setLocalUserId(userId);
+  statelessE2eeService.setLocalUserId(userId);
 
   // Initialize/load user's keys from DB and publish bundle
-  await doubleRatchetService.initializeLocalKeys();
+  await statelessE2eeService.initLocalIdentityKeys(userId);
 
   const result = await action();
 
   // Flush any queued state changes
-  await doubleRatchetService.closeDatabaseConnections();
+  await closeCryptoDatabase();
   return result;
 }
 
@@ -181,20 +179,18 @@ export class TestParticipant {
 
   async send(recipientId: number, text: string): Promise<string> {
     return asUser(this.userId, async () => {
-      return doubleRatchetService.encryptDirectMessage(text, recipientId);
+      return statelessE2eeService.encryptDirectMessage(text, recipientId);
     });
   }
 
   async receive(senderId: number, envelope: string): Promise<string> {
     return asUser(this.userId, async () => {
-      return doubleRatchetService.decryptDirectMessage(envelope, senderId);
+      return statelessE2eeService.decryptDirectMessage(envelope);
     });
   }
 
   async forceRekey(peerId: number): Promise<void> {
-    return asUser(this.userId, async () => {
-      return doubleRatchetService.forceRekey(peerId);
-    });
+    statelessE2eeService.clearCache();
   }
 }
 

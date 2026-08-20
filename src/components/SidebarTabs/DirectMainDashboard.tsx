@@ -1,12 +1,20 @@
 import React from 'react';
 import { MessageSquare, Bot, Menu, Check, CheckCheck } from 'lucide-react';
-import { decryptMessageSync } from '../../services/encryptionService';
+import { decryptMessage, decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
 import { Mic, Image as ImageIcon } from 'lucide-react';
+
+// e2ee:v1: envelopes are stateless-ECDH DMs and can only be decrypted async
+// (they hit IndexedDB for the local identity key). decryptMessageSync only
+// understands the VEL_E2EE[...] lounge XOR format, so it must never be used
+// as the terminal decryptor for DM content - only as a legacy/lounge fallback.
+function isStatelessDmEnvelope(raw: string): boolean {
+  return raw.startsWith('e2ee:v1:');
+}
 
 interface DirectMainDashboardProps {
   friendRequests: any[];
@@ -69,7 +77,9 @@ export default function DirectMainDashboard({
           const raw = last.content || last.message || last.body || last.text || '';
           if (raw) {
             try {
-              const decrypted = decryptMessageSync(raw, dmRoomId, !!(last.is_encrypted || last.isEncrypted));
+              const decrypted = isStatelessDmEnvelope(raw)
+                ? await decryptMessage(raw, { type: 'direct', peerUserId: friendId })
+                : decryptMessageSync(raw, dmRoomId, !!(last.is_encrypted || last.isEncrypted));
               if (isMounted && decrypted) {
                 setDecryptedPreviews(prev => ({ ...prev, [friendId]: decrypted }));
               }
@@ -81,6 +91,36 @@ export default function DirectMainDashboard({
     processPreviews();
     return () => { isMounted = false; };
   }, [relationshipsArray, lastMessages, currentUserId]);
+
+  const velumRoomIdKey = `dm_velum_${currentUserId}`;
+  const velumLastForEffect = lastMessages[velumRoomIdKey];
+  const [velumDecrypted, setVelumDecrypted] = React.useState('');
+
+  React.useEffect(() => {
+    let isMounted = true;
+    const processVelumPreview = async () => {
+      if (!velumLastForEffect) {
+        if (isMounted) setVelumDecrypted('');
+        return;
+      }
+      const raw = velumLastForEffect.content || velumLastForEffect.message || velumLastForEffect.body || velumLastForEffect.text || '';
+      const actualRoomId = velumLastForEffect.room_id || velumRoomIdKey;
+      if (!raw) {
+        if (isMounted) setVelumDecrypted('');
+        return;
+      }
+      try {
+        const decrypted = isStatelessDmEnvelope(raw)
+          ? await decryptMessage(raw, { type: 'direct', peerUserId: 999 })
+          : (decryptMessageSync(raw, actualRoomId, !!(velumLastForEffect.is_encrypted || velumLastForEffect.isEncrypted)) || raw);
+        if (isMounted) setVelumDecrypted(decrypted || '');
+      } catch (e) {
+        if (isMounted) setVelumDecrypted('');
+      }
+    };
+    processVelumPreview();
+    return () => { isMounted = false; };
+  }, [velumLastForEffect, currentUserId]);
 
   const filteredFriends = relationshipsArray.filter(r => {
     const name = r.username || r.displayName;
@@ -97,12 +137,9 @@ export default function DirectMainDashboard({
   if (velumLast) {
     velumIsMe = (velumLast.user_id === currentUserId) || (velumLast.senderId === currentUserId);
     const raw = velumLast.content || velumLast.message || velumLast.body || velumLast.text || '';
-    const actualRoomId = velumLast.room_id || velumRoomId;
-    try {
-      velumTxt = decryptMessageSync(raw, actualRoomId, !!(velumLast.is_encrypted || velumLast.isEncrypted)) || raw || '';
-    } catch (e) {
-      velumTxt = raw || '';
-    }
+    // Stateless e2ee:v1 envelopes are resolved async via the effect above and
+    // land in velumDecrypted; never fall back to sync-decrypting them here.
+    velumTxt = velumDecrypted || (isStatelessDmEnvelope(raw) ? '' : raw || '');
     if (velumIsMe) {
       if (velumLast.status) {
         velumMsgStatus = velumLast.status;
@@ -245,6 +282,10 @@ export default function DirectMainDashboard({
             const isEnc = !!(last.is_encrypted || last.isEncrypted);
             const actualRoomId = last.room_id || dmRoomId;
             const displayTxt = decryptedPreviews[friendId] || (function() {
+              // Stateless e2ee:v1 envelopes can only be decrypted async - the
+              // effect above will populate decryptedPreviews shortly. Never
+              // show the raw ciphertext or attempt a sync decrypt on it.
+              if (isStatelessDmEnvelope(raw)) return '';
               try {
                 return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
               } catch (e) {

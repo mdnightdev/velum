@@ -15,7 +15,7 @@ import ProfileCard from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
 import { useResponsiveLayout } from '../hooks/useResponsive';
 import { BadgeCheck, Terminal, Radio, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
-import { doubleRatchetService } from '../services/doubleRatchetService';
+import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
 import { getLocalKV, setLocalKV } from '../utils/indexedDb';
 
@@ -193,13 +193,11 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (user?.userId) {
-      doubleRatchetService.setLocalUserId(Number(user.userId));
-      doubleRatchetService.initializeLocalKeys()
-        .then(() => doubleRatchetService.publishPrekeyBundle())
-        .catch(console.error);
+      statelessE2eeService.setLocalUserId(Number(user.userId));
+      statelessE2eeService.initLocalIdentityKeys(Number(user.userId)).catch(console.error);
       loadPeopleAndRequests();
-          const interval = setInterval(loadPeopleAndRequests, 45000);
-		 return () => clearInterval(interval);
+      const interval = setInterval(loadPeopleAndRequests, 45000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 

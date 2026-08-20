@@ -149,7 +149,7 @@ export async function encryptAesGcm(
     {
       name: 'AES-GCM',
       iv: ivBytes as any,
-      additionalData: associatedData ? (associatedData as any) : undefined,
+      ...(associatedData ? { additionalData: associatedData as any } : {}),
       tagLength: 128
     },
     cryptoKey,
@@ -189,7 +189,7 @@ export async function decryptAesGcm(
     {
       name: 'AES-GCM',
       iv: ivBytes as any,
-      additionalData: associatedData ? (associatedData as any) : undefined,
+      ...(associatedData ? { additionalData: associatedData as any } : {}),
       tagLength: 128
     },
     cryptoKey,

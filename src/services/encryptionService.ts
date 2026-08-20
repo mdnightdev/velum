@@ -1,4 +1,4 @@
-import { doubleRatchetService } from './doubleRatchetService';
+import { statelessE2eeService } from './statelessE2eeService.js';
 
 export type EncryptionContext = {
   type: 'direct' | 'lounge';
@@ -6,10 +6,6 @@ export type EncryptionContext = {
   peerUserId?: number;
   isEncrypted?: boolean;
 };
-
-/**
- * Centralized encryption service - single source of truth for all encryption/decryption
- */
 
 /**
  * Low-level XOR encryption (for lounge/room messages) - UTF-8 byte safe
@@ -25,7 +21,6 @@ function encryptXOR(content: string, key: string): string {
     xorBytes[i] = textBytes[i] ^ keyBytes[i % keyBytes.length];
   }
 
-  // Convert Uint8Array to base64
   let binary = '';
   for (let i = 0; i < xorBytes.length; i++) {
     binary += String.fromCharCode(xorBytes[i]);
@@ -55,25 +50,25 @@ function decryptXOR(cipher: string, key: string): string {
 
     const decoder = new TextDecoder('utf-8', { fatal: false });
     return decoder.decode(textBytes);
-  } catch (e) {
+  } catch {
     return cipher;
   }
 }
 
 /**
- * Encrypt message based on context
- * - Direct messages: Double Ratchet E2EE
- * - Lounge messages: XOR encryption with room key
+ * Encrypt message based on context:
+ * - Direct messages: Pure Stateless Ephemeral ECDH + AES-256-GCM
+ * - Lounge messages: Room XOR encryption
  */
 export async function encryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
   if (context.type === 'direct' && context.peerUserId) {
     try {
-      return await doubleRatchetService.encryptDirectMessage(content, context.peerUserId);
+      return await statelessE2eeService.encryptDirectMessage(content, context.peerUserId);
     } catch (err) {
       console.error('[encryptionService] Direct message encryption failed:', err);
-      return content; // Fallback to plaintext on error
+      return content; // Fallback to plaintext on network error
     }
   }
 
@@ -81,59 +76,34 @@ export async function encryptMessage(content: string, context: EncryptionContext
     return `VEL_E2EE[${encryptXOR(content, 'VELUM_E2EE_' + context.roomId)}]`;
   }
 
-  return content; // Default to plaintext
+  return content;
 }
 
 /**
- * Decrypt message based on content format and context
- * Handles: Double Ratchet (ratchet:v2), Legacy Ratchet (ratchet:v1), Room XOR (VEL_E2EE), Plain text
+ * Decrypt message based on content format:
+ * - Stateless E2EE (e2ee:v1:...)
+ * - Lounge XOR (VEL_E2EE[...])
+ * - Plaintext
  */
-const activeHeals = new Set<number>();
-
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
-  // Double Ratchet v2 (current direct messages)
-  if (content.startsWith('ratchet:v2:')) {
-    if (context.peerUserId) {
-      try {
-        const decrypted = await doubleRatchetService.decryptDirectMessage(content, context.peerUserId);
-        
-        // Trap decryption errors to trigger auto-healing
-        if (
-          decrypted === '[Encrypted Message - Skipped Key Not Found]' ||
-          decrypted === '[Decryption Error - Integrity Check Failed]' ||
-          decrypted === '[Encrypted Message - No Prekey]'
-        ) {
-          const peerId = context.peerUserId;
-          if (!activeHeals.has(peerId)) {
-            activeHeals.add(peerId);
-            console.warn(`[encryptionService] Trapped decryption failure for peer ${peerId}, triggering auto-heal force rekey`);
-            
-            // Trigger background auto-heal
-            doubleRatchetService.forceRekey(peerId)
-              .catch(e => console.error(`[encryptionService] Auto-heal failed for peer ${peerId}:`, e))
-              .finally(() => {
-                setTimeout(() => activeHeals.delete(peerId), 5000); // 5 second cooldown
-              });
-          }
-        }
-        
-        return decrypted;
-      } catch (err) {
-        console.error('[encryptionService] Double Ratchet decryption error:', err);
-        return '[Encrypted Message]';
-      }
+  // 1. Stateless Direct Message
+  if (content.startsWith('e2ee:v1:')) {
+    try {
+      return await statelessE2eeService.decryptDirectMessage(content);
+    } catch (err) {
+      console.error('[encryptionService] Stateless E2EE decryption error:', err);
+      return '[Encrypted Message]';
     }
-    return '[Encrypted Message - No Peer]';
   }
 
-  // Legacy Double Ratchet v1
-  if (content.startsWith('ratchet:v1:')) {
+  // 2. Legacy ratchet payload fallback
+  if (content.startsWith('ratchet:v2:') || content.startsWith('ratchet:v1:')) {
     return '[Legacy Encrypted Message]';
   }
 
-  // Room XOR encryption (lounge messages)
+  // 3. Lounge Room XOR encryption
   if (content.startsWith('VEL_E2EE[')) {
     if (context.roomId) {
       try {
@@ -150,13 +120,11 @@ export async function decryptMessage(content: string, context: EncryptionContext
     return '[Encrypted Message - No Room]';
   }
 
-  // Plain text (no encryption)
   return content;
 }
 
 /**
  * Legacy synchronous decryption for backward compatibility
- * @deprecated Use decryptMessage instead
  */
 export function decryptMessageSync(content: string, roomId: string, isEncryptedHeader?: boolean): string {
   if (!content) return '';
@@ -172,7 +140,6 @@ export function decryptMessageSync(content: string, roomId: string, isEncryptedH
 
 /**
  * Computes SHA-256 client hash using Web Cryptography API.
- * Uses fallback to globalThis.crypto for Node-based test runners.
  */
 export async function computeClientHash(secret: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();

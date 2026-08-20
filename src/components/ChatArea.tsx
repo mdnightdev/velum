@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Message, stripAt } from '../types';
 import { EncryptionContext } from '../services/encryptionService';
 import { useAudioRecorder } from './Chat/hooks/useAudioRecorder';
@@ -219,19 +219,37 @@ export default function ChatArea({
 
   const activePeerId = activeChatPeer?.userId;
 
-  const conversationMessages = messages.filter(m => {
-    if (activePeerId) {
-      const otherId = activePeerId;
-      if (otherId === 999) {
-        return m.room_id === `dm_velum_${currentUserId}`;
+  const conversationMessages = useMemo(() => {
+    const raw = messages.filter(m => {
+      if (activePeerId) {
+        const otherId = activePeerId;
+        if (otherId === 999) {
+          return m.room_id === `dm_velum_${currentUserId}`;
+        }
+        const isPeerFromMe = m.user_id === currentUserId && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
+        const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
+        return isPeerFromMe || isPeerToMe || m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`);
+      } else {
+        return m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);
       }
-      const isPeerFromMe = m.user_id === currentUserId && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
-      const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
-      return isPeerFromMe || isPeerToMe || m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`);
-    } else {
-      return m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);
+    });
+
+    const seen = new Set<string>();
+    const deduplicated: Message[] = [];
+    // Process in reverse so confirmed sent status and permanent db_message_id override temporary optimistic drafts
+    for (let i = raw.length - 1; i >= 0; i--) {
+      const m = raw[i];
+      const keys = [m.db_message_id, m.id, m.message_id, m.client_msg_id, m.nonce]
+        .filter(Boolean)
+        .map(String);
+      const isDuplicate = keys.some(k => seen.has(k));
+      if (!isDuplicate) {
+        keys.forEach(k => seen.add(k));
+        deduplicated.unshift(m);
+      }
     }
-  });
+    return deduplicated;
+  }, [messages, activePeerId, currentUserId, roomId]);
 
   const {
     showSearch,

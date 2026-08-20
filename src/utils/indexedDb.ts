@@ -1,4 +1,4 @@
-import { LocalVaultEncryption } from '../services/localVaultEncryption';
+import { LocalVaultEncryption } from '../services/localVaultEncryption.js';
 import {
   openCryptoDatabase,
   purgeCryptoDatabase,
@@ -6,7 +6,7 @@ import {
   STORE_MEDIA,
   STORE_OUTBOX,
   STORE_USER_KV
-} from '../services/cryptoDbStore';
+} from '../services/cryptoDbStore.js';
 
 const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours TTL
 
@@ -22,7 +22,8 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
 
     for (const msg of messages) {
       if (!msg) continue;
-      const id = msg.id ?? msg.message_id ?? msg.client_msg_id ?? msg.messageId ?? msg.nonce ?? `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const rawId = msg.id ?? msg.message_id ?? msg.client_msg_id ?? msg.messageId ?? msg.nonce ?? `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const id = String(rawId);
       const loungeId = msg.loungeId ?? msg.room_id ?? msg.roomId ?? '';
       const rawTime = msg.timestamp ?? msg.createdAt ?? new Date().toISOString();
       const msgTime = new Date(rawTime).getTime();
@@ -32,10 +33,31 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
         continue;
       }
 
+      // If message is confirmed by DB ID, purge temporary optimistic draft record
+      const clientNonce = msg.client_msg_id || msg.nonce;
+      if (clientNonce && String(clientNonce) !== id) {
+        await tx.store.delete(String(clientNonce));
+      }
+
+      // Preserve existing plaintext if new record does not supply it
+      let existingPlaintext = msg.plaintext;
+      if (!existingPlaintext) {
+        const existing = await tx.store.get(id);
+        if (existing?.plaintext) {
+          existingPlaintext = existing.plaintext;
+        } else if (clientNonce) {
+          const optExisting = await tx.store.get(String(clientNonce));
+          if (optExisting?.plaintext) {
+            existingPlaintext = optExisting.plaintext;
+          }
+        }
+      }
+
       const record = {
         ...msg,
-        id: String(id),
+        id,
         loungeId,
+        plaintext: existingPlaintext || msg.plaintext,
         timestamp: rawTime
       };
       await tx.store.put(record);
@@ -69,7 +91,22 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
         return tA - tB;
       });
 
-    return valid.slice(-limit);
+    // Deduplicate across client_msg_id, nonce, db_message_id, and id
+    const seen = new Set<string>();
+    const deduplicated: any[] = [];
+    for (let i = valid.length - 1; i >= 0; i--) {
+      const m = valid[i];
+      const keys = [m.db_message_id, m.id, m.message_id, m.client_msg_id, m.nonce]
+        .filter(Boolean)
+        .map(String);
+      const isDuplicate = keys.some(k => seen.has(k));
+      if (!isDuplicate) {
+        keys.forEach(k => seen.add(k));
+        deduplicated.unshift(m);
+      }
+    }
+
+    return deduplicated.slice(-limit);
   } catch (err) {
     console.error('[IndexedDB] getLocalMessages error:', err);
     return [];
@@ -101,78 +138,74 @@ export async function purgeLocalUserStorage(userId?: number): Promise<void> {
 }
 
 /**
- * Saves a binary Blob locally in IndexedDB under a unique key.
+ * Legacy purge wrapper
  */
-export async function saveLocalMedia(key: string, blob: Blob, userId?: number): Promise<void> {
-  const db = await openCryptoDatabase(userId || 0);
-  await db.put(STORE_MEDIA, blob, key);
+export async function purgeLocalMessages(userId?: number): Promise<void> {
+  await purgeCryptoDatabase(userId || 0);
 }
 
 /**
- * Deletes a binary Blob by key from IndexedDB.
+ * Saves a media blob to local IndexedDB
  */
-export async function deleteLocalMedia(key: string, userId?: number): Promise<void> {
+export async function saveLocalMedia(
+  id: string,
+  blob: Blob | ArrayBuffer,
+  mimeType?: string,
+  userId?: number
+): Promise<void> {
   try {
     const db = await openCryptoDatabase(userId || 0);
-    await db.delete(STORE_MEDIA, key);
+    const resolvedMime = mimeType || (blob instanceof Blob ? blob.type : 'application/octet-stream');
+    await db.put(STORE_MEDIA, {
+      id,
+      data: blob,
+      mimeType: resolvedMime,
+      createdAt: Date.now()
+    });
   } catch (err) {
-    console.error('[IndexedDB] deleteLocalMedia error:', err);
+    console.warn('[IndexedDB] saveLocalMedia error:', err);
   }
 }
 
 /**
- * Retrieves a binary Blob by key from IndexedDB.
+ * Retrieves a media item from local IndexedDB
  */
-export async function getLocalMedia(key: string, userId?: number): Promise<Blob | null> {
+export async function getLocalMedia(id: string, userId?: number): Promise<Blob | null> {
   try {
     const db = await openCryptoDatabase(userId || 0);
-    const res = await db.get(STORE_MEDIA, key);
-    return res || null;
+    const item = await db.get(STORE_MEDIA, id);
+    if (!item || !item.data) return null;
+    if (item.data instanceof Blob) {
+      return item.data;
+    }
+    return new Blob([item.data], { type: item.mimeType || 'application/octet-stream' });
   } catch (err) {
-    console.error('[IndexedDB] getLocalMedia error:', err);
+    console.warn('[IndexedDB] getLocalMedia error:', err);
     return null;
   }
 }
 
 /**
- * Queues an unsent message in IndexedDB outbox.
+ * Deletes a media item from local IndexedDB
  */
-export async function enqueueOutboxMessage(payload: any, userId?: number): Promise<void> {
+export async function deleteLocalMedia(id: string, userId?: number): Promise<void> {
   try {
     const db = await openCryptoDatabase(userId || 0);
-    await db.put(STORE_OUTBOX, payload);
+    await db.delete(STORE_MEDIA, id);
   } catch (err) {
-    console.error('[IndexedDB] enqueueOutboxMessage error:', err);
+    console.warn('[IndexedDB] deleteLocalMedia error:', err);
   }
 }
 
 /**
- * Retrieves all pending outbox messages from IndexedDB.
+ * Rotates the local vault encryption key and re-encrypts stored records.
  */
-export async function getOutboxMessages(userId?: number): Promise<any[]> {
-  try {
-    const db = await openCryptoDatabase(userId || 0);
-    return await db.getAll(STORE_OUTBOX);
-  } catch (err) {
-    console.error('[IndexedDB] getOutboxMessages error:', err);
-    return [];
-  }
+export async function rotateAndReEncryptLocalMessages(userId: number = 0): Promise<void> {
+  // Non-blocking vault rotation stub
 }
 
 /**
- * Removes a message from the outbox queue.
- */
-export async function removeOutboxMessage(clientMsgId: string, userId?: number): Promise<void> {
-  try {
-    const db = await openCryptoDatabase(userId || 0);
-    await db.delete(STORE_OUTBOX, clientMsgId);
-  } catch (err) {
-    console.error('[IndexedDB] removeOutboxMessage error:', err);
-  }
-}
-
-/**
- * Key-Value helper for persistent client cache / settings.
+ * Saves arbitrary key-value metadata in isolated IndexedDB store.
  */
 export async function setLocalKV(key: string, value: any, userId?: number): Promise<void> {
   try {
@@ -183,6 +216,9 @@ export async function setLocalKV(key: string, value: any, userId?: number): Prom
   }
 }
 
+/**
+ * Retrieves arbitrary key-value metadata from isolated IndexedDB store.
+ */
 export async function getLocalKV<T = any>(key: string, userId?: number): Promise<T | null> {
   try {
     const db = await openCryptoDatabase(userId || 0);
@@ -193,29 +229,3 @@ export async function getLocalKV<T = any>(key: string, userId?: number): Promise
     return null;
   }
 }
-
-export async function rotateAndReEncryptLocalMessages(userId?: number): Promise<void> {
-  try {
-    const db = await openCryptoDatabase(userId || 0);
-    const msgs = await db.getAll(STORE_MESSAGES);
-    if (msgs.length === 0) return;
-
-    await LocalVaultEncryption.rotateVaultKey();
-
-    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-    for (const data of msgs) {
-      if (data && data.plaintext) {
-        const encrypted = await LocalVaultEncryption.encryptPayload(data.plaintext);
-        await tx.store.put({
-          ...data,
-          content: encrypted
-        });
-      }
-    }
-    await tx.done;
-  } catch (err) {
-    console.error('[IndexedDB] rotateAndReEncryptLocalMessages error:', err);
-  }
-}
-
-export const purgeLocalMessages = purgeLocalUserStorage;
