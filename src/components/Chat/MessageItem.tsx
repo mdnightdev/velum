@@ -488,6 +488,25 @@ export function MessageItem({
             </>
           )}
 
+          {/* Timestamp and Read Receipts inside bubble */}
+          <div className={`flex items-center gap-1 mt-1 -mb-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
+            <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+            <MessageStatusTicks 
+              status={msg.status} 
+              isMe={isMe} 
+              onRetry={() => {
+                if (msg.status === 'failed') {
+                  const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                  if (onRetryMessage) {
+                    onRetryMessage(targetId);
+                  } else {
+                    onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                  }
+                }
+              }}
+            />
+          </div>
+
           {/* Render Reactions */}
           {msg.reactions && Object.keys(msg.reactions).length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2.5">
@@ -522,48 +541,35 @@ export function MessageItem({
           )}
         </div>
 
-        {/* Message Meta (Below Bubble) */}
-        <div className={`flex items-center gap-1 mt-0.5 mb-1.5 text-[10px] font-medium text-text-secondary ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-          <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
-          {msg.is_pinned && (
-            <span title="Pinned message" className="flex items-center">
-              <Pin className="w-2.5 h-2.5 text-accent shrink-0" />
-            </span>
-          )}
-          <MessageStatusTicks 
-            status={msg.status} 
-            isMe={isMe} 
-            onRetry={() => {
-              if (msg.status === 'failed') {
-                const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
-                if (onRetryMessage) {
-                  onRetryMessage(targetId);
-                } else {
-                  onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
-                }
-              }
-            }}
-          />
+        {/* Message Meta (Below Bubble - Pins & Admin actions) */}
+        {(msg.is_pinned || (!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN'))) && (
+          <div className={`flex items-center gap-1 mt-0.5 mb-1 text-[10px] font-medium text-text-secondary ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+            {msg.is_pinned && (
+              <span title="Pinned message" className="flex items-center">
+                <Pin className="w-2.5 h-2.5 text-accent shrink-0" />
+              </span>
+            )}
 
-          {!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
-            <div className="hidden group-hover:flex items-center gap-1 ml-2">
-              <button
-                type="button"
-                onClick={() => onRoomMute?.(msg.user_id, true)}
-                className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
-              >
-                Mute
-              </button>
-              <button
-                type="button"
-                onClick={() => onRoomKick?.(msg.user_id)}
-                className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
-              >
-                Kick
-              </button>
-            </div>
-          )}
-        </div>
+            {!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
+              <div className="hidden group-hover:flex items-center gap-1 ml-2">
+                <button
+                  type="button"
+                  onClick={() => onRoomMute?.(msg.user_id, true)}
+                  className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
+                >
+                  Mute
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRoomKick?.(msg.user_id)}
+                  className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
+                >
+                  Kick
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

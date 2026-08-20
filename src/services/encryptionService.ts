@@ -111,7 +111,16 @@ export async function decryptMessage(content: string, context: EncryptionContext
         if (cleanCipher.endsWith(']')) {
           cleanCipher = cleanCipher.slice(0, -1);
         }
-        return decryptXOR(cleanCipher, 'VELUM_E2EE_' + context.roomId);
+        const unwrapped = decryptXOR(cleanCipher, 'VELUM_E2EE_' + context.roomId);
+        // Defense-in-depth: if a message was accidentally double-encrypted
+        // (e.g. a stateless DM envelope mistakenly wrapped in lounge XOR),
+        // the XOR layer will "successfully" unwrap to another cipher-prefixed
+        // string rather than real plaintext. Never surface that as the final
+        // result - recurse so the inner layer gets properly decrypted too.
+        if (unwrapped.startsWith('e2ee:v1:') || unwrapped.startsWith('ratchet:v2:') || unwrapped.startsWith('ratchet:v1:') || unwrapped.startsWith('VEL_E2EE[')) {
+          return await decryptMessage(unwrapped, context);
+        }
+        return unwrapped;
       } catch (err) {
         console.error('[encryptionService] Room XOR decryption error:', err);
         return '[Encrypted Message]';
