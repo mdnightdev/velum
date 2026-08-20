@@ -99,7 +99,7 @@ export function MessageItem({
   onRoomKick,
   onRoomMute,
 }: MessageItemProps) {
-  const isMe = msg.user_id === currentUserId;
+  const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
   const isCipher = msg.content?.startsWith('e2ee:v1:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
   const msgKey = String(msg.message_id || msg.id || msg.client_msg_id || msg.nonce || '');
@@ -318,7 +318,7 @@ export function MessageItem({
       <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
         {/* Content Bubble Card */}
         <div className={
-          isVoiceNote || isImageCard
+          isVoiceNote || isImageCard || isVideo
             ? "relative font-sans text-[13px] select-none"
             : `px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed break-words font-sans relative select-none ${
                 isSpecialTheme && customBubbleClass
@@ -361,15 +361,15 @@ export function MessageItem({
               {isVoiceNote ? (
                 <AudioMessagePlayer content={activeContent} isMe={isMe} />
               ) : isVideo ? (
-                <div className="flex flex-col gap-2 max-w-[320px]">
+                <div className="flex flex-col gap-1 max-w-[320px]">
                   {attachments.map((att, idx) => (
-                    <div key={idx} className="relative rounded-xl overflow-hidden bg-black/70 border border-white-5">
+                    <div key={idx} className="relative rounded-2xl overflow-hidden bg-black border border-white-5 shadow-sm">
                       <video
                         src={att.data}
                         controls
                         playsInline
                         preload="metadata"
-                        className="w-full max-h-[300px] object-contain rounded-xl bg-black"
+                        className="w-full max-h-[300px] object-contain rounded-2xl bg-black block"
                       />
                       {att.caption && (
                         <p className="px-3 py-1.5 text-[12px] text-white whitespace-pre-wrap">{att.caption}</p>
@@ -379,6 +379,23 @@ export function MessageItem({
                   {parsedMsgContent && parsedMsgContent !== firstAttachment?.caption && (
                     <p className="px-1 text-[13px] text-white whitespace-pre-wrap">{parsedMsgContent}</p>
                   )}
+                  <div className={`flex items-center gap-1 mt-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
+                    <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+                    <MessageStatusTicks
+                      status={msg.status}
+                      isMe={isMe}
+                      onRetry={() => {
+                        if (msg.status === 'failed') {
+                          const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                          if (onRetryMessage) {
+                            onRetryMessage(targetId);
+                          } else {
+                            onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                          }
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               ) : isImageCard ? (
                 <div className={`grid gap-1.5 ${attachments.length > 1 ? 'grid-cols-2 max-w-[280px]' : 'grid-cols-1'}`}>
@@ -526,8 +543,8 @@ export function MessageItem({
             </>
           )}
 
-          {/* Timestamp and Read Receipts inside bubble (hidden for image cards to prevent duplicate overlay time) */}
-          {!isImageCard && (
+          {/* Timestamp and Read Receipts inside bubble (hidden for image/video cards to prevent duplicate overlay time) */}
+          {!isImageCard && !isVideo && (
             <div className={`flex items-center gap-1 mt-1 -mb-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
               <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
               <MessageStatusTicks 
