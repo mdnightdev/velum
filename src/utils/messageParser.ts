@@ -91,11 +91,16 @@ export function getCleanPreview(content: string): string {
     const attachments = parseAttachment(content);
     if (attachments.length > 0) {
       if (attachments.length > 1) {
-        return `${attachments.length} photos`;
+        return `${attachments.length} items`;
       }
-      return attachments[0].type.startsWith('image/')
-        ? `Photo${attachments[0].caption ? ' ' + attachments[0].caption : ''}`
-        : `${attachments[0].name}${attachments[0].caption ? ' ' + attachments[0].caption : ''}`;
+      const att = attachments[0];
+      const isVid = att.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name) || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data);
+      if (isVid) {
+        return `Video${att.caption ? ' ' + att.caption : ''}`;
+      }
+      return att.type.startsWith('image/')
+        ? `Photo${att.caption ? ' ' + att.caption : ''}`
+        : `${att.name}${att.caption ? ' ' + att.caption : ''}`;
     }
     return 'Attachment';
   }

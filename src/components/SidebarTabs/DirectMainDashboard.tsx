@@ -6,7 +6,6 @@ import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
-import { Mic, Image as ImageIcon } from 'lucide-react';
 
 // e2ee:v1: envelopes are stateless-ECDH DMs and can only be decrypted async
 // (they hit IndexedDB for the local identity key). decryptMessageSync only
@@ -355,15 +354,45 @@ export default function DirectMainDashboard({
                       {isMe && !isFailed && lastMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                       {isMe && !isFailed && lastMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                       {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                    {lastTxt && (
-                        <span className="truncate inline-flex items-center gap-1">
-                          {lastTxt.startsWith('Voice message') && <Mic className="w-3.5 h-3.5 text-accent shrink-0" />}
-                          {(lastTxt.toLowerCase().includes('photo') || lastTxt.toLowerCase().includes('attachment')) && (
-                            <ImageIcon className="w-3.5 h-3.5 text-text-secondary shrink-0" />
-                          )}
-                          <span>{lastTxt}</span>
-                        </span>
-                      )}
+                      {lastTxt && (() => {
+                        const lower = lastTxt.toLowerCase();
+                        const isVoice = lastTxt.startsWith('Voice message');
+                        const isVid = lower.startsWith('video');
+                        const isPhoto = lower.startsWith('photo') || lower.includes('photos');
+                        const isDoc = !isVoice && !isVid && !isPhoto && (lower.includes('.pdf') || lower.includes('.doc') || lower.includes('.zip') || lower.includes('.txt') || lower.includes('.xlsx') || lower.includes('attachment'));
+
+                        return (
+                          <span className="truncate inline-flex items-center gap-1.5">
+                            {isVoice && (
+                              <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                <line x1="12" y1="19" x2="12" y2="23" />
+                                <line x1="8" y1="23" x2="16" y2="23" />
+                              </svg>
+                            )}
+                            {isPhoto && (
+                              <svg className="w-3.5 h-3.5 text-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                <circle cx="12" cy="13" r="4" />
+                              </svg>
+                            )}
+                            {isVid && (
+                              <svg className="w-3.5 h-3.5 text-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polygon points="23 7 16 12 23 17 23 7" />
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                              </svg>
+                            )}
+                            {isDoc && (
+                              <svg className="w-3.5 h-3.5 text-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                              </svg>
+                            )}
+                            <span className="truncate">{lastTxt}</span>
+                          </span>
+                        );
+                      })()}
                       
                       
                     </p>
