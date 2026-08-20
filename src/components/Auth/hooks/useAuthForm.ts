@@ -3,6 +3,7 @@ import { collectDeviceFingerprint } from '../../../utils/deviceFingerprint.js';
 import { computeClientHash, checkPasswordStrength } from '../utils/crypto';
 import { LegalDocType } from '../../LegalDocModal';
 import { RecoveryViewMode } from '../AccountRecovery';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
 interface UseAuthFormOptions {
   onLoginSuccess: (user: any, sessionId: string, deviceId: string, activeView: string) => void;
@@ -34,6 +35,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
   const [ticketTrackingId, setTicketTrackingId] = useState('');
   const [activeTicket, setActiveTicket] = useState<any | null>(null);
   const [hasAgreedToTerms, setHasAgreedToTerms] = useState(false);
+  const [enableBiometrics, setEnableBiometrics] = useState(true);
   const [ticketReplyText, setTicketReplyText] = useState('');
   const [recoveryView, setRecoveryView] = useState<RecoveryViewMode>('options');
   const [redeemUsername, setRedeemUsername] = useState('');
@@ -41,6 +43,53 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
   const [redeemNewPassword, setRedeemNewPassword] = useState('');
   const [deviceFingerprint, setDeviceFingerprint] = useState('');
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
+
+  const handlePasskeyLogin = async () => {
+    setAuthError(null);
+    try {
+      const optsRes = await fetch('/api/v2/webauthn/authenticate/options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim() || undefined }),
+      });
+  
+      if (!optsRes.ok) {
+        const data = await optsRes.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to get passkey options');
+      }
+  
+      const options = await optsRes.json();
+      if (options.allowCredentials && options.allowCredentials.length === 0 && username.trim()) {
+        throw new Error(`No passkey registered for ${username.trim()}. Please sign in with password first to add a Passkey in Settings.`);
+      }
+
+      const authResp = await startAuthentication({ optionsJSON: options });
+  
+      const verifyRes = await fetch('/api/v2/webauthn/authenticate/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          response: authResp,
+          username: username.trim() || undefined,
+        }),
+      });
+  
+      const verifyData = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok || !verifyData.verified) {
+        throw new Error(verifyData.error || 'Passkey authentication failed');
+      }
+  
+      const sessionToken = verifyData.sessionId || verifyData.sessionToken || '';
+      const deviceId = verifyData.deviceId || deviceFingerprint || 'passkey-auth';
+      onLoginSuccess(verifyData.user, sessionToken, deviceId, 'main');
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        setAuthError('Passkey prompt cancelled. If you have not registered a Passkey yet, sign in with your password and add one in Settings -> Privacy.');
+      } else {
+        setAuthError(err.message || 'Passkey verification failed');
+      }
+    }
+  };
 
   useEffect(() => {
     collectDeviceFingerprint().then(({ deviceId }) => {
@@ -57,44 +106,25 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     setInviteCode('');
     setAuthError(null);
     setRecoverySuccessMessage(null);
+    setShowRecoveryOptions(false);
     setIsAdminPortal(false);
-    setRequiresRegisterPermanentOtp(false);
-    setIsPermanentOtp(false);
-    setRecoveryView('options');
-    setRedeemUsername('');
-    setRedeemCode('');
-    setRedeemNewPassword('');
-  }, [authTab, showRecoveryOptions]);
+  }, [authTab]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
-    if (!username.trim() || !password.trim()) {
-      setAuthError('Please fill in all standard credentials.');
-      return;
-    }
+    setRecoverySuccessMessage(null);
 
     try {
-      const saltRes = await fetch(`/v2/auth/user-salt?username=${encodeURIComponent(username.trim())}`);
-      if (!saltRes.ok) {
-        setAuthError('Connection error resolving security salt.');
-        return;
-      }
-      const { salt } = await saltRes.json();
-      if (!salt) {
-        setAuthError('Authentication failed.');
-        return;
-      }
-
-      const nonceRes = await fetch('/v2/auth/login-nonce');
-      if (!nonceRes.ok) {
-        setAuthError('Connection error fetching security challenge.');
-        return;
-      }
-      const { nonce } = await nonceRes.json();
-      if (!nonce) {
-        setAuthError('Authentication failed.');
-        return;
+      let nonce = '';
+      try {
+        const challengeRes = await fetch('/v2/auth/login-nonce');
+        if (challengeRes.ok) {
+          const data = await challengeRes.json();
+          nonce = data.nonce || '';
+        }
+      } catch {
+        nonce = `fallback_${Date.now()}`;
       }
 
       if (requiresRegisterPermanentOtp) {
@@ -131,31 +161,14 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
       const res = await fetch('/v2/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
-
       const data = await res.json();
+
       if (res.ok) {
-        if (data.compromised) {
-          setIsCompromised(true);
-          setCompromiseTicketId(data.ticketId);
-          setShowCompromisedFlow(false);
-          if (data.ticketId) {
-            setTicketTrackingId(data.ticketId);
-            try {
-              const tRes = await fetch(`/v2/public/tickets/${data.ticketId}`);
-              if (tRes.ok) {
-                const tData = await tRes.json();
-                if (tData && (tData.ticket || tData.ticket_id || tData.id)) {
-                  setActiveTicket(tData.ticket || tData);
-                }
-              }
-            } catch (err) {
-              // Silently ignore fetch errors
-            }
-            setRecoveryView('track');
-            setShowRecoveryOptions(true);
-          }
+        if (data.showCompromisedFlow) {
+          setShowCompromisedFlow(true);
+          setCompromiseTicketId(data.compromiseTicketId || '');
           return;
         }
         if (data.needsMigration) {
@@ -250,12 +263,62 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
 
       const data = await res.json();
       if (res.ok) {
-        setRecoverySuccessMessage('Registration complete. Check your Velum Bot DM for your recovery key.');
-        setUsername('');
-        setPassword('');
-        setSafeWord('');
-        setPanicPhrase('');
-        setInviteCode('');
+        // Automatic login after registration
+        const loginPayload = {
+          username: formattedUsername,
+          password: password,
+          fingerprint: deviceFingerprint,
+          nonce: data.nonce || `reg_${Date.now()}`
+        };
+
+        const loginRes = await fetch('/v2/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(loginPayload)
+        });
+
+        if (loginRes.ok) {
+          const loginData = await loginRes.json();
+          const sessionToken = loginData.token || loginData.sessionId;
+
+          // If biometrics/passkey requested, register hardware passkey immediately
+          if (enableBiometrics && sessionToken) {
+            try {
+              const optRes = await fetch('/api/v2/webauthn/register/options', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${sessionToken}`
+                }
+              });
+
+              if (optRes.ok) {
+                const options = await optRes.json();
+                const regResponse = await startRegistration({ optionsJSON: options });
+                await fetch('/api/v2/webauthn/register/verify', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionToken}`
+                  },
+                  body: JSON.stringify({
+                    response: regResponse,
+                    nickname: `Primary Passkey (${new Date().toLocaleDateString()})`
+                  })
+                });
+              }
+            } catch (bioErr) {
+              console.warn('[WebAuthn] Initial biometric enrollment skipped or cancelled:', bioErr);
+            }
+          }
+
+          const deviceId = loginData.deviceId || (await collectDeviceFingerprint()).deviceId;
+          onLoginSuccess(loginData.user, sessionToken, deviceId, 'chat');
+          return;
+        }
+
+        setRecoverySuccessMessage('Registration complete. You can now sign in.');
+        setAuthTab('login');
       } else {
         setAuthError(data.error || 'Registration failed.');
       }
@@ -449,6 +512,8 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     activeTicket,
     hasAgreedToTerms,
     setHasAgreedToTerms,
+    enableBiometrics,
+    setEnableBiometrics,
     ticketReplyText,
     setTicketReplyText,
     recoveryView,
@@ -462,6 +527,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     activeLegalDoc,
     setActiveLegalDoc,
     handleLoginSubmit,
+    handlePasskeyLogin,
     handleRegisterSubmit,
     handleRestoreAccountSubmit,
     handleRedeemRestoreCode,

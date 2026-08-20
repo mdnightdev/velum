@@ -38,6 +38,10 @@ authRouter.get('/login-nonce', (req, res, next) => {
   authController.getLoginNonce(req, res).catch(next);
 });
 
+authRouter.get('/challenge', (req, res, next) => {
+  authController.getLoginNonce(req, res).catch(next);
+});
+
 authRouter.get('/pre-signup-salt', (req, res, next) => {
   authController.getPreSignupSalt(req, res).catch(next);
 });

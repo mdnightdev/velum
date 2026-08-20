@@ -42,6 +42,7 @@ export interface ChatAreaProps {
   onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
+  onRetryMessage?: (clientMsgId: string) => void;
   onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number) => void;
   onMarkAllAsRead?: (roomId: string) => void;
   onMarkDelivered?: (messageId: string, roomId: string) => void;
@@ -87,6 +88,7 @@ export default function ChatArea({
   onEditMessage,
   onDeleteMessage,
   onPinMessage,
+  onRetryMessage,
   onMarkAsRead,
   onMarkAllAsRead,
   activeChatPeer,
@@ -205,7 +207,8 @@ export default function ChatArea({
   } = useMessageDecryption({
     messages,
     activeChatPeer,
-    roomId
+    roomId,
+    currentUserId
   });
 
   const chatTitle = activeChatPeer
@@ -578,6 +581,7 @@ export default function ChatArea({
         onDeleteMessage={onDeleteMessage}
         onPinMessage={onPinMessage}
         onSendMessage={onSendMessage}
+        onRetryMessage={onRetryMessage}
         onScrollToMessage={handleScrollToMessage}
         popoverPeer={popoverPeer}
         setPopoverPeer={setPopoverPeer}

@@ -28,6 +28,7 @@ export interface MessageListProps {
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
   onSendMessage: (content: string, burnSeconds: number | null, isEncrypted: boolean) => void;
+  onRetryMessage?: (clientMsgId: string) => void;
   onScrollToMessage: (messageId: string) => void;
   popoverPeer: any;
   setPopoverPeer: React.Dispatch<React.SetStateAction<any>>;
@@ -63,6 +64,7 @@ export function MessageList({
   onDeleteMessage,
   onPinMessage,
   onSendMessage,
+  onRetryMessage,
   onScrollToMessage,
   popoverPeer,
   setPopoverPeer,
@@ -114,6 +116,7 @@ export function MessageList({
               onDeleteMessage={onDeleteMessage}
               onPinMessage={onPinMessage}
               onSendMessage={onSendMessage}
+              onRetryMessage={onRetryMessage}
               onScrollToMessage={onScrollToMessage}
               popoverPeer={popoverPeer}
               setPopoverPeer={setPopoverPeer}

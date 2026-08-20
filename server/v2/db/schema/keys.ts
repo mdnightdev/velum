@@ -11,7 +11,7 @@ export const userPrekeys = pgTable('user_prekeys', {
   userId: integer('user_id')
     .references(() => users.id, { onDelete: 'cascade' })
     .notNull(),
-  deviceId: integer('device_id').default(1).notNull(),
+  deviceId: text('device_id').notNull(),
   registrationId: integer('registration_id').default(1).notNull(),
   identityKey: text('identity_key').notNull(),
   signedPrekeyId: integer('signed_prekey_id').default(1).notNull(),

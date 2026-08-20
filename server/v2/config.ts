@@ -55,7 +55,9 @@ const envSchema = z.object({
   CLOUD_REDIS_URL: z.string().optional().transform(cleanEnvStr).default(''),
   MESSAGE_BATCH_INTERVAL: z.string().optional().transform((val) => {
     return val ? parseInt(val, 10) : 100;
-  }).default(() => 100)
+  }).default(() => 100),
+  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
+  WEBAUTHN_ORIGIN: z.string().optional().default('http://localhost:3000')
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

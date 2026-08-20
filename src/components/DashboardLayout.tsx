@@ -17,6 +17,7 @@ import { useResponsiveLayout } from '../hooks/useResponsive';
 import { BadgeCheck, Terminal, Radio, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
 import { doubleRatchetService } from '../services/doubleRatchetService';
 import { getSessionId } from '../utils/auth';
+import { getLocalKV, setLocalKV } from '../utils/indexedDb';
 
 interface DashboardLayoutProps {
   user: any;
@@ -41,6 +42,7 @@ interface DashboardLayoutProps {
   onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
+  onRetryMessage?: (clientMsgId: string) => void;
   onMarkAsRead?: (messageId: string, roomId: string) => void;
   onMarkAllAsRead?: (roomId: string) => void;
 }
@@ -68,6 +70,7 @@ export default function DashboardLayout({
   onEditMessage,
   onDeleteMessage,
   onPinMessage,
+  onRetryMessage,
   onMarkAsRead,
   onMarkAllAsRead
 }: DashboardLayoutProps) {
@@ -126,25 +129,24 @@ export default function DashboardLayout({
     }
   };
 
-  // Notes persistence
-  const [savedNotes, setSavedNotes] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(`velum-notes-${user?.userId || 0}`);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Notes persistence via user-isolated KV store
+  const [savedNotes, setSavedNotes] = useState<string[]>([]);
   const [newSavedNoteText, setNewSavedNoteText] = useState('');
   const [loungeRoomId, setLoungeRoomId] = useState<string>('');
 
   useEffect(() => {
-    // Left empty since we default to direct workspace now
-  }, [user]);
+    if (user?.userId) {
+      getLocalKV<string[]>('saved_notes', user.userId).then((notes) => {
+        if (notes && Array.isArray(notes)) {
+          setSavedNotes(notes);
+        }
+      }).catch(() => {});
+    }
+  }, [user?.userId]);
 
   useEffect(() => {
-    if (user?.userId) {
-      localStorage.setItem(`velum-notes-${user.userId}`, JSON.stringify(savedNotes));
+    if (user?.userId && savedNotes.length > 0) {
+      setLocalKV('saved_notes', savedNotes, user.userId).catch(() => {});
     }
   }, [savedNotes, user?.userId]);
 
@@ -169,30 +171,20 @@ export default function DashboardLayout({
         'Authorization': `Bearer ${sId}`,
         'Content-Type': 'application/json'
       };
-      const [reqRes, relRes, usersRes] = await Promise.allSettled([
-        fetch('/v2/friends/requests', { headers }),
-        fetch('/v2/friends/relationships', { headers }),
-        fetch('/v2/user/directory/search', { headers })
+          const [reqRes, relRes] = await Promise.allSettled([
+      fetch('/v2/friends/requests', { headers }),
+      fetch('/v2/friends/relationships', { headers }),
+    ]);
 
-      ]);
-      if (reqRes.status === 'fulfilled' && reqRes.value.ok) {
-        const reqData = await reqRes.value.json();
-        setFriendRequests(reqData.requests || reqData || []);
-      }
-      if (relRes.status === 'fulfilled' && relRes.value.ok) {
-        const relData = await relRes.value.json();
-        setFriendRelationships(relData);
-      }
-      if (usersRes.status === 'fulfilled' && usersRes.value.ok) {
-        const usersData = await usersRes.value.json();
-        const list = Array.isArray(usersData) ? usersData : (usersData.users || usersData.data || []);
-        const normalized = list.map((u: any) => ({
-          ...u,
-          user_id: u.userId !== undefined ? u.userId : u.user_id,
-          userId: u.userId !== undefined ? u.userId : u.user_id
-        }));
-        setRegisteredUsers(normalized);
-      }
+    if (reqRes.status === 'fulfilled' && reqRes.value.ok) {
+      const reqData = await reqRes.value.json();
+      setFriendRequests(reqData.requests || reqData || []);
+    }
+
+    if (relRes.status === 'fulfilled' && relRes.value.ok) {
+      const relData = await relRes.value.json();
+      setFriendRelationships(relData);
+    }
 
     } catch (err) {
       console.warn('Sync issue in relationship fetching:', err);
@@ -202,10 +194,12 @@ export default function DashboardLayout({
   useEffect(() => {
     if (user?.userId) {
       doubleRatchetService.setLocalUserId(Number(user.userId));
-      doubleRatchetService.initializeLocalKeys().catch(console.error);
+      doubleRatchetService.initializeLocalKeys()
+        .then(() => doubleRatchetService.publishPrekeyBundle())
+        .catch(console.error);
       loadPeopleAndRequests();
-      const interval = setInterval(loadPeopleAndRequests, 12000);
-      return () => clearInterval(interval);
+          const interval = setInterval(loadPeopleAndRequests, 45000);
+		 return () => clearInterval(interval);
     }
   }, [user]);
 
@@ -625,6 +619,7 @@ export default function DashboardLayout({
               onEditMessage={onEditMessage}
               onDeleteMessage={onDeleteMessage}
               onPinMessage={onPinMessage}
+              onRetryMessage={onRetryMessage}
               onMarkAsRead={onMarkAsRead}
               onMarkAllAsRead={onMarkAllAsRead}
               isDark={isDark}

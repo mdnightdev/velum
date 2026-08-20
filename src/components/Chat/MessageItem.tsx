@@ -57,6 +57,7 @@ export interface MessageItemProps {
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
   onSendMessage: (content: string, burnSeconds: number | null, isEncrypted: boolean) => void;
+  onRetryMessage?: (clientMsgId: string) => void;
   onScrollToMessage: (messageId: string) => void;
   popoverPeer: any;
   setPopoverPeer: React.Dispatch<React.SetStateAction<any>>;
@@ -90,6 +91,7 @@ export function MessageItem({
   onDeleteMessage,
   onPinMessage,
   onSendMessage,
+  onRetryMessage,
   onScrollToMessage,
   popoverPeer,
   setPopoverPeer,
@@ -100,7 +102,8 @@ export function MessageItem({
   const isMe = msg.user_id === currentUserId;
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
   const isCipher = msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('VEL_E2EE[');
-  const activeContent = (msg.message_id && decryptedMap[msg.message_id]) || (isCipher ? '···' : (msg.content || ''));
+  const msgKey = String(msg.message_id || msg.id || msg.client_msg_id || msg.nonce || '');
+  const activeContent = msg.plaintext || (msg as any).client_plaintext || (msgKey ? decryptedMap[msgKey] : '') || (getDecryptedText ? getDecryptedText(msg) : '') || (isCipher ? '···' : (msg.content || ''));
 
   const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
   const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment:');
@@ -113,6 +116,10 @@ export function MessageItem({
   const parsedAttachmentType = firstAttachment?.type || '';
   const parsedAttachmentData = firstAttachment?.data || '';
   const parsedMsgContent = firstAttachment ? (firstAttachment.caption || '') : activeContent;
+
+  if (!msg.deleted && !activeContent && attachments.length === 0 && !msg.content) {
+    return null;
+  }
 
   const isImageCard = attachments.length > 0 && attachments.every((att) => 
     att.type.startsWith('image/') ||
@@ -365,8 +372,12 @@ export function MessageItem({
                         isMe={isMe}
                         onRetry={() => {
                           if (msg.status === 'failed') {
-                            onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
-                            onDeleteMessage?.(msg.message_id, msg.room_id || roomId);
+                            const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                            if (onRetryMessage) {
+                              onRetryMessage(targetId);
+                            } else {
+                              onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                            }
                           }
                         }}
                       />
@@ -524,8 +535,12 @@ export function MessageItem({
             isMe={isMe} 
             onRetry={() => {
               if (msg.status === 'failed') {
-                onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
-                onDeleteMessage?.(msg.message_id, msg.room_id || roomId);
+                const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                if (onRetryMessage) {
+                  onRetryMessage(targetId);
+                } else {
+                  onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                }
               }
             }}
           />

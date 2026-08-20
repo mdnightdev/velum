@@ -54,7 +54,7 @@ export function useWebSocket({
 
     const syncRoom = async () => {
       // a. Load cached messages for active room
-      const cached = await getLocalMessages(activeRoomId);
+      const cached = await getLocalMessages(activeRoomId, 100, userId || undefined);
       let lastTimestamp = '';
 
       if (cached && cached.length > 0) {
@@ -90,14 +90,14 @@ export function useWebSocket({
     };
 
     syncRoom();
-  }, [activeRoomId, wsConnected]);
+  }, [activeRoomId, wsConnected, userId]);
 
   // 2. Persist message state changes to local storage
   useEffect(() => {
     if (activeRoomId && messages.length > 0) {
-      saveLocalMessages(messages);
+      saveLocalMessages(messages, userId || undefined);
     }
-  }, [activeRoomId, messages]);
+  }, [activeRoomId, messages, userId]);
   
   const [lastMessages, setLastMessages] = useState<Record<string, Message>>({});
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
@@ -211,7 +211,7 @@ export function useWebSocket({
           return true;
         }
         return false;
-      });
+      }, userId || undefined);
 
       pingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -308,7 +308,7 @@ export function useWebSocket({
         } else if (data.type === 'message_ack') {
           const ackNonce = data.client_msg_id || data.nonce;
           if (ackNonce) {
-            removeOutboxMessage(ackNonce);
+            removeOutboxMessage(ackNonce, userId || undefined);
           }
           setMessages(prev => prev.map(m => {
             if (m.nonce === ackNonce || m.client_msg_id === ackNonce || m.message_id === ackNonce) {
@@ -566,7 +566,7 @@ export function useWebSocket({
     };
 
     // Enqueue in IndexedDB outbox queue
-    await enqueueOutboxMessage(outboxPayload);
+    await enqueueOutboxMessage(outboxPayload, userId || undefined);
 
     // If socket is open, send frame immediately
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -586,6 +586,52 @@ export function useWebSocket({
     setTimeout(() => {
       setMessages(prev => prev.map(m => {
         if (m.nonce === nonce && m.status === 'sending') {
+          return { ...m, status: 'failed' };
+        }
+        return m;
+      }));
+    }, 10000);
+  };
+
+  const retryMessage = async (clientMsgId: string) => {
+    let targetMsg: Message | undefined;
+    setMessages(prev => {
+      return prev.map(m => {
+        const matches = (m.client_msg_id && m.client_msg_id === clientMsgId) ||
+          (m.nonce && m.nonce === clientMsgId) ||
+          (m.message_id && m.message_id === clientMsgId) ||
+          (m.id && String(m.id) === clientMsgId);
+        if (matches) {
+          targetMsg = m;
+          return { ...m, status: 'sending' };
+        }
+        return m;
+      });
+    });
+
+    if (!targetMsg) return;
+
+    const destRoomId = (targetMsg as Message).room_id || activeRoomId;
+    const finalContent = (targetMsg as Message).content;
+    const shouldEncrypt = !!((targetMsg as Message).is_encrypted || (targetMsg as any).isEncrypted);
+    const nonce = (targetMsg as Message).client_msg_id || (targetMsg as Message).nonce || clientMsgId;
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'send_message',
+        room_id: destRoomId,
+        content: finalContent,
+        is_encrypted: shouldEncrypt,
+        expires_in: (targetMsg as Message).expires_in || null,
+        reply_to: (targetMsg as Message).reply_to || null,
+        client_msg_id: nonce,
+        nonce: nonce
+      }));
+    }
+
+    setTimeout(() => {
+      setMessages(prev => prev.map(m => {
+        if ((m.nonce === nonce || m.client_msg_id === nonce || m.message_id === nonce) && m.status === 'sending') {
           return { ...m, status: 'failed' };
         }
         return m;
@@ -744,6 +790,7 @@ export function useWebSocket({
     unreadCounts,
     wsConnected,
     sendMessage,
+    retryMessage,
     sendTyping,
     kickMember,
     muteMember,

@@ -1,6 +1,4 @@
-const DB_NAME = 'velum_local_storage';
-const DB_VERSION = 26;
-const STORE_OUTBOX = 'outbox_messages';
+import { openCryptoDatabase, STORE_OUTBOX } from './cryptoDbStore';
 
 export interface OutboxPayload {
   client_msg_id: string;
@@ -13,51 +11,13 @@ export interface OutboxPayload {
   retryCount: number;
 }
 
-function openOutboxDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      return reject(new Error('IndexedDB is not supported.'));
-    }
-
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(new Error('Failed to open outbox database.'));
-    request.onsuccess = () => {
-      const db = request.result;
-      db.onversionchange = () => {
-        db.close();
-      };
-      resolve(db);
-    };
-
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('media_blobs')) {
-        db.createObjectStore('media_blobs');
-      }
-      if (!db.objectStoreNames.contains('messages')) {
-        db.createObjectStore('messages');
-      }
-      if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
-        db.createObjectStore(STORE_OUTBOX, { keyPath: 'client_msg_id' });
-      }
-    };
-  });
-}
-
 /**
  * Enqueue an outgoing message frame into the offline persistent outbox
  */
-export async function enqueueOutboxMessage(payload: OutboxPayload): Promise<void> {
+export async function enqueueOutboxMessage(payload: OutboxPayload, userId?: number): Promise<void> {
   try {
-    const db = await openOutboxDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORE_OUTBOX], 'readwrite');
-      const store = tx.objectStore(STORE_OUTBOX);
-      const req = store.put(payload);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(new Error(`Failed to enqueue outbox message ${payload.client_msg_id}`));
-    });
+    const db = await openCryptoDatabase(userId || 0);
+    await db.put(STORE_OUTBOX, payload);
   } catch (err) {
     console.warn('[OUTBOX] Failed to enqueue message:', err);
   }
@@ -66,20 +26,12 @@ export async function enqueueOutboxMessage(payload: OutboxPayload): Promise<void
 /**
  * Get all queued pending outbox messages sorted by timestamp
  */
-export async function getQueuedOutboxMessages(): Promise<OutboxPayload[]> {
+export async function getQueuedOutboxMessages(userId?: number): Promise<OutboxPayload[]> {
   try {
-    const db = await openOutboxDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORE_OUTBOX], 'readonly');
-      const store = tx.objectStore(STORE_OUTBOX);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const items: OutboxPayload[] = req.result || [];
-        items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-        resolve(items);
-      };
-      req.onerror = () => reject(new Error('Failed to read outbox messages'));
-    });
+    const db = await openCryptoDatabase(userId || 0);
+    const items: OutboxPayload[] = await db.getAll(STORE_OUTBOX);
+    items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    return items;
   } catch (err) {
     console.warn('[OUTBOX] Failed to read outbox:', err);
     return [];
@@ -89,16 +41,10 @@ export async function getQueuedOutboxMessages(): Promise<OutboxPayload[]> {
 /**
  * Remove an acknowledged or sent message from the outbox queue
  */
-export async function removeOutboxMessage(clientMsgId: string): Promise<void> {
+export async function removeOutboxMessage(clientMsgId: string, userId?: number): Promise<void> {
   try {
-    const db = await openOutboxDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORE_OUTBOX], 'readwrite');
-      const store = tx.objectStore(STORE_OUTBOX);
-      const req = store.delete(clientMsgId);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(new Error(`Failed to remove outbox item ${clientMsgId}`));
-    });
+    const db = await openCryptoDatabase(userId || 0);
+    await db.delete(STORE_OUTBOX, clientMsgId);
   } catch (err) {
     console.warn('[OUTBOX] Failed to remove outbox message:', err);
   }
@@ -107,15 +53,15 @@ export async function removeOutboxMessage(clientMsgId: string): Promise<void> {
 /**
  * Drains and re-transmits outbox messages sequentially over an active WebSocket connection
  */
-export async function drainOutboxQueue(sendWebSocketFrame: (payload: OutboxPayload) => boolean): Promise<number> {
-  const pending = await getQueuedOutboxMessages();
+export async function drainOutboxQueue(sendWebSocketFrame: (payload: OutboxPayload) => boolean, userId?: number): Promise<number> {
+  const pending = await getQueuedOutboxMessages(userId);
   if (pending.length === 0) return 0;
 
   let drainedCount = 0;
   for (const item of pending) {
     const success = sendWebSocketFrame(item);
     if (success) {
-      await removeOutboxMessage(item.client_msg_id);
+      await removeOutboxMessage(item.client_msg_id, userId);
       drainedCount++;
     } else {
       break; // Socket unable to send, stop draining

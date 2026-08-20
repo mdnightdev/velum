@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Lock, Key, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, Key, Eye, EyeOff, KeyRound, HelpCircle, LifeBuoy } from 'lucide-react';
 import PasswordInput from '../PasswordInput';
 import { LegalDocType } from '../LegalDocModal';
 
@@ -17,8 +17,10 @@ interface LoginFormProps {
   isPermanentOtp: boolean;
   onSubmit: (e: React.FormEvent) => void;
   onShowRecovery: () => void;
+  onShowHelpDesk?: () => void;
   onSwitchToRegister: () => void;
   onOpenLegalDoc: (doc: LegalDocType) => void;
+  onPasskeyLogin?: () => void;
 }
 
 export default function LoginForm({
@@ -35,51 +37,60 @@ export default function LoginForm({
   isPermanentOtp,
   onSubmit,
   onShowRecovery,
+  onShowHelpDesk,
   onSwitchToRegister,
   onOpenLegalDoc,
+  onPasskeyLogin
 }: LoginFormProps) {
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="w-full space-y-4">
       {!isAdminPortal ? (
         <>
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Username</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-text-secondary block">
+              Username
+            </label>
             <div className="relative">
-              <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+              <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary" />
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-velum-850 border border-white-5 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+                className="w-full bg-white-5 border border-white-10 rounded-xl pl-10 pr-4 py-3.5 text-sm text-text-primary outline-none focus:border-accent transition-colors"
                 required
+                autoComplete="username"
               />
             </div>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex justify-between items-center">
-              <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">Password</label>
+              <label className="text-xs font-medium text-text-secondary block">
+                Password
+              </label>
               <button
                 type="button"
                 onClick={onShowRecovery}
-                className="text-[9px] uppercase tracking-wider text-accent hover:underline cursor-pointer"
+                className="text-xs text-accent hover:underline cursor-pointer"
               >
-                Recovery
+                Forgot password?
               </button>
             </div>
             <div className="relative">
-              <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+              <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-velum-850 border border-white-5 rounded-xl pl-10 pr-10 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+                className="w-full bg-white-5 border border-white-10 rounded-xl pl-10 pr-10 py-3.5 text-sm text-text-primary outline-none focus:border-accent transition-colors"
                 required
+                autoComplete="current-password"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary cursor-pointer"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary cursor-pointer p-1"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -87,49 +98,81 @@ export default function LoginForm({
           </div>
         </>
       ) : (
-        <div className="space-y-1 pt-2 animate-fadeIn">
-          <label className="text-[10px] uppercase font-sans tracking-wider text-white font-semibold block">
+        <div className="space-y-1.5 pt-2 animate-fadeIn">
+          <label className="text-xs font-medium text-text-secondary block">
             {requiresRegisterPermanentOtp 
               ? 'Create Passcode' 
               : (isPermanentOtp ? 'Passcode' : 'Passcode')}
           </label>
           <div className="relative">
-            <Key className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+            <Key className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary" />
             <PasswordInput
               value={adminToken}
               onChange={(e) => setAdminToken(e.target.value)}
-              placeholder=""
-              className="w-full bg-velum-850 border border-white-5 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-accent font-sans"
+              className="w-full bg-white-5 border border-white-10 rounded-xl pl-10 pr-4 py-3.5 text-sm text-text-primary outline-none focus:border-accent transition-colors"
               required
             />
           </div>
         </div>
       )}
 
+      {/* Primary Submit Button */}
       <button
         type="submit"
-        className="w-full bg-accent hover:bg-accent-hover text-zinc-950 font-bold uppercase p-3 rounded-xl transition duration-150 text-xs tracking-widest cursor-pointer mt-4"
+        className="w-full bg-accent hover:opacity-95 text-velum-950 font-semibold py-3.5 px-6 rounded-xl transition-all text-sm tracking-wide cursor-pointer mt-6 shadow-lg shadow-accent/10 active:scale-[0.99]"
       >
         {isAdminPortal 
           ? (requiresRegisterPermanentOtp ? 'Save and Verify Passcode' : 'Verify Passcode') 
           : 'Sign In'}
       </button>
 
+      {/* Passkey Alternative */}
+      {onPasskeyLogin && !isAdminPortal && (
+        <button
+          type="button"
+          onClick={onPasskeyLogin}
+          className="w-full bg-white-5 hover:bg-white-10 border border-white-10 text-text-primary font-medium py-3 px-6 rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer mt-2"
+        >
+          <KeyRound className="w-3.5 h-3.5 text-accent" />
+          <span>Sign In with Passkey / Face ID</span>
+        </button>
+      )}
+
       {!isAdminPortal && (
-        <div className="text-center mt-3 pt-1 border-t border-white-5">
+        <div className="flex flex-col gap-2 mt-6 pt-4 border-t border-white-5 text-center">
           <button
             type="button"
             onClick={onSwitchToRegister}
-            className="text-[10px] uppercase font-sans tracking-wider text-accent hover:text-accent-hover transition cursor-pointer font-semibold"
+            className="text-xs text-accent hover:underline transition cursor-pointer font-medium"
           >
             New user? Create an account
           </button>
+
+          <div className="flex items-center justify-center gap-4 pt-1">
+            <button
+              type="button"
+              onClick={onShowRecovery}
+              className="text-xs text-text-secondary hover:text-text-primary flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <HelpCircle className="w-3 h-3 text-text-secondary" />
+              <span>Account Recovery</span>
+            </button>
+            <span className="text-white-10">·</span>
+            <button
+              type="button"
+              onClick={onShowHelpDesk || onShowRecovery}
+              className="text-xs text-text-secondary hover:text-text-primary flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <LifeBuoy className="w-3 h-3 text-text-secondary" />
+              <span>Support Desk</span>
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="mt-2 pt-2 border-t border-white-5 text-center">
-        <button type="button" onClick={() => onOpenLegalDoc('terms')} className="text-[9px] text-text-secondary hover:text-accent underline mr-3 cursor-pointer">Terms of Service</button>
-        <button type="button" onClick={() => onOpenLegalDoc('privacy')} className="text-[9px] text-text-secondary hover:text-accent underline cursor-pointer">Privacy Policy</button>
+      <div className="mt-4 pt-2 text-center text-[11px] text-text-disabled">
+        <button type="button" onClick={() => onOpenLegalDoc('terms')} className="hover:text-text-secondary underline mr-3 cursor-pointer">Terms of Service</button>
+        <button type="button" onClick={() => onOpenLegalDoc('privacy')} className="hover:text-text-secondary underline cursor-pointer">Privacy Policy</button>
       </div>
     </form>
   );

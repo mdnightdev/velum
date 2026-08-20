@@ -9,7 +9,7 @@ data/velum_state_v3.bin
 server/services/ws.log
 logs/
 backups/
-scripts/
+server/v2/scripts/
 
 # Ignore local databases, keys, and logs
 bun.lock
@@ -28,3 +28,4 @@ uploads
 dump.rdb
 gradle-*.zip
 gradle-*.zip
+patches

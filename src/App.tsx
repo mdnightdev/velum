@@ -192,6 +192,7 @@ function AppContent() {
       onEditMessage={ws.editMessage}
       onDeleteMessage={ws.deleteMessage}
       onPinMessage={ws.pinMessage}
+      onRetryMessage={ws.retryMessage}
       onMarkAsRead={ws.markAsRead}
       onMarkAllAsRead={ws.markAllAsRead}
     />

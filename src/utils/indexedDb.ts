@@ -1,218 +1,221 @@
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
-const DB_NAME = 'velum_local_storage';
-const DB_VERSION = 26;
-const STORE_MEDIA = 'media_blobs';
-const STORE_MESSAGES = 'messages';
-const STORE_OUTBOX = 'outbox_messages';
+import {
+  openCryptoDatabase,
+  purgeCryptoDatabase,
+  STORE_MESSAGES,
+  STORE_MEDIA,
+  STORE_OUTBOX,
+  STORE_USER_KV
+} from '../services/cryptoDbStore';
 
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      return reject(new Error('IndexedDB is not supported on this platform.'));
-    }
-
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => {
-      reject(new Error('Failed to open local storage database.'));
-    };
-
-    request.onsuccess = () => {
-      const db = request.result;
-      db.onversionchange = () => {
-        db.close();
-      };
-      resolve(db);
-    };
-
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_MEDIA)) {
-        db.createObjectStore(STORE_MEDIA);
-      }
-     if (db.objectStoreNames.contains(STORE_MESSAGES)) {
-  db.deleteObjectStore(STORE_MESSAGES);
-}
-const msgStore = db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
-msgStore.createIndex('loungeId', 'loungeId', { unique: false });
-msgStore.createIndex('lounge_time', ['loungeId', 'timestamp'], { unique: false });
-      if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
-        db.createObjectStore(STORE_OUTBOX, { keyPath: 'client_msg_id' });
-      }
-    };
-  });
-}
+const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours TTL
 
 /**
- * Saves or updates messages in IndexedDB individually without loading the whole array.
+ * Saves or updates messages in user-isolated IndexedDB and prunes stale records.
  */
-export async function saveLocalMessages(messages: any[]): Promise<void> {
+export async function saveLocalMessages(messages: any[], userId?: number): Promise<void> {
   if (!messages || messages.length === 0) return;
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction= db.transaction([STORE_MESSAGES], 'readwrite');
-    const store = transaction.objectStore(STORE_MESSAGES);
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+    const now = Date.now();
 
     for (const msg of messages) {
-      store.put(msg);
+      if (!msg) continue;
+      const id = msg.id ?? msg.message_id ?? msg.client_msg_id ?? msg.messageId ?? msg.nonce ?? `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const loungeId = msg.loungeId ?? msg.room_id ?? msg.roomId ?? '';
+      const rawTime = msg.timestamp ?? msg.createdAt ?? new Date().toISOString();
+      const msgTime = new Date(rawTime).getTime();
+
+      // Skip messages older than TTL
+      if (!isNaN(msgTime) && (now - msgTime) > MAX_MESSAGE_AGE_MS) {
+        continue;
+      }
+
+      const record = {
+        ...msg,
+        id: String(id),
+        loungeId,
+        timestamp: rawTime
+      };
+      await tx.store.put(record);
     }
 
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(new Error('Failed to save messages to local storage'));
-  });
+    await tx.done;
+  } catch (err) {
+    console.warn('[IndexedDB] saveLocalMessages error:', err);
+  }
 }
 
 /**
- * Retrieves the most recent messages for a lounge using the compound index.
+ * Retrieves the most recent messages for a room from the user's isolated store.
  */
-export async function getLocalMessages(loungeId: string, limit = 50): Promise<any[]> {
+export async function getLocalMessages(loungeId: string, limit = 100, userId?: number): Promise<any[]> {
   try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_MESSAGES], 'readonly');
-      const store = transaction.objectStore(STORE_MESSAGES);
-      const index = store.index('lounge_time');
-      
-      // Query all messages matching loungeId across any timestamp
-      const range = IDBKeyRange.bound([loungeId, -Infinity], [loungeId, Infinity]);
-      const request = index.openCursor(range, 'prev'); // Most recent first
-      
-      const results: any[] = [];
-      request.onsuccess = (event: any) => {
-        const cursor = event.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          resolve(results.reverse()); // Chronological order
-        }
-      };
-      request.onerror = () => reject(new Error(`Failed to load messages for lounge: ${loungeId}`));
-    });
+    const db = await openCryptoDatabase(userId || 0);
+    const now = Date.now();
+    const all: any[] = await db.getAllFromIndex(STORE_MESSAGES, 'loungeId', loungeId);
+    
+    const valid = all
+      .filter((m) => {
+        const matchesRoom = m.loungeId === loungeId || m.room_id === loungeId || m.roomId === loungeId;
+        if (!matchesRoom) return false;
+        const msgTime = new Date(m.timestamp || m.createdAt || 0).getTime();
+        return isNaN(msgTime) || (now - msgTime) <= MAX_MESSAGE_AGE_MS;
+      })
+      .sort((a, b) => {
+        const tA = new Date(a.timestamp || a.createdAt || 0).getTime();
+        const tB = new Date(b.timestamp || b.createdAt || 0).getTime();
+        return tA - tB;
+      });
+
+    return valid.slice(-limit);
   } catch (err) {
-    console.error('getLocalMessages error:', err);
+    console.error('[IndexedDB] getLocalMessages error:', err);
     return [];
   }
 }
 
 /**
- * Saves a binary Blob locally in IndexedDB under a unique key.
+ * Flushes cache for a specific room.
  */
-export async function saveLocalMedia(key: string, blob: Blob): Promise<void> {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_MEDIA], 'readwrite');
-    const store = transaction.objectStore(STORE_MEDIA);
-    const request = store.put(blob, key);
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(new Error(`Failed to save local media asset: ${key}`));
-  });
+export async function flushLoungeCache(loungeId: string, userId?: number): Promise<void> {
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+    const all: any[] = await tx.store.index('loungeId').getAll(loungeId);
+    for (const m of all) {
+      await tx.store.delete(m.id);
+    }
+    await tx.done;
+  } catch (err) {
+    console.warn('[IndexedDB] flushLoungeCache error:', err);
+  }
 }
 
 /**
- * Retrieves a binary Blob from IndexedDB. Returns null if not found.
+ * Purges the entire local IndexedDB storage for a specific user on logout.
  */
-export async function getLocalMedia(key: string): Promise<Blob | null> {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_MEDIA], 'readonly');
-      const store = transaction.objectStore(STORE_MEDIA);
-      const request = store.get(key);
+export async function purgeLocalUserStorage(userId?: number): Promise<void> {
+  await purgeCryptoDatabase(userId || 0);
+}
 
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(new Error(`Failed to retrieve local media asset: ${key}`));
-    });
+/**
+ * Saves a binary Blob locally in IndexedDB under a unique key.
+ */
+export async function saveLocalMedia(key: string, blob: Blob, userId?: number): Promise<void> {
+  const db = await openCryptoDatabase(userId || 0);
+  await db.put(STORE_MEDIA, blob, key);
+}
+
+/**
+ * Deletes a binary Blob by key from IndexedDB.
+ */
+export async function deleteLocalMedia(key: string, userId?: number): Promise<void> {
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    await db.delete(STORE_MEDIA, key);
   } catch (err) {
-    console.warn('[IndexedDB] Local database is unavailable:', err);
+    console.error('[IndexedDB] deleteLocalMedia error:', err);
+  }
+}
+
+/**
+ * Retrieves a binary Blob by key from IndexedDB.
+ */
+export async function getLocalMedia(key: string, userId?: number): Promise<Blob | null> {
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const res = await db.get(STORE_MEDIA, key);
+    return res || null;
+  } catch (err) {
+    console.error('[IndexedDB] getLocalMedia error:', err);
     return null;
   }
 }
 
 /**
- * Deletes a binary Blob from IndexedDB.
+ * Queues an unsent message in IndexedDB outbox.
  */
-export async function deleteLocalMedia(key: string): Promise<void> {
+export async function enqueueOutboxMessage(payload: any, userId?: number): Promise<void> {
   try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_MEDIA], 'readwrite');
-      const store = transaction.objectStore(STORE_MEDIA);
-      const request = store.delete(key);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(new Error(`Failed to delete local media asset: ${key}`));
-    });
+    const db = await openCryptoDatabase(userId || 0);
+    await db.put(STORE_OUTBOX, payload);
   } catch (err) {
-    console.warn('[IndexedDB] Local database deletion failed:', err);
+    console.error('[IndexedDB] enqueueOutboxMessage error:', err);
   }
 }
 
-export async function rotateAndReEncryptLocalMessages(): Promise<void> {
+/**
+ * Retrieves all pending outbox messages from IndexedDB.
+ */
+export async function getOutboxMessages(userId?: number): Promise<any[]> {
   try {
-    const db = await openDatabase();
-    const allRecords = await new Promise<{ key: IDBValidKey, value: any }[]>((resolve, reject) => {
-      const tx = db.transaction([STORE_MESSAGES], 'readonly');
-      const store = tx.objectStore(STORE_MESSAGES);
-      const req = store.getAll();
-      const keysReq = store.getAllKeys();
-      
-      req.onsuccess = () => {
-        keysReq.onsuccess = () => {
-          const records = keysReq.result.map((key, i) => ({ key, value: req.result[i] }));
-          resolve(records);
-        };
-      };
-      req.onerror = () => reject(new Error('Failed to fetch messages for re-encryption'));
-    });
+    const db = await openCryptoDatabase(userId || 0);
+    return await db.getAll(STORE_OUTBOX);
+  } catch (err) {
+    console.error('[IndexedDB] getOutboxMessages error:', err);
+    return [];
+  }
+}
 
-    const decryptedData = [];
-    // Decrypt all possible records with the current key
-    for (const record of allRecords) {
-      if (record.value._encrypted) {
-        const str = await LocalVaultEncryption.decryptPayload(record.value);
-        if (str) {
-          decryptedData.push({ key: record.key, plaintext: str });
-        }
-      } else if (Array.isArray(record.value)) {
-        decryptedData.push({ key: record.key, plaintext: JSON.stringify(record.value) });
-      }
-    }
+/**
+ * Removes a message from the outbox queue.
+ */
+export async function removeOutboxMessage(clientMsgId: string, userId?: number): Promise<void> {
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    await db.delete(STORE_OUTBOX, clientMsgId);
+  } catch (err) {
+    console.error('[IndexedDB] removeOutboxMessage error:', err);
+  }
+}
 
-    // Now rotate the key
+/**
+ * Key-Value helper for persistent client cache / settings.
+ */
+export async function setLocalKV(key: string, value: any, userId?: number): Promise<void> {
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    await db.put(STORE_USER_KV, { key, value, updatedAt: Date.now() });
+  } catch (err) {
+    console.warn('[IndexedDB] setLocalKV error:', err);
+  }
+}
+
+export async function getLocalKV<T = any>(key: string, userId?: number): Promise<T | null> {
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const record = await db.get(STORE_USER_KV, key);
+    return record ? record.value : null;
+  } catch (err) {
+    console.warn('[IndexedDB] getLocalKV error:', err);
+    return null;
+  }
+}
+
+export async function rotateAndReEncryptLocalMessages(userId?: number): Promise<void> {
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const msgs = await db.getAll(STORE_MESSAGES);
+    if (msgs.length === 0) return;
+
     await LocalVaultEncryption.rotateVaultKey();
 
-    // Re-encrypt and overwrite
-    const tx = db.transaction([STORE_MESSAGES], 'readwrite');
-    const store = tx.objectStore(STORE_MESSAGES);
-
-    for (const data of decryptedData) {
-      const encrypted = await LocalVaultEncryption.encryptPayload(data.plaintext);
-      store.put({ _encrypted: true, ...encrypted }, data.key);
+    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+    for (const data of msgs) {
+      if (data && data.plaintext) {
+        const encrypted = await LocalVaultEncryption.encryptPayload(data.plaintext);
+        await tx.store.put({
+          ...data,
+          content: encrypted
+        });
+      }
     }
-    
-    // We can also return a promise for the transaction completion if needed.
+    await tx.done;
   } catch (err) {
-    console.error('[IndexedDB] Failed to rotate and re-encrypt local messages', err);
+    console.error('[IndexedDB] rotateAndReEncryptLocalMessages error:', err);
   }
 }
 
-
-export function purgeLocalMessages(): Promise<void> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const db = await openDatabase();
-      const tx = db.transaction([STORE_MESSAGES, STORE_MEDIA], 'readwrite');
-      const storeMsgs = tx.objectStore(STORE_MESSAGES);
-      const storeMedia = tx.objectStore(STORE_MEDIA);
-      storeMsgs.clear();
-      storeMedia.clear();
-      
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
+export const purgeLocalMessages = purgeLocalUserStorage;

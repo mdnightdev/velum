@@ -37,7 +37,7 @@ export async function publishPrekeyBundle(
   userId: number,
   bundle: PrekeyBundlePayload
 ): Promise<void> {
-  const deviceId = Number(bundle.deviceId) || 1;
+  const deviceId = bundle.deviceId ? String(bundle.deviceId) : '1';
   const registrationId = Number(bundle.registrationId) || 1;
 
   let signedPrekeyId = Number(bundle.signedPrekeyId) || 1;
@@ -93,8 +93,9 @@ export async function publishPrekeyBundle(
 
 export async function fetchPrekeyBundle(
   targetUserId: number,
-  deviceId: number = 1
+  deviceId: string | number = '1'
 ): Promise<SignalPrekeyBundleDTO | null> {
+  const deviceIdStr = String(deviceId);
   return await executeWithRetry(async () => {
     return await db.transaction(async (tx) => {
       let record;
@@ -102,7 +103,7 @@ export async function fetchPrekeyBundle(
         const query = tx
           .select()
           .from(userPrekeys)
-          .where(and(eq(userPrekeys.userId, targetUserId), eq(userPrekeys.deviceId, deviceId)))
+          .where(and(eq(userPrekeys.userId, targetUserId), eq(userPrekeys.deviceId, deviceIdStr)))
           .limit(1);
 
         if (typeof (query as any).for === 'function') {
@@ -114,7 +115,7 @@ export async function fetchPrekeyBundle(
         [record] = await tx
           .select()
           .from(userPrekeys)
-          .where(and(eq(userPrekeys.userId, targetUserId), eq(userPrekeys.deviceId, deviceId)))
+          .where(and(eq(userPrekeys.userId, targetUserId), eq(userPrekeys.deviceId, deviceIdStr)))
           .limit(1);
       }
 

@@ -1,7 +1,8 @@
-import React from 'react';
-import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShieldAlert, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { LegalDocModal } from './LegalDocModal';
 import { useAuthForm } from './Auth/hooks/useAuthForm';
+import WelcomeScreen from './Auth/WelcomeScreen';
 import AuthHeader from './Auth/AuthHeader';
 import LoginForm from './Auth/LoginForm';
 import RegisterForm from './Auth/RegisterForm';
@@ -16,13 +17,59 @@ interface AuthPortalProps {
   tabPrefix: string;
 }
 
-export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired }: AuthPortalProps) {
+export default function AuthPortal({ onLoginSuccess, onMigrationRequired }: AuthPortalProps) {
+  const [authView, setAuthView] = useState<'welcome' | 'auth'>('welcome');
   const auth = useAuthForm({ onLoginSuccess, onMigrationRequired });
 
+  if (authView === 'welcome') {
+    return (
+      <>
+        <WelcomeScreen
+          onGetStarted={() => {
+            auth.setAuthTab('register');
+            setAuthView('auth');
+          }}
+          onLogIn={() => {
+            auth.setAuthTab('login');
+            setAuthView('auth');
+          }}
+          onPasskeyAuth={auth.handlePasskeyLogin}
+          onOpenLegalDoc={(doc) => auth.setActiveLegalDoc(doc)}
+        />
+        <LegalDocModal docType={auth.activeLegalDoc} onClose={() => auth.setActiveLegalDoc(null)} />
+      </>
+    );
+  }
+
   return (
-    <div className={`h-full flex items-center justify-center p-4 font-sans ${isDark ? 'bg-velum-850 text-text-primary' : 'bg-velum-900 text-text-disabled'}`}>
-      <div className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl relative overflow-hidden transition-all duration-300 ${isDark ? 'bg-velum-800 border-white-5' : 'bg-text-primary border-gray-200'}`}>
-        
+    <div className="w-full min-h-dvh flex flex-col justify-between bg-velum-900 text-text-primary px-6 py-8 sm:px-12 sm:py-12 select-none overflow-y-auto">
+      {/* Top Bar with Navigation */}
+      <header className="flex items-center justify-between w-full max-w-md mx-auto pt-2 mb-4">
+        <button
+          onClick={() => {
+            if (auth.showRecoveryOptions) {
+              auth.resetRecoveryState();
+            } else if (auth.showCompromisedFlow) {
+              auth.resetCompromisedState();
+            } else {
+              setAuthView('welcome');
+            }
+          }}
+          className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors cursor-pointer py-1.5 px-2.5 -ml-2 rounded-lg hover:bg-white-5"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back</span>
+        </button>
+
+        <span className="text-xs font-semibold tracking-wider text-text-secondary uppercase">
+          {auth.showRecoveryOptions 
+            ? 'Account Recovery' 
+            : (auth.authTab === 'login' ? 'Sign In' : 'Create Account')}
+        </span>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto my-auto">
         <AuthHeader />
 
         {auth.authError && (
@@ -41,21 +88,6 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
 
         {!auth.showRecoveryOptions && !auth.showCompromisedFlow ? (
           <>
-            <div className="flex border-b border-white-5 mb-6">
-              <button
-                onClick={() => auth.setAuthTab('login')}
-                className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all ${auth.authTab === 'login' ? 'text-accent border-b-2 border-accent' : 'text-text-secondary hover:text-text-primary'}`}
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => auth.setAuthTab('register')}
-                className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all ${auth.authTab === 'register' ? 'text-accent border-b-2 border-accent' : 'text-text-secondary hover:text-text-primary'}`}
-              >
-                Registration
-              </button>
-            </div>
-
             {auth.authTab === 'login' ? (
               <LoginForm
                 username={auth.username}
@@ -71,6 +103,11 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                 isPermanentOtp={auth.isPermanentOtp}
                 onSubmit={auth.handleLoginSubmit}
                 onShowRecovery={() => auth.setShowRecoveryOptions(true)}
+                onShowHelpDesk={() => {
+                  auth.setRecoveryView('track');
+                  auth.setShowRecoveryOptions(true);
+                }}
+                onPasskeyLogin={auth.handlePasskeyLogin}
                 onSwitchToRegister={() => auth.setAuthTab('register')}
                 onOpenLegalDoc={(doc) => auth.setActiveLegalDoc(doc)}
               />
@@ -88,6 +125,8 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
                 setPanicPhrase={auth.setPanicPhrase}
                 hasAgreedToTerms={auth.hasAgreedToTerms}
                 setHasAgreedToTerms={auth.setHasAgreedToTerms}
+                enableBiometrics={auth.enableBiometrics}
+                setEnableBiometrics={auth.setEnableBiometrics}
                 onSubmit={auth.handleRegisterSubmit}
                 onSwitchToLogin={() => auth.setAuthTab('login')}
                 onOpenLegalDoc={(doc) => auth.setActiveLegalDoc(doc)}
@@ -129,7 +168,9 @@ export default function AuthPortal({ isDark, onLoginSuccess, onMigrationRequired
             onTicketReplySubmit={auth.handleTicketReplySubmit}
           />
         )}
-      </div>
+      </main>
+
+      <footer className="w-full max-w-md mx-auto text-center pt-4" />
 
       <LegalDocModal docType={auth.activeLegalDoc} onClose={() => auth.setActiveLegalDoc(null)} />
     </div>

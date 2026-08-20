@@ -26,9 +26,24 @@ import { mediaRouter } from './routes/mediaRoutes.js';
 import { cryptoRouter } from './routes/cryptoRoutes.js';
 import { notificationRouter } from './routes/notificationRoutes.js';
 import { healthRouter } from './routes/healthRoutes.js';
+import { webauthnRouter } from './routes/webauthnRoutes.js';
 import { currencyConverter } from './services/currencyConverter.js';
+import { SystemBot } from './services/systemBot.js';
 
 export const app = express();
+
+app.use(metricsMiddleware);
+
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.setHeader('Content-Type', metrics.register.contentType);
+    res.send(await metrics.register.metrics());
+  } catch (err) {
+    res.status(500).send(err);
+  }
+});
+
+
 // app.set('trust proxy', true);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -125,6 +140,10 @@ app.use('/v2/auth', authLimiter, duressRouter);
 app.use('/api/v2/auth', authLimiter, duressRouter);
 app.use('/v2/auth', authLimiter, v2AuthRouter);
 app.use('/api/v2/auth', authLimiter, v2AuthRouter);
+
+// WebAuthn passkey endpoints
+app.use('/v2/webauthn', webauthnRouter);
+app.use('/api/v2/webauthn', webauthnRouter);
 
 app.use('/v2/bank', apiLimiter, v2BankRouter);
 app.use('/v2/marketplace', apiLimiter, v2MarketRouter);
