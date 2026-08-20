@@ -19,7 +19,6 @@ import { submitDiagnosticLogs, collectClientDiagnosticsPayload } from '../../uti
 import { getLocalMedia, saveLocalMedia, deleteLocalMedia } from '../../utils/indexedDb';
 import { FULL_BUILD_VERSION } from '../../version';
 import { useLanguage } from '../../i18n/LanguageContext';
-import { LegalDocModal, LegalDocType } from '../../components/LegalDocModal';
 import { ImageCropperModal } from '../../components/ImageCropperModal';
 
 interface SettingsDrawerProps {
@@ -50,7 +49,6 @@ export default function SettingsDrawer({
   const { language, setLanguage, t, supportedLanguages } = useLanguage();
 
   const [activeView, setActiveView] = useState<SettingCategory | 'menu'>('menu');
-  const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
 
   // Account settings states
   const [displayName, setDisplayName] = useState(currentUsername.replace('@', ''));
@@ -1143,24 +1141,7 @@ export default function SettingsDrawer({
                     <div className="text-[10px] text-text-secondary font-mono tracking-widest mt-1">Secure conversations, refined.</div>
                   </div>
 
-                  <div className="flex items-center justify-center gap-4 py-2 border-t border-b border-white-5 w-full">
-                    <button
-                      type="button"
-                      onClick={() => setActiveLegalDoc('terms')}
-                      className="text-xs font-mono text-accent hover:underline cursor-pointer"
-                    >
-                      Terms of Service
-                    </button>
-                    <span className="text-text-disabled">•</span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveLegalDoc('privacy')}
-                      className="text-xs font-mono text-accent hover:underline cursor-pointer"
-                    >
-                      Privacy Policy
-                    </button>
-                  </div>
-
+                 
                   <div className="pt-2 w-full">
                     <div className="text-[10px] text-text-secondary font-mono">Version {FULL_BUILD_VERSION || '2.2.0'}</div>
                     <div className="text-[10px] text-text-secondary font-mono mt-1">© 2026 Velum Network. All rights reserved.</div>
@@ -1175,9 +1156,7 @@ export default function SettingsDrawer({
 
       </div>
 
-      {/* In-App Legal Document Modal */}
-      <LegalDocModal docType={activeLegalDoc} onClose={() => setActiveLegalDoc(null)} />
-
+      
       {croppingConfig && (
         <ImageCropperModal
           imageSrc={croppingConfig.src}

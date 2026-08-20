@@ -33,8 +33,6 @@ export default function AuthPortal({ onLoginSuccess, onMigrationRequired }: Auth
             auth.setAuthTab('login');
             setAuthView('auth');
           }}
-          onPasskeyAuth={auth.handlePasskeyLogin}
-          onOpenLegalDoc={(doc) => auth.setActiveLegalDoc(doc)}
         />
         <LegalDocModal docType={auth.activeLegalDoc} onClose={() => auth.setActiveLegalDoc(null)} />
       </>
@@ -109,7 +107,6 @@ export default function AuthPortal({ onLoginSuccess, onMigrationRequired }: Auth
                 }}
                 onPasskeyLogin={auth.handlePasskeyLogin}
                 onSwitchToRegister={() => auth.setAuthTab('register')}
-                onOpenLegalDoc={(doc) => auth.setActiveLegalDoc(doc)}
               />
             ) : (
               <RegisterForm

@@ -1,7 +1,6 @@
 import React from 'react';
 import { User, Lock, Key, Eye, EyeOff, KeyRound, HelpCircle, LifeBuoy } from 'lucide-react';
 import PasswordInput from '../PasswordInput';
-import { LegalDocType } from '../LegalDocModal';
 
 interface LoginFormProps {
   username: string;
@@ -19,7 +18,6 @@ interface LoginFormProps {
   onShowRecovery: () => void;
   onShowHelpDesk?: () => void;
   onSwitchToRegister: () => void;
-  onOpenLegalDoc: (doc: LegalDocType) => void;
   onPasskeyLogin?: () => void;
 }
 
@@ -39,7 +37,6 @@ export default function LoginForm({
   onShowRecovery,
   onShowHelpDesk,
   onSwitchToRegister,
-  onOpenLegalDoc,
   onPasskeyLogin
 }: LoginFormProps) {
   return (
@@ -170,10 +167,6 @@ export default function LoginForm({
         </div>
       )}
 
-      <div className="mt-4 pt-2 text-center text-[11px] text-text-disabled">
-        <button type="button" onClick={() => onOpenLegalDoc('terms')} className="hover:text-text-secondary underline mr-3 cursor-pointer">Terms of Service</button>
-        <button type="button" onClick={() => onOpenLegalDoc('privacy')} className="hover:text-text-secondary underline cursor-pointer">Privacy Policy</button>
-      </div>
-    </form>
+         </form>
   );
 }

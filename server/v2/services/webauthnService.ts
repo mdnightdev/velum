@@ -6,14 +6,42 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/client.js';
 import { webauthnCredentials } from '../db/schema/webauthn.js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { UserRepository } from '../repositories/userRepository.js';
 
 const userRepository = new UserRepository();
 
+let tableInitialized = false;
+async function ensureWebauthnTable() {
+  if (tableInitialized) return;
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS webauthn_credentials (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT NOT NULL UNIQUE,
+        public_key TEXT NOT NULL,
+        counter INTEGER DEFAULT 0,
+        transports JSONB,
+        device_type TEXT,
+        backed_up INTEGER DEFAULT 0,
+        aaguid TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_used_at TIMESTAMP,
+        nickname TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_webauthn_user_id ON webauthn_credentials(user_id);
+    `);
+    tableInitialized = true;
+  } catch {
+    // Table already present
+  }
+}
+
 export class WebauthnService {
   // Generate registration options for new passkey
   async generateRegistrationOptions(userId: number, username: string, rpID: string = 'localhost') {
+    await ensureWebauthnTable();
     const user = await userRepository.findById(userId);
     if (!user) {
       throw new Error('User not found');
@@ -53,6 +81,7 @@ export class WebauthnService {
     expectedOrigin: string = 'http://localhost:3000',
     expectedRPID: string = 'localhost'
   ) {
+    await ensureWebauthnTable();
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge,
@@ -85,6 +114,7 @@ export class WebauthnService {
 
   // Generate authentication options for login
   async generateAuthenticationOptions(username?: string, rpID: string = 'localhost') {
+    await ensureWebauthnTable();
     let userCredentials: any[] = [];
 
     if (username) {
@@ -116,6 +146,7 @@ export class WebauthnService {
     expectedOrigin: string = 'http://localhost:3000',
     expectedRPID: string = 'localhost'
   ) {
+    await ensureWebauthnTable();
     const credentialId = response.id;
     
     // Find the credential in database
@@ -168,6 +199,7 @@ export class WebauthnService {
 
   // Get all passkeys for a user
   async getUserPasskeys(userId: number) {
+    await ensureWebauthnTable();
     const credentials = await db
       .select()
       .from(webauthnCredentials)
@@ -186,6 +218,7 @@ export class WebauthnService {
 
   // Delete a passkey
   async deletePasskey(userId: number, credentialId: string) {
+    await ensureWebauthnTable();
     const result = await db
       .delete(webauthnCredentials)
       .where(eq(webauthnCredentials.credentialId, credentialId))
@@ -196,6 +229,7 @@ export class WebauthnService {
 
   // Update passkey nickname
   async updatePasskeyNickname(userId: number, credentialId: string, nickname: string) {
+    await ensureWebauthnTable();
     const result = await db
       .update(webauthnCredentials)
       .set({ nickname })

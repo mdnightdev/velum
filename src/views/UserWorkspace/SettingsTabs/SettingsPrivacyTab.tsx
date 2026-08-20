@@ -250,16 +250,16 @@ export function SettingsPrivacyTab({
 
       {/* 3. Panic Protocol */}
       <div className="pt-8 border-t border-white-5 space-y-4">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-alert-error font-mono">Panic Protocol & Danger Zone</h3>
+        <h3 className="text-xs font-bold uppercase tracking-widest text-alert-error font-mono">Dures & Danger Zone</h3>
         <div className="p-4 bg-status-dnd-bg rounded-xl flex items-center justify-between border border-alert-error/30">
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-white">Trigger Emergency Panic Protocol</span>
+            <span className="text-sm font-semibold text-white">DURES</span>
             <span className="text-xs text-text-secondary">Executes instant WAL cascade deletion of sensitive messages, prekeys, and sessions.</span>
           </div>
           <button 
             type="button" 
             onClick={async () => {
-              if (window.confirm('CRITICAL WARNING: Are you sure you want to trigger the Panic Protocol? This will immediately perform a WAL cascade purge of your sensitive data and sessions.')) {
+              if (window.confirm('CRITICAL WARNING: This will Wipe your data')) {
                 try {
                   const token = sessionStorage.getItem('velum-sessionId');
                   const res = await fetch('/api/v2/auth/panic', {
@@ -270,7 +270,7 @@ export function SettingsPrivacyTab({
                     }
                   });
                   if (res.ok) {
-                    alert('Panic protocol executed successfully. Session ended.');
+                    alert('Panic executed. Session ended.');
                     sessionStorage.clear();
                     localStorage.clear();
                     window.location.reload();
