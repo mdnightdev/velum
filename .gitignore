@@ -4,11 +4,11 @@ node_modules/
 .env.encrypted
 .secrets.key
 dist/
-.superdesign
 data/server.log
 data/velum_state_v3.bin
 server/services/ws.log
 logs/
+backups/
 scripts/
 
 # Ignore local databases, keys, and logs

@@ -255,6 +255,8 @@ Configure automated backups via provider (Neon, AWS RDS):
 // - Set backup retention policy
 ```
 
+**Status:** ✅ **RESOLVED** - Implemented database backup/restore scripts (`scripts/backup-db.sh`, `scripts/restore-db.sh`) with npm commands (`npm run db:backup`, `npm run db:restore`). Works with any PostgreSQL database via DATABASE_URL. Includes automatic cleanup of old backups (configurable retention). Note: For production cloud databases, use provider's native backup features (Neon PITR, AWS RDS snapshots) instead.
+
 ---
 
 ### 8. No Monitoring/Alerting
@@ -291,6 +293,8 @@ app.use((req, res, next) => {
 });
 ```
 
+**Status:** ✅ **RESOLVED** - Implemented Prometheus metrics with `prom-client`. HTTP request duration/counter, database query metrics, error tracking, and system metrics (CPU, memory). Metrics endpoint at `/metrics` (enabled in production or via `ENABLE_METRICS=true`). See `server/v2/utils/metrics.ts`. Note: Requires Prometheus server or compatible monitoring stack for scraping and alerting.
+
 ---
 
 ## Priority 3: Reliability Issues
@@ -319,6 +323,8 @@ dbBreaker.on('open', () => {
   logger.error('Database circuit breaker opened');
 });
 ```
+
+**Status:** ✅ **RESOLVED** - Implemented custom circuit breaker pattern (`server/v2/utils/circuitBreaker.ts`) with configurable timeout, error threshold, and reset timeout. Applied to database operations in `server/v2/db/client.ts` with automatic retry logic integration. Provides state monitoring via `getDbCircuitBreakerStatus()`. Custom implementation avoids external dependency while maintaining full circuit breaker functionality.
 
 ---
 
@@ -352,6 +358,8 @@ async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 ```
+
+**Status:** ✅ **RESOLVED** - Implemented distributed locking using Redis (`server/v2/utils/distributedLock.ts`) following Redlock algorithm pattern. Provides `DistributedLock` class with acquire/release/extend methods, plus helper functions `withLock()` and `withRetryLock()` for convenience. Uses atomic Lua scripts for safe lock operations. Prevents race conditions in concurrent operations like wallet transactions and market updates.
 
 ---
 

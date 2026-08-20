@@ -5,6 +5,7 @@ import cors from 'cors';
 import { config } from './config.js';
 import { globalErrorHandler } from './utils/errors.js';
 import { requestLogger, logger } from './utils/logger.js';
+import { metricsMiddleware, metrics } from './utils/metrics.js';
 
 // V2 Routes
 import { authRouter as v2AuthRouter } from './routes/authRoutes.js';
@@ -33,7 +34,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Rate limiting middleware (disabled in development)
-const isDevelopment = config.NODE_ENV === 'development';
+const isDevelopment = config.NODE_ENV === 'development' || config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test';
 
 const authLimiter = isDevelopment ? (_req, res, next) => next() : rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -81,6 +82,11 @@ app.use(cors(corsOptions));
 // Request logging middleware
 app.use(requestLogger);
 
+// Metrics middleware (only in production or when enabled)
+if (process.env.NODE_ENV === 'production' || process.env.ENABLE_METRICS === 'true') {
+  app.use(metricsMiddleware);
+}
+
 // Public health endpoints (no auth required)
 app.get('/health', (_req, res) => {
   res.status(200).json({
@@ -90,6 +96,14 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Metrics endpoint for Prometheus scraping (only in production or when enabled)
+if (process.env.NODE_ENV === 'production' || process.env.ENABLE_METRICS === 'true') {
+  app.get('/metrics', async (_req, res) => {
+    res.set('Content-Type', metrics.register.contentType);
+    res.end(await metrics.register.metrics());
+  });
+}
 
 // Health endpoints
 app.use('/v2', healthRouter);
