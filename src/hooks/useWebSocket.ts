@@ -95,7 +95,7 @@ export function useWebSocket({
   // 2. Persist message state changes to local storage
   useEffect(() => {
     if (activeRoomId && messages.length > 0) {
-      saveLocalMessages(activeRoomId, messages);
+      saveLocalMessages(messages);
     }
   }, [activeRoomId, messages]);
   

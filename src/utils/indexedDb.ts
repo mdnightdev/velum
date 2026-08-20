@@ -1,6 +1,6 @@
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 const DB_NAME = 'velum_local_storage';
-const DB_VERSION = 25;
+const DB_VERSION = 26;
 const STORE_MEDIA = 'media_blobs';
 const STORE_MESSAGES = 'messages';
 const STORE_OUTBOX = 'outbox_messages';
@@ -30,9 +30,12 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_MEDIA)) {
         db.createObjectStore(STORE_MEDIA);
       }
-      if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
-        db.createObjectStore(STORE_MESSAGES);
-      }
+     if (db.objectStoreNames.contains(STORE_MESSAGES)) {
+  db.deleteObjectStore(STORE_MESSAGES);
+}
+const msgStore = db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
+msgStore.createIndex('loungeId', 'loungeId', { unique: false });
+msgStore.createIndex('lounge_time', ['loungeId', 'timestamp'], { unique: false });
       if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
         db.createObjectStore(STORE_OUTBOX, { keyPath: 'client_msg_id' });
       }
@@ -41,37 +44,54 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 /**
- * Saves messages array for a specific lounge/room in IndexedDB.
+ * Saves or updates messages in IndexedDB individually without loading the whole array.
  */
-export async function saveLocalMessages(loungeId: string, messages: any[]): Promise<void> {
+export async function saveLocalMessages(messages: any[]): Promise<void> {
+  if (!messages || messages.length === 0) return;
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_MESSAGES], 'readwrite');
+    const transaction= db.transaction([STORE_MESSAGES], 'readwrite');
     const store = transaction.objectStore(STORE_MESSAGES);
-    const request = store.put(messages, loungeId);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(new Error(`Failed to save cached messages for lounge: ${loungeId}`));
+    for (const msg of messages) {
+      store.put(msg);
+    }
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(new Error('Failed to save messages to local storage'));
   });
 }
 
 /**
- * Retrieves cached messages for a lounge from IndexedDB.
+ * Retrieves the most recent messages for a lounge using the compound index.
  */
-export async function getLocalMessages(loungeId: string): Promise<any[] | null> {
+export async function getLocalMessages(loungeId: string, limit = 50): Promise<any[]> {
   try {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_MESSAGES], 'readonly');
       const store = transaction.objectStore(STORE_MESSAGES);
-      const request = store.get(loungeId);
-
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(new Error(`Failed to get cached messages for lounge: ${loungeId}`));
+      const index = store.index('lounge_time');
+      
+      // Query all messages matching loungeId across any timestamp
+      const range = IDBKeyRange.bound([loungeId, -Infinity], [loungeId, Infinity]);
+      const request = index.openCursor(range, 'prev'); // Most recent first
+      
+      const results: any[] = [];
+      request.onsuccess = (event: any) => {
+        const cursor = event.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(results.reverse()); // Chronological order
+        }
+      };
+      request.onerror = () => reject(new Error(`Failed to load messages for lounge: ${loungeId}`));
     });
   } catch (err) {
-    console.warn('[IndexedDB] Local database is unavailable:', err);
-    return null;
+    console.error('getLocalMessages error:', err);
+    return [];
   }
 }
 

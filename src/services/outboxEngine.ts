@@ -1,5 +1,5 @@
 const DB_NAME = 'velum_local_storage';
-const DB_VERSION = 25;
+const DB_VERSION = 26;
 const STORE_OUTBOX = 'outbox_messages';
 
 export interface OutboxPayload {

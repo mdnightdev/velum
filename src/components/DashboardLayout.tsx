@@ -172,7 +172,8 @@ export default function DashboardLayout({
       const [reqRes, relRes, usersRes] = await Promise.allSettled([
         fetch('/v2/friends/requests', { headers }),
         fetch('/v2/friends/relationships', { headers }),
-        fetch('/v2/user', { headers })
+        fetch('/v2/user/directory/search', { headers })
+
       ]);
       if (reqRes.status === 'fulfilled' && reqRes.value.ok) {
         const reqData = await reqRes.value.json();
@@ -184,13 +185,15 @@ export default function DashboardLayout({
       }
       if (usersRes.status === 'fulfilled' && usersRes.value.ok) {
         const usersData = await usersRes.value.json();
-        const normalized = usersData.map((u: any) => ({
+        const list = Array.isArray(usersData) ? usersData : (usersData.users || usersData.data || []);
+        const normalized = list.map((u: any) => ({
           ...u,
           user_id: u.userId !== undefined ? u.userId : u.user_id,
           userId: u.userId !== undefined ? u.userId : u.user_id
         }));
         setRegisteredUsers(normalized);
       }
+
     } catch (err) {
       console.warn('Sync issue in relationship fetching:', err);
     }
@@ -198,6 +201,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (user?.userId) {
+      doubleRatchetService.setLocalUserId(Number(user.userId));
       doubleRatchetService.initializeLocalKeys().catch(console.error);
       loadPeopleAndRequests();
       const interval = setInterval(loadPeopleAndRequests, 12000);

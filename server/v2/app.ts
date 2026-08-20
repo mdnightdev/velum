@@ -19,7 +19,7 @@ import { ticketRouter } from './routes/ticketRoutes.js';
 import { friendRouter } from './routes/friendRoutes.js';
 import { adminRouter } from './routes/adminRoutes.js';
 import { userPublicRouter } from './routes/userPublicRoutes.js';
-import { utilityRouter } from './routes/mockRoutes.js';
+import { utilityRouter } from './routes/utilityRoutes.js';
 import { messagingRouter } from './routes/messagingRoutes.js';
 import { mediaRouter } from './routes/mediaRoutes.js';
 import { cryptoRouter } from './routes/cryptoRoutes.js';
@@ -102,6 +102,9 @@ app.use('/public', userPublicRouter);
 app.use('/api/public', userPublicRouter);
 app.use('/v2/public', userPublicRouter);
 app.use('/api/v2/public', userPublicRouter);
+app.use('/v2', utilityRouter);
+app.use('/api/v2', utilityRouter);
+
 
 // Authenticated routes with rate limiting
 app.use('/v2/auth', authLimiter, duressRouter);
@@ -125,7 +128,6 @@ app.use('/v2/payments', apiLimiter, v2PaymentRouter);
 app.use('/v2', apiLimiter, ticketRouter);
 app.use('/v2/friends', apiLimiter, friendRouter);
 app.use('/v2/admin', apiLimiter, adminRouter);
-app.use('/api/v2/admin', apiLimiter, adminRouter);
 app.use('/v2', apiLimiter, utilityRouter);
 
 // Fallback for unmounted endpoints to prevent HTML responses

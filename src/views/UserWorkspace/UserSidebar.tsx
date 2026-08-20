@@ -183,7 +183,7 @@ export default function UserSidebar({
       if (!sId) return;
 
       const [usersRes, loungesRes, profileRes] = await Promise.all([
-        fetch('/v2/user', { headers }),
+        fetch('/v2/user/directory/search', { headers }),
         fetch('/v2/lounges', { headers }),
         fetch(`/v2/user/${currentUserId}/profile`, { headers })
       ]);
@@ -199,7 +199,9 @@ export default function UserSidebar({
 
       const usersData = await safeParseJson(usersRes);
       if (usersData) {
-        const normalized = usersData.map((u: any) => ({
+        const list = Array.isArray(usersData) ? usersData : (usersData.users || usersData.data || []);
+        const normalized = list.map((u: any) => ({
+        
           ...u,
           user_id: u.userId !== undefined ? u.userId : u.user_id,
           userId: u.userId !== undefined ? u.userId : u.user_id
