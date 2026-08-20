@@ -488,24 +488,26 @@ export function MessageItem({
             </>
           )}
 
-          {/* Timestamp and Read Receipts inside bubble */}
-          <div className={`flex items-center gap-1 mt-1 -mb-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
-            <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
-            <MessageStatusTicks 
-              status={msg.status} 
-              isMe={isMe} 
-              onRetry={() => {
-                if (msg.status === 'failed') {
-                  const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
-                  if (onRetryMessage) {
-                    onRetryMessage(targetId);
-                  } else {
-                    onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+          {/* Timestamp and Read Receipts inside bubble (hidden for image cards to prevent duplicate overlay time) */}
+          {!isImageCard && (
+            <div className={`flex items-center gap-1 mt-1 -mb-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
+              <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+              <MessageStatusTicks 
+                status={msg.status} 
+                isMe={isMe} 
+                onRetry={() => {
+                  if (msg.status === 'failed') {
+                    const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                    if (onRetryMessage) {
+                      onRetryMessage(targetId);
+                    } else {
+                      onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                    }
                   }
-                }
-              }}
-            />
-          </div>
+                }}
+              />
+            </div>
+          )}
 
           {/* Render Reactions */}
           {msg.reactions && Object.keys(msg.reactions).length > 0 && (
