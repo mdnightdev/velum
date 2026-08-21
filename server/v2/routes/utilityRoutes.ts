@@ -97,45 +97,6 @@ utilityRouter.get('/admin/diagnostics', async (req, res) => {
   });
 });
 
-utilityRouter.get('/admin/diagnostics/logs', (req, res) => {
-  res.json([
-    {
-      id: 'diag_1',
-      user_id: 1,
-      username: 'midnight',
-      status: 'pending',
-      app_version: '2.0.0',
-      ip_address: '127.0.0.1',
-      screen_resolution: '1920x1080',
-      device_pixel_ratio: 2,
-      viewport_size: '1920x950',
-      online_status: true,
-      connection_type: 'wifi',
-      storage_summary: { localStorage_keys_count: 5, localStorage_approx_size_kb: 1.2 },
-      user_agent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
-      created_at: new Date().toISOString(),
-      notes: 'Diagnostic checklist initialized successfully.',
-      error_buffer: []
-    }
-  ]);
-});
-
-utilityRouter.post('/admin/diagnostics/logs/:logId/resolve', (req, res) => {
-  res.json({ success: true });
-});
-
-utilityRouter.get('/admin/reports', (req, res) => {
-  res.json([
-    {
-      report_id: 'rep_1',
-      reporter_username: 'lexie',
-      reported_username: 'midnight',
-      reason: 'Spamming transaction logs in central bank sandbox simulations',
-      status: 'pending',
-      timestamp: new Date().toISOString()
-    }
-  ]);
-});
 
 utilityRouter.get('/public/version', (req, res) => res.json({ version: '2.0.0', latestIncrement: 0 }));
 

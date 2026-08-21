@@ -25,6 +25,7 @@ export default function AdminDiagnosticsView({
   const [diagLogs, setDiagLogs] = useState<ClientDiagnosticLog[]>(Array.isArray(initialDiagLogs) ? initialDiagLogs : []);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<ClientDiagnosticLog | null>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'alerts' | 'audits' | 'debug'>('all');
 
   useEffect(() => {
     if (Array.isArray(initialDiagLogs) && initialDiagLogs.length > 0) {
@@ -53,7 +54,7 @@ export default function AdminDiagnosticsView({
 
       if (res.ok) {
         const data = await res.json();
-        const logsArray = Array.isArray(data) ? data : (data && Array.isArray(data.logs) ? data.logs : []);
+        const logsArray = Array.isArray(data) ? data : (data && Array.isArray(data.diagnostic_logs) ? data.diagnostic_logs : (data.logs || []));
         setDiagLogs(logsArray);
         if (logsArray.length > 0 && !selectedLog) {
           setSelectedLog(logsArray[0]);
@@ -104,31 +105,112 @@ export default function AdminDiagnosticsView({
   };
 
   return (
-    <div className={`p-6 rounded-2xl border ${c.bgPanel} shadow-xl animate-fadeIn space-y-6`}>
-      <div className="flex items-center justify-between border-b border-white-5 pb-4">
-        <div className="flex items-center gap-2.5">
-          <BookOpen className="w-5 h-5 text-accent" />
-          <div>
-            <h4 className="font-extrabold text-sm uppercase tracking-wider">Signals Audit Surveillance & Client Diagnostics</h4>
-          </div>
+    <div className={`w-full h-full animate-fadeIn space-y-6`}>
+      
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white-5 pb-5 mb-6">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'all'
+                ? 'bg-accent-20 text-text-primary border-accent-40'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setActiveTab('alerts')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'alerts'
+                ? 'bg-status-dnd-bg text-status-dnd border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Alerts
+          </button>
+          <button
+            onClick={() => setActiveTab('audits')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'audits'
+                ? 'bg-status-online-bg text-status-online border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Audits
+          </button>
+          <button
+            onClick={() => setActiveTab('debug')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'debug'
+                ? 'bg-status-sky-bg text-status-sky border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Debug
+          </button>
         </div>
-        <button
-          onClick={fetchDiagLogs}
-          disabled={isLoading}
-          className="px-3 py-1.5 bg-velum-750 hover:bg-velum-700 text-xs font-mono font-bold text-accent border border-accent/20 rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>Refresh Bundles</span>
-        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Left side box: anomalous activity catalog */}
-        <div className="p-5 rounded-xl border bg-velum-850/60 border-white-5">
+      {activeTab === 'all' && (
+        <div className="w-full max-h-[500px] overflow-y-auto space-y-2 pr-1">
+          {(() => {
+            const feed = [
+              ...suspicious.map(s => ({ ...s, _type: 'alert', _ts: new Date(s.created_at || s.timestamp || 0).getTime() })),
+              ...logs.map(l => ({ ...l, _type: 'audit', _ts: new Date(l.timestamp || 0).getTime() })),
+              ...diagLogs.map(d => ({ ...d, _type: 'debug', _ts: new Date(d.created_at || 0).getTime() }))
+            ].sort((a, b) => b._ts - a._ts);
+
+            if (feed.length === 0) {
+              return <div className="text-center py-10 font-mono text-xs uppercase text-text-disabled">Mailbox is empty</div>;
+            }
+
+            return feed.map((item, i) => {
+              if (item._type === 'alert') {
+                return (
+                  <div key={`alert-${i}`} onClick={() => setActiveTab('alerts')} className="p-3 border border-status-dnd/20 bg-status-dnd-bg/50 hover:bg-status-dnd-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2 h-2 rounded-full bg-status-dnd animate-pulse" />
+                      <span className="text-status-dnd font-bold font-mono text-[10px] uppercase">[ALERT]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).description || (item as any).details || (item as any).reason || 'Anomalous Activity'}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
+              if (item._type === 'audit') {
+                return (
+                  <div key={`audit-${i}`} onClick={() => setActiveTab('audits')} className="p-3 border border-status-online/20 bg-status-online-bg/50 hover:bg-status-online-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2 h-2 rounded-full bg-status-online" />
+                      <span className="text-status-online font-bold font-mono text-[10px] uppercase">[AUDIT]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).action} {(item as any).target_id ? `target user #${(item as any).target_id}` : ''}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
+              return (
+                <div key={`debug-${i}`} onClick={() => setActiveTab('debug')} className="p-3 border border-status-sky/20 bg-status-sky-bg/50 hover:bg-status-sky-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                  <div className="flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full bg-status-sky" />
+                    <span className="text-status-sky font-bold font-mono text-[10px] uppercase">[DEBUG]</span>
+                    <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).username || `User #${item.user_id}`} telemetry report</span>
+                  </div>
+                  <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
+
+      {/* Left side box: anomalous activity catalog */}
+        {(activeTab === 'alerts') && (
+        <div className="w-full">
           <div className="text-[10px] font-mono font-black text-status-dnd uppercase mb-3 border-b border-white-5 pb-2 tracking-widest flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-status-dnd animate-pulse" />
-            <span>Anomalous Events Diagnosed ({suspicious.length})</span>
+            <span>Alerts ({suspicious.length})</span>
           </div>
           <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
             {suspicious.map((ev, idx) => {
@@ -160,12 +242,14 @@ export default function AdminDiagnosticsView({
             )}
           </div>
         </div>
+        )}
 
         {/* Right side box: administrative actions */}
-        <div className="p-5 rounded-xl border bg-velum-850/60 border-white-5">
+        {(activeTab === 'audits') && (
+        <div className="w-full">
           <div className="text-[10px] font-mono font-black text-accent-hover uppercase mb-3 border-b border-white-5 pb-2 tracking-widest flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-accent-hover" />
-            <span>Oversight Audit Commits ({logs.length})</span>
+            <span>Audits ({logs.length})</span>
           </div>
           <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
             {logs.map((log, idx) => (
@@ -185,16 +269,16 @@ export default function AdminDiagnosticsView({
             )}
           </div>
         </div>
-      </div>
-
+        )}
       {/* Full-width Section: User Client Diagnostic Bundles */}
-      <div className="p-5 rounded-xl border bg-velum-850/60 border-white-10 space-y-4">
+      {(activeTab === 'debug') && (
+      <div className="w-full space-y-4">
         <div className="flex items-center justify-between border-b border-white-5 pb-3">
           <div className="flex items-center gap-2">
             <Monitor className="w-4 h-4 text-accent" />
-            <span className="text-xs font-mono font-bold text-text-primary uppercase tracking-wider">Client Diagnostic Telemetry Submissions ({diagLogs.length})</span>
+            <span className="text-xs font-mono font-bold text-text-primary uppercase tracking-wider">Debug ({diagLogs.length})</span>
           </div>
-          <span className="text-[10px] font-mono text-text-disabled uppercase">Cloud DB Link Active</span>
+          
         </div>
 
         {diagLogs.length === 0 ? (
@@ -307,6 +391,7 @@ export default function AdminDiagnosticsView({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

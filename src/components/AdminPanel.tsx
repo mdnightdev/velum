@@ -565,9 +565,7 @@ export default function AdminPanel({
                   >
                     <Menu className="w-5 h-5" />
                   </button>
-                  <span className="text-sm font-bold text-text-primary capitalize font-mono tracking-wider">
-                    {activeTab?.replace('_', ' ')}
-                  </span>
+                  
                 </div>
               </div>
 
