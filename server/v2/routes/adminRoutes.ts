@@ -55,6 +55,21 @@ adminRouter.post('/diagnostics/logs/:logId/resolve', async (req: Request, res: R
   }
 });
 
+// DELETE /v2/admin/diagnostics/logs/:logId - Delete diagnostics log
+adminRouter.delete('/diagnostics/logs/:logId', async (req: Request, res: Response) => {
+  try {
+    const { logId } = req.params;
+    const index = clientDiagnosticsList.findIndex(l => l.id === logId);
+    if (index !== -1) {
+      clientDiagnosticsList.splice(index, 1);
+    }
+    res.json({ success: true, message: 'Diagnostic log deleted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete diagnostic log.' });
+  }
+});
+
+
 // GET /v2/admin/audit-logs - Get database audit log records
 adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
   try {

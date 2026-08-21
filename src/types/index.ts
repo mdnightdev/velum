@@ -661,6 +661,7 @@ export interface ClientDiagnosticLog {
     serviceWorker_active: boolean;
     indexedDb_supported: boolean;
   };
+  state_snapshot?: any;
   error_buffer?: Array<{
     message: string;
     source?: string;

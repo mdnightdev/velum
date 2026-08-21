@@ -163,8 +163,21 @@ ticketRouter.post('/user/tickets/:ticketId/reply', authMiddleware, async (req: R
 
 export const clientDiagnosticsList: any[] = [];
 
+const diagnosticsRateLimit = new Map<number, number>();
+
 ticketRouter.post('/support/diagnostics', authMiddleware, async (req: Request, res: Response) => {
   try {
+    if (req.user && req.user.role && req.user.role.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Admins cannot submit client diagnostics.' });
+    }
+
+    const now = Date.now();
+    const lastSubmit = diagnosticsRateLimit.get(req.user!.userId) || 0;
+    if (now - lastSubmit < 60000) { // 1 minute cooldown
+      return res.status(429).json({ error: 'Too many diagnostic reports. Please wait before submitting again.' });
+    }
+    diagnosticsRateLimit.set(req.user!.userId, now);
+
     const payload = req.body;
     const logId = `diag_${Date.now()}`;
     const newLog = {

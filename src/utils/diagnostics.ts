@@ -26,9 +26,51 @@ if (typeof window !== 'undefined') {
         source: 'promise',
         timestamp: new Date().toISOString()
       });
-      if (buffer.length > 15) buffer.shift();
+      if (buffer.length > 50) buffer.shift();
     } catch (_) {}
   });
+
+  const originalConsoleError = console.error;
+  console.error = function (...args) {
+    try {
+      const buffer = (window as any).__velum_error_buffer;
+      buffer.push({
+        message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
+        source: 'console.error',
+        timestamp: new Date().toISOString()
+      });
+      if (buffer.length > 50) buffer.shift();
+    } catch (_) {}
+    originalConsoleError.apply(console, args);
+  };
+
+  const originalFetch = window.fetch;
+  window.fetch = async function (...args) {
+    try {
+      const response = await originalFetch.apply(this, args);
+      if (!response.ok) {
+        const url = typeof args[0] === 'string' ? args[0] : (args[0] && (args[0] as any).url ? (args[0] as any).url : 'unknown');
+        const buffer = (window as any).__velum_error_buffer;
+        buffer.push({
+          message: `HTTP ${response.status}: ${url}`,
+          source: 'fetch',
+          timestamp: new Date().toISOString()
+        });
+        if (buffer.length > 50) buffer.shift();
+      }
+      return response;
+    } catch (err: any) {
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] && (args[0] as any).url ? (args[0] as any).url : 'unknown');
+      const buffer = (window as any).__velum_error_buffer;
+      buffer.push({
+        message: `Fetch Error: ${err.message} on ${url}`,
+        source: 'fetch',
+        timestamp: new Date().toISOString()
+      });
+      if (buffer.length > 50) buffer.shift();
+      throw err;
+    }
+  };
 }
 
 export function collectClientDiagnosticsPayload(notes?: string): Partial<ClientDiagnosticLog> {
@@ -51,6 +93,12 @@ export function collectClientDiagnosticsPayload(notes?: string): Partial<ClientD
   const idbSupported = typeof window !== 'undefined' && !!window.indexedDB;
   const connectionType = typeof navigator !== 'undefined' ? (navigator as any).connection?.effectiveType || 'unknown' : 'unknown';
   const errorBuffer = typeof window !== 'undefined' ? (window as any).__velum_error_buffer || [] : [];
+  
+  const stateSnapshot = {
+    websocket_connected: typeof window !== 'undefined' ? !!(window as any).__velum_ws_connected : false,
+    active_view: typeof window !== 'undefined' ? localStorage.getItem('velum_active_view') || 'unknown' : 'unknown',
+    auth_tier: typeof window !== 'undefined' ? localStorage.getItem('velum_auth_tier') || 'unknown' : 'unknown'
+  };
 
   return {
     user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server/Unknown',
@@ -66,6 +114,7 @@ export function collectClientDiagnosticsPayload(notes?: string): Partial<ClientD
       indexedDb_supported: idbSupported
     },
     error_buffer: errorBuffer,
+    state_snapshot: stateSnapshot,
     app_version: FULL_BUILD_VERSION,
     notes: notes || ''
   };

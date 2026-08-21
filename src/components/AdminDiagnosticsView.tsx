@@ -104,10 +104,39 @@ export default function AdminDiagnosticsView({
     }
   };
 
+  const handleDelete = async (logId: string) => {
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch(`/v2/admin/diagnostics/logs/${logId}`, {
+          method: 'DELETE',
+        });
+      } else {
+        const token = sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || '';
+        res = await fetch(`/v2/admin/diagnostics/logs/${logId}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token
+          }
+        });
+      }
+
+      if (res.ok) {
+        setDiagLogs(prev => prev.filter(l => l.id !== logId));
+        if (selectedLog?.id === logId) {
+          setSelectedLog(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete log:', err);
+    }
+  };
+
   return (
-    <div className={`w-full h-full animate-fadeIn space-y-6`}>
+    <div className={`w-full h-full animate-fadeIn flex flex-col overflow-hidden`}>
       
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white-5 pb-5 mb-6">
+      <div className="flex-none flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white-5 pb-3 mb-3">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveTab('all')}
@@ -152,8 +181,9 @@ export default function AdminDiagnosticsView({
         </div>
       </div>
 
+      <div className="flex-1 overflow-hidden w-full h-full">
       {activeTab === 'all' && (
-        <div className="w-full max-h-[500px] overflow-y-auto space-y-2 pr-1">
+        <div className="w-full h-full overflow-y-auto space-y-2 pr-1">
           {(() => {
             const feed = [
               ...suspicious.map(s => ({ ...s, _type: 'alert', _ts: new Date(s.created_at || s.timestamp || 0).getTime() })),
@@ -272,60 +302,35 @@ export default function AdminDiagnosticsView({
         )}
       {/* Full-width Section: User Client Diagnostic Bundles */}
       {(activeTab === 'debug') && (
-      <div className="w-full space-y-4">
-        <div className="flex items-center justify-between border-b border-white-5 pb-3">
-          <div className="flex items-center gap-2">
-            <Monitor className="w-4 h-4 text-accent" />
-            <span className="text-xs font-mono font-bold text-text-primary uppercase tracking-wider">Debug ({diagLogs.length})</span>
-          </div>
-          
-        </div>
-
+      <div className="flex-1 overflow-hidden w-full h-full flex flex-col">
         {diagLogs.length === 0 ? (
-          <div className="text-text-disabled text-center py-10 font-mono text-xs uppercase tracking-wider">
+          <div className="text-text-disabled text-center py-10 font-mono text-xs uppercase tracking-wider flex-1">
             No client diagnostic reports submitted yet
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+          <div className="flex-1 flex flex-col md:flex-row w-full h-full divide-y md:divide-y-0 md:divide-x divide-white-5 border-t border-white-5">
+            <div className="flex-1 overflow-y-auto w-full md:w-1/2 bg-black/10">
               {diagLogs.map((diag) => (
                 <div
                   key={diag.id}
                   onClick={() => setSelectedLog(diag)}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition select-none ${
-                    selectedLog?.id === diag.id
-                      ? 'bg-velum-750 border-accent/60 text-text-primary shadow-lg'
-                      : 'bg-velum-800/80 border-white-5 text-text-secondary hover:bg-velum-800'
-                  }`}
+                  className={`px-3 py-2 border-b border-white-5 cursor-pointer transition select-none flex items-center justify-between ${selectedLog?.id === diag.id ? 'bg-velum-750 text-text-primary' : 'bg-transparent text-text-secondary hover:bg-velum-800/50'}`}
                 >
-                  <div className="flex items-center justify-between text-xs font-mono mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-accent">{diag.username || `User #${diag.user_id}`}</span>
-                      <span className="px-1.5 py-0.2 bg-white-5 border border-white-10 rounded text-[9px] text-text-secondary">
-                        {diag.app_version || FULL_BUILD_VERSION}
-                      </span>
-                    </div>
-                    <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded ${
+                  <div className="flex items-center gap-3 text-[11px] font-mono w-full overflow-hidden">
+                    <span className="font-bold text-accent whitespace-nowrap min-w-[80px] truncate">{diag.username || `User #${diag.user_id}`}</span>
+                    <span className="hidden lg:inline text-text-disabled min-w-[120px] whitespace-nowrap truncate">{new Date(diag.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' })}</span>
+                    <span className="truncate flex-1 text-text-primary min-w-0">{diag.error_buffer?.length ? diag.error_buffer[0].message : diag.notes || 'No crash reported'}</span>
+                    <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase rounded ${
                       diag.status === 'resolved' ? 'bg-status-online-bg text-status-online' : 'bg-status-away-bg text-status-away'
                     }`}>
                       {diag.status}
                     </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-text-secondary flex items-center justify-between mt-2">
-                    <span>IP: {diag.ip_address}</span>
-                    <span>{new Date(diag.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                  </div>
-                  {diag.notes && (
-                    <div className="mt-2 text-[10px] text-text-primary italic font-sans bg-black/20 p-2 rounded border border-white-5 truncate">
-                      "{diag.notes}"
-                    </div>
-                  )}
-                </div>
+                  </div></div>
               ))}
             </div>
 
             {/* Detailed Inspector Panel */}
-            <div className="p-4 rounded-xl bg-velum-900 border border-white-10 font-mono text-xs space-y-3 overflow-y-auto max-h-[360px]">
+            <div className="p-4 font-mono text-xs space-y-3 overflow-y-auto flex-1 w-full md:w-1/2">
               {selectedLog ? (
                 <>
                   <div className="flex items-center justify-between border-b border-white-5 pb-2">
@@ -333,13 +338,20 @@ export default function AdminDiagnosticsView({
                       <span className="text-accent font-bold uppercase text-[11px] block">{selectedLog.id}</span>
                       <span className="text-[10px] text-text-secondary">{new Date(selectedLog.created_at).toLocaleString()}</span>
                     </div>
-                    {selectedLog.status !== 'resolved' && (
+                    {selectedLog.status !== 'resolved' ? (
                       <button
                         onClick={() => handleResolve(selectedLog.id)}
                         className="px-2.5 py-1 bg-status-online-bg hover:bg-status-online-bg text-status-online rounded text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition"
                       >
                         <CheckCircle2 className="w-3 h-3" />
                         Resolve
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleDelete(selectedLog.id)}
+                        className="px-2.5 py-1 bg-status-dnd-bg hover:bg-status-dnd text-status-dnd rounded text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition border border-status-dnd/20"
+                      >
+                        Delete
                       </button>
                     )}
                   </div>
@@ -392,6 +404,7 @@ export default function AdminDiagnosticsView({
         )}
       </div>
       )}
+      </div>
     </div>
   );
 }
