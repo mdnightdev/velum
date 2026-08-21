@@ -146,12 +146,12 @@ export async function ensureReservesSeeded() {
       // 2. Ensure standard V2 reserve rows exist with default balances if not migrated
       const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
       if (!vcb) {
-        await reserveRepository.updateBalance('VELUM CENTRAL BANK', 1000000000); 
+        await reserveRepository.updateBalance('VELUM CENTRAL BANK', 0); 
         console.log('[AdminSeeder] Seeded default central bank reserve: VELUM CENTRAL BANK ($10M)');
       }
       const sb = await reserveRepository.getReserve('SENTRY BANK');
       if (!sb) {
-        await reserveRepository.updateBalance('SENTRY BANK', 500000000); 
+        await reserveRepository.updateBalance('SENTRY BANK', 0); 
         console.log('[AdminSeeder] Seeded default sentry bank reserve: SENTRY BANK ($5M)');
       }
       const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');

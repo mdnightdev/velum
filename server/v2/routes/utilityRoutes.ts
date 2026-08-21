@@ -84,22 +84,7 @@ utilityRouter.get('/admin/diagnostics', async (req, res) => {
     access_count: d.accessCount
   }));
 
-  const suspicious = [
-    {
-      event_id: 'susp_1',
-      risk_level: 'HIGH',
-      description: 'API Request targeting undisclosed duress endpoint route pattern',
-      ip_address: '104.244.42.1',
-      created_at: new Date(Date.now() - 3600000).toISOString()
-    },
-    {
-      event_id: 'susp_2',
-      risk_level: 'HIGH',
-      description: 'High amount deposit initiated outside usual geo-IP region boundaries',
-      ip_address: '185.220.101.5',
-      created_at: new Date(Date.now() - 7200000).toISOString()
-    }
-  ];
+  const suspicious: any[] = [];
 
   res.json({
     suspicious,
