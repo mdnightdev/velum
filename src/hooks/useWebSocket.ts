@@ -170,9 +170,12 @@ export function useWebSocket({
       oldWs.close();
     }
 
-    const host = window.location.host;
+    let host = window.location.host;
+    if (!host || host === 'localhost' || window.location.protocol === 'capacitor:') {
+      host = '127.0.0.1:3000';
+    }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const currentSessionId = sessionStorage.getItem('velum-sessionId') || sessionId;
+    const currentSessionId = localStorage.getItem('velum-sessionId') || sessionStorage.getItem('velum-sessionId') || sessionId;
     const wsUrl = `${protocol}//${host}/ws?userId=${uid}&sessionId=${encodeURIComponent(currentSessionId || '')}`;
 
     console.log('Connecting socket: ', wsUrl);

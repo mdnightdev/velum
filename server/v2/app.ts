@@ -84,12 +84,33 @@ app.use(helmet({
   }
 }));
 
-// Configure CORS
-const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+// Configure CORS for Web, PWA, and Android Capacitor APK
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost',
+  'https://localhost',
+  'capacitor://localhost',
+  'ionic://localhost',
+  ...(process.env.ALLOWED_ORIGINS?.split(',') || [])
+];
+
+const corsOptions: cors.CorsOptions = {
+  origin: (requestOrigin, callback) => {
+    if (!requestOrigin || 
+        allowedOrigins.includes(requestOrigin) || 
+        requestOrigin.startsWith('http://localhost') || 
+        requestOrigin.startsWith('http://127.0.0.1') || 
+        requestOrigin.startsWith('capacitor://') || 
+        requestOrigin.startsWith('ionic://')) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id', 'x-requested-with', 'Accept']
 };
 
 app.use(cors(corsOptions));

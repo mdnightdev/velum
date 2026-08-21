@@ -226,8 +226,8 @@ export default function ChatArea({
         if (otherId === 999) {
           return m.room_id === `dm_velum_${currentUserId}`;
         }
-        const isPeerFromMe = m.user_id === currentUserId && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
-        const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
+        const isPeerFromMe = String(m.user_id) === String(currentUserId) && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
+        const isPeerToMe = String(m.user_id) === String(otherId) && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
         return isPeerFromMe || isPeerToMe || m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`);
       } else {
         return m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);

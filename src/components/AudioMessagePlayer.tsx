@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Volume2, Mic } from 'lucide-react';
 
 interface AudioMessagePlayerProps {
   content: string;
@@ -14,19 +13,9 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ content,
   const [audioSrc, setAudioSrc] = useState<string>('');
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Seed static waveform heights for visually authentic audio waves
-  const waveHeights = useRef<number[]>(
-    Array.from({ length: 30 }, (_, i) => {
-      const seed = (i * 13 + 7) % 100;
-      return Math.max(25, Math.min(95, seed));
-    })
-  ).current;
+  const progressRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    // Parse duration and audio url or base64 from content string:
-    // Format: [Voice Note duration:3s url:/media/xyz.webm]
-    // or [Voice Note duration:3s data:audio/webm;base64,...]
     let src = '';
     let parsedDuration = 0;
 
@@ -42,7 +31,16 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ content,
     if (urlMatch) {
       src = urlMatch[1];
     } else if (dataMatch) {
-      src = `data:${dataMatch[1]}`;
+      src = dataMatch[1].startsWith('data:') ? dataMatch[1] : `data:audio/webm;base64,${dataMatch[1]}`;
+    }
+
+    // Resolve relative URL for Capacitor APK / local backend
+    if (src && src.startsWith('/')) {
+      const isCapacitor = typeof window !== 'undefined' && 
+        (window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port));
+      if (isCapacitor) {
+        src = `http://127.0.0.1:3000${src}`;
+      }
     }
 
     setAudioSrc(src);
@@ -50,87 +48,73 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ content,
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.src = '';
         audioRef.current = null;
       }
+      setIsPlaying(false);
+      setCurrentTime(0);
     };
   }, [content]);
 
-  const togglePlay = () => {
-    if (!audioSrc) return;
+  const initAudio = () => {
+    if (!audioSrc) return null;
+    if (audioRef.current) return audioRef.current;
 
-    if (!audioRef.current) {
-      let playbackUrl = audioSrc;
-      if (audioSrc.startsWith('data:')) {
-        try {
-          const parts = audioSrc.split(',');
-          const mime = parts[0].match(/:(.*?);/)?.[1] || 'audio/webm';
-          const b64Data = parts[1];
-          
-          const sliceSize = 512;
-          const byteCharacters = atob(b64Data);
-          const byteArrays = [];
-          
-          for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-            const slice = byteCharacters.slice(offset, offset + sliceSize);
-            const byteNumbers = new Array(slice.length);
-            for (let i = 0; i < slice.length; i++) {
-              byteNumbers[i] = slice.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            byteArrays.push(byteArray);
-          }
-          
-          const blob = new Blob(byteArrays, { type: mime });
-          playbackUrl = URL.createObjectURL(blob);
-        } catch (e) {
-          console.error('Failed to parse base64 audio data:', e);
-        }
+    const audio = new Audio(audioSrc);
+    audio.playbackRate = playbackRate;
+
+    audio.onplay = () => setIsPlaying(true);
+    audio.onpause = () => setIsPlaying(false);
+    audio.onended = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+
+    audio.ontimeupdate = () => {
+      setCurrentTime(audio.currentTime);
+      if (audio.duration && !isNaN(audio.duration) && audio.duration !== Infinity && duration === 0) {
+        setDuration(audio.duration);
       }
+    };
 
-      const audio = new Audio(playbackUrl);
-      audio.playbackRate = playbackRate;
+    audio.onloadedmetadata = () => {
+      if (audio.duration && !isNaN(audio.duration) && audio.duration !== Infinity) {
+        setDuration(audio.duration);
+      }
+    };
 
-      audio.onended = () => {
-        setIsPlaying(false);
-        setCurrentTime(0);
-      };
+    audioRef.current = audio;
+    return audio;
+  };
 
-      audio.ontimeupdate = () => {
-        setCurrentTime(audio.currentTime);
-        if (audio.duration && !isNaN(audio.duration) && audio.duration !== Infinity) {
-          setDuration(audio.duration);
-        }
-      };
-
-      audio.onloadedmetadata = () => {
-        if (audio.duration && !isNaN(audio.duration) && audio.duration !== Infinity) {
-          setDuration(audio.duration);
-        }
-      };
-
-      audioRef.current = audio;
-    }
+  const togglePlay = () => {
+    const audio = initAudio();
+    if (!audio) return;
 
     if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
+      audio.pause();
     } else {
-      audioRef.current.playbackRate = playbackRate;
-      audioRef.current.play().then(() => {
-        setIsPlaying(true);
-      }).catch((err) => {
-        console.error("Failed to play voice note:", err);
+      audio.playbackRate = playbackRate;
+      audio.play().catch((err) => {
+        console.warn("Audio playback failed:", err);
+        setIsPlaying(false);
       });
     }
   };
 
-  const handleSeek = (index: number) => {
-    if (!duration) return;
-    const seekFraction = (index + 1) / waveHeights.length;
-    const newTime = seekFraction * duration;
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressRef.current) return;
+    const rect = progressRef.current.getBoundingClientRect();
+    const clickX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const fraction = clickX / rect.width;
+    const activeDuration = duration || (audioRef.current?.duration || 0);
+    if (!activeDuration) return;
+
+    const newTime = fraction * activeDuration;
     setCurrentTime(newTime);
-    if (audioRef.current) {
-      audioRef.current.currentTime = newTime;
+    const audio = initAudio();
+    if (audio) {
+      audio.currentTime = newTime;
     }
   };
 
@@ -143,70 +127,66 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ content,
   };
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
+    const s = Math.max(0, Math.floor(seconds || 0));
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  const progressFraction = duration > 0 ? Math.min(1, currentTime / duration) : 0;
-  const activeWaveIndex = Math.floor(progressFraction * waveHeights.length);
+  const activeDuration = duration || (audioRef.current?.duration || 0);
+  const progressFraction = activeDuration > 0 ? Math.min(1, currentTime / activeDuration) : 0;
 
   return (
-    <div className={`flex items-center gap-3 p-2.5 rounded-2xl max-w-xs sm:max-w-sm ${
-      isMe 
-        ? 'bg-accent/20 border border-accent/40 text-text-primary' 
-        : 'bg-velum-800/90 border border-white-10 text-text-primary'
+    <div className={`flex items-center gap-2.5 py-1.5 px-3 rounded-2xl w-56 sm:w-64 select-none ${
+      isMe
+        ? 'bg-accent/15 border border-accent/30 text-text-primary'
+        : 'bg-velum-800 border border-white-10 text-text-primary'
     }`}>
-      {/* Play / Pause Circular Button */}
+      {/* Play / Pause Button */}
       <button
+        type="button"
         onClick={togglePlay}
         disabled={!audioSrc}
-        className={`w-11 h-11 rounded-full flex items-center justify-center transition-transform active:scale-95 shadow-md flex-shrink-0 cursor-pointer ${
-          isMe
-            ? 'bg-accent text-velum-950 hover:bg-accent-light'
-            : 'bg-accent/20 text-accent border border-accent/40 hover:bg-accent/30'
-        }`}
-        title={isPlaying ? "Pause voice note" : "Play voice note"}
+        className="w-8 h-8 rounded-full bg-accent hover:bg-accent-hover text-velum-950 flex items-center justify-center transition active:scale-95 shadow-sm shrink-0 cursor-pointer disabled:opacity-40"
+        title={isPlaying ? "Pause" : "Play"}
       >
         {isPlaying ? (
-          <Pause className="w-5 h-5 fill-current" />
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
+          </svg>
         ) : (
-          <Play className="w-5 h-5 fill-current ml-0.5" />
+          <svg className="w-3.5 h-3.5 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
         )}
       </button>
 
-      {/* Waveform & Time Info */}
+      {/* Scrubber Track & Metadata */}
       <div className="flex-1 min-w-0 flex flex-col gap-1">
-        {/* Waveform Interactive Bars */}
-        <div className="flex items-center gap-0.5 h-7 py-1 cursor-pointer select-none">
-          {waveHeights.map((height, idx) => {
-            const isActive = idx <= activeWaveIndex;
-            return (
-              <div
-                key={idx}
-                onClick={() => handleSeek(idx)}
-                className={`flex-1 rounded-full transition-all duration-150 ${
-                  isActive
-                    ? isMe ? 'bg-accent audio-active-bar-glow' : 'bg-accent'
-                    : 'bg-text-secondary/30 hover:bg-text-secondary/50'
-                }`}
-                style={{ height: `${height}%` }}
-              />
-            );
-          })}
+        {/* Sleek Progress Track */}
+        <div
+          ref={progressRef}
+          onClick={handleTrackClick}
+          className="h-1.5 w-full bg-white-10 rounded-full cursor-pointer relative overflow-hidden my-0.5"
+        >
+          <div
+            className="h-full bg-accent rounded-full transition-all duration-75"
+            style={{ width: `${progressFraction * 100}%` }}
+          />
         </div>
 
-        {/* Bottom Bar: Duration, Mic icon, Playback rate */}
-        <div className="flex items-center justify-between text-[11px] text-text-secondary font-mono px-0.5">
-          <span className="flex items-center gap-1 font-medium">
-            <Mic className="w-3 h-3 text-accent" />
-            {isPlaying ? formatTime(currentTime) : formatTime(duration || 0)}
+        {/* Time and Speed */}
+        <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+          <span>
+            {isPlaying ? `${formatTime(currentTime)} / ${formatTime(activeDuration)}` : formatTime(activeDuration)}
           </span>
 
           <button
+            type="button"
             onClick={cycleSpeed}
-            className="px-1.5 py-0.5 rounded bg-white-5 hover:bg-white-10 text-[10px] font-bold text-accent transition cursor-pointer"
-            title="Change playback speed"
+            className="px-1.5 py-0.5 rounded bg-white-5 hover:bg-white-10 text-[9px] font-bold text-accent transition cursor-pointer"
+            title="Speed"
           >
             {playbackRate}x
           </button>

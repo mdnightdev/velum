@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { initiateMicrophoneStream, terminateMicrophoneStream, cancelMicrophoneStream } from '../utils/mediaPipeline';
+import { initiateMicrophoneStream, terminateMicrophoneStream, cancelMicrophoneStream, pauseMicrophoneStream, resumeMicrophoneStream, getDraftAudioBlob } from '../utils/mediaPipeline';
 
 export function useAudioRecorder() {
   const [isRecording, setIsRecording] = useState(false);
@@ -65,11 +65,13 @@ export function useAudioRecorder() {
   };
 
   const pauseRecording = () => {
+    pauseMicrophoneStream();
     setIsPaused(true);
     setAudioLevels(new Array(30).fill(10));
   };
 
   const resumeRecording = () => {
+    resumeMicrophoneStream();
     setIsPaused(false);
   };
 
@@ -125,6 +127,7 @@ export function useAudioRecorder() {
     resumeRecording,
     stopRecording,
     cancelRecording,
+    getDraftAudioBlob,
     setMicError,
   };
 }

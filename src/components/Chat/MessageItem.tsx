@@ -103,7 +103,7 @@ export function MessageItem({
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
   const isCipher = msg.content?.startsWith('e2ee:v1:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
   const msgKey = String(msg.message_id || msg.id || msg.client_msg_id || msg.nonce || '');
-  const activeContent = msg.plaintext || (msg as any).client_plaintext || (getDecryptedText ? getDecryptedText(msg) : '') || (msgKey ? decryptedMap[msgKey] : '') || (isCipher ? '···' : (msg.content || ''));
+  const activeContent = isMe ? (msg.plaintext || (msg as any).client_plaintext || msg.content || '') : (msg.plaintext || (msg as any).client_plaintext || (getDecryptedText ? getDecryptedText(msg) : '') || (msgKey ? decryptedMap[msgKey] : '') || (isCipher ? '...' : (msg.content || '')));
 
   const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
   const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment:');

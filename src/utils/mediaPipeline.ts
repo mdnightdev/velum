@@ -103,11 +103,36 @@ export const terminateMicrophoneStream = (): Promise<Blob> => {
   });
 };
 
+export const pauseMicrophoneStream = (): void => {
+  if (nativeRecorder && nativeRecorder.state === 'recording') {
+    try {
+      nativeRecorder.requestData();
+      nativeRecorder.pause();
+    } catch (e) {}
+  }
+};
+
+export const resumeMicrophoneStream = (): void => {
+  if (nativeRecorder && nativeRecorder.state === 'paused') {
+    try {
+      nativeRecorder.resume();
+    } catch (e) {}
+  }
+};
+
+export const getDraftAudioBlob = (): Blob | null => {
+  if (collectedAudioBuffers.length === 0) return null;
+  const mimeType = nativeRecorder ? nativeRecorder.mimeType : "audio/webm";
+  return new Blob(collectedAudioBuffers, { type: mimeType });
+};
+
 export const cancelMicrophoneStream = (): void => {
   if (nativeRecorder) {
     nativeRecorder.onstop = null;
-    if (nativeRecorder.state === 'recording') {
-      nativeRecorder.stop();
+    if (nativeRecorder.state === 'recording' || nativeRecorder.state === 'paused') {
+      try {
+        nativeRecorder.stop();
+      } catch (e) {}
     }
     if (nativeRecorder.stream) {
       nativeRecorder.stream.getTracks().forEach(track => track.stop());

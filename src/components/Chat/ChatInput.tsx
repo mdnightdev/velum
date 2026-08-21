@@ -2,14 +2,13 @@ import React, { RefObject, useEffect, useState, useRef } from 'react';
 import {
   Mic,
   Pause,
-  Send,
   Trash2,
   X,
-  Reply,
-  Plus
+  Reply
 } from 'lucide-react';
 import { Message, stripAt } from '../../types';
 import { Attachment } from './hooks/useMessageInput';
+import { getDraftAudioBlob } from '../../utils/mediaPipeline';
 
 export interface ChatInputProps {
   // Input state
@@ -129,8 +128,41 @@ export function ChatInput({
     }
   }, [inputText, textareaRef]);
 
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!isRecording) {
+      if (previewAudioRef.current) {
+        try { previewAudioRef.current.pause(); } catch (e) {}
+        previewAudioRef.current = null;
+      }
+      setIsPreviewPlaying(false);
+    }
+  }, [isRecording]);
+
+  const toggleDraftPreview = () => {
+    if (isPreviewPlaying && previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      setIsPreviewPlaying(false);
+      return;
+    }
+    const blob = getDraftAudioBlob();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    previewAudioRef.current = audio;
+    audio.onended = () => {
+      setIsPreviewPlaying(false);
+      URL.revokeObjectURL(url);
+    };
+    audio.play().then(() => {
+      setIsPreviewPlaying(true);
+    }).catch(() => {});
+  };
+
   return (
-    <div className="p-4 border-t flex-shrink-0 bg-black/10 border-white-5">
+    <div className="px-4 py-3 border-t flex-shrink-0 bg-velum-900 border-white-5">
       <div className="max-w-5xl mx-auto">
         {/* Mic Error Banner */}
         {micError && (
@@ -249,59 +281,73 @@ export function ChatInput({
           </div>
         )}
 
-        {/* Voice Recording Overlay Bar */}
+        {/* Slim Voice Recording Bar */}
         {isRecording ? (
-          <div className="bg-velum-850 p-4 border-t border-white-5 text-text-primary flex flex-col gap-3 rounded-2xl">
-            {/* Live Audio Track / Waveform preview */}
-            <div className="flex items-center justify-between gap-3 px-1">
-              <div className="flex items-center gap-2 font-mono text-xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-alert-error animate-pulse" />
-                <span className="text-white font-semibold">
-                  {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
-                </span>
-              </div>
-
-              {/* Dynamic Dots Visualizer */}
-              <div className="flex flex-1 items-center justify-between gap-[3px] overflow-hidden px-3 h-6">
-                {audioLevels.map((level, i) => (
-                  <span
-                    key={i}
-                    className="w-1 rounded-full bg-accent transition-all duration-75 opacity-90"
-                    style={{ height: `${Math.max(4, (level / 100) * 24)}px` }}
-                  />
-                ))}
-              </div>
+          <div className="bg-velum-850 px-3.5 py-2 border border-white-5 text-text-primary flex items-center justify-between gap-3 rounded-2xl animate-fadeIn select-none">
+            {/* Timer & Indicator */}
+            <div className="flex items-center gap-2 font-mono text-xs shrink-0">
+              <span className={`w-2.5 h-2.5 rounded-full ${isPaused ? 'bg-accent' : 'bg-alert-error animate-pulse'}`} />
+              <span className="text-white font-semibold">
+                {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
+              </span>
             </div>
 
-            {/* Controls Row */}
-            <div className="flex items-center justify-between gap-3">
+            {/* Middle: Dynamic visualizer dots or Listen button when paused */}
+            {isPaused ? (
               <button
                 type="button"
-                onClick={cancelRecording}
-                className="w-11 h-11 rounded-full bg-status-dnd-bg hover:bg-status-dnd-bg/85 text-status-dnd flex items-center justify-center transition cursor-pointer"
-                title="Discard recording"
+                onClick={toggleDraftPreview}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-accent/15 hover:bg-accent/25 text-accent text-xs font-mono font-bold transition active:scale-95 cursor-pointer"
               >
-                <Trash2 className="w-5 h-5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={isPaused ? resumeRecording : pauseRecording}
-                className="flex-1 h-11 rounded-full bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20 font-mono text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
-              >
-                {isPaused ? (
+                {isPreviewPlaying ? (
                   <>
-                    <Mic className="w-4 h-4" />
-                    <span>RESUME</span>
+                    <Pause className="w-3.5 h-3.5 fill-current" />
+                    <span>PAUSE</span>
                   </>
                 ) : (
                   <>
-                    <Pause className="w-4 h-4 fill-current" />
-                    <span>PAUSE</span>
+                    <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    <span>LISTEN</span>
                   </>
                 )}
               </button>
+            ) : (
+              <div className="flex flex-1 items-center justify-center gap-1 overflow-hidden px-2 h-5">
+                {audioLevels.slice(0, 16).map((level, i) => (
+                  <span
+                    key={i}
+                    className="w-1 rounded-full bg-accent transition-all duration-75 opacity-90"
+                    style={{ height: `${Math.max(4, (level / 100) * 18)}px` }}
+                  />
+                ))}
+              </div>
+            )}
 
+            {/* Controls */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Discard */}
+              <button
+                type="button"
+                onClick={cancelRecording}
+                className="w-9 h-9 rounded-full bg-status-dnd-bg hover:bg-status-dnd-bg/85 text-status-dnd flex items-center justify-center transition active:scale-95 cursor-pointer"
+                title="Discard"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+
+              {/* Pause / Resume */}
+              <button
+                type="button"
+                onClick={isPaused ? resumeRecording : pauseRecording}
+                className="w-9 h-9 rounded-full bg-accent/10 hover:bg-accent/20 text-accent flex items-center justify-center transition active:scale-95 cursor-pointer"
+                title={isPaused ? "Resume recording" : "Pause recording"}
+              >
+                {isPaused ? <Mic className="w-4 h-4" /> : <Pause className="w-4 h-4 fill-current" />}
+              </button>
+
+              {/* Send */}
               <button
                 type="button"
                 onClick={() => {
@@ -309,10 +355,12 @@ export function ChatInput({
                     onSendVoiceNote(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`);
                   });
                 }}
-                className="w-11 h-11 rounded-full bg-accent text-velum-950 hover:bg-accent-light flex items-center justify-center transition shadow-md cursor-pointer"
+                className="w-9 h-9 rounded-full bg-accent hover:bg-accent-hover text-velum-950 flex items-center justify-center transition shadow-md active:scale-95 cursor-pointer"
                 title="Send voice note"
               >
-                <Send className="w-4 h-4 ml-0.5" />
+                <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
               </button>
             </div>
           </div>
@@ -383,104 +431,124 @@ export function ChatInput({
                 Admins Only
               </div>
             ) : (
-              <form onSubmit={onSend} className="w-full flex gap-3 items-center min-w-0">
-                <div className="relative" ref={attachmentMenuRef}>
+              <form onSubmit={onSend} className="w-full flex items-end gap-2 min-w-0">
+                {/* Paperclip Button */}
+                <div className="relative shrink-0" ref={attachmentMenuRef}>
                   <button
                     type="button"
                     onClick={() => setIsAttachmentMenuOpen((prev) => !prev)}
-                    className={`w-10 h-10 rounded-full border border-white-5 text-text-secondary hover:text-white transition flex items-center justify-center shrink-0 cursor-pointer ${
-                      isAttachmentMenuOpen ? 'bg-accent text-black font-bold rotate-45' : 'bg-velum-800 hover:bg-velum-800'
+                    className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition active:scale-95 ${
+                      isAttachmentMenuOpen
+                        ? 'text-accent bg-accent/15 rotate-45'
+                        : 'text-text-secondary hover:text-white hover:bg-white-5'
                     }`}
-                    title="Attach File"
+                    title="Attach"
                   >
-                    <Plus className="w-5 h-5 transition-transform duration-200" />
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.97 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l7.88-7.87" />
+                    </svg>
                   </button>
 
-                  {/* Popover Menu */}
+                  {/* Native Mobile Bottom Sheet Drawer */}
                   {isAttachmentMenuOpen && (
-                    <div className="absolute bottom-12 left-0 z-50 bg-velum-850 border border-white-10 rounded-2xl p-1.5 shadow-2xl flex flex-col gap-1 w-48 animate-fadeIn">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsAttachmentMenuOpen(false);
-                          if (onTriggerPhotoInput) onTriggerPhotoInput();
-                          else if (onTriggerFileInput) onTriggerFileInput();
-                        }}
-                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs text-text-primary hover:text-white hover:bg-white-5 transition cursor-pointer font-sans"
-                      >
-                        <svg className="w-4 h-4 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="2" y="2" width="20" height="20" rx="4" />
-                          <circle cx="8.5" cy="8.5" r="1.5" />
-                          <polyline points="21 15 16 10 5 21" />
-                        </svg>
-                        <span className="font-semibold text-[13px]">Photo & Video</span>
-                      </button>
+                    <>
+                      {/* Backdrop */}
+                      <div
+                        className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 animate-fadeIn"
+                        onClick={() => setIsAttachmentMenuOpen(false)}
+                      />
+                      {/* Bottom Sheet Drawer */}
+                      <div className="fixed bottom-0 left-0 right-0 z-50 bg-velum-850 border-t border-white-10 rounded-t-3xl p-4 pb-6 shadow-2xl animate-slide-up select-none max-w-lg mx-auto">
+                        {/* Grabber handle */}
+                        <div className="w-9 h-1 bg-white/20 rounded-full mx-auto mb-4" />
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsAttachmentMenuOpen(false);
-                          if (onTriggerDocInput) onTriggerDocInput();
-                          else if (onTriggerFileInput) onTriggerFileInput();
-                        }}
-                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs text-text-primary hover:text-white hover:bg-white-5 transition cursor-pointer font-sans"
-                      >
-                        <svg className="w-4 h-4 text-status-away shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                          <polyline points="10 9 9 9 8 9" />
-                        </svg>
-                        <span className="font-semibold text-[13px]">Document & File</span>
-                      </button>
-                    </div>
+                        <div className="flex items-center justify-around gap-4 px-4">
+                          {/* Photo or Video / Gallery */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAttachmentMenuOpen(false);
+                              if (onTriggerPhotoInput) onTriggerPhotoInput();
+                              else if (onTriggerFileInput) onTriggerFileInput();
+                            }}
+                            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white-5 active:scale-95 transition-all cursor-pointer group"
+                          >
+                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#7B2CBF] to-[#9D4EDD] text-white flex items-center justify-center shadow-md shadow-purple-950/40 group-hover:scale-105 transition-transform">
+                              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="4" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <polyline points="21 15 16 10 5 21" />
+                              </svg>
+                            </div>
+                            <span className="text-[11px] font-medium text-text-primary group-hover:text-white font-sans">
+                              Gallery
+                            </span>
+                          </button>
+
+                          {/* Document / File */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAttachmentMenuOpen(false);
+                              if (onTriggerDocInput) onTriggerDocInput();
+                              else if (onTriggerFileInput) onTriggerFileInput();
+                            }}
+                            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white-5 active:scale-95 transition-all cursor-pointer group"
+                          >
+                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#0077B6] to-[#0096C7] text-white flex items-center justify-center shadow-md shadow-blue-950/40 group-hover:scale-105 transition-transform">
+                              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                              </svg>
+                            </div>
+                            <span className="text-[11px] font-medium text-text-primary group-hover:text-white font-sans">
+                              File
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
 
-                <div className="flex-1 relative flex items-end min-w-0">
-                  <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (!isSending) onSend(e);
-                      }
-                    }}
-                    placeholder={chatTitle ? t('chat.message_peer', 'Message {name}').replace('{name}', chatTitle) : t('chat.message_placeholder', 'Message...')}
-                    className="w-full bg-velum-800 border border-white-5 rounded-2xl pl-5 pr-24 py-[11px] text-[13px] text-white outline-none focus:border-accent/50 font-sans resize-none max-h-32 overflow-y-auto leading-relaxed"
-                    style={{ height: 'auto', minHeight: '42px' }}
-                  />
-                  <div className="absolute right-2 bottom-[3px] flex items-center gap-1">
-                    <div className="relative w-9 h-9 flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={onToggleRecording}
-                        className={`absolute inset-0 flex items-center justify-center text-text-secondary hover:text-accent transition-all duration-200 cursor-pointer ${
-                          inputText.length > 0 || selectedAttachment ? 'opacity-0 scale-50 pointer-events-none' : 'opacity-100 scale-100'
-                        }`}
-                      >
-                        <Mic className="w-5 h-5" />
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isSending || (!inputText.trim() && !selectedAttachment)}
-                        className={`absolute inset-0 flex items-center justify-center bg-accent text-black rounded-full transition-all duration-200 shadow-md ${
-                          inputText.length > 0 || selectedAttachment
-                            ? isSending
-                              ? 'opacity-60 cursor-not-allowed pointer-events-none scale-100'
-                              : 'opacity-100 scale-100 cursor-pointer'
-                            : 'opacity-0 scale-50 pointer-events-none'
-                        }`}
-                      >
-                        <Send className="w-4 h-4 ml-0.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                {/* Unified Textarea */}
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!isSending) onSend(e);
+                    }
+                  }}
+                  placeholder={chatTitle ? t('chat.message_peer', 'Message {name}').replace('{name}', chatTitle) : t('chat.message_placeholder', 'Write a message...')}
+                  className="flex-1 bg-velum-800 border border-white-5 focus:border-accent/40 rounded-2xl px-4 py-2 text-[13.5px] text-white outline-none resize-none max-h-32 min-h-[40px] leading-relaxed placeholder:text-text-disabled font-sans"
+                />
+
+                {/* Right Action Button */}
+                {inputText.trim().length > 0 || selectedAttachment ? (
+                  <button
+                    type="submit"
+                    disabled={isSending}
+                    className="w-10 h-10 rounded-full bg-accent hover:bg-accent-hover text-velum-900 flex items-center justify-center shrink-0 shadow-md shadow-accent/25 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    title="Send"
+                  >
+                    <svg className="w-5 h-5 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onToggleRecording}
+                    className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 text-text-secondary hover:text-accent hover:bg-white-5 flex items-center justify-center shrink-0 transition active:scale-95 cursor-pointer"
+                    title="Voice message"
+                  >
+                    <Mic className="w-5 h-5" />
+                  </button>
+                )}
               </form>
             )}
           </>

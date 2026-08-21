@@ -41,7 +41,7 @@ export function useMessageDecryption({
 
         if (!m.content || keys.length === 0) continue;
 
-        const isOutgoing = !!(currentUserId && m.user_id === currentUserId);
+        const isOutgoing = Boolean(currentUserId && String(m.user_id) === String(currentUserId));
 
         // 1. If plaintext already attached in memory, map to all key aliases immediately
         if (m.plaintext) {
