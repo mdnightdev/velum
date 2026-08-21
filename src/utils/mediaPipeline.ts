@@ -1,3 +1,5 @@
+import { getSessionId } from './auth';
+
 interface UploadConfig {
   uploadUrl: string;
   relativeDbPath: string;
@@ -150,7 +152,7 @@ export const streamFileDirectToCloudStorage = async (
   folderDestination: "avatars" | "media",
   fileExtension: string
 ): Promise<string> => {
-  const sid = sessionStorage.getItem('velum-sessionId') || '';
+  const sid = getSessionId();
   
   try {
     // 1. Fetch secure upload config from Velum node

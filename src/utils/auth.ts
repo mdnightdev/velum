@@ -1,8 +1,6 @@
 export function getSessionId(): string {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem('velum-sessionId') ||
-         sessionStorage.getItem('velum-sessionId') || 
-         localStorage.getItem('velum_sessionId') ||
+  return sessionStorage.getItem('velum-sessionId') || 
          sessionStorage.getItem('velum_sessionId') || 
          '';
 }

@@ -90,6 +90,9 @@ loungeRouter.post('/:id/members/add', auth, loungeController.addMemberDirect);
 loungeRouter.post('/:loungeId/rooms/:roomId/join', auth, loungeController.joinRoom);
 
 // Settings, Applications, Maintenance
+loungeRouter.post('/:id/avatar', auth, loungeController.updateLoungeAvatar);
+loungeRouter.put('/:id/avatar', auth, loungeController.updateLoungeAvatar);
+loungeRouter.post('/:id', auth, loungeController.updateLoungeSettings);
 loungeRouter.put('/:id', auth, loungeController.updateLoungeSettings);
 loungeRouter.post('/:id/apply', auth, loungeController.applyToLounge);
 loungeRouter.post('/deduplicate', auth, loungeController.deduplicateLounges);

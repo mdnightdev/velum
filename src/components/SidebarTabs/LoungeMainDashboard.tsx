@@ -4,6 +4,7 @@ import ProfileCard from '../ProfileCard';
 import { useLanguage } from '../../i18n/LanguageContext';
 import logoSvg from '../../assets/logo.svg?raw';
 import { formatMessageTimestamp } from '../../utils/time';
+import { getSessionId } from '../../utils/auth';
 
 interface LoungeMainDashboardProps {
   currentUserId: number;
@@ -57,12 +58,12 @@ export default function LoungeMainDashboard({
   const [isApplying, setIsApplying] = useState(false);
   const [applyMessage, setApplyMessage] = useState('');
 
-  const handleApplyToJoin = async (targetId: string) => {
+  const handleApplyToJoin = async (targetId?: string) => {
     if (!targetId || isApplying) return;
     setIsApplying(true);
     setApplyMessage('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${targetId}/apply`, {
         method: 'POST',
         headers: {
@@ -72,12 +73,11 @@ export default function LoungeMainDashboard({
       });
       const data = await res.json();
       if (res.ok) {
-        setApplyMessage(data.message || 'Application submitted successfully!');
+        setApplyMessage(data.message || 'Application submitted successfully.');
       } else {
         setApplyMessage(data.error || 'Failed to submit application.');
       }
     } catch (err) {
-      console.error('Error applying to join:', err);
       setApplyMessage('Error submitting join application.');
     } finally {
       setIsApplying(false);
@@ -88,7 +88,6 @@ export default function LoungeMainDashboard({
   const [newLoungeName, setNewLoungeName] = useState('');
   const [newLoungeDescription, setNewLoungeDescription] = useState('');
   const [newLoungeInviteCode, setNewLoungeInviteCode] = useState('');
-  const [newLoungeIconUrl, setNewLoungeIconUrl] = useState('');
   const [newLoungeIsPrivate, setNewLoungeIsPrivate] = useState(false);
   const [isSubmittingLounge, setIsSubmittingLounge] = useState(false);
   const [loungeError, setLoungeError] = useState('');
@@ -103,7 +102,7 @@ export default function LoungeMainDashboard({
     setIsSubmittingLounge(true);
     setLoungeError('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch('/v2/lounges', {
         method: 'POST',
         headers: {
@@ -114,7 +113,6 @@ export default function LoungeMainDashboard({
           name: newLoungeName,
           description: newLoungeDescription,
           invite_code: newLoungeInviteCode,
-          icon_url: newLoungeIconUrl,
           is_private: newLoungeIsPrivate
         })
       });
@@ -127,7 +125,6 @@ export default function LoungeMainDashboard({
       setNewLoungeName('');
       setNewLoungeDescription('');
       setNewLoungeInviteCode('');
-      setNewLoungeIconUrl('');
       setNewLoungeIsPrivate(false);
       setLoungeError('');
       setShowCreateLoungeModal(false);
@@ -142,7 +139,7 @@ export default function LoungeMainDashboard({
 
   const loadLounges = async () => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const headers = { 'Authorization': `Bearer ${sid}` };
       const res = await fetch('/v2/lounges', { headers });
       if (res.ok) {
@@ -173,7 +170,7 @@ export default function LoungeMainDashboard({
     setIsSubmittingRoom(true);
     setStatusMessage('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${targetLoungeId}/sublounges`, {
         method: 'POST',
         headers: {
@@ -210,7 +207,7 @@ export default function LoungeMainDashboard({
 
   const handleJoinRoom = async (loungeId: string, roomId: string, code?: string) => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/rooms/${roomId}/join`, {
         method: 'POST',
         headers: {
@@ -367,8 +364,19 @@ export default function LoungeMainDashboard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <div className={`font-bold text-sm capitalize tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
+                    {lastTimeStr && <div className="text-[10px] text-text-secondary shrink-0 font-mono">{lastTimeStr}</div>}
                   </div>
+                  {lastTxt && (
+                    <div className="text-xs text-text-secondary truncate mt-0.5">
+                      {lastTxt}
+                    </div>
+                  )}
                 </div>
+                {unread > 0 && (
+                  <span className="px-1.5 py-0.2 min-w-[18px] text-[10px] font-bold rounded-full bg-accent text-velum-950 flex items-center justify-center shrink-0">
+                    {unread}
+                  </span>
+                )}
               </div>
             );
           });
@@ -514,20 +522,6 @@ export default function LoungeMainDashboard({
                 <label htmlFor="lounge-private-toggle" className="text-[10px] uppercase font-bold tracking-wider cursor-pointer">
                   Private Lounge (Requires invite or access key)
                 </label>
-              </div>
-              <div>
-                <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Lounge Avatar / Icon URL (Optional)</label>
-                <input
-                  type="text"
-                  value={newLoungeIconUrl}
-                  onChange={(e) => setNewLoungeIconUrl(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border text-xs outline-none transition font-mono ${
-                    isDark 
-                      ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
-                      : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
-                  }`}
-                  placeholder="https://example.com/lounge-icon.png"
-                />
               </div>
             </div>
 
