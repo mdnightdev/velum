@@ -9,11 +9,6 @@ interface AdminDiagnosticsViewProps {
   logs: AuditLog[];
   initialDiagLogs?: ClientDiagnosticLog[];
   adminFetch?: (url: string, options?: RequestInit) => Promise<Response>;
-  c: {
-    bgPanel: string;
-    border: string;
-    textMuted: string;
-  };
 }
 
 export default function AdminDiagnosticsView({
@@ -21,7 +16,6 @@ export default function AdminDiagnosticsView({
   logs,
   initialDiagLogs = [],
   adminFetch,
-  c
 }: AdminDiagnosticsViewProps) {
   const [diagLogs, setDiagLogs] = useState<ClientDiagnosticLog[]>(Array.isArray(initialDiagLogs) ? initialDiagLogs : []);
   const [isLoading, setIsLoading] = useState(false);

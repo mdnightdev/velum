@@ -1,5 +1,5 @@
 import React from 'react';
-import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key, Send } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key, Send, X } from 'lucide-react';
 import { Ticket } from '../../types';
 
 interface AdminTicketsProps {
@@ -20,7 +20,6 @@ interface AdminTicketsProps {
   handleTicketReply: (close: boolean, escalate: boolean) => Promise<void>;
   restoreCode: string | null;
   user?: any;
-  c: any;
 }
 
 export default function AdminTickets({
@@ -41,7 +40,6 @@ export default function AdminTickets({
   handleTicketReply,
   restoreCode,
   user,
-  c,
 }: AdminTicketsProps) {
   // Filter tickets dynamically
   const safeTickets = Array.isArray(tickets) ? tickets : [];
@@ -57,121 +55,75 @@ export default function AdminTickets({
   });
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Top Level Audit KPI Oversight Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-text-secondary uppercase tracking-widest font-mono">
-            Total Tickets
+    <div className="space-y-4">
+      {/* KPI Cards Single Row */}
+      <div className="grid grid-cols-4 gap-2 sm:gap-3">
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-text-secondary font-medium truncate">
+            Total
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-text-primary">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-text-primary">
               {tickets.length}
             </span>
           </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div className="h-full bg-accent-secondary rounded-full" style={{ width: '100%' }}></div>
-          </div>
         </div>
 
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-status-dnd uppercase tracking-widest font-mono">
-            Open Tickets
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-status-dnd font-medium truncate">
+            Open
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-status-dnd">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-status-dnd">
               {tickets.filter((t) => t.status === 'open' || t.status === 'escalated').length}
             </span>
           </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-status-dnd rounded-full"
-              style={{
-                width: `${
-                  tickets.length
-                    ? (tickets.filter((t) => t.status === 'open' || t.status === 'escalated').length /
-                        tickets.length) *
-                      100
-                    : 0
-                }%`,
-              }}
-            ></div>
-          </div>
         </div>
 
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-status-away/80 uppercase tracking-widest font-mono">
-            Pending Tickets
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-status-away font-medium truncate">
+            Pending
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-status-away">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-status-away">
               {tickets.filter((t) => t.status === 'pending').length}
             </span>
           </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-status-away rounded-full"
-              style={{
-                width: `${
-                  tickets.length
-                    ? (tickets.filter((t) => t.status === 'pending').length / tickets.length) * 100
-                    : 0
-                }%`,
-              }}
-            ></div>
-          </div>
         </div>
 
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-status-online/80 uppercase tracking-widest font-mono">
-            Resolved Tickets
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-status-online font-medium truncate">
+            Resolved
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-status-online">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-status-online">
               {tickets.filter((t) => t.status === 'resolved' || t.status === 'approved').length}
             </span>
-          </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-status-online rounded-full"
-              style={{
-                width: `${
-                  tickets.length
-                    ? (tickets.filter((t) => t.status === 'resolved' || t.status === 'approved')
-                        .length /
-                        tickets.length) *
-                      100
-                    : 0
-                }%`,
-              }}
-            ></div>
           </div>
         </div>
       </div>
 
-      {/* Central Auditing Controls & Registry Workspace */}
-      <div className="flex flex-col border-t border-white-5 pt-6 mt-4">
+      {/* Central Registry Workspace */}
+      <div className="flex flex-col border-t border-velum-600 pt-4 mt-2">
         {/* Header and Live Search Filters Panel */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white-5 pb-4 mb-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-velum-600 pb-3 mb-3">
           <div className="flex items-center gap-2">
-            <HelpCircle className="w-5 h-5 text-accent" />
-            <div>
-              <h3 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Tickets
-              </h3>
-            </div>
+            <HelpCircle className="w-4 h-4 text-accent" />
+            <h3 className="font-semibold text-sm text-text-primary">
+              Tickets
+            </h3>
           </div>
 
           {/* Filtering Controllers */}
-          <div className="flex items-center gap-2.5 w-full md:w-auto">
-            <div className="relative flex-grow md:w-64">
-              <Search className="w-3.5 h-3.5 text-text-disabled absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-grow md:w-56">
+              <Search className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder=""
+                placeholder="Search tickets..."
                 value={ticketSearch}
                 onChange={(e) => setTicketSearch(e.target.value)}
-                className={`pl-8 pr-3 py-1.5 text-[11px] rounded-xl w-full outline-none font-mono ${c.bgInput}`}
+                className="pl-9 pr-3 py-1.5 text-xs rounded-xl w-full outline-none bg-velum-750 border border-velum-600 text-text-primary placeholder:text-text-disabled focus:border-accent/40"
               />
             </div>
 
@@ -179,31 +131,20 @@ export default function AdminTickets({
               <select
                 value={ticketFilter}
                 onChange={(e) => setTicketFilter(e.target.value as any)}
-                className={`pl-3 pr-8 py-1.5 text-[11px] rounded-xl outline-none font-mono cursor-pointer appearance-none ${c.bgInput} border border-white-5`}
+                className="pl-3 pr-7 py-1.5 text-xs rounded-xl outline-none cursor-pointer appearance-none bg-velum-750 border border-velum-600 text-text-primary focus:border-accent/40"
               >
-                <option value="all">ALL STATUSES</option>
-                <option value="open">OPEN CASES</option>
-                <option value="pending">PENDING</option>
-                <option value="escalated">ESCALATED</option>
-                <option value="resolved">RESOLVED</option>
+                <option value="all">All</option>
+                <option value="open">Open</option>
+                <option value="pending">Pending</option>
+                <option value="escalated">Escalated</option>
+                <option value="resolved">Resolved</option>
               </select>
-              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-40">
-                <svg
-                  className="w-3 h-3 text-text-secondary"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2.5"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                </svg>
-              </div>
             </div>
           </div>
         </div>
 
         {/* Audit Registry Main Data Table */}
-        <div className="overflow-x-auto rounded-xl border border-white-5 bg-velum-850/40">
+        <div className="overflow-x-auto rounded-xl border border-velum-600 bg-velum-800">
           <table className="w-full text-xs font-sans text-left border-collapse">
             <thead>
               <tr className="text-text-secondary/30 text-[9px] font-black uppercase tracking-widest border-b border-white-5">
@@ -518,7 +459,7 @@ export default function AdminTickets({
                         }
                       }}
                       placeholder="Type a message..."
-                      className={`flex-1 text-sm rounded-xl py-3 pl-4 pr-12 outline-none resize-none transition-all ${c.bgInput} border border-white-5 focus:border-accent-40`}
+                      className="flex-1 text-sm rounded-xl py-2.5 pl-4 pr-12 outline-none resize-none transition-all bg-velum-750 border border-velum-600 text-text-primary placeholder:text-text-disabled focus:border-accent/40"
                     />
                     <button
                       onClick={() => handleTicketReply(false, false)}

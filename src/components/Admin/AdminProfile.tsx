@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { User, Plus, RefreshCw } from 'lucide-react';
 import PasswordInput from '../PasswordInput';
-import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
-import { getLocalMedia, saveLocalMedia } from '../../utils/indexedDb';
+import { streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
+import { saveLocalMedia } from '../../utils/indexedDb';
 import { ImageCropperModal } from '../ImageCropperModal';
 
 interface AdminProfileProps {
@@ -12,7 +12,6 @@ interface AdminProfileProps {
   adminProfile: any;
   adminFetch: (url: string, options?: RequestInit) => Promise<Response>;
   fetchData: () => void;
-  c: any;
 }
 
 export default function AdminProfile({
@@ -22,9 +21,7 @@ export default function AdminProfile({
   adminProfile,
   adminFetch,
   fetchData,
-  c,
 }: AdminProfileProps) {
-  // Local profile/settings states
   const [avatarFile, setAvatarFile] = useState<File | Blob | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -32,104 +29,60 @@ export default function AdminProfile({
   const [safeWord, setSafeWord] = useState('');
   const [panicPhrase, setPanicPhrase] = useState('');
 
-  // Local rotation states
   const [rotatedUsername, setRotatedUsername] = useState('');
   const [rotatedPassword, setRotatedPassword] = useState('');
   const [rotationResult, setRotationResult] = useState<string | null>(null);
   const [rotationError, setRotationError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (adminId) {
-      getLocalMedia(`avatar_${adminId}`).then((cachedBlob) => {
-        if (cachedBlob) {
-          setAvatarPreview(URL.createObjectURL(cachedBlob));
-        }
-      }).catch(() => {});
-    }
-  }, [adminId]);
-
   const [croppingAvatar, setCroppingAvatar] = useState<{ src: string; fileName: string } | null>(null);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (reader.result) {
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
         setCroppingAvatar({ src: reader.result as string, fileName: file.name });
-      }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
-  const uploadAdminAvatar = async () => {
-    if (!avatarFile || !avatarPreview) return null;
-    setIsUploading(true);
-    try {
-      const url = await streamFileDirectToCloudStorage(avatarFile, 'avatars', 'webp');
-      return url;
-    } catch (err) {
-      console.error('Error uploading avatar:', err);
-    } finally {
-      setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
     }
-    return null;
   };
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSettingsStatus(null);
     setIsUploading(true);
+    setSettingsStatus(null);
 
     try {
-      let finalAvatar = adminProfile?.avatar || '';
-      if (avatarFile && avatarPreview) {
-        const uploadedUrl = await uploadAdminAvatar();
+      let finalAvatarUrl = adminProfile?.avatar || '';
+
+      if (avatarFile) {
+        const fileExt = avatarFile.type.split('/')[1] || 'jpg';
+        const fileName = `admin_${adminId}_${Date.now()}.${fileExt}`;
+        const uploadedUrl = await streamFileDirectToCloudStorage(avatarFile, 'avatars', fileExt);
         if (uploadedUrl) {
-          finalAvatar = uploadedUrl;
+          finalAvatarUrl = uploadedUrl;
           await saveLocalMedia(`avatar_${adminId}`, avatarFile);
         }
       }
 
-      const profileRes = await adminFetch('/v2/user/profile', {
+      const res = await adminFetch('/v2/admin/profile/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: adminId,
-          avatar: finalAvatar,
-          displayName: user?.username || 'DeV',
-          bio: adminProfile?.bio || 'System Dev.',
+          avatar: finalAvatarUrl,
+          safeWord: safeWord.trim() || undefined,
+          panicPhrase: panicPhrase.trim() || undefined,
         }),
       });
 
-      let settingsOk = true;
-      if (safeWord.trim() || panicPhrase.trim()) {
-        const settingsRes = await adminFetch('/v2/admin/update-settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            safeWord: safeWord.trim() || undefined,
-            panicPhrase: panicPhrase.trim() || undefined,
-          }),
-        });
-        settingsOk = settingsRes.ok;
-      }
-
-      if (profileRes.ok && settingsOk) {
-        setSettingsStatus('Profile updated.');
-        setAvatarFile(null);
-        if (finalAvatar) {
-          setAvatarPreview(finalAvatar);
-        }
+      if (res.ok) {
+        setSettingsStatus('Profile saved successfully.');
         fetchData();
-        setTimeout(() => setSettingsStatus(null), 3500);
       } else {
-        alert('Failed to update settings database.');
+        const err = await res.json();
+        setSettingsStatus(err.error || 'Failed to save profile.');
       }
-    } catch (err) {
-      console.error('Profile save error:', err);
-      alert('Network error while saving profile.');
+    } catch {
+      setSettingsStatus('Connection error.');
     } finally {
       setIsUploading(false);
     }
@@ -141,12 +94,12 @@ export default function AdminProfile({
     setRotationError(null);
 
     if (!rotatedUsername.trim() || !rotatedPassword.trim()) {
-      setRotationError('Both username and secret key values are required.');
+      setRotationError('Username and password cannot be empty.');
       return;
     }
 
     try {
-      const res = await adminFetch(`/v2/admin/rename-executive`, {
+      const res = await adminFetch('/v2/admin/credentials/rotate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -157,36 +110,32 @@ export default function AdminProfile({
 
       const data = await res.json();
       if (res.ok) {
-        setRotationResult(
-          'Updated.!'
-        );
+        setRotationResult('Credentials updated successfully.');
         setRotatedUsername('');
         setRotatedPassword('');
       } else {
-        setRotationError(data.error || 'Failed to update .');
+        setRotationError(data.error || 'Failed to update credentials.');
       }
-    } catch (safeErr) {
-      setRotationError('Failed to connect .');
+    } catch {
+      setRotationError('Connection error.');
     }
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Card: Admin Identity & Custom Avatar */}
-        <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-velum-800 border border-velum-600 rounded-xl p-4 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-5">
-              <User className="w-4.5 h-4.5 text-accent-hover" />
-              <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Executive Identity
+            <div className="flex items-center gap-2 border-b border-velum-600 pb-2.5 mb-4">
+              <User className="w-4 h-4 text-accent" />
+              <h4 className="font-semibold text-xs text-text-primary">
+                Admin Profile
               </h4>
             </div>
 
-            <div className="flex flex-col items-center justify-center py-6 space-y-4">
-              {/* Circular Avatar Frame */}
+            <div className="flex flex-col items-center justify-center py-4 space-y-3">
               <div className="relative group cursor-pointer">
-                <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-accent/40 bg-accent-10 flex items-center justify-center text-accent text-3xl font-black font-mono shadow-lg shadow-accent/10 group-hover:border-accent transition-colors">
+                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-accent/40 bg-accent/10 flex items-center justify-center text-accent text-2xl font-bold">
                   {avatarPreview ? (
                     <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
                   ) : adminProfile?.avatar ? (
@@ -195,12 +144,11 @@ export default function AdminProfile({
                     (user?.username || 'AD').substring(0, 2).toUpperCase()
                   )}
                 </div>
-                {/* Hover upload overlay */}
                 <label
                   htmlFor="admin-avatar-input"
-                  className="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[9px] font-bold text-text-primary uppercase tracking-widest font-mono"
+                  className="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs font-medium text-text-primary"
                 >
-                  <Plus className="w-4 h-4 mb-1 text-accent" />
+                  <Plus className="w-4 h-4 mb-0.5 text-accent" />
                   Upload
                 </label>
                 <input
@@ -226,148 +174,147 @@ export default function AdminProfile({
                 />
               )}
 
-              <div className="text-center space-y-1">
-                <span className="text-sm font-extrabold text-text-primary">
-                  @{user?.username || 'Executive'}
+              <div className="text-center">
+                <span className="text-sm font-semibold text-text-primary block">
+                  @{user?.username || 'Admin'}
                 </span>
-                <span className="text-[10px] text-text-secondary font-mono block">
-                  Clearance: {adminRole}
+                <span className="text-xs text-text-secondary">
+                  Role: {adminRole}
                 </span>
               </div>
             </div>
 
-            <form onSubmit={handleProfileSubmit} className="space-y-4 font-sans text-xs">
-              <div className="grid grid-cols-2 gap-3.5">
+            <form onSubmit={handleProfileSubmit} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    Identifier
+                  <label className="block text-xs text-text-secondary mb-1">
+                    ID
                   </label>
                   <input
                     type="text"
                     disabled
                     value={`ID: ${adminId}`}
-                    className={`w-full p-3 rounded-xl font-mono text-text-secondary cursor-not-allowed ${c.bgInput}`}
+                    className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-secondary cursor-not-allowed text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    Status
+                  <label className="block text-xs text-text-secondary mb-1">
+                    Role
                   </label>
                   <input
                     type="text"
                     disabled
-                    value={adminRole === 'SUPPORT_ADMIN' ? 'SUPPORT OPERATIONS' : 'EXECUTIVE CONTROLS'}
-                    className={`w-full p-3 rounded-xl font-mono text-text-secondary cursor-not-allowed ${c.bgInput}`}
+                    value={adminRole === 'SUPPORT_ADMIN' ? 'Support Admin' : 'Admin'}
+                    className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-secondary cursor-not-allowed text-xs"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                     Safe Word
+                  <label className="block text-xs text-text-secondary mb-1">
+                    Safe Word
                   </label>
                   <input
                     type="text"
                     value={safeWord}
                     onChange={(e) => setSafeWord(e.target.value)}
-                    placeholder=""
-                    className={`w-full p-3 rounded-xl font-mono ${c.bgInput}`}
+                    placeholder="Safe word"
+                    className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                     Panic Phrase
+                  <label className="block text-xs text-text-secondary mb-1">
+                    Panic Phrase
                   </label>
                   <input
                     type="text"
                     value={panicPhrase}
                     onChange={(e) => setPanicPhrase(e.target.value)}
-                    placeholder=""
-                    className={`w-full p-3 rounded-xl font-mono ${c.bgInput}`}
+                    placeholder="Panic phrase"
+                    className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>
               </div>
             </form>
           </div>
 
-          <div className="mt-6">
+          <div className="mt-4">
             <button
               type="button"
               onClick={handleProfileSubmit}
               disabled={isUploading}
-              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 text-text-primary font-extrabold py-3 rounded-xl text-[10px] uppercase tracking-wider transition border-0 cursor-pointer shadow-md font-mono"
+              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 text-black font-semibold py-2 rounded-lg text-xs transition cursor-pointer"
             >
-              {isUploading ? 'Securing Profile...' : 'Save Profile Settings'}
+              {isUploading ? 'Saving...' : 'Save Profile'}
             </button>
             {settingsStatus && (
-              <div className="mt-3 p-3 bg-status-online-bg text-status-online text-xs rounded font-mono font-bold text-center">
+              <div className="mt-2 p-2 bg-status-online/10 text-status-online text-xs rounded text-center">
                 {settingsStatus}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Card: Credential Rotation */}
-        <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
+        <div className="bg-velum-800 border border-velum-600 rounded-xl p-4 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-5">
-              <RefreshCw className="w-4.5 h-4.5 text-purple-400" />
-              <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Rotate Credentials
+            <div className="flex items-center gap-2 border-b border-velum-600 pb-2.5 mb-4">
+              <RefreshCw className="w-4 h-4 text-accent" />
+              <h4 className="font-semibold text-xs text-text-primary">
+                Change Credentials
               </h4>
             </div>
 
-            <form onSubmit={rotateExecutiveCredentials} className="space-y-4 font-sans text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <form onSubmit={rotateExecutiveCredentials} className="space-y-3 text-xs">
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
-                    New Handle
+                  <label className="block text-xs text-text-secondary mb-1">
+                    New Username
                   </label>
                   <input
                     type="text"
                     value={rotatedUsername}
                     onChange={(e) => setRotatedUsername(e.target.value)}
-                    placeholder=""
-                    className={`w-full p-3 rounded-xl outline-none ${c.bgInput}`}
+                    placeholder="Username"
+                    className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">
+                  <label className="block text-xs text-text-secondary mb-1">
                     New Password
                   </label>
                   <PasswordInput
                     value={rotatedPassword}
                     onChange={(e) => setRotatedPassword(e.target.value)}
-                    placeholder=""
-                    className={`w-full p-3 rounded-xl outline-none ${c.bgInput}`}
+                    placeholder="Password"
+                    className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>
               </div>
             </form>
           </div>
 
-          <div className="mt-6 space-y-3">
+          <div className="mt-4 space-y-2">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-                ACCESS LOCKED: CREDENTIAL ROTATIONS DISABLED
+              <div className="bg-status-away/10 text-status-away p-2.5 rounded-lg text-xs text-center font-medium">
+                Admin permissions required.
               </div>
             ) : (
               <>
                 <button
                   type="button"
                   onClick={rotateExecutiveCredentials}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-text-primary font-extrabold py-3 rounded-xl text-[10px] uppercase tracking-wider transition border-0 cursor-pointer shadow-md font-mono"
-                >Update credentials
-                  
+                  className="w-full bg-accent hover:bg-accent-hover text-black font-semibold py-2 rounded-lg text-xs transition cursor-pointer"
+                >
+                  Update Credentials
                 </button>
                 {rotationResult && (
-                  <div className="p-3 bg-status-indigo-bg text-status-indigo rounded-xl text-xs font-mono font-bold leading-normal text-center">
+                  <div className="p-2 bg-status-online/10 text-status-online rounded-lg text-xs text-center">
                     {rotationResult}
                   </div>
                 )}
                 {rotationError && (
-                  <div className="p-3 bg-status-dnd-bg text-status-dnd rounded-xl text-xs font-mono font-bold leading-normal text-center">
+                  <div className="p-2 bg-status-dnd/10 text-status-dnd rounded-lg text-xs text-center">
                     {rotationError}
                   </div>
                 )}

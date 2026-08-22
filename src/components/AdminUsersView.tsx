@@ -11,12 +11,6 @@ interface AdminUsersViewProps {
   applyQuickSanction: (userName: string, type: 'ban' | 'mute', duration: number, reason: string) => Promise<{ success: boolean; text: string }>;
   adminFetch: (url: string, init?: RequestInit) => Promise<Response>;
   fetchData: () => Promise<void>;
-  c: {
-    bgPanel: string;
-    border: string;
-    bgInput: string;
-    textMuted: string;
-  };
 }
 
 export default function AdminUsersView({
@@ -26,7 +20,6 @@ export default function AdminUsersView({
   applyQuickSanction,
   adminFetch,
   fetchData,
-  c
 }: AdminUsersViewProps) {
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [targetUser, setTargetUser] = useState('');
@@ -34,149 +27,157 @@ export default function AdminUsersView({
   const [sanctionMinutes, setSanctionMinutes] = useState<number | ''>('');
   const [sanctionReason, setSanctionReason] = useState('');
   const [sanctionResult, setSanctionResult] = useState<string | null>(null);
+  const [sanctionError, setSanctionError] = useState<string | null>(null);
 
   const handleProfileMute = async (u: any) => {
     try {
       const sId = getSessionId();
-      const targetId = u.user_id || u.userId;
-      const res = await fetch(`/v2/user/${targetId}/mute`, {
+      const res = await adminFetch(`/v2/admin/sanctions/mute`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${sId}` }
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sId}` },
+        body: JSON.stringify({ userId: u.id, durationMinutes: 60, reason: 'Manual moderation action' })
       });
-      if (res.ok) alert(`Muted user.`);
-    } catch(e) {}
-    setSelectedUser(null);
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (_) {}
+  };
+
+  const handleProfileBan = async (u: any) => {
+    try {
+      const sId = getSessionId();
+      const res = await adminFetch(`/v2/admin/sanctions/ban`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sId}` },
+        body: JSON.stringify({ userId: u.id, durationMinutes: 1440, reason: 'Manual moderation action' })
+      });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (_) {}
+  };
+
+  const handleProfilePurge = async (u: any) => {
+    try {
+      const sId = getSessionId();
+      const res = await adminFetch(`/v2/admin/sanctions/purge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sId}` },
+        body: JSON.stringify({ userId: u.id, reason: 'Manual moderation action' })
+      });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (_) {}
   };
 
   const handleProfileBlock = async (u: any) => {
     try {
       const sId = getSessionId();
-      const targetId = u.user_id || u.userId;
-      const res = await fetch(`/v2/user/${targetId}/block`, {
+      const targetId = u.user_id || u.userId || u.id;
+      const res = await adminFetch(`/v2/user/${targetId}/block`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}` }
       });
-      if (res.ok) alert(`Blocked user.`);
-    } catch(e) {}
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (_) {}
     setSelectedUser(null);
   };
 
   const handleProfileDeleteChat = async (u: any) => {
     try {
       const sId = getSessionId();
-      const targetId = u.user_id || u.userId;
-      const res = await fetch(`/v2/user/${targetId}/chat`, {
+      const targetId = u.user_id || u.userId || u.id;
+      const res = await adminFetch(`/v2/user/${targetId}/chat`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${sId}` }
       });
-      if (res.ok) alert(`Chat deleted.`);
-    } catch(e) {}
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (_) {}
     setSelectedUser(null);
   };
 
   const handleProfileReport = async (u: any) => {
-    const targetId = u.user_id || u.userId;
-    const reason = prompt(`Reason for reporting:`);
+    const targetId = u.user_id || u.userId || u.id;
+    const reason = window.prompt('Reason for reporting:');
     if (!reason || !reason.trim()) return;
     try {
       const sId = getSessionId();
-      const res = await fetch('/v2/user/report', {
+      const res = await adminFetch('/v2/user/report', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetUserId: targetId, reason: reason.trim() })
       });
-      if (res.ok) alert(`Report submitted.`);
-    } catch(e) {}
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (_) {}
     setSelectedUser(null);
   };
-  const [sanctionError, setSanctionError] = useState<string | null>(null);
 
   const handleSanctionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSanctionResult(null);
     setSanctionError(null);
 
-    const trimmedUser = targetUser.trim();
-    if (!trimmedUser) {
-      setSanctionError('Target account username is required.');
-      return;
-    }
-
-    if (!sanctionReason.trim() && (sanctionType === 'ban' || sanctionType === 'purge')) {
-      setSanctionError('Reason is mandatory for deactivations and purges.');
-      return;
-    }
-
-    const targetAccount = users.find(u => u.username.toLowerCase() === trimmedUser.toLowerCase());
-
-    if (sanctionType === 'purge') {
-      if (adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN') {
-        setSanctionError('Insufficient privileges to purge accounts.');
-        return;
-      }
-      if (!targetAccount) {
-        setSanctionError('Target account not found in directory.');
-        return;
-      }
-      try {
-        const res = await adminFetch(`/v2/admin/users/${targetAccount.user_id}/delete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: sanctionReason.trim() })
-        });
-        if (res.ok) {
-          setSanctionResult(`Successfully purged user ${trimmedUser}.`);
-          setTargetUser('');
-          setSanctionReason('');
-          fetchData();
-        } else {
-          const errData = await res.json();
-          setSanctionError(errData.error || 'Failed to purge user.');
-        }
-      } catch {
-        setSanctionError('Error calling purge endpoint.');
-      }
+    if (!targetUser.trim()) {
+      setSanctionError('Enter a valid username.');
       return;
     }
 
     if (sanctionType === 'restore') {
-      if (adminRole !== 'CLI_ADMIN') {
-        setSanctionError('Only CLI_ADMIN can restore accounts.');
-        return;
-      }
-      if (!targetAccount) {
-        setSanctionError('Target account not found in directory.');
-        return;
-      }
       try {
-        const res = await adminFetch(`/v2/admin/users/${targetAccount.user_id}/restore`, {
-          method: 'POST'
+        const sId = getSessionId();
+        const res = await adminFetch(`/v2/admin/sanctions/restore`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sId}` },
+          body: JSON.stringify({ username: targetUser.trim() })
         });
+        const data = await res.json();
         if (res.ok) {
-          setSanctionResult(`Successfully restored user ${trimmedUser}.`);
+          setSanctionResult(data.message || 'Account restored successfully.');
+          setTargetUser('');
+          fetchData();
+        } else {
+          setSanctionError(data.error || 'Failed to restore account.');
+        }
+      } catch {
+        setSanctionError('Connection error.');
+      }
+      return;
+    }
+
+    if (sanctionType === 'purge') {
+      try {
+        const sId = getSessionId();
+        const res = await adminFetch(`/v2/admin/sanctions/purge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sId}` },
+          body: JSON.stringify({ username: targetUser.trim(), reason: sanctionReason })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setSanctionResult(data.message || 'Account purged successfully.');
           setTargetUser('');
           setSanctionReason('');
           fetchData();
         } else {
-          const errData = await res.json();
-          setSanctionError(errData.error || 'Failed to restore user.');
+          setSanctionError(data.error || 'Failed to purge account.');
         }
       } catch {
-        setSanctionError('Error calling restore endpoint.');
+        setSanctionError('Connection error.');
       }
       return;
     }
 
-    const durationMinutes = Number(sanctionMinutes);
-    if (isNaN(durationMinutes) || durationMinutes <= 0) {
-      setSanctionError('Please provide a valid duration in minutes.');
-      return;
-    }
-
-    const res = await applyQuickSanction(trimmedUser, sanctionType === 'ban' ? 'ban' : 'mute', durationMinutes, sanctionReason);
+    const mins = sanctionMinutes === '' ? 60 : Number(sanctionMinutes);
+    const res = await applyQuickSanction(targetUser.trim(), sanctionType, mins, sanctionReason);
     if (res.success) {
       setSanctionResult(res.text);
-      setSanctionReason('');
       setTargetUser('');
       fetchData();
     } else {
@@ -188,36 +189,36 @@ export default function AdminUsersView({
   const hasItems = activeSanctions.length > 0 || purgedUsers.length > 0;
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-4">
       {/* Top Section: Apply Sanction Form */}
-      <div className={`p-6 rounded-2xl border ${c.bgPanel} shadow-xl w-full`}>
-        <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
-          <ShieldCheck className="w-4.5 h-4.5 text-accent" />
-          <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">Apply New Sanction</h4>
+      <div className="p-4 rounded-xl border border-velum-600 bg-velum-800 w-full">
+        <div className="flex items-center gap-2 border-b border-velum-600 pb-2.5 mb-3">
+          <ShieldCheck className="w-4 h-4 text-accent" />
+          <h4 className="font-semibold text-xs text-text-primary">User Restrictions</h4>
         </div>
 
-        <form onSubmit={handleSanctionSubmit} className="space-y-4 font-sans text-xs">
+        <form onSubmit={handleSanctionSubmit} className="space-y-3 text-xs">
           <div>
-            <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">Target Account Username</label>
+            <label className="block text-xs text-text-secondary mb-1">Target Username</label>
             <input
               type="text"
-              placeholder=""
+              placeholder="Username"
               value={targetUser}
               onChange={(e) => setTargetUser(e.target.value)}
-              className={`w-full p-3 rounded-xl font-mono ${c.bgInput}`}
+              className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-primary placeholder:text-text-disabled text-xs"
             />
           </div>
 
           <div>
-            <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">Sanction Enforcement Type</label>
-            <div className="flex flex-wrap items-center gap-2.5">
+            <label className="block text-xs text-text-secondary mb-1">Action</label>
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setSanctionType('mute')}
-                 className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
+                className={`py-1.5 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer ${
                   sanctionType === 'mute'
-                    ? "bg-status-away-bg text-status-away border border-transparent"
-                    : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
+                    ? "bg-status-away/15 text-status-away border border-status-away/30"
+                    : "bg-velum-750 text-text-secondary border border-velum-600 hover:bg-velum-700"
                 }`}
               >
                 <MessageSquare className="w-3.5 h-3.5" />
@@ -227,12 +228,12 @@ export default function AdminUsersView({
                 type="button"
                 onClick={() => setSanctionType('ban')}
                 disabled={adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN'}
-                className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
+                className={`py-1.5 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer ${
                   sanctionType === 'ban'
-                    ? "bg-status-dnd-bg text-status-dnd border border-transparent"
+                    ? "bg-status-dnd/15 text-status-dnd border border-status-dnd/30"
                     : (adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN')
-                    ? "bg-velum-900/20 text-accent/20 border border-velum-600 opacity-40 cursor-not-allowed"
-                    : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
+                    ? "bg-velum-750 text-text-disabled border border-velum-600 opacity-40 cursor-not-allowed"
+                    : "bg-velum-750 text-text-secondary border border-velum-600 hover:bg-velum-700"
                 }`}
               >
                 <Ban className="w-3.5 h-3.5" />
@@ -242,12 +243,12 @@ export default function AdminUsersView({
                 type="button"
                 onClick={() => setSanctionType('purge')}
                 disabled={adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN'}
-                className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
+                className={`py-1.5 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer ${
                   sanctionType === 'purge'
-                    ? "bg-status-dnd-bg text-status-dnd border border-transparent"
+                    ? "bg-status-dnd/15 text-status-dnd border border-status-dnd/30"
                     : (adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN')
-                    ? "bg-velum-900/20 text-accent/20 border border-velum-600 opacity-40 cursor-not-allowed"
-                    : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
+                    ? "bg-velum-750 text-text-disabled border border-velum-600 opacity-40 cursor-not-allowed"
+                    : "bg-velum-750 text-text-secondary border border-velum-600 hover:bg-velum-700"
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -257,10 +258,10 @@ export default function AdminUsersView({
                 <button
                   type="button"
                   onClick={() => setSanctionType('restore')}
-                  className={`py-2 px-3 rounded-xl font-bold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer text-[10px] sm:text-xs ${
+                  className={`py-1.5 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer ${
                     sanctionType === 'restore'
-                      ? "bg-status-online-bg text-status-online border border-transparent"
-                      : "bg-velum-850 text-text-secondary border border-white-5 hover:bg-text-primary-2"
+                      ? "bg-status-online/15 text-status-online border border-status-online/30"
+                      : "bg-velum-750 text-text-secondary border border-velum-600 hover:bg-velum-700"
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
@@ -272,43 +273,43 @@ export default function AdminUsersView({
 
           {(sanctionType === 'mute' || sanctionType === 'ban') && (
             <div>
-              <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">Duration (Minutes)</label>
+              <label className="block text-xs text-text-secondary mb-1">Duration (Minutes)</label>
               <input
                 type="number"
                 min="1"
                 value={sanctionMinutes}
                 onChange={(e) => setSanctionMinutes(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                className={`w-full p-3 rounded-xl font-mono ${c.bgInput}`}
+                className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-primary text-xs"
               />
             </div>
           )}
 
           <div>
-            <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono">Reason for Sanction</label>
+            <label className="block text-xs text-text-secondary mb-1">Reason</label>
             <textarea
-              rows={3}
-              placeholder=""
+              rows={2}
+              placeholder="Reason for restriction..."
               value={sanctionReason}
               onChange={(e) => setSanctionReason(e.target.value)}
-              className={`w-full p-3 rounded-xl font-sans resize-none ${c.bgInput}`}
+              className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-primary text-xs resize-none"
             />
           </div>
 
           <button
             type="submit"
-            className="w-full bg-accent hover:bg-accent-hover text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px] flex items-center justify-center gap-2 mt-2"
+            className="w-full bg-accent hover:bg-accent-hover text-black font-semibold py-2 rounded-lg transition cursor-pointer text-xs flex items-center justify-center gap-2 mt-1"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Enforce Sanction</span>
+            <span>Apply Restriction</span>
           </button>
 
           {sanctionResult && (
-            <div className="p-3 bg-status-online-bg text-status-online text-[10px] rounded-xl font-mono font-bold uppercase tracking-wider">
+            <div className="p-2 bg-status-online/10 text-status-online text-xs rounded-lg">
               {sanctionResult}
             </div>
           )}
           {sanctionError && (
-            <div className="p-3 bg-status-dnd-bg text-status-dnd text-[10px] rounded-xl font-mono font-bold uppercase tracking-wider">
+            <div className="p-2 bg-status-dnd/10 text-status-dnd text-xs rounded-lg">
               {sanctionError}
             </div>
           )}
@@ -316,24 +317,24 @@ export default function AdminUsersView({
       </div>
 
       {/* Bottom Section: Active Sanctions Log */}
-      <div className={`p-6 rounded-2xl border ${c.bgPanel} shadow-xl overflow-hidden flex flex-col`}>
-        <div className="flex items-center justify-between border-b border-white-5 pb-3 mb-4">
+      <div className="p-4 rounded-xl border border-velum-600 bg-velum-800 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between border-b border-velum-600 pb-2.5 mb-3">
           <div className="flex items-center gap-2">
-            <Activity className="w-4.5 h-4.5 text-accent" />
-            <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">Active Operational Sanctions</h4>
+            <Activity className="w-4 h-4 text-accent" />
+            <h4 className="font-semibold text-xs text-text-primary">Active Restrictions</h4>
           </div>
-          <span className="px-2 py-0.5 rounded bg-text-primary-5 border border-white-5 font-mono text-[9px] font-black text-text-secondary">
-            {activeSanctions.length + purgedUsers.length} ACTIVE
+          <span className="px-2 py-0.5 rounded bg-velum-750 border border-velum-600 text-xs text-text-secondary">
+            {activeSanctions.length + purgedUsers.length} Active
           </span>
         </div>
 
         <div className="overflow-x-auto">
           {!hasItems ? (
-            <div className="py-24 text-center">
-              <ShieldCheck className="w-10 h-10 text-status-online/30 mx-auto mb-3" />
-              <h5 className="text-xs font-black text-text-secondary uppercase tracking-wider">Zero Security Anomalies</h5>
-              <p className="text-[10px] text-text-secondary mt-1 max-w-sm mx-auto uppercase tracking-wide">
-                No active bans or communication blockades are currently registered across the system.
+            <div className="py-12 text-center">
+              <ShieldCheck className="w-8 h-8 text-status-online/30 mx-auto mb-2" />
+              <h5 className="text-xs font-semibold text-text-secondary">No Active Restrictions</h5>
+              <p className="text-xs text-text-disabled mt-1 max-w-sm mx-auto">
+                No active mutes, bans, or account restrictions found.
               </p>
             </div>
           ) : (

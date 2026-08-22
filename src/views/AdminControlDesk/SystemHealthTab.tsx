@@ -4,11 +4,6 @@ import { getSessionId } from '../../utils/auth';
 
 interface SystemHealthTabProps {
   adminFetch?: (url: string, options?: RequestInit) => Promise<Response>;
-  c?: {
-    bgPanel?: string;
-    border?: string;
-    textMuted?: string;
-  };
 }
 
 interface DiagnosticsData {
@@ -45,7 +40,7 @@ interface AuditLogEntry {
   timestamp: string;
 }
 
-export default function SystemHealthTab({ adminFetch, c }: SystemHealthTabProps) {
+export default function SystemHealthTab({ adminFetch }: SystemHealthTabProps) {
   const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -107,8 +102,8 @@ export default function SystemHealthTab({ adminFetch, c }: SystemHealthTabProps)
     return `${minutes}m ${secs}s`;
   };
 
-  const panelClass = c?.bgPanel || 'bg-white/[0.03] backdrop-blur-xl border border-white-10 rounded-2xl shadow-xl p-6';
-  const borderClass = c?.border || 'border-white-10';
+  const panelClass = 'bg-velum-800 border border-velum-600 rounded-xl p-4';
+  const borderClass = 'border-velum-600';
 
   return (
     <div className="space-y-6 animate-fadeIn text-text-primary">

@@ -7,7 +7,6 @@ interface AdminSystemProps {
   adminFetch: (url: string, options?: RequestInit) => Promise<Response>;
   fetchData: () => void;
   approveQuarantineAccess: (targetUserId: string, action: 'approve' | 'deny') => Promise<void>;
-  c: any;
 }
 
 export default function AdminSystem({
@@ -16,7 +15,6 @@ export default function AdminSystem({
   adminFetch,
   fetchData,
   approveQuarantineAccess,
-  c,
 }: AdminSystemProps) {
   // Local States
   const [invDays, setInvDays] = useState(7);
@@ -27,7 +25,6 @@ export default function AdminSystem({
   const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'room' | 'user'>('all');
   const [broadcastRoomId, setBroadcastRoomId] = useState('');
   const [broadcastUserId, setBroadcastUserId] = useState('');
-
 
   const generateNewInvite = async () => {
     setNewCodeInfo(null);
@@ -45,10 +42,10 @@ export default function AdminSystem({
         setNewCodeInfo(data.code);
         fetchData();
       } else {
-        alert(data.error || 'Failed key creation.');
+        alert(data.error || 'Failed to create invite.');
       }
     } catch {
-      alert('Connection timeout.');
+      alert('Connection error.');
     }
   };
 
@@ -82,55 +79,54 @@ export default function AdminSystem({
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         {/* Entry code creation layout */}
-        <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
+        <div className="bg-velum-800 border border-velum-600 rounded-xl p-4 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
-              <UserPlus className="w-4.5 h-4.5 text-accent-hover" />
-              <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Issue Entry Code Key
+            <div className="flex items-center gap-2 border-b border-velum-600 pb-2.5 mb-3">
+              <UserPlus className="w-4 h-4 text-accent" />
+              <h4 className="font-semibold text-xs text-text-primary">
+                Generate Invite
               </h4>
             </div>
-            <div className="space-y-4 font-sans text-xs">
+            <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-[9px] text-text-secondary font-black uppercase mb-2 tracking-widest font-mono">
-                  Expiry Days limit
+                <label className="block text-xs text-text-secondary mb-1">
+                  Expiry (Days)
                 </label>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <input
                     type="number"
                     value={invDays}
                     onChange={(e) => setInvDays(parseInt(e.target.value, 10))}
-                    className={`p-3 rounded-xl w-24 outline-none text-center font-mono ${c.bgInput}`}
+                    className="p-2 rounded-lg w-20 outline-none text-center bg-velum-750 border border-velum-600 text-text-primary"
                   />
-                  <span className="text-text-secondary text-[10px] font-mono uppercase font-bold">
-                    Days Active
+                  <span className="text-text-secondary text-xs">
+                    days
                   </span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="mt-5 space-y-3">
+          <div className="mt-4 space-y-2">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-               ACCESS RESTRICTED: ADMIN PRIVILEGES REQUIRED TO GENERATE INVITE KEYS.
-                
+              <div className="bg-status-away/10 text-status-away p-2.5 rounded-lg text-xs text-center font-medium">
+                Admin permissions required.
               </div>
             ) : (
               <>
                 <button
                   onClick={generateNewInvite}
-                  className="w-full bg-accent-hover hover:bg-accent text-black font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
+                  className="w-full bg-accent hover:bg-accent-hover text-black font-semibold py-2 rounded-lg transition cursor-pointer text-xs"
                 >
-                  Issue New Entry Validation Key
+                  Generate Invite
                 </button>
                 {newCodeInfo && (
-                  <div className="p-3.5 bg-accent-hover/10 border border-accent-hover/15 text-accent-hover rounded-xl font-mono text-xs font-black tracking-wider block text-center uppercase">
-                    Verification Key:{' '}
-                    <strong className="text-status-danger select-all font-black ml-1 font-sans">{newCodeInfo}</strong>
+                  <div className="p-2 bg-accent/10 border border-accent/20 text-accent rounded-lg text-xs text-center">
+                    Invite code:{' '}
+                    <strong className="text-text-primary select-all ml-1">{newCodeInfo}</strong>
                   </div>
                 )}
               </>
@@ -138,55 +134,55 @@ export default function AdminSystem({
           </div>
         </div>
 
-        {/* Emergency System Lockdown */}
-                <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
-                      <Unlock className="w-4.5 h-4.5 text-status-away" />
-                      <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                        Emergency System Lockdown
-                      </h4>
-                    </div>
+        {/* Maintenance Mode */}
+        <div className="bg-velum-800 border border-velum-600 rounded-xl p-4 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 border-b border-velum-600 pb-2.5 mb-3">
+              <Unlock className="w-4 h-4 text-status-away" />
+              <h4 className="font-semibold text-xs text-text-primary">
+                Maintenance Mode
+              </h4>
+            </div>
 
-                    <p className="text-xs text-text-secondary leading-relaxed font-sans mb-4">
-                      In case of security incidents, emergency lockdown revokes active tokens, disables user registration, and closes active socket connections.
-                    </p>
-                  </div>
+            <p className="text-xs text-text-secondary leading-relaxed mb-3">
+              Temporarily closes new registrations and socket connections for system maintenance.
+            </p>
+          </div>
 
-                  <div className="mt-5 space-y-3">
-                    {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-                      <div className="bg-status-dnd-bg text-status-dnd p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-                        ACCESS DENIED:REQUIRES ADMIN PRIVILIGES
-                      </div>
-                    ) : (
-                      <>
-                        {isGatewayLocked ? (
-                          <button
-                            onClick={() => {
-                              setIsGatewayLocked(false);
-                              alert('System lockdown disabled.');
-                            }}
-                            className="w-full bg-status-online hover:bg-status-online/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
-                          >
-                            Disable System Lockdown
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setIsGatewayLocked(true);
-                              alert('System lockdown enabled.');
-                            }}
-                            className="w-full bg-status-danger hover:bg-status-danger/80 text-text-primary font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
-                          >
-                            Enable System Lockdown
-                          </button>
-                        )}
-        <div className="p-3 text-[9.5px] font-mono text-text-disabled uppercase tracking-wide leading-relaxed">
+          <div className="mt-4 space-y-2">
+            {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
+              <div className="bg-status-dnd/10 text-status-dnd p-2.5 rounded-lg text-xs text-center font-medium">
+                Admin permissions required.
+              </div>
+            ) : (
+              <>
+                {isGatewayLocked ? (
+                  <button
+                    onClick={() => {
+                      setIsGatewayLocked(false);
+                      alert('Maintenance mode disabled.');
+                    }}
+                    className="w-full bg-status-online hover:bg-status-online/80 text-text-primary font-semibold py-2 rounded-lg transition cursor-pointer text-xs"
+                  >
+                    Disable Maintenance Mode
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsGatewayLocked(true);
+                      alert('Maintenance mode enabled.');
+                    }}
+                    className="w-full bg-status-dnd hover:bg-status-dnd/80 text-text-primary font-semibold py-2 rounded-lg transition cursor-pointer text-xs"
+                  >
+                    Enable Maintenance Mode
+                  </button>
+                )}
+                <div className="text-xs text-text-secondary">
                   Status:{' '}
                   {isGatewayLocked ? (
-                    <span className="text-status-danger font-black">LOCKED</span>
+                    <span className="text-status-dnd font-semibold">Active</span>
                   ) : (
-                    <span className="text-status-online font-bold">OPEN</span>
+                    <span className="text-status-online font-semibold">Normal</span>
                   )}
                 </div>
               </>
@@ -194,24 +190,24 @@ export default function AdminSystem({
           </div>
         </div>
 
-        {/* quarantine checking tool */}
-        <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
+        {/* Account Restore */}
+        <div className="bg-velum-800 border border-velum-600 rounded-xl p-4 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
-              <Sliders className="w-4.5 h-4.5 text-accent-hover" />
-              <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Manual Account Restore
+            <div className="flex items-center gap-2 border-b border-velum-600 pb-2.5 mb-3">
+              <Sliders className="w-4 h-4 text-accent" />
+              <h4 className="font-semibold text-xs text-text-primary">
+                Restore Account
               </h4>
             </div>
-            <div className="space-y-4 font-sans text-xs">
+            <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-[9px] text-text-secondary font-black uppercase mb-2 tracking-widest font-mono font-bold">
-                  Client ID
+                <label className="block text-xs text-text-secondary mb-1">
+                  User ID
                 </label>
                 <input
                   type="text"
-                  className={`w-full p-3 rounded-xl outline-none font-mono ${c.bgInput}`}
-                  placeholder=""
+                  className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
+                  placeholder="Enter user ID"
                   value={quarantineTargetId}
                   onChange={(e) => setQuarantineTargetId(e.target.value)}
                 />
@@ -219,105 +215,103 @@ export default function AdminSystem({
             </div>
           </div>
 
-          <div className="mt-5 space-y-3">
+          <div className="mt-4 space-y-2">
             {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' ? (
-              <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-                ACCESS LOCKED: REQUIRES ADMIN PRIVILEGES
+              <div className="bg-status-away/10 text-status-away p-2.5 rounded-lg text-xs text-center font-medium">
+                Admin permissions required.
               </div>
             ) : (
               <button
                 onClick={() => approveQuarantineAccess(quarantineTargetId, 'approve')}
-                className="w-full bg-accent-20 hover:bg-accent text-accent hover:text-text-primary font-extrabold py-3 rounded-xl text-[10px] uppercase tracking-wider cursor-pointer border border-accent-40 transition"
+                className="w-full bg-accent hover:bg-accent-hover text-black font-semibold py-2 rounded-lg text-xs cursor-pointer transition"
               >
-                UNLOCK
+                Restore
               </button>
             )}
           </div>
         </div>
 
-        {/* System Broadcast Panel */}
-        <div className="glass-card p-6 shadow-lg flex flex-col justify-between">
+        {/* Broadcast Panel */}
+        <div className="bg-velum-800 border border-velum-600 rounded-xl p-4 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 border-b border-white-5 pb-3 mb-4">
-              <Megaphone className="w-4.5 h-4.5 text-accent-hover" />
-              <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                BROADCAST PANEL
+            <div className="flex items-center gap-2 border-b border-velum-600 pb-2.5 mb-3">
+              <Megaphone className="w-4 h-4 text-accent" />
+              <h4 className="font-semibold text-xs text-text-primary">
+                Broadcast Message
               </h4>
             </div>
-            <div className="space-y-4 font-sans text-xs">
+            <div className="space-y-2.5 text-xs">
               <div>
-                <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
-                  Broadcast Message
+                <label className="block text-xs text-text-secondary mb-1">
+                  Message
                 </label>
                 <textarea
                   value={broadcastMsg}
                   onChange={(e) => setBroadcastMsg(e.target.value)}
-                  placeholder="Enter message content..."
-                  className={`w-full p-2.5 rounded-xl outline-none font-sans min-h-[60px] ${c.bgInput}`}
+                  placeholder="Message text..."
+                  className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary min-h-[50px] text-xs resize-none"
                 />
               </div>
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
-                    Target Scope
-                  </label>
-                  <select
-                    value={broadcastTarget}
-                    onChange={(e) => setBroadcastTarget(e.target.value as any)}
-                    className={`w-full p-2.5 rounded-xl outline-none font-sans ${c.bgInput}`}
-                  >
-                    <option value="all">All Users</option>
-                    <option value="room">Specific Room</option>
-                    <option value="user">Specific User</option>
-                  </select>
-                </div>
-                {broadcastTarget === 'room' && (
-                  <div>
-                    <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
-                      Room ID
-                    </label>
-                    <input
-                      type="text"
-                      value={broadcastRoomId}
-                      onChange={(e) => setBroadcastRoomId(e.target.value)}
-                      placeholder="e.g. general"
-                      className={`w-full p-2.5 rounded-xl outline-none font-mono ${c.bgInput}`}
-                    />
-                  </div>
-                )}
-                {broadcastTarget === 'user' && (
-                  <div>
-                    <label className="block text-[9px] text-text-secondary font-black uppercase mb-1.5 tracking-widest font-mono font-bold">
-                      User ID
-                    </label>
-                    <input
-                      type="number"
-                      value={broadcastUserId}
-                      onChange={(e) => setBroadcastUserId(e.target.value)}
-                      placeholder=""
-                      className={`w-full p-2.5 rounded-xl outline-none font-mono ${c.bgInput}`}
-                    />
-                  </div>
-                )}
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">
+                  Target
+                </label>
+                <select
+                  value={broadcastTarget}
+                  onChange={(e) => setBroadcastTarget(e.target.value as any)}
+                  className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
+                >
+                  <option value="all">All Users</option>
+                  <option value="room">Specific Room</option>
+                  <option value="user">Specific User</option>
+                </select>
               </div>
+              {broadcastTarget === 'room' && (
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">
+                    Room ID
+                  </label>
+                  <input
+                    type="text"
+                    value={broadcastRoomId}
+                    onChange={(e) => setBroadcastRoomId(e.target.value)}
+                    placeholder="e.g. general"
+                    className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
+                  />
+                </div>
+              )}
+              {broadcastTarget === 'user' && (
+                <div>
+                  <label className="block text-xs text-text-secondary mb-1">
+                    User ID
+                  </label>
+                  <input
+                    type="number"
+                    value={broadcastUserId}
+                    onChange={(e) => setBroadcastUserId(e.target.value)}
+                    placeholder="User ID"
+                    className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="mt-5 space-y-3">
-                      {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' && adminRole !== 'SUPPORT_ADMIN' ? (
-            <div className="bg-status-away-bg text-status-away p-3.5 rounded-xl text-[9px] font-mono text-center font-bold tracking-wide uppercase leading-normal">
-            </div>
-          ) : (
+          <div className="mt-4 space-y-2">
+            {adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN' && adminRole !== 'SUPPORT_ADMIN' ? (
+              <div className="bg-status-away/10 text-status-away p-2.5 rounded-lg text-xs text-center font-medium">
+                Admin permissions required.
+              </div>
+            ) : (
               <button
                 onClick={handleSendBroadcast}
-                className="w-full bg-accent-hover hover:bg-accent text-black font-extrabold py-3 rounded-xl transition border-0 cursor-pointer shadow-md uppercase font-mono tracking-wider text-[10px]"
+                className="w-full bg-accent hover:bg-accent-hover text-black font-semibold py-2 rounded-lg transition cursor-pointer text-xs"
               >
-                Broadcast
+                Send Broadcast
               </button>
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

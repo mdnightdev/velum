@@ -62,20 +62,6 @@ export default function AdminPanel({
   activeRoomId,
   setActiveRoomId
 }: AdminPanelProps) {
-  // Design theme variables
-  const c = {
-    bgPanel: "bg-white/[0.03] backdrop-blur-[var(--blur-backdrop-xl)] border border-white-10 rounded-2xl shadow-xl",
-    bgSubPanel: "bg-white/[0.01] backdrop-blur-[var(--blur-backdrop-md)] border border-white-5 rounded-xl shadow-md",
-    bgInput: "bg-white/[0.04] border border-white-10 text-text-primary focus:border-accent/40 placeholder:text-text-disabled rounded-lg p-2.5 outline-none transition-all",
-    border: "border-white-10",
-    textMain: "text-text-primary",
-    textMuted: "text-text-secondary",
-    statusResolved: "bg-status-online-bg text-status-online",
-    statusOpen: "bg-status-dnd-bg text-status-dnd",
-    statusPending: "bg-status-away-bg text-status-away",
-    statusEscalated: "bg-accent-10 text-accent border border-accent-20"
-  };
-
   // Sidebar controls
   const { isMobile: _isMobile, isTablet } = useResponsiveLayout();
   const isMobile = _isMobile || isTablet;
@@ -571,7 +557,6 @@ export default function AdminPanel({
                   adminRole={adminRole as any}
                   adminFetch={adminFetch}
                   onTabChange={selectTab}
-                  c={c}
                 />
               )}
 
@@ -586,7 +571,6 @@ export default function AdminPanel({
                 adminRole={adminRole as any}
                 adminFetch={adminFetch}
                 fetchData={fetchData}
-                c={c}
                 isLoading={isLoadingData}
               />
             )}
@@ -610,7 +594,6 @@ export default function AdminPanel({
                 handleTicketReply={handleTicketReply}
                 restoreCode={restoreCode}
                 user={user}
-                c={c}
               />
             )}
 
@@ -633,21 +616,18 @@ export default function AdminPanel({
                 applyQuickSanction={applyQuickSanction}
                 adminFetch={adminFetch}
                 fetchData={fetchData}
-                c={c}
               />
             )}
 
             {activeTab === 'verifications' && (
               <AdminVerificationView
                 adminRole={adminRole as any}
-                c={c}
               />
             )}
 
             {activeTab === 'health' && (
               <SystemHealthTab
                 adminFetch={adminFetch}
-                c={c}
               />
             )}
 
@@ -658,7 +638,6 @@ export default function AdminPanel({
                 adminFetch={adminFetch}
                 fetchData={fetchData}
                 approveQuarantineAccess={approveQuarantineAccess}
-                c={c}
               />
             )}
 
@@ -668,7 +647,6 @@ export default function AdminPanel({
                 logs={logs}
                 initialDiagLogs={diagnosticLogs}
                 adminFetch={adminFetch}
-                c={c}
               />
             )}
 
@@ -688,7 +666,6 @@ export default function AdminPanel({
                 adminProfile={adminProfile}
                 adminFetch={adminFetch}
                 fetchData={fetchData}
-                c={c}
               />
             )}
           </div>

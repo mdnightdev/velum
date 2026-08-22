@@ -57,14 +57,14 @@ html, body, #root {
 }
 
 @theme {
-  /* ---- Neutral Scale (Richer, Warm Charcoal Slate) ---- */
-  --color-velum-900: #111319;   /* canvas (lifted warm dark slate) */
-  --color-velum-850: #161922;   /* sidebars, drawers, overlays */
-  --color-velum-800: #1C202B;   /* cards, panels */
-  --color-velum-750: #222735;   /* inputs, modals */
-  --color-velum-700: #2B3141;   /* hover states */
-  --color-velum-600: #363D50;   /* subtle borders */
-  --color-velum-500: #464F66;   /* muted separators */
+  /* ---- Neutral Scale (warm charcoal - authoritative docs/DESIGN.md) ---- */
+  --color-velum-900: #08090C;   /* canvas (deepest background) */
+  --color-velum-850: #0C0E12;   /* sidebars, drawers, overlays */
+  --color-velum-800: #101218;   /* cards, elevated surfaces */
+  --color-velum-750: #15171E;   /* inputs, modals */
+  --color-velum-700: #1A1D24;   /* hover states */
+  --color-velum-600: #22262E;   /* subtle borders */
+  --color-velum-500: #2E323B;   /* muted separators */
 
   /* ---- Primary Accent (Rose Gold) ---- */
   --color-accent:        #C89B8A;
