@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Ban, MessageSquare, ShieldCheck, Activity } from 'lucide-react';
 import { stripAt } from '../types';
 import ProfileCard from './ProfileCard';
+import { getSessionId } from '../utils/auth';
 
 interface AdminUsersViewProps {
   adminRole: any;
@@ -36,7 +37,7 @@ export default function AdminUsersView({
 
   const handleProfileMute = async (u: any) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const targetId = u.user_id || u.userId;
       const res = await fetch(`/v2/user/${targetId}/mute`, {
         method: 'POST',
@@ -49,7 +50,7 @@ export default function AdminUsersView({
 
   const handleProfileBlock = async (u: any) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const targetId = u.user_id || u.userId;
       const res = await fetch(`/v2/user/${targetId}/block`, {
         method: 'POST',
@@ -62,7 +63,7 @@ export default function AdminUsersView({
 
   const handleProfileDeleteChat = async (u: any) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const targetId = u.user_id || u.userId;
       const res = await fetch(`/v2/user/${targetId}/chat`, {
         method: 'DELETE',
@@ -78,7 +79,7 @@ export default function AdminUsersView({
     const reason = prompt(`Reason for reporting:`);
     if (!reason || !reason.trim()) return;
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const res = await fetch('/v2/user/report', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },

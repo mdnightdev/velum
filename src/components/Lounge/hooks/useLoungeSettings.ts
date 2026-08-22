@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { captureAndCompressPhoto, streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
+import { getSessionId } from '../../../utils/auth';
 
 interface UseLoungeSettingsOptions {
   loungeId: string | number;
@@ -42,7 +43,7 @@ export function useLoungeSettings({
     setSettingsError('');
     setSettingsSuccess('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}`, {
         method: 'PUT',
         headers: {

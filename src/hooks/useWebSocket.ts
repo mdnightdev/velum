@@ -4,6 +4,7 @@ import { encryptMessage, EncryptionContext } from '../services/encryptionService
 import { getLocalMessages, saveLocalMessages, rotateAndReEncryptLocalMessages } from '../utils/indexedDb';
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
+import { storage } from '../services/storageService';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -67,7 +68,7 @@ export function useWebSocket({
 
       // b. Fetch missing (delta) messages from backend
       try {
-        const sessionToken = sessionStorage.getItem('velum-sessionId') || '';
+        const sessionToken = storage.getItem('velum-sessionId') || '';
         const url = lastTimestamp
           ? `/v2/lounges/${activeRoomId}/messages?since=${encodeURIComponent(lastTimestamp)}`
           : `/v2/lounges/${activeRoomId}/messages`;
@@ -109,7 +110,7 @@ export function useWebSocket({
 
   const fetchConversationsSummary = async () => {
     try {
-      const sessionToken = sessionStorage.getItem('velum-sessionId');
+      const sessionToken = storage.getItem('velum-sessionId');
       const headers: Record<string, string> = {};
       if (sessionToken) {
         headers['x-session-token'] = sessionToken;
@@ -131,7 +132,7 @@ export function useWebSocket({
 
     // Fetch Redis-based unread counts
     try {
-      const sessionToken = sessionStorage.getItem('velum-sessionId');
+      const sessionToken = storage.getItem('velum-sessionId');
       const headers: Record<string, string> = {};
       if (sessionToken) {
         headers['x-session-token'] = sessionToken;
@@ -175,7 +176,7 @@ export function useWebSocket({
       host = '127.0.0.1:3000';
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const currentSessionId = localStorage.getItem('velum-sessionId') || sessionStorage.getItem('velum-sessionId') || sessionId;
+    const currentSessionId = storage.getItem('velum-sessionId') || storage.getItem('velum_sessionId') || sessionId;
     const wsUrl = `${protocol}//${host}/ws?userId=${uid}&sessionId=${encodeURIComponent(currentSessionId || '')}`;
 
     console.log('Connecting socket: ', wsUrl);

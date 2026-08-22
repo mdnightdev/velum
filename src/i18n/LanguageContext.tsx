@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SupportedLanguage, SUPPORTED_LANGUAGES, LanguageOption, translations } from './translations';
+import { storage } from '../services/storageService';
 
 interface LanguageContextType {
   language: SupportedLanguage;
@@ -18,7 +19,7 @@ const LanguageContext = createContext<LanguageContextType>({
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguageState] = useState<SupportedLanguage>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('velum_language') as SupportedLanguage;
+      const saved = storage.getItem<SupportedLanguage>('velum_language') || storage.getItem<SupportedLanguage>('language');
       if (saved && translations[saved]) {
         return saved;
       }
@@ -35,7 +36,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (translations[lang]) {
       setLanguageState(lang);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('velum_language', lang);
+        storage.setItem('velum_language', lang);
       }
     }
   };

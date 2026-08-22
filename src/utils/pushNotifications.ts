@@ -1,3 +1,5 @@
+import { getSessionId } from './auth';
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding)
@@ -47,7 +49,7 @@ export async function registerPushNotifications(): Promise<boolean> {
 
     // Register subscription on backend
     const subJson = subscription.toJSON();
-    const token = localStorage.getItem('velum_session_token');
+    const token = getSessionId();
     
     await fetch('/api/v2/notifications/subscribe', {
       method: 'POST',
@@ -67,7 +69,7 @@ export async function registerPushNotifications(): Promise<boolean> {
 
 export async function setRoomMuteRule(roomId: string, muteRule: 'off' | 'mentions_only' | 'forever'): Promise<boolean> {
   try {
-    const token = localStorage.getItem('velum_session_token');
+    const token = getSessionId();
     const res = await fetch(`/api/v2/lounges/${encodeURIComponent(roomId)}/mute`, {
       method: 'POST',
       headers: {
@@ -85,7 +87,7 @@ export async function setRoomMuteRule(roomId: string, muteRule: 'off' | 'mention
 
 export async function getRoomMuteRule(roomId: string): Promise<'off' | 'mentions_only' | 'forever'> {
   try {
-    const token = localStorage.getItem('velum_session_token');
+    const token = getSessionId();
     const res = await fetch(`/api/v2/lounges/${encodeURIComponent(roomId)}/mute`, {
       headers: {
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})

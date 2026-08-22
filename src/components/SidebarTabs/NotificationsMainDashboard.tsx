@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, HelpCircle, Inbox, Bell, ShoppingCart, Menu } from 'lucide-react';
 import { FriendRequest } from '../../types';
+import { getSessionId } from '../../utils/auth';
 
 interface NotificationsMainDashboardProps {
   friendRequests: FriendRequest[];
@@ -23,7 +24,7 @@ export default function NotificationsMainDashboard({
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || '';
+  const fetchSessionId = () => getSessionId();
 
   const loadCategoryItems = async (category: string) => {
     try {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Server, Cpu, Database, Wifi, ShieldCheck, Clock, RefreshCw, FileText, AlertTriangle, Layers } from 'lucide-react';
+import { getSessionId } from '../../utils/auth';
 
 interface SystemHealthTabProps {
   adminFetch?: (url: string, options?: RequestInit) => Promise<Response>;
@@ -61,7 +62,7 @@ export default function SystemHealthTab({ adminFetch, c }: SystemHealthTabProps)
         diagRes = await adminFetch('/v2/diagnostics');
         logsRes = await adminFetch('/v2/admin/audit-logs?limit=30');
       } else {
-        const token = sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || '';
+        const token = getSessionId();
         const headers = {
           Authorization: `Bearer ${token}`,
           'x-session-id': token

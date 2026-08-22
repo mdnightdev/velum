@@ -1,7 +1,9 @@
+import { storage } from '../services/storageService';
+
 export function getSessionId(): string {
   if (typeof window === 'undefined') return '';
-  return sessionStorage.getItem('velum-sessionId') || 
-         sessionStorage.getItem('velum_sessionId') || 
+  return storage.getItem('velum-sessionId') || 
+         storage.getItem('velum_sessionId') || 
          '';
 }
 

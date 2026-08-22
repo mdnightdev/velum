@@ -11,6 +11,7 @@ import { ListingInspector } from '../Market/ListingInspector';
 import { ShoppingCartDrawer } from '../Market/ShoppingCartDrawer';
 import { useCart } from '../../context/CartContext';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { getSessionId } from '../../utils/auth';
 
 interface MarketMainDashboardProps {
   currentUserId: number;
@@ -23,9 +24,9 @@ const TECH_CATEGORIES = [
   'All',
   'Automation Scripts',
   'Developer Utilities',
-  'Source Modules',
-  'Security Audits',
-  'Data Pipelines'
+  'Data Pipelines',
+  'AI Workflows',
+  'Decentralized Protocols'
 ];
 
 export default function MarketMainDashboard({
@@ -35,6 +36,7 @@ export default function MarketMainDashboard({
   onToggleSidebar
 }: MarketMainDashboardProps) {
   const { t } = useLanguage();
+  const [activeTab, setActiveTab] = useState<'browse' | 'orders' | 'inventory'>('browse');
   const [listings, setListings] = useState<MarketListing[]>([]);
   const [escrows, setEscrows] = useState<EscrowTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,7 @@ export default function MarketMainDashboard({
 
   const { addToCart, cartCount } = useCart();
 
-  const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || '';
+  const fetchSessionId = () => getSessionId();
 
   const loadMarket = useCallback(async () => {
     try {

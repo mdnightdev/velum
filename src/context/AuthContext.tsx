@@ -3,6 +3,7 @@ import { createLogger } from '../utils/logger';
 import { purgeCryptoVault } from '../services/cryptoDbStore';
 import { purgeLocalMessages } from '../utils/indexedDb';
 import { statelessE2eeService } from '../services/statelessE2eeService';
+import { storage } from '../services/storageService';
 
 const log = createLogger('AuthContext');
 
@@ -31,19 +32,20 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
-      const cached = sessionStorage.getItem('velum-user');
-      return cached ? JSON.parse(cached) : null;
+      return storage.getItem<AuthUser>('velum-user');
     } catch (_) { return null; }
   });
   const [sessionId, setSessionId] = useState<string | null>(() => {
-    return sessionStorage.getItem('velum-sessionId');
+    return storage.getItem<string>('velum-sessionId');
   });
   const [deviceId, setDeviceId] = useState<string | null>(() => {
-    return sessionStorage.getItem('velum-deviceId');
+    return storage.getItem<string>('velum-deviceId');
   });
   const [isLoadingSession, setIsLoadingSession] = useState<boolean>(() => {
-    const hasCachedUser = sessionStorage.getItem('velum-sessionId') && sessionStorage.getItem('velum-user');
-    return !hasCachedUser;
+    try {
+      const hasCachedUser = storage.getItem('velum-sessionId') && storage.getItem('velum-user');
+      return !hasCachedUser;
+    } catch (_) { return true; }
   });
 
   const isAuthenticated = !!user && !!sessionId;
@@ -61,14 +63,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDeviceId(dId);
     
     try {
-      const uJson = JSON.stringify(loginUser);
-      sessionStorage.setItem('velum-user', uJson);
-      sessionStorage.setItem('velum-sessionId', sId);
-      sessionStorage.setItem('velum-deviceId', dId);
-      // Clean up legacy localStorage tokens to ensure per-tab isolation
-      localStorage.removeItem('velum-user');
-      localStorage.removeItem('velum-sessionId');
-      localStorage.removeItem('velum-deviceId');
+      storage.setItem('velum-user', loginUser);
+      storage.setItem('velum-sessionId', sId);
+      storage.setItem('velum-deviceId', dId);
     } catch (e) {
       log.warn('Session storage write warning', { error: (e as Error).message });
     }
@@ -91,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Purge plaintext saved notes from localStorage for vault safety
     if (user?.userId) {
       try {
-        localStorage.removeItem(`velum-notes-${user.userId}`);
+        storage.removeItem(`velum-notes-${user.userId}`);
       } catch (e) {}
     }
 
@@ -102,12 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     try {
-      sessionStorage.removeItem('velum-user');
-      sessionStorage.removeItem('velum-sessionId');
-      sessionStorage.removeItem('velum-deviceId');
-      localStorage.removeItem('velum-user');
-      localStorage.removeItem('velum-sessionId');
-      localStorage.removeItem('velum-deviceId');
+      storage.clearSession();
     } catch (e) {
       log.warn('Session storage clear warning', { error: (e as Error).message });
     }
@@ -125,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Boot Session Verification Hook
   useEffect(() => {
     const verifySessionOnBoot = async () => {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = storage.getItem('velum-sessionId');
       if (!sId) {
         handleLogout();
         setIsLoadingSession(false);
@@ -154,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(verifiedUser);
             setSessionId(sId);
             try {
-              sessionStorage.setItem('velum-user', JSON.stringify(verifiedUser));
+              storage.setItem('velum-user', JSON.stringify(verifiedUser));
             } catch (_) {}
             setIsLoadingSession(false);
             return;
@@ -169,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           log.error('Session verification notice', { error: (err as Error).message });
         }
         // Fall back to cached session user if server is slow or unreachable
-        const cachedUserStr = sessionStorage.getItem('velum-user');
+        const cachedUserStr = storage.getItem('velum-user');
         if (cachedUserStr) {
           try {
             const cachedUser = JSON.parse(cachedUserStr);

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Search, Filter, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { getSessionId } from '../utils/auth';
 
 interface AdminVerificationViewProps {
   adminRole: 'SUPPORT_ADMIN' | 'LOGIN_ADMIN' | 'CLI_ADMIN';
@@ -21,7 +22,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
   const loadVerificationQueue = async () => {
     try {
       setLoading(true);
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch('/v2/admin/verifications', {
         headers: { 'Authorization': `Bearer ${sId}` }
       });
@@ -59,7 +60,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
   const handleReview = async (listingId: string, decision: 'APPROVED' | 'REJECTED') => {
     if (!window.confirm(`Are you sure you want to mark this listing as ${decision}?`)) return;
     try {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch(`/v2/admin/verifications/${listingId}/review`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
@@ -78,7 +79,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
   const handleResolveDispute = async (chatId: string, resolution: string, penalty: string) => {
     try {
       setLoading(true);
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch(`/v2/marketplace/support-chats/${chatId}/resolve`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },

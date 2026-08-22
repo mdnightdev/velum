@@ -20,6 +20,7 @@ import { getLocalMedia, saveLocalMedia, deleteLocalMedia } from '../../utils/ind
 import { FULL_BUILD_VERSION } from '../../version';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { ImageCropperModal } from '../../components/ImageCropperModal';
+import { storage } from '../../services/storageService';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -275,7 +276,7 @@ export default function SettingsDrawer({
         if (onProfileUpdate) {
           onProfileUpdate(data.user);
         }
-        sessionStorage.setItem('velum-username', data.user.username);
+        storage.setItem('velum-username', data.user.username);
       } else {
         setAccountError(data.error || 'Failed to update account details.');
       }
@@ -630,7 +631,7 @@ export default function SettingsDrawer({
       });
       if (res.ok) {
         window.alert("Account deleted successfully.");
-        sessionStorage.clear();
+        storage.clear();
         window.location.reload();
       } else {
         const data = await res.json();
@@ -785,7 +786,7 @@ export default function SettingsDrawer({
                   <button
                     type="button"
                     onClick={() => {
-                      sessionStorage.clear();
+                      storage.clear();
                       window.location.reload();
                     }}
                     className="w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer text-alert-error hover:bg-alert-error-bg"

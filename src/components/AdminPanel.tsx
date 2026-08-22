@@ -22,6 +22,7 @@ import AdminBank from './Admin/AdminBank';
 import AdminProfile from './Admin/AdminProfile';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import SystemHealthTab from '../views/AdminControlDesk/SystemHealthTab';
+import { getSessionId } from '../utils/auth';
 
 import logoSvg from '../assets/logo.svg?raw';
 import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report, ClientDiagnosticLog } from '../types';
@@ -122,10 +123,6 @@ export default function AdminPanel({
   // Profile status
   const [adminProfile, setAdminProfile] = useState<any>(null);
 
-  const getSessionId = (): string => {
-    if (typeof window === 'undefined') return '';
-    return sessionStorage.getItem('velum-sessionId') || '';
-  };
 
   const adminFetch = async (url: string, options: RequestInit = {}) => {
     const sId = getSessionId();

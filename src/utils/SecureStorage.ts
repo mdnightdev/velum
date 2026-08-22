@@ -1,7 +1,10 @@
 /**
  * Type-safe, isolated Session Storage Manager
  * Strictly isolated per browser tab/window without global prototype mutation.
+ * Now uses unified storage service for single source of truth.
  */
+
+import { storage } from '../services/storageService';
 
 export class SecureStorage {
   private static readonly SESSION_TOKEN_KEY = 'velum-sessionId';
@@ -10,44 +13,38 @@ export class SecureStorage {
 
   public static getSessionToken(): string | null {
     if (typeof window === 'undefined') return null;
-    return sessionStorage.getItem(this.SESSION_TOKEN_KEY);
+    return storage.getItem(this.SESSION_TOKEN_KEY);
   }
 
   public static setSessionToken(token: string): void {
     if (typeof window === 'undefined') return;
-    sessionStorage.setItem(this.SESSION_TOKEN_KEY, token);
+    storage.setItem(this.SESSION_TOKEN_KEY, token);
   }
 
   public static getUser(): any | null {
     if (typeof window === 'undefined') return null;
-    const raw = sessionStorage.getItem(this.USER_KEY);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+    return storage.getItem(this.USER_KEY);
   }
 
   public static setUser(user: any): void {
     if (typeof window === 'undefined') return;
-    sessionStorage.setItem(this.USER_KEY, JSON.stringify(user));
+    storage.setItem(this.USER_KEY, user);
   }
 
   public static getDeviceId(): string | null {
     if (typeof window === 'undefined') return null;
-    return sessionStorage.getItem(this.DEVICE_ID_KEY);
+    return storage.getItem(this.DEVICE_ID_KEY);
   }
 
   public static setDeviceId(deviceId: string): void {
     if (typeof window === 'undefined') return;
-    sessionStorage.setItem(this.DEVICE_ID_KEY, deviceId);
+    storage.setItem(this.DEVICE_ID_KEY, deviceId);
   }
 
   public static clearSession(): void {
     if (typeof window === 'undefined') return;
-    sessionStorage.removeItem(this.SESSION_TOKEN_KEY);
-    sessionStorage.removeItem(this.USER_KEY);
-    sessionStorage.removeItem(this.DEVICE_ID_KEY);
+    storage.removeItem(this.SESSION_TOKEN_KEY);
+    storage.removeItem(this.USER_KEY);
+    storage.removeItem(this.DEVICE_ID_KEY);
   }
 }

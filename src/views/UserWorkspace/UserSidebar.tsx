@@ -10,6 +10,7 @@ import { decryptMessage } from '../../services/encryptionService';
 import logoSvg from '../../assets/logo.svg?raw';
 import LoadingFallback from '../../components/LoadingFallback';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { getSessionId } from '../../utils/auth';
 
 interface UserSidebarProps {
   currentUserId: number;
@@ -104,7 +105,7 @@ export default function UserSidebar({
   const [currentUserAvatar, setCurrentUserAvatar] = useState<string>('emerald');
   const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string>('');
 
-  const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || '';
+  const fetchSessionId = () => getSessionId();
   const headers = {
     'Authorization': `Bearer ${fetchSessionId()}`,
     'Content-Type': 'application/json'

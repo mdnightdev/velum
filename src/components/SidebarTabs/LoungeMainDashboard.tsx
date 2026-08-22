@@ -5,6 +5,7 @@ import { useLanguage } from '../../i18n/LanguageContext';
 import logoSvg from '../../assets/logo.svg?raw';
 import { formatMessageTimestamp } from '../../utils/time';
 import { getSessionId } from '../../utils/auth';
+import { storage } from '../../services/storageService';
 
 interface LoungeMainDashboardProps {
   currentUserId: number;
@@ -30,10 +31,9 @@ export default function LoungeMainDashboard({
   const { t } = useLanguage();
   const [lounges, setLounges] = useState<any[]>(() => {
     try {
-      const cached = localStorage.getItem('velum_cached_lounges');
+      const cached = storage.getItem<any>('velum_cached_lounges');
       if (cached) {
-        const parsed = JSON.parse(cached);
-        return Array.isArray(parsed) ? parsed : (parsed?.lounges || []);
+        return Array.isArray(cached) ? cached : (cached?.lounges || []);
       }
     } catch {}
     return [];
@@ -147,7 +147,7 @@ export default function LoungeMainDashboard({
         const rawLounges = Array.isArray(data) ? data : (data?.lounges || []);
         setLounges(rawLounges);
         try {
-          localStorage.setItem('velum_cached_lounges', JSON.stringify(rawLounges));
+          storage.setItem('velum_cached_lounges', rawLounges);
         } catch {}
       }
     } catch (err) {
@@ -250,7 +250,7 @@ export default function LoungeMainDashboard({
   const handleJoinLoungeMobile = async () => {
     if (!loungeInviteCodeInput.trim()) return;
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const res = await fetch(`/v2/lounges/join`, {
         method: 'POST',
         headers: {

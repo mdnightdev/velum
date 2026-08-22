@@ -5,6 +5,7 @@ import {
   Activity, Menu
 } from 'lucide-react';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { getSessionId } from '../../utils/auth';
 
 interface WalletMainDashboardProps {
   isDark?: boolean;
@@ -119,7 +120,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
 
   const loadData = async () => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const headers = { 'Authorization': `Bearer ${sId}` };
       
       const [balRes, curRes, ratesRes, methodsRes] = await Promise.all([
@@ -254,7 +255,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
     e.preventDefault();
     setExchangeError(''); setExchangeSuccess('');
     try {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch('/v2/payments/exchange', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
@@ -279,7 +280,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
     e.preventDefault();
     setFundingMsg('');
     try {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const endpoint = fundingType === 'RECHARGE' ? '/v2/payments/recharge' : '/v2/payments/withdraw';
       const bodyPayload: any = { 
         amount_cents: Math.floor(parseFloat(fundingAmount.replace(/[^0-9.]/g, '')) * 100),
@@ -308,7 +309,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
     e.preventDefault();
     setAddMethodError('');
     try {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const methodTypeMap = newMethodCategory === 'BANK' ? 'BANK_ACCOUNT' : 'CARD';
       const res = await fetch('/v2/payments/methods', {
         method: 'POST',
@@ -327,7 +328,7 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
 
   const handleRemoveMethod = async (methodId: string) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch(`/v2/payments/methods/${methodId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${sId}` }

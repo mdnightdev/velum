@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getSessionId } from '../../utils/auth';
 
 interface PrivateSubloungeBannerProps {
   activeRoom: any;
@@ -28,7 +29,7 @@ export default function PrivateSubloungeBanner({
     setIsApplying(true);
     setApplyMessage('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${activeRoom.lounge_id}/apply`, {
         method: 'POST',
         headers: {

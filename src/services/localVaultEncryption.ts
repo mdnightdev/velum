@@ -1,4 +1,5 @@
 import { saveLocalVaultKeyToDb, loadLocalVaultKeyFromDb } from './cryptoDbStore';
+import { storage } from './storageService';
 
 export class LocalVaultEncryption {
   private static activeKey: CryptoKey | null = null;
@@ -72,11 +73,11 @@ export class LocalVaultEncryption {
   public static async checkAndRotatePeriodically(): Promise<boolean> {
     const LAST_ROTATION_KEY = 'velum-last-vault-rotation';
     const ROTATION_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-    const lastRotation = localStorage.getItem(LAST_ROTATION_KEY);
+    const lastRotation = storage.getItem<string | number>(LAST_ROTATION_KEY);
     const now = Date.now();
 
-    if (!lastRotation || (now - parseInt(lastRotation, 10)) > ROTATION_INTERVAL) {
-      localStorage.setItem(LAST_ROTATION_KEY, now.toString());
+    if (!lastRotation || (now - Number(lastRotation)) > ROTATION_INTERVAL) {
+      storage.setItem(LAST_ROTATION_KEY, now.toString());
       return true;
     }
     return false;

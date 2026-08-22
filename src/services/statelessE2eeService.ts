@@ -18,6 +18,7 @@ import {
   loadSignedPrekey
 } from './cryptoDbStore.js';
 import { getSessionId } from '../utils/auth.js';
+import { storage } from './storageService';
 
 class StatelessE2eeService {
   private localUserId: number | null = null;
@@ -31,11 +32,11 @@ class StatelessE2eeService {
   public getLocalUserId(): number | null {
     if (!this.localUserId) {
       try {
-        if (typeof window !== 'undefined' && window.sessionStorage) {
-          const cached = window.sessionStorage.getItem('velum-user');
+        if (typeof window !== 'undefined') {
+          const cached = storage.getItem<any>('velum-user');
           if (cached) {
-            const u = JSON.parse(cached);
-            const id = u.id || u.userId;
+            const u = typeof cached === 'string' ? JSON.parse(cached) : cached;
+            const id = u?.id || u?.userId;
             if (id) {
               this.localUserId = Number(id);
             }

@@ -12,6 +12,7 @@ import CreateRoomModal from '../Lounge/CreateRoomModal';
 import ManageLoungeModal from '../Lounge/ManageLoungeModal';
 import SanctionDialog from '../Lounge/SanctionDialog';
 import PrivateSubloungeBanner from '../Lounge/PrivateSubloungeBanner';
+import { getSessionId } from '../../utils/auth';
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const { isMobile: _isMobile, isTablet } = useResponsive();
@@ -36,7 +37,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       const targetId = selectedMember?.user_id || selectedMember?.userId;
       if (targetId && !selectedMember.isDetailsLoaded) {
         try {
-          const sId = sessionStorage.getItem('velum-sessionId') || '';
+          const sId = getSessionId();
           const res = await fetch(`/v2/user/${targetId}/profile`, {
             headers: { 'Authorization': `Bearer ${sId}` }
           });
@@ -81,7 +82,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
   const handleProfileMute = async (member: any) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const targetId = member.userId || member.user_id;
       const res = await fetch(`/v2/user/${targetId}/mute`, {
         method: 'POST',
@@ -103,7 +104,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
   const handleProfileBlock = async (member: any) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const targetId = member.userId || member.user_id;
       const res = await fetch(`/v2/user/${targetId}/block`, {
         method: 'POST',
@@ -128,7 +129,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
   const handleProfileDeleteChat = async (member: any) => {
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const targetId = member.userId || member.user_id;
       const res = await fetch(`/v2/user/${targetId}/chat`, {
         method: 'DELETE',
@@ -147,7 +148,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     const reason = prompt(`Reason for reporting:`);
     if (!reason || !reason.trim()) return;
     try {
-      const sId = sessionStorage.getItem('velum-sessionId') || '';
+      const sId = getSessionId();
       const res = await fetch('/v2/user/report', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },

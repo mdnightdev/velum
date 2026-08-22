@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, Activity, Monitor, CheckCircle2, AlertTriangle, Cpu, Terminal, RefreshCw } from 'lucide-react';
 import { SuspiciousEvent, AuditLog, ClientDiagnosticLog } from '../types';
 import { APP_VERSION, FULL_BUILD_VERSION } from '../version';
+import { getSessionId } from '../utils/auth';
 
 interface AdminDiagnosticsViewProps {
   suspicious: SuspiciousEvent[];
@@ -43,7 +44,7 @@ export default function AdminDiagnosticsView({
       if (adminFetch) {
         res = await adminFetch('/v2/admin/diagnostics/logs');
       } else {
-        const token = sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || '';
+        const token = getSessionId();
         res = await fetch('/v2/admin/diagnostics/logs', {
           headers: { 
             Authorization: `Bearer ${token}`,
@@ -81,7 +82,7 @@ export default function AdminDiagnosticsView({
           body: JSON.stringify({ status: 'resolved' })
         });
       } else {
-        const token = sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || '';
+        const token = getSessionId();
         res = await fetch(`/v2/admin/diagnostics/logs/${logId}/resolve`, {
           method: 'POST',
           headers: {
@@ -112,7 +113,7 @@ export default function AdminDiagnosticsView({
           method: 'DELETE',
         });
       } else {
-        const token = sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || '';
+        const token = getSessionId();
         res = await fetch(`/v2/admin/diagnostics/logs/${logId}`, {
           method: 'DELETE',
           headers: {

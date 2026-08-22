@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { MarketListing, MarketSkuVariant } from '../types';
+import { storage } from '../services/storageService';
 
 export interface CartItem {
   id: string; // generated as listingId_variantId or listingId_default
@@ -25,15 +26,15 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
-      const saved = localStorage.getItem('velum-cart');
-      return saved ? JSON.parse(saved) : [];
+      const saved = storage.getItem<CartItem[]>('velum-cart');
+      return Array.isArray(saved) ? saved : [];
     } catch {
       return [];
     }
   });
 
   useEffect(() => {
-    localStorage.setItem('velum-cart', JSON.stringify(cartItems));
+    storage.setItem('velum-cart', cartItems);
   }, [cartItems]);
 
   const addToCart = (listing: MarketListing, selectedVariant: MarketSkuVariant | null, quantity = 1) => {

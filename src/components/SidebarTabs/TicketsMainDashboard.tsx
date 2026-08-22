@@ -3,6 +3,7 @@ import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, 
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { useResponsiveLayout } from '../../hooks/useResponsive';
+import { getSessionId } from '../../utils/auth';
 
 interface TicketsMainDashboardProps {
   currentUserId: number;
@@ -36,7 +37,7 @@ export default function TicketsMainDashboard({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum-sessionId') || '';
+  const fetchSessionId = () => getSessionId();
 
   const categories = [
     { value: 'general_support', label: 'General Support' },

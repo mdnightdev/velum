@@ -1,5 +1,7 @@
 import { ClientDiagnosticLog } from '../types';
 import { FULL_BUILD_VERSION } from '../version';
+import { getSessionId } from './auth';
+import { storage } from '../services/storageService';
 
 // Global error listener to track recent uncaught exceptions
 if (typeof window !== 'undefined') {
@@ -96,8 +98,8 @@ export function collectClientDiagnosticsPayload(notes?: string): Partial<ClientD
   
   const stateSnapshot = {
     websocket_connected: typeof window !== 'undefined' ? !!(window as any).__velum_ws_connected : false,
-    active_view: typeof window !== 'undefined' ? localStorage.getItem('velum_active_view') || 'unknown' : 'unknown',
-    auth_tier: typeof window !== 'undefined' ? localStorage.getItem('velum_auth_tier') || 'unknown' : 'unknown'
+    active_view: typeof window !== 'undefined' ? storage.getItem<string>('velum_active_view') || 'unknown' : 'unknown',
+    auth_tier: typeof window !== 'undefined' ? storage.getItem<string>('velum_auth_tier') || 'unknown' : 'unknown'
   };
 
   return {
@@ -123,9 +125,7 @@ export function collectClientDiagnosticsPayload(notes?: string): Partial<ClientD
 export async function submitDiagnosticLogs(notes?: string): Promise<{ success: boolean; log_id?: string; error?: string }> {
   try {
     const payload = collectClientDiagnosticsPayload(notes);
-    const token = typeof window !== 'undefined' 
-      ? (sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || localStorage.getItem('velum_admin_token') || '')
-      : '';
+    const token = getSessionId();
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'

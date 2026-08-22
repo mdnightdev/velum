@@ -31,7 +31,7 @@ if (urlParams.has('clear') || urlParams.has('reset')) {
   (async () => {
     localStorage.clear();
     sessionStorage.clear();
-
+  
     if (window.caches) {
       const keys = await caches.keys();
       await Promise.all(keys.map(k => caches.delete(k)));

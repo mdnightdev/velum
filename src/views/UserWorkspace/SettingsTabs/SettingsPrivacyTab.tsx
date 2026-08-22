@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle, AlertTriangle, Trash2, Plus, Fingerprint } from 'lucide-react';
 import PasswordInput from '../../../components/PasswordInput';
 import { startRegistration } from '@simplewebauthn/browser';
+import { getSessionId } from '../../../utils/auth';
+import { storage } from '../../../services/storageService';
 
 interface PasskeyItem {
   id: number;
@@ -40,7 +42,7 @@ export function SettingsPrivacyTab({
   const [passkeyMsg, setPasskeyMsg] = useState<string | null>(null);
   const [passkeyErr, setPasskeyErr] = useState<string | null>(null);
 
-  const getSessionToken = () => sessionStorage.getItem('velum-sessionId') || '';
+  const getSessionToken = () => getSessionId();
 
   const fetchPasskeys = async () => {
     try {
@@ -149,8 +151,7 @@ export function SettingsPrivacyTab({
     } catch {
       // Continue cleanup regardless
     } finally {
-      sessionStorage.clear();
-      localStorage.clear();
+      storage.clear();
       window.location.reload();
     }
   };
