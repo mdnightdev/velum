@@ -63,25 +63,42 @@ export function SettingsAccountTab({
       <div className="relative rounded-2xl bg-velum-800 border border-white/10 overflow-hidden shadow-xl mb-6">
         {/* Banner Area (Theme-derived gradient or custom image) */}
         <div 
-          className={`h-24 relative ${(!resolvedBannerSrc || bannerLoadError) ? 'bg-gradient-to-r from-accent/30 via-accent/10 to-transparent' : getBannerClass(bannerColor)}`}
+          className={`h-28 relative ${(!resolvedBannerSrc || bannerLoadError) ? 'bg-gradient-to-r from-accent/30 via-accent/10 to-transparent' : getBannerClass(bannerColor)}`}
           style={
             (resolvedBannerSrc && !bannerLoadError)
               ? { backgroundImage: `url(${resolvedBannerSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
               : {}
           }
         >
-          <label className="absolute top-3 right-3 px-2.5 py-1 bg-velum-800/80 hover:bg-velum-750 text-[10px] font-mono text-text-primary rounded-md backdrop-blur-[var(--blur-backdrop-md)] border border-velum-700 cursor-pointer transition">
-            Change Banner
-            <input 
-              type="file" 
-              accept="image/*" 
-              className="hidden" 
-              onChange={(e) => {
-                setBannerLoadError(false);
-                handleBannerFileChange(e);
-              }} 
-            />
-          </label>
+          <div className="absolute top-3 right-3 flex items-center gap-1.5">
+            {resolvedBannerSrc && !bannerLoadError && (
+              <button
+                type="button"
+                onClick={handleDeleteBanner || handleDeleteAvatar}
+                className="w-8 h-8 rounded-lg bg-velum-900/70 hover:bg-velum-800 text-text-secondary hover:text-text-primary border border-velum-600/60 backdrop-blur-md flex items-center justify-center transition cursor-pointer"
+                title="Remove Banner"
+                aria-label="Remove Banner"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <label 
+              className="w-8 h-8 rounded-lg bg-velum-900/70 hover:bg-velum-800 text-text-secondary hover:text-text-primary border border-velum-600/60 backdrop-blur-md flex items-center justify-center transition cursor-pointer"
+              title="Change Banner"
+              aria-label="Change Banner"
+            >
+              <Upload className="w-4 h-4" />
+              <input 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                onChange={(e) => {
+                  setBannerLoadError(false);
+                  handleBannerFileChange(e);
+                }} 
+              />
+            </label>
+          </div>
         </div>
 
         {/* Profile Details Bar */}
@@ -114,7 +131,20 @@ export function SettingsAccountTab({
               </label>
             </div>
             <div className="mb-1">
-              <h4 className="text-lg font-bold text-text-primary leading-none">{displayName}</h4>
+              <div className="flex items-center gap-2">
+                <h4 className="text-lg font-bold text-text-primary leading-none">{displayName}</h4>
+                {resolvedAvatarSrc && !avatarLoadError && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAvatar}
+                    className="w-7 h-7 rounded-lg bg-velum-750 hover:bg-velum-700 text-text-secondary hover:text-text-primary border border-velum-600/50 flex items-center justify-center transition cursor-pointer"
+                    title="Remove Avatar"
+                    aria-label="Remove Avatar"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <p className="text-xs font-mono text-text-secondary mt-1">{currentUsername ? `@${currentUsername}` : ''}</p>
             </div>
           </div>

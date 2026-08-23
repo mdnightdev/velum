@@ -1,7 +1,6 @@
 import React from 'react';
 import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, Check, Copy, ShieldCheck } from 'lucide-react';
 import { Message, stripAt } from '../../types';
-import ProfileCard from '../ProfileCard';
 import { AudioMessagePlayer } from '../AudioMessagePlayer';
 import { SecureImageCard } from '../SecureImageCard';
 import { MessageStatusTicks } from '../MessageStatusTicks';

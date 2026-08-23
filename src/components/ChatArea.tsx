@@ -105,6 +105,7 @@ export default function ChatArea({
   isMember,
   onJoinLounge,
   avatarUrl,
+  onSelectProfileUser,
 }: ChatAreaProps) {
   const { t } = useLanguage();
 
@@ -488,6 +489,15 @@ export default function ChatArea({
         chatTitle={chatTitle}
         peerPresence={peerPresence}
         conversationMessages={conversationMessages}
+        onViewProfile={() => {
+          if (activeChatPeer && onSelectProfileUser) {
+            onSelectProfileUser({
+              userId: activeChatPeer.userId,
+              username: activeChatPeer.username,
+              avatar: activeChatPeer.avatar
+            });
+          }
+        }}
         onSearchToggle={() => setShowSearch(!showSearch)}
         selectedMessage={selectedMessage}
         getDecryptedText={getDecryptedText}

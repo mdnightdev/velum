@@ -624,6 +624,7 @@ export default function DashboardLayout({
               activeChatPeer={activeChatPeer}
               onToggleSidebar={toggleSidebar}
               isMobile={isMobile}
+              onSelectProfileUser={handleLoadProfileCard}
               onBackToDeck={() => {
                 const wasRoom = activeRoomId && !activeRoomId.startsWith('dm_');
                 onRoomSelect('');

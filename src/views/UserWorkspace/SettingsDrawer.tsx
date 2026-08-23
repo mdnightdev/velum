@@ -390,6 +390,13 @@ export default function SettingsDrawer({
     setAvatarColor('charcoal');
   };
 
+  const handleRemoveBanner = () => {
+    setBannerPreview(null);
+    setBannerFile(null);
+    setBannerUrl('');
+    setBannerColor('slate');
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileMsg(null);
@@ -421,6 +428,9 @@ export default function SettingsDrawer({
         finalBanner = uploadedUrl;
         setBannerUrl(uploadedUrl);
         await saveLocalMedia(`banner_${currentUserId}`, bannerFile);
+      } else if (bannerColor === 'slate' && !bannerPreview && !bannerUrl) {
+        finalBanner = '';
+        await deleteLocalMedia(`banner_${currentUserId}`);
       }
 
       const res = await fetch('/v2/user/profile', {
@@ -827,6 +837,7 @@ export default function SettingsDrawer({
                   setBio={setBio}
                   handleFileChange={handleFileChange}
                   handleDeleteAvatar={handleRemovePhoto}
+                  handleDeleteBanner={handleRemoveBanner}
                   bannerPreview={bannerPreview}
                   bannerUrl={bannerUrl}
                   bannerColor={bannerColor}

@@ -14,6 +14,7 @@ interface ChatHeaderProps {
   conversationMessages: Message[];
   onSearchToggle?: () => void;
   onForceRekey?: () => void;
+  onViewProfile?: () => void;
   // Selection Mode Props
   selectedMessage?: Message | null;
   getDecryptedText?: (msg: Message) => string;
@@ -39,6 +40,7 @@ export function ChatHeader({
   conversationMessages,
   onSearchToggle,
   onForceRekey,
+  onViewProfile,
   selectedMessage,
   getDecryptedText,
   onClearSelection,
@@ -159,7 +161,11 @@ export function ChatHeader({
             <ChevronLeft className="w-5 h-5" />
           </button>
         )}
-        <div className="flex items-center gap-3 min-w-0">
+        <div 
+          onClick={onViewProfile}
+          className={`flex items-center gap-3 min-w-0 ${onViewProfile ? 'cursor-pointer active:opacity-80 transition' : ''}`}
+          title={onViewProfile ? "View Profile" : undefined}
+        >
           {/* Avatar */}
           {headerAvatar && !avatarErr ? (
             <div 
