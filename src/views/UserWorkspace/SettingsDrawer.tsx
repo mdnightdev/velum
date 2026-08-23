@@ -28,6 +28,7 @@ import { useLanguage } from '../../i18n/LanguageContext';
 import { ImageCropperModal } from '../../components/ImageCropperModal';
 import { storage } from '../../services/storageService';
 import { getStoredAppearanceSettings, applyAppearanceSettings } from '../../utils/appearance';
+import { stripAt } from '../../types';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -46,7 +47,7 @@ export default function SettingsDrawer({
   isOpen,
   onClose,
   currentUserId,
-  currentUsername,
+  currentUsername = 'Guest',
   currentUserRole = 'USER',
   isDark,
   onToggleTheme,
@@ -59,7 +60,7 @@ export default function SettingsDrawer({
   const [activeView, setActiveView] = useState<SettingCategory | 'menu'>('menu');
 
   // Account settings states
-  const [displayName, setDisplayName] = useState(currentUsername.replace('@', ''));
+  const [displayName, setDisplayName] = useState(stripAt(currentUsername || ''));
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [permanentOtp, setPermanentOtp] = useState('');
@@ -157,11 +158,7 @@ export default function SettingsDrawer({
         .then(data => {
           if (data) {
             if (data.bio) setBio(data.bio);
-            if (data.displayName) {
-              setDisplayName(data.displayName.replace('@', ''));
-            } else {
-              setDisplayName(currentUsername.replace('@', ''));
-            }
+            setDisplayName(stripAt(data.displayName || currentUsername || ''));
             if (data.avatar !== undefined) {
               const avatarVal = data.avatar || '';
               if (avatarVal.startsWith('http') || avatarVal.startsWith('data:') || avatarVal.startsWith('/')) {
@@ -235,8 +232,8 @@ export default function SettingsDrawer({
         headers,
         body: JSON.stringify({
           userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
+          username: `@${stripAt(displayName)}`,
+          displayName: stripAt(displayName),
           bio,
           avatar: chosenAvatar,
           location: '',
@@ -431,7 +428,7 @@ export default function SettingsDrawer({
         headers: requestHeaders,
         body: JSON.stringify({
           userId: currentUserId,
-          displayName: displayName.trim().replace('@', ''),
+          displayName: stripAt(displayName),
           bio: bio.trim(),
           avatar: finalAvatar,
           email: email.trim(),
@@ -504,8 +501,8 @@ export default function SettingsDrawer({
         headers,
         body: JSON.stringify({
           userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
+          username: `@${stripAt(displayName)}`,
+          displayName: stripAt(displayName),
           bio,
           avatar: chosenAvatar,
           email,
@@ -546,8 +543,8 @@ export default function SettingsDrawer({
         headers,
         body: JSON.stringify({
           userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
+          username: `@${stripAt(displayName)}`,
+          displayName: stripAt(displayName),
           bio,
           avatar: chosenAvatar,
           email,
@@ -586,8 +583,8 @@ export default function SettingsDrawer({
         headers,
         body: JSON.stringify({
           userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
+          username: `@${stripAt(displayName)}`,
+          displayName: stripAt(displayName),
           bio,
           avatar: chosenAvatar,
           email,
