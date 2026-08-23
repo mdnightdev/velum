@@ -112,6 +112,7 @@ export default function DashboardLayout({
         const data = await res.json();
         setProfileCardUser({
           ...profUser,
+          avatarUrl: data.avatarUrl || data.avatar || profUser.avatarUrl || profUser.avatar || '',
           displayName: data.displayName || profUser.displayName || profUser.username,
           bio: data.bio || '',
           location: data.location || '',
@@ -122,10 +123,16 @@ export default function DashboardLayout({
           stats: data.stats || { loungesCount: 0, connectionsCount: 0 }
         });
       } else {
-        setProfileCardUser(profUser);
+        setProfileCardUser({
+          ...profUser,
+          avatarUrl: profUser.avatarUrl || profUser.avatar || ''
+        });
       }
     } catch (e) {
-      setProfileCardUser(profUser);
+      setProfileCardUser({
+        ...profUser,
+        avatarUrl: profUser.avatarUrl || profUser.avatar || ''
+      });
     }
   };
 

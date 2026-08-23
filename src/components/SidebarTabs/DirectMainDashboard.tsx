@@ -150,16 +150,67 @@ export default function DirectMainDashboard({
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
-  const [deletedUserIds, setDeletedUserIds] = useState<number[]>(() => {
+  const [deletedDms, setDeletedDms] = useState<Record<number, number>>(() => {
     try {
       const saved = localStorage.getItem(`velum_deleted_dms_${currentUserId}`);
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
+      if (!saved) return {};
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        const map: Record<number, number> = {};
+        parsed.forEach(id => { map[id] = Date.now(); });
+        return map;
+      }
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch { return {}; }
   });
   const [contextPeer, setContextPeer] = useState<{ userId: number; username: string; dmRoomId: string; isArchived: boolean } | null>(null);
   const [isNewChatPickerOpen, setIsNewChatPickerOpen] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState('');
   const [quickAvatarPeer, setQuickAvatarPeer] = useState<{ userId: number; username: string; displayName?: string; avatarUrl?: string; bio?: string } | null>(null);
+
+  // Helper to un-delete a contact
+  const unDeleteContact = (peerId: number) => {
+    setDeletedDms(prev => {
+      if (!prev[peerId]) return prev;
+      const next = { ...prev };
+      delete next[peerId];
+      try {
+        localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Auto-un-delete if a new message arrives from/to peer after deletion timestamp
+  useEffect(() => {
+    if (!lastMessages || Object.keys(deletedDms).length === 0) return;
+    let changed = false;
+    const nextMap = { ...deletedDms };
+
+    for (const [peerIdStr, delTime] of Object.entries(deletedDms)) {
+      const peerId = parseInt(peerIdStr, 10);
+      const dmRoomId = `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`;
+      const candidateKeys = [dmRoomId, `dm_${peerId}`, `dm_${currentUserId}_${peerId}`, `dm_${peerId}_${currentUserId}`];
+      let last: any = null;
+      for (const k of candidateKeys) {
+        if (k && lastMessages[k]) { last = lastMessages[k]; break; }
+      }
+      if (last) {
+        const msgTime = last.createdAt ? new Date(last.createdAt).getTime() : last.created_at ? new Date(last.created_at).getTime() : (last.timestamp ? new Date(last.timestamp).getTime() : 0);
+        if (msgTime > delTime) {
+          delete nextMap[peerId];
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      setDeletedDms(nextMap);
+      try {
+        localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(nextMap));
+      } catch {}
+    }
+  }, [lastMessages, currentUserId, deletedDms]);
 
   const touchTimerRef = useRef<any>(null);
   const isLongPressRef = useRef(false);
@@ -195,8 +246,9 @@ export default function DirectMainDashboard({
 
   const handleDeleteConversation = async (peerId: number, peerName: string, dmRoomId: string) => {
     try {
-      setDeletedUserIds(prev => {
-        const next = [...prev.filter(id => id !== peerId), peerId];
+      const now = Date.now();
+      setDeletedDms(prev => {
+        const next = { ...prev, [peerId]: now };
         try {
           localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next));
         } catch {}
@@ -442,9 +494,10 @@ export default function DirectMainDashboard({
       {/* Directory List */}
       <div className="flex-1 overflow-y-auto w-full flex flex-col relative">
         {/* Default Secure VELUM System Contact (only in active tab) */}
-        {filterTab === 'active' && !deletedUserIds.includes(999) && (
+        {filterTab === 'active' && !deletedDms[999] && (
           <div
             onClick={() => {
+              unDeleteContact(999);
               if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
               if (onSectionView) onSectionView('chat');
               if (onMarkAsRead) onMarkAsRead('', velumRoomId);
@@ -500,7 +553,18 @@ export default function DirectMainDashboard({
         {/* Other friends/contacts */}
         {filteredFriends
           .filter(r => {
-            if (deletedUserIds.includes(r.friendId)) return false;
+            const delTime = deletedDms[r.friendId];
+            if (delTime) {
+              const dmRoomId = `dm_${Math.min(currentUserId, r.friendId)}_${Math.max(currentUserId, r.friendId)}`;
+              const candidateKeys = [dmRoomId, `dm_${r.friendId}`, `dm_${currentUserId}_${r.friendId}`, `dm_${r.friendId}_${currentUserId}`];
+              let last: any = null;
+              const lm = lastMessages || {};
+              for (const k of candidateKeys) {
+                if (k && lm[k]) { last = lm[k]; break; }
+              }
+              const msgTime = last ? (last.createdAt ? new Date(last.createdAt).getTime() : last.created_at ? new Date(last.created_at).getTime() : (last.timestamp ? new Date(last.timestamp).getTime() : 0)) : 0;
+              if (msgTime <= delTime) return false;
+            }
             const isArchived = archivedUserIds.includes(r.friendId);
             return filterTab === 'archived' ? isArchived : !isArchived;
           })
@@ -596,6 +660,7 @@ export default function DirectMainDashboard({
                     isLongPressRef.current = false;
                     return;
                   }
+                  unDeleteContact(friendId);
                   try {
                     const lastId = last ? (last.message_id || last.id || last.messageId) : undefined;
                     if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
@@ -795,11 +860,7 @@ export default function DirectMainDashboard({
                       key={fId}
                       onClick={() => {
                         // Un-delete this user so conversation card appears
-                        setDeletedUserIds(prev => {
-                          const next = prev.filter(id => id !== fId);
-                          try { localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next)); } catch {}
-                          return next;
-                        });
+                        unDeleteContact(fId);
                         if (onSelectPeer) onSelectPeer({ userId: fId, username: fName, avatar: fAvatar });
                         if (onMarkAsRead) onMarkAsRead(undefined, dmSlug);
                         setIsNewChatPickerOpen(false);
@@ -862,6 +923,7 @@ export default function DirectMainDashboard({
               <button
                 type="button"
                 onClick={() => {
+                  unDeleteContact(quickAvatarPeer.userId);
                   if (onSelectPeer) onSelectPeer({ userId: quickAvatarPeer.userId, username: quickAvatarPeer.username, avatar: quickAvatarPeer.avatarUrl });
                   if (onSectionView) onSectionView('chat');
                   setQuickAvatarPeer(null);
@@ -884,6 +946,7 @@ export default function DirectMainDashboard({
                       username: peer.username,
                       displayName: peer.displayName || peer.username,
                       avatarUrl: peer.avatarUrl,
+                      avatar: peer.avatarUrl,
                       bio: peer.bio
                     });
                   }
