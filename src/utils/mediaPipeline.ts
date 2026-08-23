@@ -229,8 +229,10 @@ export function resolveMediaUrl(url: string | null | undefined): string {
   }
 
   const isCapacitorOrLocalApk = typeof window !== 'undefined' && (
+    (window as any).Capacitor?.isNativePlatform?.() ||
     window.location.protocol === 'capacitor:' || 
-    window.location.protocol === 'ionic:'
+    window.location.protocol === 'ionic:' ||
+    (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173')
   );
 
   if (isCapacitorOrLocalApk) {

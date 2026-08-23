@@ -173,7 +173,15 @@ export function useWebSocket({
     }
 
     let host = window.location.host;
-    if (!host || host === 'localhost' || window.location.protocol === 'capacitor:') {
+    const isCapacitorOrLocalApk =
+      (window as any).Capacitor?.isNativePlatform?.() ||
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'ionic:' ||
+      !host ||
+      host === 'localhost' ||
+      (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173');
+
+    if (isCapacitorOrLocalApk) {
       host = '127.0.0.1:3000';
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

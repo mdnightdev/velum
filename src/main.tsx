@@ -3,16 +3,18 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Automatically route relative API and WebSocket requests to Termux backend when inside Capacitor APK
+// Automatically route relative API and WebSocket requests to local node backend on port 3000 when inside Capacitor APK
 if (typeof window !== 'undefined') {
   const nativeFetch = window.fetch;
   window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
     let url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
     const isCapacitorOrLocalApk =
+      (window as any).Capacitor?.isNativePlatform?.() ||
       window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'ionic:';
+      window.location.protocol === 'ionic:' ||
+      (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173');
 
-    if (isCapacitorOrLocalApk && (url.startsWith('/v2/') || url.startsWith('/api/'))) {
+    if (isCapacitorOrLocalApk && (url.startsWith('/v2/') || url.startsWith('/api/') || url.startsWith('/uploads/'))) {
       const targetUrl = `http://127.0.0.1:3000${url.startsWith('/') ? '' : '/'}${url}`;
       if (typeof input === 'string' || input instanceof URL) {
         input = targetUrl;
