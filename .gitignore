@@ -30,3 +30,4 @@ gradle-*.zip
 gradle-*.zip
 patches
 PLANNING.md
+public/ota/*.zip
