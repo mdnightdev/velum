@@ -67,73 +67,73 @@ export function ChatHeader({
       rawText = selectedMessage.content && !selectedMessage.content.includes('VEL_E2EE') ? selectedMessage.content : 'Encrypted Message';
     }
     return (
-      <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-3 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="px-3 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] pb-1.5 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <button
             type="button"
             onClick={onClearSelection}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            className="w-8 h-8 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
             title="Cancel selection"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
           <div className="flex flex-col min-w-0">
-            <span className="text-xs font-semibold text-accent uppercase tracking-wider">1 selected</span>
-            <span className="text-[11px] text-text-secondary truncate max-w-xs sm:max-w-md">
+            <span className="text-[11px] font-semibold text-accent uppercase tracking-wider">1 selected</span>
+            <span className="text-[10px] text-text-secondary truncate max-w-xs sm:max-w-md">
               {rawText}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           {onReplySelected && (
             <button
               type="button"
               onClick={() => onReplySelected(selectedMessage)}
-              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
+              className="p-1.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Reply to message"
             >
-              <Reply className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Reply className="w-4 h-4" />
             </button>
           )}
           {canEdit && onEditSelected && (
             <button
               type="button"
               onClick={() => onEditSelected(selectedMessage)}
-              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
+              className="p-1.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Edit message"
             >
-              <Edit2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Edit2 className="w-4 h-4" />
             </button>
           )}
           {onPinSelected && (
             <button
               type="button"
               onClick={() => onPinSelected(selectedMessage)}
-              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
+              className="p-1.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title={selectedMessage.is_pinned ? "Unpin message" : "Pin message"}
             >
-              <Pin className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedMessage.is_pinned ? 'text-accent fill-accent' : ''}`} />
+              <Pin className={`w-4 h-4 ${selectedMessage.is_pinned ? 'text-accent fill-accent' : ''}`} />
             </button>
           )}
           {onReportSelected && !isOwnSelectedMessage && (
             <button
               type="button"
               onClick={() => onReportSelected(selectedMessage)}
-              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-alert-warning hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
+              className="p-1.5 rounded-full text-text-secondary hover:text-alert-warning hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Report message"
             >
-              <AlertOctagon className="w-4 h-4 sm:w-5 sm:h-5" />
+              <AlertOctagon className="w-4 h-4" />
             </button>
           )}
           {canDelete && onDeleteSelected && (
             <button
               type="button"
               onClick={() => onDeleteSelected(selectedMessage)}
-              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-alert-error hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
+              className="p-1.5 rounded-full text-text-secondary hover:text-alert-error hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Delete message"
             >
-              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5 text-alert-error" />
+              <Trash2 className="w-4 h-4 text-alert-error" />
             </button>
           )}
         </div>
@@ -145,23 +145,23 @@ export function ChatHeader({
 
   // Standard Header Mode
   return (
-    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-3 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
-      <div className="flex items-center gap-3">
+    <div className="px-3 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] pb-1.5 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
+      <div className="flex items-center gap-2">
         {isMobile && onBackToDeck && (
           <button
             type="button"
             onClick={onBackToDeck}
-            className="w-11 h-11 rounded-full text-text-secondary hover:text-white hover:bg-text-primary/5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            className="w-8 h-8 rounded-full text-text-secondary hover:text-white hover:bg-text-primary/5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
             title="Back to directory"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ChevronLeft className="w-4 h-4" />
           </button>
         )}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Avatar */}
           {headerAvatar && !avatarErr ? (
             <div 
-              className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
+              className="w-8 h-8 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
             >
               <img 
                 src={resolveMediaUrl(headerAvatar)} 
@@ -172,20 +172,20 @@ export function ChatHeader({
               />
             </div>
           ) : (
-            <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
-              <span className="text-xs font-mono font-bold uppercase text-accent">{initials}</span>
+            <div className="w-8 h-8 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
+              <span className="text-[11px] font-mono font-bold uppercase text-accent">{initials}</span>
             </div>
           )}
           
           {/* Title & Status */}
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-white">{chatTitle}</span>
+            <span className="text-xs font-semibold text-white leading-tight">{chatTitle}</span>
             {!wsConnected ? (
-              <span className="text-[10px] font-mono text-accent animate-pulse">
+              <span className="text-[9px] font-mono text-accent animate-pulse leading-none mt-0.5">
                 connecting...
               </span>
             ) : activeChatPeer && activeChatPeer.userId !== 999 ? (
-              <span className="text-[11px] text-text-secondary">
+              <span className="text-[10px] text-text-secondary leading-none mt-0.5">
                 {formatLastSeen(peerPresence)}
               </span>
             ) : null}
@@ -197,10 +197,10 @@ export function ChatHeader({
           <button
             type="button"
             onClick={onSearchToggle}
-            className="w-11 h-11 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            className="w-8 h-8 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
             title="Search messages"
           >
-            <Search className="w-5 h-5" />
+            <Search className="w-4 h-4" />
           </button>
         )}
       </div>

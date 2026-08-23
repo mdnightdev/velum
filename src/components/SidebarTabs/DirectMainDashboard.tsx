@@ -277,7 +277,7 @@ export default function DirectMainDashboard({
   return (
     <div className="flex-1 flex flex-col w-full h-full select-none font-sans bg-transparent text-text-primary">
       {/* Header */}
-      <div className="p-2.5 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
+      <div className="p-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
