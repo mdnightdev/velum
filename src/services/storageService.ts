@@ -12,14 +12,14 @@ interface StoragePolicy {
 
 // Storage policies for different data types
 const STORAGE_POLICIES: Record<string, StoragePolicy> = {
-  // Authentication - sessionStorage for security
-  'session_token': { storageType: 'session' },
-  'velum-sessionId': { storageType: 'session' },
-  'velum_sessionId': { storageType: 'session' },
-  'velum-user': { storageType: 'session' },
-  'velum_user': { storageType: 'session' },
-  'velum-deviceId': { storageType: 'session' },
-  'auth_state': { storageType: 'session' },
+  // Authentication - localStorage for persistence across app switches, tabs, and reloads
+  'session_token': { storageType: 'local' },
+  'velum-sessionId': { storageType: 'local' },
+  'velum_sessionId': { storageType: 'local' },
+  'velum-user': { storageType: 'local' },
+  'velum_user': { storageType: 'local' },
+  'velum-deviceId': { storageType: 'local' },
+  'auth_state': { storageType: 'local' },
   'oauth_state': { storageType: 'session' },
   'webauthn_challenge': { storageType: 'session' },
   

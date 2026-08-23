@@ -40,9 +40,34 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
   const [recoveryView, setRecoveryView] = useState<RecoveryViewMode>('options');
   const [redeemUsername, setRedeemUsername] = useState('');
   const [redeemCode, setRedeemCode] = useState('');
-  const [redeemNewPassword, setRedeemNewPassword] = useState('');
   const [deviceFingerprint, setDeviceFingerprint] = useState('');
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
+
+  // Security: Wipe unsubmitted credentials if user switches apps or minimizes the tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        setUsername('');
+        setPassword('');
+        setAdminToken('');
+        setSafeWord('');
+        setPanicPhrase('');
+        setInviteCode('');
+        setRecoveryUsername('');
+        setRecoverySafeWord('');
+        setRecoveryCodeInput('');
+        setRecoveryNewPassword('');
+        setRedeemUsername('');
+        setRedeemCode('');
+        setRedeemNewPassword('');
+        setAuthError(null);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   const handlePasskeyLogin = async () => {
     setAuthError(null);
