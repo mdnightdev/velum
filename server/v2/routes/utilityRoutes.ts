@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import { currencyConverter } from '../services/currencyConverter.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
@@ -128,3 +130,32 @@ utilityRouter.post('/payments/convert', (req, res) => {
 
 utilityRouter.get('/payments/balances', (req, res) => res.json({ balances: [] }));
 utilityRouter.get('/payments/methods', (req, res) => res.json({ methods: [] }));
+
+// ---------------------------------------------------------------------------
+// Self-Hosted OTA Live Update Endpoints
+// ---------------------------------------------------------------------------
+utilityRouter.get('/ota/manifest', (req, res) => {
+  const manifestPath = path.join(process.cwd(), 'public', 'ota', 'manifest.json');
+  if (fs.existsSync(manifestPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      return res.json(data);
+    } catch (e) {}
+  }
+  res.json({
+    version: '2.2.0',
+    buildTime: new Date().toISOString(),
+    bundleUrl: '/v2/ota/bundle.zip'
+  });
+});
+
+utilityRouter.get('/ota/bundle.zip', (req, res) => {
+  const zipPath = path.join(process.cwd(), 'public', 'ota', 'bundle.zip');
+  if (!fs.existsSync(zipPath)) {
+    return res.status(404).json({ error: 'OTA update bundle not found. Run npm run build first.' });
+  }
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="bundle.zip"');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(zipPath);
+});
