@@ -21,15 +21,11 @@ export function getSenderIdentity(msg: Message, fallbackUsername?: string) {
   if (SYSTEM_ROLES[msg.user_id]) {
     return { cleanName: SYSTEM_ROLES[msg.user_id].name, isSpecialTheme: true, customBubbleClass: SYSTEM_ROLES[msg.user_id].style };
   }
-  let name = msg.username;
-  if (!name || name === 'Client' || name === 'client' || name.toLowerCase() === 'you') {
-    if (fallbackUsername) {
-      name = fallbackUsername;
-    } else {
-      name = msg.username && msg.username !== 'Client' ? msg.username : 'User';
-    }
+  let name = msg.username || (msg as any).sender_name || fallbackUsername || '';
+  if (name === 'Client' || name === 'client' || name.toLowerCase() === 'you') {
+    name = fallbackUsername || msg.username || '';
   }
-  return { cleanName: stripAt(name || 'User'), isSpecialTheme: false, customBubbleClass: '' };
+  return { cleanName: stripAt(name), isSpecialTheme: false, customBubbleClass: '' };
 }
 
 export interface MessageItemProps {
@@ -205,7 +201,7 @@ export function MessageItem({
             {msg.avatar ? (
               <img src={msg.avatar} alt={cleanName} className="w-full h-full object-cover" />
             ) : (
-              <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider">{cleanName.slice(0, 2).toUpperCase()}</span>
+              <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider">{cleanName ? cleanName.slice(0, 2).toUpperCase() : (msg.user_id ? String(msg.user_id).slice(-2) : '')}</span>
             )}
           </div>
           {popoverPeer && popoverPeer.messageId === msg.message_id && (
@@ -337,13 +333,13 @@ export function MessageItem({
                 const repliedMsg = conversationMessages.find(
                   m => String(m.db_message_id) === String(msg.reply_to) || String(m.message_id) === String(msg.reply_to)
                 );
-                let replyName = 'User';
-                let replyText = 'Original message';
+                let replyName = '';
+                let replyText = '';
                 if (repliedMsg) {
                   replyName = getSenderIdentity(repliedMsg).cleanName;
                   replyText = getDecryptedText(repliedMsg);
                 } else if (msg.reply_preview) {
-                  replyName = stripAt(msg.reply_preview.username || 'User');
+                  replyName = stripAt(msg.reply_preview.username || '');
                   replyText = msg.reply_preview.content;
                 }
                 return (
@@ -362,15 +358,15 @@ export function MessageItem({
               {isVoiceNote ? (
                 <AudioMessagePlayer content={activeContent} isMe={isMe} />
               ) : isVideo ? (
-                <div className="flex flex-col gap-1 max-w-[320px]">
+                <div className="flex flex-col gap-1 w-full max-w-[320px]">
                   {attachments.map((att, idx) => (
-                    <div key={idx} className="relative rounded-2xl overflow-hidden bg-black border border-white-5 shadow-sm">
+                    <div key={idx} className="relative rounded-2xl overflow-hidden bg-black border border-white-5 shadow-sm min-h-[180px] aspect-video">
                       <video
                         src={att.data}
                         controls
                         playsInline
                         preload="metadata"
-                        className="w-full max-h-[300px] object-contain rounded-2xl bg-black block"
+                        className="w-full h-full object-contain rounded-2xl bg-black block"
                       />
                       {att.caption && (
                         <p className="px-3 py-1.5 text-[12px] text-white whitespace-pre-wrap">{att.caption}</p>
@@ -381,7 +377,7 @@ export function MessageItem({
                     <p className="px-1 text-[13px] text-white whitespace-pre-wrap">{parsedMsgContent}</p>
                   )}
                   <div className={`flex items-center gap-1 mt-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
-                    <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+                    <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
                     <MessageStatusTicks
                       status={msg.status}
                       isMe={isMe}
@@ -408,9 +404,9 @@ export function MessageItem({
                       size={att.size}
                       caption={idx === attachments.length - 1 ? (att.caption || parsedMsgContent) : ''}
                       isMe={isMe}
-                      timestamp={safeFormatTimeOnly(msg.timestamp) || 'Just now'}
+                      timestamp={safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}
                     >
-                      <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+                      <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
                       <MessageStatusTicks
                         status={msg.status}
                         isMe={isMe}
@@ -476,13 +472,7 @@ export function MessageItem({
                       )}
                     </div>
                   )}
-                  {parsedMsgContent === '[Decryption Error - Integrity Check Failed]' || parsedMsgContent === '[Encrypted Message - Skipped Key Not Found]' ? (
-                    <div className="flex items-center gap-3">
-                      <p className="whitespace-pre-wrap message-content-wrap selectable-text text-alert-error italic font-mono text-[11px]">
-                        {parsedMsgContent}
-                      </p>
-                    </div>
-                  ) : parsedMsgContent && (
+                  {parsedMsgContent && (
                     <div>
                       <p className="whitespace-pre-wrap message-content-wrap selectable-text">
                         {parsedMsgContent}
@@ -547,7 +537,7 @@ export function MessageItem({
           {/* Timestamp and Read Receipts inside bubble (hidden for image/video cards to prevent duplicate overlay time) */}
           {!isImageCard && !isVideo && (
             <div className={`flex items-center gap-1 mt-1 -mb-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
-              <span>{safeFormatTimeOnly(msg.timestamp) || 'Just now'}</span>
+              <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
               <MessageStatusTicks 
                 status={msg.status} 
                 isMe={isMe} 

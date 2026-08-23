@@ -6,6 +6,7 @@ import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview, parseAttachment, formatVoiceNotePreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
+import { getLocalMessages } from '../../utils/indexedDb';
 
 function renderPreviewWithIcons(content: string) {
   if (!content) return null;
@@ -162,7 +163,14 @@ export default function DirectMainDashboard({
           // locally (set at send time) instead of attempting a decrypt that
           // is structurally guaranteed to fail.
           if (isMe && isStatelessDmEnvelope(raw)) {
-            const known = last.plaintext || last.client_plaintext || '';
+            let known = last.plaintext || last.client_plaintext || '';
+            if (!known) {
+              const localStore = await getLocalMessages(dmRoomId, 10, currentUserId).catch(() => []);
+              const match = localStore.find((lm: any) => lm.plaintext && (lm.content === raw || lm.id === last.message_id || lm.message_id === last.message_id));
+              if (match?.plaintext) {
+                known = match.plaintext;
+              }
+            }
             if (isMounted && known) {
               setDecryptedPreviews(prev => ({ ...prev, [friendId]: known }));
             }
@@ -170,9 +178,16 @@ export default function DirectMainDashboard({
           }
           if (raw) {
             try {
-              const decrypted = isStatelessDmEnvelope(raw)
+              let decrypted = isStatelessDmEnvelope(raw)
                 ? await decryptMessage(raw, { type: 'direct', peerUserId: friendId })
                 : decryptMessageSync(raw, dmRoomId, !!(last.is_encrypted || last.isEncrypted));
+              if (!decrypted || decrypted === '[Encrypted Message]') {
+                const localStore = await getLocalMessages(dmRoomId, 10, currentUserId).catch(() => []);
+                const match = localStore.find((lm: any) => lm.plaintext && (lm.content === raw || lm.id === last.message_id || lm.message_id === last.message_id));
+                if (match?.plaintext) {
+                  decrypted = match.plaintext;
+                }
+              }
               if (isMounted && decrypted) {
                 setDecryptedPreviews(prev => ({ ...prev, [friendId]: decrypted }));
               }

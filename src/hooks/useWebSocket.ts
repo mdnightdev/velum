@@ -413,8 +413,54 @@ export function useWebSocket({
             setMessages([]);
           }
         } else if (data.type === 'history') {
+          const historyMessages: Message[] = data.messages || [];
           if (data.room_id === activeRoomIdRef.current) {
-            setMessages(data.messages || []);
+            // Silently merge with local known plaintexts in background
+            getLocalMessages(data.room_id, 200, uid).then((localMsgs) => {
+              const localMap = new Map<string, string>();
+              localMsgs.forEach(lm => {
+                if (lm.plaintext) {
+                  const lk = [lm.message_id, lm.id, lm.client_msg_id, lm.nonce, lm.db_message_id].filter(Boolean).map(String);
+                  for (const k of lk) {
+                    localMap.set(k, lm.plaintext);
+                  }
+                  if (lm.content) localMap.set(lm.content, lm.plaintext);
+                }
+              });
+
+              setMessages(prev => {
+                const prevMap = new Map<string, Message>();
+                prev.forEach(p => {
+                  const pk = [p.message_id, p.id, p.client_msg_id, p.nonce, p.db_message_id].filter(Boolean).map(String);
+                  for (const k of pk) {
+                    prevMap.set(k, p);
+                  }
+                });
+
+                return historyMessages.map(hm => {
+                  const keys = [hm.message_id, hm.id, hm.client_msg_id, hm.nonce, (hm as any).db_message_id].filter(Boolean).map(String);
+                  let plaintext = hm.plaintext;
+                  if (!plaintext) {
+                    for (const k of keys) {
+                      if (prevMap.has(k) && prevMap.get(k)!.plaintext) {
+                        plaintext = prevMap.get(k)!.plaintext;
+                        break;
+                      }
+                      if (localMap.has(k)) {
+                        plaintext = localMap.get(k);
+                        break;
+                      }
+                    }
+                    if (!plaintext && localMap.has(hm.content)) {
+                      plaintext = localMap.get(hm.content);
+                    }
+                  }
+                  return plaintext ? { ...hm, plaintext } : hm;
+                });
+              });
+            }).catch(() => {
+              setMessages(historyMessages);
+            });
           }
           if (data.messages && data.messages.length > 0 && data.room_id) {
             const latest = data.messages[data.messages.length - 1];
@@ -423,6 +469,11 @@ export function useWebSocket({
         } else {
           window.dispatchEvent(new CustomEvent('velum-message-received', { detail: data }));
           
+          const rawAckId = data.client_msg_id || data.nonce;
+          if (rawAckId) {
+            removeOutboxMessage(String(rawAckId), userId || undefined);
+          }
+
           if (data.room_id) {
             const newMessage = data as Message;
             setLastMessages(prev => {
@@ -449,29 +500,41 @@ export function useWebSocket({
           if (data.room_id === activeRoomIdRef.current) {
             setMessages(prev => {
               const newMessage = data as Message;
-              // Check if we have an optimistic message to replace by nonce
-              const targetKey = newMessage.client_msg_id || newMessage.nonce || newMessage.message_id;
-              const optIdx = prev.findIndex(m => 
-                (targetKey && (m.client_msg_id === targetKey || m.nonce === targetKey || m.message_id === targetKey)) ||
-                (newMessage.client_msg_id && (m.client_msg_id === newMessage.client_msg_id || m.nonce === newMessage.client_msg_id || m.message_id === newMessage.client_msg_id)) ||
-                (newMessage.nonce && (m.client_msg_id === newMessage.nonce || m.nonce === newMessage.nonce || m.message_id === newMessage.nonce))
-              );
-              if (optIdx !== -1) {
-                const originalPlaintext = prev[optIdx].plaintext;
-                const newArr = [...prev];
-                newArr[optIdx] = {
-                  ...newMessage,
-                  plaintext: originalPlaintext || newMessage.plaintext,
-                  status: newMessage.status || 'sent'
-                };
-                if (onMessageReceived) {
-                  onMessageReceived(newArr[optIdx]);
+              const isFromMe = Boolean(uid && String(newMessage.user_id) === String(uid));
+
+              // Check if we have an optimistic message to replace by nonce ONLY for our own outgoing messages
+              if (isFromMe || !newMessage.user_id) {
+                const targetKey = newMessage.client_msg_id || newMessage.nonce || newMessage.message_id;
+                const optIdx = prev.findIndex(m => {
+                  const mIsMe = !m.user_id || String(m.user_id) === String(uid);
+                  if (!mIsMe) return false;
+                  return (
+                    (targetKey && (m.client_msg_id === targetKey || m.nonce === targetKey || m.message_id === targetKey)) ||
+                    (newMessage.client_msg_id && (m.client_msg_id === newMessage.client_msg_id || m.nonce === newMessage.client_msg_id || m.message_id === newMessage.client_msg_id)) ||
+                    (newMessage.nonce && (m.client_msg_id === newMessage.nonce || m.nonce === newMessage.nonce || m.message_id === newMessage.nonce))
+                  );
+                });
+
+                if (optIdx !== -1) {
+                  const originalPlaintext = prev[optIdx].plaintext;
+                  const newArr = [...prev];
+                  newArr[optIdx] = {
+                    ...newMessage,
+                    plaintext: originalPlaintext || newMessage.plaintext,
+                    status: newMessage.status || 'sent'
+                  };
+                  if (onMessageReceived) {
+                    onMessageReceived(newArr[optIdx]);
+                  }
+                  return newArr;
                 }
-                return newArr;
               }
+
               const exists = prev.some(m => 
                 (data.message_id && String(m.message_id) === String(data.message_id)) ||
-                (data.db_message_id && String(m.db_message_id) === String(data.db_message_id))
+                (data.db_message_id && String(m.db_message_id) === String(data.db_message_id)) ||
+                (data.nonce && m.nonce && String(m.nonce) === String(data.nonce)) ||
+                (data.client_msg_id && m.client_msg_id && String(m.client_msg_id) === String(data.client_msg_id))
               );
               if (exists) return prev;
               if (onMessageReceived) {

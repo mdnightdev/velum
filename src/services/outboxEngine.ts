@@ -62,8 +62,18 @@ export async function drainOutboxQueue(sendWebSocketFrame: (payload: OutboxPaylo
     const pending = await getQueuedOutboxMessages(userId);
     if (pending.length === 0) return 0;
 
+    const now = Date.now();
+    const MAX_STALE_MS = 5 * 60 * 1000; // 5 minutes max age
+
     let drainedCount = 0;
     for (const item of pending) {
+      const itemAge = now - new Date(item.timestamp).getTime();
+      if (itemAge > MAX_STALE_MS) {
+        // Drop stale outbox item to prevent infinite reconnect spam
+        await removeOutboxMessage(item.client_msg_id, userId);
+        continue;
+      }
+
       const success = sendWebSocketFrame(item);
       if (success) {
         await removeOutboxMessage(item.client_msg_id, userId);

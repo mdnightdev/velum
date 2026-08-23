@@ -31,12 +31,12 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
 
   return (
     <>
-      <div className="relative rounded-2xl overflow-hidden shadow-md max-w-full max-h-64 group">
+      <div className="relative rounded-2xl overflow-hidden shadow-md w-full max-w-[280px] min-h-[180px] aspect-[4/3] bg-velum-800/80 group">
         {/* Image */}
         <img
           src={src}
           alt={name || 'Image'}
-          className="w-full max-h-64 object-cover cursor-pointer block hover:opacity-95 transition-opacity"
+          className="w-full h-full object-cover cursor-pointer block hover:opacity-95 transition-opacity"
           onClick={() => setIsExpanded(true)}
           loading="lazy"
         />

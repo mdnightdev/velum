@@ -32,57 +32,50 @@ export function useMessageScroll({ messagesLength, typingPeer, chatKey }: UseMes
   const handleScroll = () => {
     if (scrollContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-      setIsScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
+      setIsScrolledUp(scrollHeight - scrollTop - clientHeight > 60);
     }
   };
 
-  const scrollToBottom = (force = false, smooth = true) => {
-    if (force || !isScrolledUp) {
-      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  const scrollToBottom = (force = false) => {
+    if (scrollContainerRef.current) {
+      if (force || !isScrolledUp) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
     }
   };
 
-  // Reset initial load and snap scroll when switching active conversations
+  // When opening a chat or switching active conversation, open directly at the last message (no autoscrolling animation)
   useEffect(() => {
-    settleUntilRef.current = Date.now() + SETTLE_WINDOW_MS;
     prevMessagesLengthRef.current = 0;
     if (scrollDebounceRef.current) {
       clearTimeout(scrollDebounceRef.current);
       scrollDebounceRef.current = null;
     }
-    scrollToBottom(true, false);
+    // Snap directly to the bottom without animated scrolling
+    scrollToBottom(true);
+    // Double-check alignment on next tick after DOM paint
+    const t = setTimeout(() => {
+      scrollToBottom(true);
+    }, 50);
+    return () => clearTimeout(t);
   }, [chatKey]);
+
   useEffect(() => {
     const handleResize = () => {
-      // Force scroll = true, smooth = false (so it snaps instantly)
-      scrollToBottom(true, false);
+      scrollToBottom(true);
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-
+  // When new messages arrive, keep at bottom only if the user is already at the bottom
   useEffect(() => {
-    const stillSettling = Date.now() < settleUntilRef.current;
-    const bigJump = Math.abs(messagesLength - prevMessagesLengthRef.current) > 3;
+    if (!isScrolledUp) {
+      scrollToBottom(false);
+    }
     prevMessagesLengthRef.current = messagesLength;
-
-    if (scrollDebounceRef.current) {
-      clearTimeout(scrollDebounceRef.current);
-      scrollDebounceRef.current = null;
-    }
-
-    if (stillSettling || bigJump) {
-      // Wait for the burst of loading updates to quiet down, then snap once.
-      scrollDebounceRef.current = setTimeout(() => {
-        scrollToBottom(true, false);
-        scrollDebounceRef.current = null;
-      }, SCROLL_DEBOUNCE_MS);
-    } else {
-      scrollToBottom(false, true);
-    }
-  }, [messagesLength, typingPeer]);
+  }, [messagesLength]);
 
   useEffect(() => {
     return () => {

@@ -586,6 +586,7 @@ export function useLoungeData({
   return {
     rooms,
     members,
+    setMembers,
     loungeDetails,
     loungeList,
     isLoadingLounge,

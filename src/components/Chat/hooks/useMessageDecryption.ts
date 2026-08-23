@@ -3,7 +3,7 @@ import { Message } from '../../../types';
 import { decryptMessage, encryptMessage, EncryptionContext } from '../../../services/encryptionService';
 import { statelessE2eeService } from '../../../services/statelessE2eeService';
 import { parseAttachment } from '../../../utils/messageParser';
-import { saveLocalMessages } from '../../../utils/indexedDb';
+import { saveLocalMessages, getLocalMessages } from '../../../utils/indexedDb';
 
 export function useMessageDecryption({
   messages,
@@ -26,6 +26,21 @@ export function useMessageDecryption({
     }
 
     const processDecryption = async () => {
+      // Preload local messages for this room from user-isolated store to restore known plaintexts
+      const localStore = await getLocalMessages(roomId, 300, currentUserId).catch(() => []);
+      const localPlaintextMap = new Map<string, string>();
+      for (const lm of localStore) {
+        if (lm.plaintext) {
+          const lk = [lm.message_id, lm.id, lm.client_msg_id, lm.nonce, lm.db_message_id].filter(Boolean).map(String);
+          for (const k of lk) {
+            localPlaintextMap.set(k, lm.plaintext);
+          }
+          if (lm.content) {
+            localPlaintextMap.set(lm.content, lm.plaintext);
+          }
+        }
+      }
+
       const pending: Array<{
         keys: string[];
         ciphertext: string;
@@ -40,6 +55,19 @@ export function useMessageDecryption({
           .map(String);
 
         if (!m.content || keys.length === 0) continue;
+
+        // Restore plaintext from local database if omitted in memory
+        if (!m.plaintext) {
+          for (const k of keys) {
+            if (localPlaintextMap.has(k)) {
+              m.plaintext = localPlaintextMap.get(k);
+              break;
+            }
+          }
+          if (!m.plaintext && localPlaintextMap.has(m.content)) {
+            m.plaintext = localPlaintextMap.get(m.content);
+          }
+        }
 
         const isOutgoing = Boolean(currentUserId && String(m.user_id) === String(currentUserId));
 
@@ -70,14 +98,16 @@ export function useMessageDecryption({
           continue;
         }
 
+        const isDmRoom = (m.room_id || roomId || '').startsWith('dm_');
+
         // 3. Outgoing ratchet messages cannot be decrypted with receiver ratchet
-        if (isOutgoing && activeChatPeer) {
+        if (isOutgoing && (activeChatPeer || isDmRoom)) {
           continue;
         }
 
-        const peerId = activeChatPeer?.userId || m.user_id;
+        const peerId = activeChatPeer?.userId || (isOutgoing ? undefined : m.user_id);
         const context: EncryptionContext = {
-          type: activeChatPeer ? 'direct' : 'lounge',
+          type: (activeChatPeer || isDmRoom) ? 'direct' : 'lounge',
           roomId: m.room_id || roomId,
           peerUserId: peerId,
           isEncrypted: !!(m.is_encrypted || (m as any).isEncrypted),
