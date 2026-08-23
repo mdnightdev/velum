@@ -147,23 +147,23 @@ export function ChatHeader({
 
   // Standard Header Mode
   return (
-    <div className="px-3 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] pb-1.5 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
-      <div className="flex items-center gap-2">
+    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] pb-2 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
+      <div className="flex items-center gap-2 min-w-0">
         {isMobile && onBackToDeck && (
           <button
             type="button"
             onClick={onBackToDeck}
-            className="w-8 h-8 rounded-full text-text-secondary hover:text-white hover:bg-text-primary/5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            className="w-9 h-9 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
             title="Back to directory"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-5 h-5" />
           </button>
         )}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3 min-w-0">
           {/* Avatar */}
           {headerAvatar && !avatarErr ? (
             <div 
-              className="w-8 h-8 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
+              className="w-9 h-9 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
             >
               <img 
                 src={resolveMediaUrl(headerAvatar)} 
@@ -174,32 +174,32 @@ export function ChatHeader({
               />
             </div>
           ) : (
-            <div className="w-8 h-8 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
-              <span className="text-[11px] font-mono font-bold uppercase text-accent">{initials}</span>
+            <div className="w-9 h-9 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
+              <span className="text-xs font-mono font-bold uppercase text-accent">{initials}</span>
             </div>
           )}
           
           {/* Title & Status */}
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold text-white leading-tight">{chatTitle}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-semibold text-white leading-tight truncate">{chatTitle}</span>
             {!wsConnected ? (
               <span className="text-[9px] font-mono text-accent animate-pulse leading-none mt-0.5">
                 connecting...
               </span>
             ) : activeChatPeer && activeChatPeer.userId !== 999 ? (
-              <span className="text-[10px] text-text-secondary leading-none mt-0.5">
+              <span className="text-[10px] text-text-secondary leading-none mt-0.5 truncate">
                 {formatLastSeen(peerPresence)}
               </span>
             ) : null}
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         {onSearchToggle && (
           <button
             type="button"
             onClick={onSearchToggle}
-            className="w-8 h-8 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            className="w-9 h-9 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
             title="Search messages"
           >
             <Search className="w-4 h-4" />

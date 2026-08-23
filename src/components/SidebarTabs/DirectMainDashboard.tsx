@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Bot, Menu, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X } from 'lucide-react';
+import { MessageSquare, Bot, Menu, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search } from 'lucide-react';
 import { decryptMessage, decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -150,8 +150,15 @@ export default function DirectMainDashboard({
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
-  const [deletedDmRooms, setDeletedDmRooms] = useState<Set<string>>(new Set());
+  const [deletedUserIds, setDeletedUserIds] = useState<number[]>(() => {
+    try {
+      const saved = localStorage.getItem(`velum_deleted_dms_${currentUserId}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [contextPeer, setContextPeer] = useState<{ userId: number; username: string; dmRoomId: string; isArchived: boolean } | null>(null);
+  const [isNewChatPickerOpen, setIsNewChatPickerOpen] = useState(false);
+  const [newChatSearch, setNewChatSearch] = useState('');
 
   const touchTimerRef = useRef<any>(null);
   const isLongPressRef = useRef(false);
@@ -187,16 +194,14 @@ export default function DirectMainDashboard({
 
   const handleDeleteConversation = async (peerId: number, peerName: string, dmRoomId: string) => {
     try {
-      const sId = getSessionId();
-      await fetch(`/v2/user/${peerId}/chat`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${sId}`,
-          'Content-Type': 'application/json'
-        }
+      setDeletedUserIds(prev => {
+        const next = [...prev.filter(id => id !== peerId), peerId];
+        try {
+          localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next));
+        } catch {}
+        return next;
       });
       await flushLoungeCache(dmRoomId, currentUserId);
-      setDeletedDmRooms(prev => new Set(prev).add(dmRoomId));
       setDecryptedPreviews(prev => {
         const copy = { ...prev };
         delete copy[peerId];
@@ -343,12 +348,12 @@ export default function DirectMainDashboard({
     <div className="flex-1 flex flex-col w-full h-full select-none font-sans bg-transparent text-text-primary">
       {/* Header / Selection Action Bar */}
       {contextPeer ? (
-        <div className="p-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center justify-between gap-2 animate-in fade-in duration-150">
+        <div className="p-3 pt-[calc(env(safe-area-inset-top,0px)+0.875rem)] px-4 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center justify-between gap-2.5 animate-in fade-in duration-150">
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => setContextPeer(null)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
               title="Cancel Selection"
             >
               <X className="w-5 h-5" />
@@ -356,11 +361,11 @@ export default function DirectMainDashboard({
             <span className="text-xs font-bold text-accent uppercase tracking-wider">1 selected</span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => toggleArchive(contextPeer.userId)}
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-text-secondary hover:text-accent hover:bg-velum-750 active:bg-velum-700 transition cursor-pointer"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-text-secondary hover:text-accent hover:bg-velum-750 active:bg-velum-700 transition cursor-pointer"
               title={contextPeer.isArchived ? "Unarchive Chat" : "Archive Chat"}
               aria-label={contextPeer.isArchived ? "Unarchive Chat" : "Archive Chat"}
             >
@@ -369,27 +374,27 @@ export default function DirectMainDashboard({
             <button
               type="button"
               onClick={() => handleDeleteConversation(contextPeer.userId, contextPeer.username, contextPeer.dmRoomId)}
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-alert-error hover:bg-alert-error/15 active:bg-alert-error/20 transition cursor-pointer"
-              title="Delete Entire Conversation"
-              aria-label="Delete Entire Conversation"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-alert-error hover:bg-alert-error/15 active:bg-alert-error/20 transition cursor-pointer"
+              title="Delete Conversation"
+              aria-label="Delete Conversation"
             >
               <Trash2 className="w-5 h-5 text-alert-error" />
             </button>
           </div>
         </div>
       ) : (
-        <div className="p-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
+        <div className="p-3 pt-[calc(env(safe-area-inset-top,0px)+0.875rem)] px-4 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2.5">
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
-              className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
+              className="md:hidden p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
               aria-label="Open sidebar menu"
               title="Open Navigation"
             >
               <Menu className="w-4 h-4" />
             </button>
           )}
-          <div className="relative flex-1 flex items-center h-8 px-2.5 rounded-lg border border-velum-600 bg-velum-750 focus-within:border-accent/40">
+          <div className="relative flex-1 flex items-center h-9 px-3 rounded-xl border border-velum-600 bg-velum-750 focus-within:border-accent/40">
             <input
               type="text"
               placeholder={t('chats.search', 'Search messages...')}
@@ -402,11 +407,11 @@ export default function DirectMainDashboard({
       )}
 
       {/* Filter Tabs (All vs Archived) */}
-      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-velum-600 bg-velum-850 shrink-0 text-xs">
+      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-velum-600 bg-velum-850 shrink-0 text-xs">
         <button
           type="button"
           onClick={() => setFilterTab('active')}
-          className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+          className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
             filterTab === 'active' 
               ? 'bg-accent/15 text-accent' 
               : 'text-text-secondary hover:text-text-primary'
@@ -417,7 +422,7 @@ export default function DirectMainDashboard({
         <button
           type="button"
           onClick={() => setFilterTab('archived')}
-          className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
             filterTab === 'archived' 
               ? 'bg-accent/15 text-accent' 
               : 'text-text-secondary hover:text-text-primary'
@@ -434,23 +439,23 @@ export default function DirectMainDashboard({
       </div>
 
       {/* Directory List */}
-      <div className="flex-1 overflow-y-auto w-full flex flex-col">
+      <div className="flex-1 overflow-y-auto w-full flex flex-col relative">
         {/* Default Secure VELUM System Contact (only in active tab) */}
-        {filterTab === 'active' && (
+        {filterTab === 'active' && !deletedUserIds.includes(999) && (
           <div
             onClick={() => {
               if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
               if (onSectionView) onSectionView('chat');
               if (onMarkAsRead) onMarkAsRead('', velumRoomId);
             }}
-            className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
+            className="w-full px-4 py-3 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
           >
             <div className="min-w-0 flex items-center gap-3 flex-1">
               <div 
-                className="w-9 h-9 rounded-lg bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden flex-shrink-0"
+                className="w-10 h-10 rounded-xl bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden flex-shrink-0"
                 title="Velum"
               >
-                <div className="w-4.5 h-4.5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+                <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
@@ -485,6 +490,7 @@ export default function DirectMainDashboard({
         {/* Other friends/contacts */}
         {filteredFriends
           .filter(r => {
+            if (deletedUserIds.includes(r.friendId)) return false;
             const isArchived = archivedUserIds.includes(r.friendId);
             return filterTab === 'archived' ? isArchived : !isArchived;
           })
@@ -505,7 +511,6 @@ export default function DirectMainDashboard({
             const friendName = stripAt(r.username || r.displayName);
             const friendAvatar = r.avatarUrl;
             const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
-            const isDeletedLocally = deletedDmRooms.has(dmRoomId);
             const isArchived = archivedUserIds.includes(friendId);
             const candidateKeys = [
               dmRoomId,
@@ -523,9 +528,9 @@ export default function DirectMainDashboard({
             }
 
             const lm = lastMessages || {};
-            let last = isDeletedLocally ? null : (r.last_message || null as any);
+            let last = r.last_message || null as any;
             for (const k of candidateKeys) {
-              if (!isDeletedLocally && k && lm[k]) { last = lm[k]; break; }
+              if (k && lm[k]) { last = lm[k]; break; }
             }
 
             let lastTxt = '';
@@ -597,14 +602,14 @@ export default function DirectMainDashboard({
                   e.preventDefault();
                   setContextPeer({ userId: friendId, username: friendName, dmRoomId, isArchived });
                 }}
-                className={`w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer transition-colors group relative ${
+                className={`w-full px-4 py-3 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer transition-colors group relative ${
                   contextPeer?.userId === friendId 
                     ? 'bg-accent/15 border-l-4 border-l-accent' 
                     : 'hover:bg-velum-750 active:bg-velum-700'
                 }`}
               >
                 <div className="min-w-0 flex items-center gap-3 flex-1">
-                  <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
+                  <div className="w-10 h-10 rounded-xl bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
                     {friendAvatar ? (
                       <img 
                         src={resolveMediaUrl(friendAvatar)} 
@@ -635,7 +640,7 @@ export default function DirectMainDashboard({
                             e.stopPropagation();
                             setContextPeer(contextPeer?.userId === friendId ? null : { userId: friendId, username: friendName, dmRoomId, isArchived });
                           }}
-                          className="w-7 h-7 -mr-1 flex items-center justify-center rounded-md text-text-secondary hover:text-text-primary hover:bg-velum-700 active:bg-velum-600 transition cursor-pointer shrink-0"
+                          className="w-8 h-8 -mr-1 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-700 active:bg-velum-600 transition cursor-pointer shrink-0"
                           title="Chat Options"
                           aria-label="Chat Options"
                         >
@@ -668,6 +673,134 @@ export default function DirectMainDashboard({
             );
           })}
       </div>
+
+      {/* Floating Action Button (New Chat) */}
+      <button
+        type="button"
+        onClick={() => {
+          setNewChatSearch('');
+          setIsNewChatPickerOpen(true);
+        }}
+        className="fixed bottom-8 right-6 z-30 w-15 h-15 rounded-2xl bg-accent hover:bg-accent-hover active:scale-95 text-velum-900 shadow-2xl shadow-accent/40 flex items-center justify-center cursor-pointer transition-all group"
+        title="Start new conversation"
+        aria-label="Start new conversation"
+      >
+        <MessageSquarePlus className="w-7 h-7 text-velum-900 group-hover:scale-110 transition-transform" />
+      </button>
+
+      {/* New Conversation Contact Selector Bottom Sheet */}
+      {isNewChatPickerOpen && (
+        <div
+          className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center modal-backdrop bg-black/75 p-0 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setIsNewChatPickerOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-velum-850 border-t sm:border border-velum-600 rounded-t-3xl sm:rounded-2xl p-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] space-y-4 shadow-2xl animate-in slide-in-from-bottom duration-200 text-text-primary max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto sm:hidden -mt-1" />
+            <div className="flex items-center justify-between pb-2 border-b border-velum-600 shrink-0">
+              <div className="flex flex-col">
+                <span className="text-base font-bold text-text-primary">New Conversation</span>
+                <span className="text-xs text-text-secondary">Select a contact to message</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsNewChatPickerOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search contacts input */}
+            <div className="relative flex items-center h-10 px-3 rounded-xl border border-velum-600 bg-velum-750 focus-within:border-accent/40 shrink-0">
+              <Search className="w-4 h-4 text-text-secondary mr-2 shrink-0" />
+              <input
+                type="text"
+                placeholder="Search contacts by name..."
+                value={newChatSearch}
+                onChange={(e) => setNewChatSearch(e.target.value)}
+                className="w-full bg-transparent border-none outline-none text-xs text-text-primary placeholder-text-disabled"
+                autoFocus
+              />
+            </div>
+
+            {/* Contacts list */}
+            <div className="flex-1 overflow-y-auto space-y-1 min-h-[160px] max-h-[50vh] pr-1">
+              {/* Velum system contact */}
+              {(!newChatSearch || 'velum'.includes(newChatSearch.toLowerCase())) && (
+                <div
+                  onClick={() => {
+                    setDeletedUserIds(prev => {
+                      const next = prev.filter(id => id !== 999);
+                      try { localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next)); } catch {}
+                      return next;
+                    });
+                    if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
+                    if (onMarkAsRead) onMarkAsRead('', velumRoomId);
+                    setIsNewChatPickerOpen(false);
+                  }}
+                  className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-velum-750 active:bg-velum-700 transition"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden shrink-0">
+                    <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
+                      Velum <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-accent/15 text-accent">System</span>
+                    </span>
+                    <span className="text-[11px] text-text-secondary">Official System Bot</span>
+                  </div>
+                </div>
+              )}
+
+              {/* All contacts */}
+              {relationshipsArray
+                .filter(r => {
+                  const name = stripAt(r.username || r.displayName || '');
+                  return !newChatSearch || name.toLowerCase().includes(newChatSearch.toLowerCase());
+                })
+                .map(r => {
+                  const fId = r.friendId;
+                  const fName = stripAt(r.username || r.displayName || '');
+                  const fAvatar = r.avatarUrl;
+                  const dmSlug = `dm_${Math.min(currentUserId, fId)}_${Math.max(currentUserId, fId)}`;
+
+                  return (
+                    <div
+                      key={fId}
+                      onClick={() => {
+                        // Un-delete this user so conversation card appears
+                        setDeletedUserIds(prev => {
+                          const next = prev.filter(id => id !== fId);
+                          try { localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next)); } catch {}
+                          return next;
+                        });
+                        if (onSelectPeer) onSelectPeer({ userId: fId, username: fName, avatar: fAvatar });
+                        if (onMarkAsRead) onMarkAsRead(undefined, dmSlug);
+                        setIsNewChatPickerOpen(false);
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-velum-750 active:bg-velum-700 transition"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden shrink-0">
+                        {fAvatar ? (
+                          <img src={resolveMediaUrl(fAvatar)} alt={fName} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="uppercase text-xs font-semibold text-text-primary">{fName.slice(0, 2)}</span>
+                        )}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-semibold text-text-primary truncate">{fName}</span>
+                        <span className="text-[11px] text-text-secondary">Tap to start encrypted conversation</span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
