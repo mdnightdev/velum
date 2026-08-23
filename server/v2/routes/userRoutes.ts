@@ -248,19 +248,26 @@ userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Respons
       ? `dm_velum_${currentUserId}`
       : `dm_${Math.min(currentUserId, targetUserId)}_${Math.max(currentUserId, targetUserId)}`;
 
-    // Delete messages matching dmSlug directly
-    await db.delete(messages).where(eq(messages.loungeId, dmSlug));
+    // Resolve all lounges matching dmSlug or common DM memberships
+    const matchedLounges = await db.select().from(lounges).where(eq(lounges.slug, dmSlug));
+    const targetLoungeIds = new Set<number>(matchedLounges.map(l => l.id));
 
-    // Also delete messages in any registered DM lounges
-    const dmLounges = await db.select().from(lounges).where(eq(lounges.type, 'dm'));
     const members = await db.select().from(loungeMembers).where(inArray(loungeMembers.userId, [currentUserId, targetUserId]));
-    
     const userLounges = new Set(members.filter(m => m.userId === currentUserId).map(m => m.loungeId));
     const targetLounges = new Set(members.filter(m => m.userId === targetUserId).map(m => m.loungeId));
-    const commonDmLounge = dmLounges.find(l => userLounges.has(l.id) && targetLounges.has(l.id));
+    
+    for (const lId of userLounges) {
+      if (targetLounges.has(lId)) {
+        targetLoungeIds.add(lId);
+      }
+    }
 
-    if (commonDmLounge) {
-      await db.delete(messages).where(eq(messages.loungeId, commonDmLounge.id));
+    const allLoungeIds = Array.from(targetLoungeIds);
+    if (allLoungeIds.length > 0) {
+      await db.delete(messages).where(inArray(messages.loungeId, allLoungeIds));
+      await db.update(lounges)
+        .set({ lastMessageText: null, lastMessageAt: null, lastMessageSenderId: null })
+        .where(inArray(lounges.id, allLoungeIds));
     }
 
     res.json({ success: true, message: 'Chat history cleared.' });

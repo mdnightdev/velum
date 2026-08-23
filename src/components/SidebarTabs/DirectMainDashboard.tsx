@@ -153,6 +153,27 @@ export default function DirectMainDashboard({
   const [deletedDmRooms, setDeletedDmRooms] = useState<Set<string>>(new Set());
   const [contextPeer, setContextPeer] = useState<{ userId: number; username: string; dmRoomId: string; isArchived: boolean } | null>(null);
 
+  const touchTimerRef = useRef<any>(null);
+  const isLongPressRef = useRef(false);
+
+  const startLongPress = (peerInfo: { userId: number; username: string; dmRoomId: string; isArchived: boolean }) => {
+    isLongPressRef.current = false;
+    touchTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      setContextPeer(peerInfo);
+      if (typeof window !== 'undefined' && window.navigator && 'vibrate' in window.navigator) {
+        try { window.navigator.vibrate(40); } catch {}
+      }
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  };
+
   const toggleArchive = (peerId: number) => {
     setArchivedUserIds(prev => {
       const next = prev.includes(peerId) ? prev.filter(id => id !== peerId) : [...prev, peerId];
@@ -165,9 +186,6 @@ export default function DirectMainDashboard({
   };
 
   const handleDeleteConversation = async (peerId: number, peerName: string, dmRoomId: string) => {
-    if (!window.confirm(`Delete entire conversation with ${peerName}? This action cannot be undone.`)) {
-      return;
-    }
     try {
       const sId = getSessionId();
       await fetch(`/v2/user/${peerId}/chat`, {
@@ -179,6 +197,11 @@ export default function DirectMainDashboard({
       });
       await flushLoungeCache(dmRoomId, currentUserId);
       setDeletedDmRooms(prev => new Set(prev).add(dmRoomId));
+      setDecryptedPreviews(prev => {
+        const copy = { ...prev };
+        delete copy[peerId];
+        return copy;
+      });
       setContextPeer(null);
     } catch (e) {
       console.warn('Failed to delete conversation:', e);
@@ -318,28 +341,65 @@ export default function DirectMainDashboard({
 
   return (
     <div className="flex-1 flex flex-col w-full h-full select-none font-sans bg-transparent text-text-primary">
-      {/* Header */}
-      <div className="p-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
-        {onToggleSidebar && (
-          <button
-            onClick={onToggleSidebar}
-            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
-            aria-label="Open sidebar menu"
-            title="Open Navigation"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-        )}
-        <div className="relative flex-1 flex items-center h-8 px-2.5 rounded-lg border border-velum-600 bg-velum-750 focus-within:border-accent/40">
-          <input
-            type="text"
-            placeholder={t('chats.search', 'Search messages...')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent border-none outline-none text-xs text-text-primary placeholder-text-disabled"
-          />
+      {/* Header / Selection Action Bar */}
+      {contextPeer ? (
+        <div className="p-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center justify-between gap-2 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setContextPeer(null)}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+              title="Cancel Selection"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <span className="text-xs font-bold text-accent uppercase tracking-wider">1 selected</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => toggleArchive(contextPeer.userId)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-text-secondary hover:text-accent hover:bg-velum-750 active:bg-velum-700 transition cursor-pointer"
+              title={contextPeer.isArchived ? "Unarchive Chat" : "Archive Chat"}
+              aria-label={contextPeer.isArchived ? "Unarchive Chat" : "Archive Chat"}
+            >
+              {contextPeer.isArchived ? <ArchiveRestore className="w-5 h-5 text-accent" /> : <Archive className="w-5 h-5 text-text-primary" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteConversation(contextPeer.userId, contextPeer.username, contextPeer.dmRoomId)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-alert-error hover:bg-alert-error/15 active:bg-alert-error/20 transition cursor-pointer"
+              title="Delete Entire Conversation"
+              aria-label="Delete Entire Conversation"
+            >
+              <Trash2 className="w-5 h-5 text-alert-error" />
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="p-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
+              aria-label="Open sidebar menu"
+              title="Open Navigation"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+          )}
+          <div className="relative flex-1 flex items-center h-8 px-2.5 rounded-lg border border-velum-600 bg-velum-750 focus-within:border-accent/40">
+            <input
+              type="text"
+              placeholder={t('chats.search', 'Search messages...')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-transparent border-none outline-none text-xs text-text-primary placeholder-text-disabled"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Filter Tabs (All vs Archived) */}
       <div className="flex items-center gap-1 px-3 py-1.5 border-b border-velum-600 bg-velum-850 shrink-0 text-xs">
@@ -517,6 +577,10 @@ export default function DirectMainDashboard({
               <div
                 key={friendId}
                 onClick={() => {
+                  if (isLongPressRef.current) {
+                    isLongPressRef.current = false;
+                    return;
+                  }
                   try {
                     const lastId = last ? (last.message_id || last.id || last.messageId) : undefined;
                     if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
@@ -525,7 +589,19 @@ export default function DirectMainDashboard({
                   if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
                   if (onSectionView) onSectionView('chat');
                 }}
-                className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors group relative"
+                onTouchStart={() => startLongPress({ userId: friendId, username: friendName, dmRoomId, isArchived })}
+                onTouchEnd={cancelLongPress}
+                onTouchMove={cancelLongPress}
+                onTouchCancel={cancelLongPress}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextPeer({ userId: friendId, username: friendName, dmRoomId, isArchived });
+                }}
+                className={`w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer transition-colors group relative ${
+                  contextPeer?.userId === friendId 
+                    ? 'bg-accent/15 border-l-4 border-l-accent' 
+                    : 'hover:bg-velum-750 active:bg-velum-700'
+                }`}
               >
                 <div className="min-w-0 flex items-center gap-3 flex-1">
                   <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
@@ -547,7 +623,7 @@ export default function DirectMainDashboard({
                       <p className={`text-xs ${unread > 0 ? 'font-bold text-text-primary' : 'font-medium text-text-primary'} truncate`}>
                         {friendName}
                       </p>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         {lastTimeStr && (
                           <span className={`text-[10px] shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
                             {lastTimeStr}
@@ -557,12 +633,13 @@ export default function DirectMainDashboard({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setContextPeer({ userId: friendId, username: friendName, dmRoomId, isArchived });
+                            setContextPeer(contextPeer?.userId === friendId ? null : { userId: friendId, username: friendName, dmRoomId, isArchived });
                           }}
-                          className="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-velum-600 opacity-60 group-hover:opacity-100 transition cursor-pointer"
+                          className="w-7 h-7 -mr-1 flex items-center justify-center rounded-md text-text-secondary hover:text-text-primary hover:bg-velum-700 active:bg-velum-600 transition cursor-pointer shrink-0"
                           title="Chat Options"
+                          aria-label="Chat Options"
                         >
-                          <MoreVertical className="w-3.5 h-3.5" />
+                          <MoreVertical className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -591,46 +668,6 @@ export default function DirectMainDashboard({
             );
           })}
       </div>
-
-      {/* Conversation Options Modal */}
-      {contextPeer && (
-        <div 
-          className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center modal-backdrop bg-black/60 p-4"
-          onClick={() => setContextPeer(null)}
-        >
-          <div 
-            className="w-full max-w-xs bg-velum-850 border border-velum-600 rounded-2xl p-4 space-y-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150 text-text-primary"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-2 border-b border-velum-600">
-              <span className="text-xs font-bold text-text-primary truncate">{contextPeer.username}</span>
-              <button
-                type="button"
-                onClick={() => setContextPeer(null)}
-                className="p-1 rounded-full text-text-secondary hover:text-text-primary cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => toggleArchive(contextPeer.userId)}
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
-            >
-              {contextPeer.isArchived ? <ArchiveRestore className="w-4 h-4 text-accent" /> : <Archive className="w-4 h-4 text-accent" />}
-              <span>{contextPeer.isArchived ? 'Unarchive Conversation' : 'Archive Conversation'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDeleteConversation(contextPeer.userId, contextPeer.username, contextPeer.dmRoomId)}
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-alert-error hover:bg-alert-error/10 transition cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4 text-alert-error" />
-              <span>Delete Entire Conversation</span>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
