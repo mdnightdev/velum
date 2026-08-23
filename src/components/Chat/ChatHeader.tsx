@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Search, X, Reply, Pencil, Forward, Pin, Trash2, Flag, Copy } from 'lucide-react';
+import { ChevronLeft, Search, X, Reply, Pencil, Forward, Pin, Trash2, ShieldAlert, Copy } from 'lucide-react';
 import { Message } from '../../types';
 import { formatLastSeen } from '../../utils/datetime';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
@@ -58,7 +58,9 @@ export function ChatHeader({
     setAvatarErr(false);
   }, [activeChatPeer?.avatar, avatarUrl]);
   const initials = (activeChatPeer?.displayName || activeChatPeer?.username || chatTitle || '?').slice(0, 2).toUpperCase();
-  const isOwnSelectedMessage = selectedMessage && currentUserId && selectedMessage.user_id === currentUserId;
+  const isOwnSelectedMessage = Boolean(selectedMessage && currentUserId && selectedMessage.user_id === currentUserId);
+  const canEdit = Boolean(isOwnSelectedMessage && !selectedMessage?.deleted && (Date.now() - new Date(selectedMessage?.created_at || Date.now()).getTime() < 15 * 60 * 1000));
+  const canDelete = Boolean(isOwnSelectedMessage);
 
   // Render Selection Mode Action Header when a message is selected
   if (selectedMessage) {
@@ -103,7 +105,7 @@ export function ChatHeader({
               className="p-1.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Edit message"
             >
-              <Edit2 className="w-4 h-4" />
+              <Pencil className="w-4 h-4" />
             </button>
           )}
           {onPinSelected && (
@@ -123,7 +125,7 @@ export function ChatHeader({
               className="p-1.5 rounded-full text-text-secondary hover:text-alert-warning hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Report message"
             >
-              <AlertOctagon className="w-4 h-4" />
+              <ShieldAlert className="w-4 h-4" />
             </button>
           )}
           {canDelete && onDeleteSelected && (

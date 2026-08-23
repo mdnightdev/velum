@@ -40,6 +40,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
   const [recoveryView, setRecoveryView] = useState<RecoveryViewMode>('options');
   const [redeemUsername, setRedeemUsername] = useState('');
   const [redeemCode, setRedeemCode] = useState('');
+  const [redeemNewPassword, setRedeemNewPassword] = useState('');
   const [deviceFingerprint, setDeviceFingerprint] = useState('');
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
 
