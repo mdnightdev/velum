@@ -60,7 +60,7 @@ export function ImageCropperModal({
       ctx.translate(canvas.width / 2, canvas.height / 2);
       ctx.rotate((rotation * Math.PI) / 180);
       ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
-      setRotatedSrc(canvas.toDataURL('image/png'));
+      setRotatedSrc(canvas.toDataURL('image/webp', 0.85));
     };
     img.src = imageSrc;
   }, [imageSrc, rotation]);
@@ -203,14 +203,15 @@ export function ImageCropperModal({
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
 
-    const croppedDataUrl = outputCanvas.toDataURL('image/png');
+    const croppedDataUrl = outputCanvas.toDataURL('image/webp', 0.85);
     const arr = croppedDataUrl.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/webp';
     const bstr = atob(arr[1]);
     let n = bstr.length;
     const u8arr = new Uint8Array(n);
     while (n--) u8arr[n] = bstr.charCodeAt(n);
-    onCropComplete(croppedDataUrl, new File([u8arr], fileName, { type: mime }));
+    const webpFileName = fileName.replace(/\.(png|jpg|jpeg|gif)$/i, '.webp');
+    onCropComplete(croppedDataUrl, new File([u8arr], webpFileName, { type: mime }));
   };
 
   const corners = [

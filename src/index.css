@@ -1,13 +1,50 @@
 @import "tailwindcss";
 
+:root {
+  --theme-velum-900: #08090C;
+  --theme-velum-850: #0C0E12;
+  --theme-velum-800: #101218;
+  --theme-velum-750: #15171E;
+  --theme-velum-700: #1A1D24;
+  --theme-velum-600: #22262E;
+  --theme-velum-500: #2E323B;
+  --theme-text-primary: #F5F2EB;
+  --theme-text-secondary: #9B9790;
+  --theme-text-disabled: #5A5550;
+  --theme-white-2: rgba(255, 255, 255, 0.02);
+  --theme-white-5: rgba(255, 255, 255, 0.05);
+  --theme-white-10: rgba(255, 255, 255, 0.1);
+  --theme-white-15: rgba(255, 255, 255, 0.15);
+  --theme-white-20: rgba(255, 255, 255, 0.2);
+}
+
+html.light,
+html[data-theme="light"] {
+  --theme-velum-900: #F4F6F9;
+  --theme-velum-850: #FFFFFF;
+  --theme-velum-800: #F8F9FA;
+  --theme-velum-750: #E9ECEF;
+  --theme-velum-700: #DEE2E6;
+  --theme-velum-600: #CED4DA;
+  --theme-velum-500: #ADB5BD;
+  --theme-text-primary: #121417;
+  --theme-text-secondary: #495057;
+  --theme-text-disabled: #868E96;
+  --theme-white-2: rgba(0, 0, 0, 0.02);
+  --theme-white-5: rgba(0, 0, 0, 0.05);
+  --theme-white-10: rgba(0, 0, 0, 0.08);
+  --theme-white-15: rgba(0, 0, 0, 0.12);
+  --theme-white-20: rgba(0, 0, 0, 0.16);
+}
+
 html, body, #root {
   height: var(--viewport-height, 100dvh);
   width: 100%;
   min-height: 100%;
   overflow: hidden;
   position: fixed;
-  background-color: var(--color-velum-900);
-  color: var(--color-text-primary);
+  background-color: var(--theme-velum-900);
+  color: var(--theme-text-primary);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", "Android Emoji", sans-serif;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -45,26 +82,109 @@ html, body, #root {
   max-width: 100%;
 }
 
+/* ---- Message Bubble Layout & Responsive Sizing ---- */
 .message-bubble-container {
   min-width: 0;
-  max-width: 58%;
+  max-width: 88%;
 }
 
 @media (min-width: 640px) {
   .message-bubble-container {
-    max-width: 82%;
+    max-width: 78%;
   }
 }
 
+@media (min-width: 768px) {
+  .message-bubble-container {
+    max-width: 70%;
+  }
+}
+
+@media (min-width: 1024px) {
+  .message-bubble-container {
+    max-width: 62%;
+  }
+}
+
+/* Base Chat Bubble */
+.chat-bubble {
+  position: relative;
+  border-radius: 1rem;
+  padding: 0.625rem 1rem;
+  font-size: 0.8125rem; /* 13px */
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.chat-bubble-me {
+  background-color: var(--color-bubble-me);
+  color: var(--color-bubble-me-text);
+  border: 1px solid var(--color-bubble-me-border);
+}
+
+.chat-bubble-peer {
+  background-color: var(--color-bubble-peer);
+  color: var(--color-bubble-peer-text);
+  border: 1px solid var(--color-bubble-peer-border);
+}
+
+/* Appearance density scaling: Compact */
+html[data-message-scaling="compact"] .chat-wallpaper > * + *,
+html[data-message-scaling="compact"] .space-y-2 > * + * {
+  margin-top: 0.125rem !important;
+}
+
+html[data-message-scaling="compact"] .message-bubble-container {
+  margin-bottom: 0.0625rem !important;
+}
+
+html[data-message-scaling="compact"] .chat-bubble {
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.75rem !important; /* 12px */
+  line-height: 1.35 !important;
+  border-radius: 0.75rem !important;
+}
+
+html[data-message-scaling="compact"] .chat-wallpaper {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+/* Appearance density scaling: Cozy (Default) */
+html[data-message-scaling="cozy"] .chat-wallpaper > * + *,
+html[data-message-scaling="cozy"] .space-y-2 > * + * {
+  margin-top: 0.5rem;
+}
+
+html[data-message-scaling="cozy"] .chat-bubble {
+  padding: 0.625rem 1rem;
+  font-size: 0.8125rem;
+}
+
+/* Reduced motion preference */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after,
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.0001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.0001ms !important;
+  transition-delay: 0s !important;
+}
+
 @theme {
-  /* ---- Neutral Scale (warm charcoal - authoritative docs/DESIGN.md) ---- */
-  --color-velum-900: #08090C;   /* canvas (deepest background) */
-  --color-velum-850: #0C0E12;   /* sidebars, drawers, overlays */
-  --color-velum-800: #101218;   /* cards, elevated surfaces */
-  --color-velum-750: #15171E;   /* inputs, modals */
-  --color-velum-700: #1A1D24;   /* hover states */
-  --color-velum-600: #22262E;   /* subtle borders */
-  --color-velum-500: #2E323B;   /* muted separators */
+  /* ---- Neutral Scale (dynamic theme variables) ---- */
+  --color-velum-900: var(--theme-velum-900);
+  --color-velum-850: var(--theme-velum-850);
+  --color-velum-800: var(--theme-velum-800);
+  --color-velum-750: var(--theme-velum-750);
+  --color-velum-700: var(--theme-velum-700);
+  --color-velum-600: var(--theme-velum-600);
+  --color-velum-500: var(--theme-velum-500);
 
   /* ---- Primary Accent (Rose Gold) ---- */
   --color-accent:        #C89B8A;
@@ -88,10 +208,10 @@ html, body, #root {
   --color-accent-secondary-10:     color-mix(in srgb, var(--color-accent-secondary) 10%, transparent);
   --color-accent-secondary-20:     color-mix(in srgb, var(--color-accent-secondary) 20%, transparent);
 
-  /* ---- Text ---- */
-  --color-text-primary:    #F5F2EB;   /* warm ivory – high contrast */
-  --color-text-secondary:  #9B9790;   /* muted sand – labels, descriptions */
-  --color-text-disabled:   #5A5550;   /* disabled or placeholder text */
+  /* ---- Text (dynamic theme variables) ---- */
+  --color-text-primary:    var(--theme-text-primary);
+  --color-text-secondary:  var(--theme-text-secondary);
+  --color-text-disabled:   var(--theme-text-disabled);
 
   /* ---- Status Indicators (Standard) ---- */
   --color-status-online:    #10B981;
@@ -99,10 +219,12 @@ html, body, #root {
   --color-status-dnd:       #F43F5E;
   --color-status-invisible: #71717A;
 
-  /* ---- Opacity Overlays (White / Black) ---- */
-  --color-white-2:   rgba(255, 255, 255, 0.02);
-  --color-white-5:   rgba(255, 255, 255, 0.05);
-  --color-white-10:  rgba(255, 255, 255, 0.1);
+  /* ---- Opacity Overlays (dynamic theme variables) ---- */
+  --color-white-2:   var(--theme-white-2);
+  --color-white-5:   var(--theme-white-5);
+  --color-white-10:  var(--theme-white-10);
+  --color-white-15:  var(--theme-white-15);
+  --color-white-20:  var(--theme-white-20);
   --color-black-40:  rgba(0, 0, 0, 0.4);
   --color-black-60:  rgba(0, 0, 0, 0.6);
 

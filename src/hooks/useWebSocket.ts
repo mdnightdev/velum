@@ -5,6 +5,7 @@ import { getLocalMessages, saveLocalMessages, rotateAndReEncryptLocalMessages, d
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 import { storage } from '../services/storageService';
+import { handleInboundMessageNotification, updateAppBadge } from '../utils/notifications';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -476,6 +477,19 @@ export function useWebSocket({
 
           if (data.room_id) {
             const newMessage = data as Message;
+            const isFromMe = Boolean(uid && String(newMessage.user_id) === String(uid));
+
+            // Trigger notification alert (sound chime, desktop banner) for incoming messages
+            if (!isFromMe && newMessage.user_id) {
+              handleInboundMessageNotification({
+                senderName: newMessage.username || (newMessage as any).sender_name || 'Velum',
+                content: newMessage.plaintext || newMessage.content,
+                isFromMe: false,
+                roomId: data.room_id,
+                activeRoomId: activeRoomIdRef.current
+              });
+            }
+
             setLastMessages(prev => {
               const existing = prev[data.room_id];
               const sameMessage = existing && (

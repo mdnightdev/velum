@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createAuthMiddleware, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import {
@@ -10,6 +11,7 @@ import {
   validatePresignedToken,
   verifyFileSha256
 } from '../services/media/presignedUploadService.js';
+import { logger } from '../utils/logger.js';
 
 const auth = createAuthMiddleware(async (hashedToken) => {
   if (process.env.NODE_ENV === 'test' && hashedToken === hashSessionToken('mock-token')) {
@@ -170,9 +172,25 @@ mediaRouter.post('/storage/upload-token', auth, handlePresignedUpload);
 // ---------------------------------------------------------------------------
 
 const handleDirectUpload = async (req: Request, res: Response, next: NextFunction) => {
+  const correlationId = (req as any).correlationId || 'NO-CORR-ID';
+  
   try {
     const contentLength = Number(req.headers['content-length'] || 0);
+    logger.debug('Upload request received', {
+      correlationId,
+      contentLength,
+      contentType: req.headers['content-type'],
+      userId: req.user?.userId,
+      filename: req.query.filename,
+      folder: req.query.folder
+    });
+    
     if (contentLength > MAX_UPLOAD_BYTES) {
+      logger.warn('Payload exceeds maximum size', {
+        correlationId,
+        contentLength,
+        maxSize: MAX_UPLOAD_BYTES
+      });
       return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
     }
 
@@ -182,27 +200,58 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
 
     const bodyBuffer = req.body as Buffer;
     if (!bodyBuffer || !Buffer.isBuffer(bodyBuffer) || bodyBuffer.length === 0) {
+      logger.warn('No binary payload received', {
+        correlationId,
+        bodyBufferExists: !!bodyBuffer,
+        isBuffer: bodyBuffer ? Buffer.isBuffer(bodyBuffer) : false,
+        bodyLength: bodyBuffer?.length || 0
+      });
       return res.status(400).json({ error: 'No binary payload received.' });
     }
 
     if (bodyBuffer.length > MAX_UPLOAD_BYTES) {
+      logger.warn('Body buffer exceeds maximum size', {
+        correlationId,
+        bodyLength: bodyBuffer.length,
+        maxSize: MAX_UPLOAD_BYTES
+      });
       return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
     }
 
     const ext = getSafeExtension(rawFilename);
     if (!ext) {
+      logger.warn('File type not allowed', {
+        correlationId,
+        rawFilename,
+        extractedExtension: path.extname(rawFilename)
+      });
       return res.status(400).json({ error: 'File type not allowed.' });
     }
 
     if (!matchesMagicBytes(bodyBuffer, ext)) {
+      logger.warn('Magic bytes mismatch', {
+        correlationId,
+        ext,
+        bufferLength: bodyBuffer.length,
+        bufferPrefix: bodyBuffer.subarray(0, 8).toString('hex')
+      });
       return res.status(400).json({ error: 'File content does not match a valid file of this type.' });
     }
 
     if (containsScriptContent(bodyBuffer)) {
+      logger.warn('Script content detected', {
+        correlationId,
+        ext
+      });
       return res.status(400).json({ error: 'File content rejected: embedded script content detected.' });
     }
 
     if (expectedSha && !verifyFileSha256(bodyBuffer, expectedSha)) {
+      logger.warn('SHA-256 checksum mismatch', {
+        correlationId,
+        expectedSha,
+        computedSha: crypto.createHash('sha256').update(bodyBuffer).digest('hex').substring(0, 16) + '...'
+      });
       return res.status(422).json({ error: 'SHA-256 checksum mismatch. Payload corrupted during transit.' });
     }
 
@@ -211,15 +260,22 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
       fs.mkdirSync(publicUploadDir, { recursive: true });
     }
 
-    // Server-generated filename — only the validated extension survives from
-    // client input. Removes any residual filename-based attack surface.
-    const generatedFilename = `upload_${req.user!.userId}_${Date.now()}_${Math.random()
+    // Use presigned filename if available, otherwise generate server filename
+    const presignedFilename = (req as any).presignedFilename;
+    const generatedFilename = presignedFilename || `upload_${req.user!.userId}_${Date.now()}_${Math.random()
       .toString(36)
       .slice(2, 8)}.${ext}`;
     const targetPath = path.join(publicUploadDir, generatedFilename);
     await fs.promises.writeFile(targetPath, bodyBuffer);
 
     const relativeUrl = `/uploads/${folder}/${generatedFilename}`;
+
+    logger.info('Upload successful', {
+      correlationId,
+      userId: req.user!.userId,
+      relativeUrl,
+      bytesReceived: bodyBuffer.length
+    });
 
     res.json({
       status: 'ok',
@@ -228,26 +284,59 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
       bytes_received: bodyBuffer.length
     });
   } catch (err) {
+    logger.error('Upload handler error', {
+      correlationId,
+      error: (err as Error).message,
+      stack: (err as Error).stack
+    });
     next(err);
   }
 };
 
 const uploadAuth = async (req: Request, res: Response, next: NextFunction) => {
   const queryToken = req.query.token as string;
+  const correlationId = (req as any).correlationId || 'NO-CORR-ID';
+  
   if (queryToken) {
-    const tokenResult = validatePresignedToken(queryToken);
+    logger.debug('Attempting presigned token validation', {
+      correlationId,
+      tokenPresent: true,
+      mediaId: req.query.media_id,
+      folder: req.query.folder
+    });
+    
+    const tokenResult = await validatePresignedToken(queryToken);
     if (tokenResult.valid) {
+      logger.debug('Presigned token validation succeeded', {
+        correlationId,
+        userId: tokenResult.userId,
+        folder: tokenResult.folder,
+        filename: tokenResult.filename
+      });
+      
       req.user = {
         userId: tokenResult.userId || 1,
         username: 'uploader',
         role: 'USER',
         duress_active: false
       };
+      (req as any).presignedFilename = tokenResult.filename;
       return next();
+    } else {
+      logger.warn('Presigned token validation failed, falling back to session auth', {
+        correlationId,
+        reason: 'Token not found or expired',
+        mediaId: req.query.media_id
+      });
     }
+  } else {
+    logger.debug('No presigned token provided, using session auth', {
+      correlationId
+    });
   }
+  
   return auth(req, res, next);
 };
 
-mediaRouter.put('/media/upload', uploadAuth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
-mediaRouter.post('/media/upload', uploadAuth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
+mediaRouter.put('/media/upload', express.raw({ type: '*/*', limit: '50mb' }), uploadAuth, handleDirectUpload);
+mediaRouter.post('/media/upload', express.raw({ type: '*/*', limit: '50mb' }), uploadAuth, handleDirectUpload);

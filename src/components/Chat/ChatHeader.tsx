@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, Search, X, Reply, Pencil, Forward, Pin, Trash2, Flag, Copy } from 'lucide-react';
 import { Message } from '../../types';
 import { formatLastSeen } from '../../utils/datetime';
+import { resolveMediaUrl } from '../../utils/mediaPipeline';
 
 interface ChatHeaderProps {
   wsConnected: boolean;
@@ -51,6 +52,11 @@ export function ChatHeader({
   currentUserId,
   avatarUrl
 }: ChatHeaderProps) {
+  const [avatarErr, setAvatarErr] = useState(false);
+
+  useEffect(() => {
+    setAvatarErr(false);
+  }, [activeChatPeer?.avatar, avatarUrl]);
   const initials = (activeChatPeer?.displayName || activeChatPeer?.username || chatTitle || '?').slice(0, 2).toUpperCase();
   const isOwnSelectedMessage = selectedMessage && currentUserId && selectedMessage.user_id === currentUserId;
 
@@ -184,11 +190,17 @@ export function ChatHeader({
         )}
         <div className="flex items-center gap-3">
           {/* Avatar */}
-          {headerAvatar ? (
+          {headerAvatar && !avatarErr ? (
             <div 
               className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
             >
-              <img src={headerAvatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              <img 
+                src={resolveMediaUrl(headerAvatar)} 
+                alt="" 
+                className="w-full h-full object-cover" 
+                referrerPolicy="no-referrer" 
+                onError={() => setAvatarErr(true)}
+              />
             </div>
           ) : (
             <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">

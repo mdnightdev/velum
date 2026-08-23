@@ -10,11 +10,10 @@ if (typeof window !== 'undefined') {
     let url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
     const isCapacitorOrLocalApk =
       window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'ionic:' ||
-      (window.location.hostname === 'localhost' && !window.location.port);
+      window.location.protocol === 'ionic:';
 
     if (isCapacitorOrLocalApk && (url.startsWith('/v2/') || url.startsWith('/api/'))) {
-      const targetUrl = `http://127.0.0.1:3000${url.startsWith('/') ? '' : '/'}${url}`;
+      const targetUrl = `https://edition-approval-ranked-article.trycloudflare.com${url.startsWith('/') ? '' : '/'}${url}`;
       if (typeof input === 'string' || input instanceof URL) {
         input = targetUrl;
       } else {

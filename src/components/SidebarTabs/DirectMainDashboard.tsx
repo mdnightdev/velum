@@ -7,6 +7,7 @@ import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview, parseAttachment, formatVoiceNotePreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
 import { getLocalMessages } from '../../utils/indexedDb';
+import { resolveMediaUrl } from '../../utils/mediaPipeline';
 
 function renderPreviewWithIcons(content: string) {
   if (!content) return null;
@@ -450,7 +451,14 @@ export default function DirectMainDashboard({
               <div className="min-w-0 flex items-center gap-3 flex-1">
                 <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
                   {friendAvatar ? (
-                    <img src={friendAvatar} alt={friendName} className="w-full h-full object-cover" />
+                    <img 
+                      src={resolveMediaUrl(friendAvatar)} 
+                      alt={friendName} 
+                      className="w-full h-full object-cover" 
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   ) : (
                     <span className="uppercase text-xs font-semibold text-text-primary">{friendName.slice(0, 2)}</span>
                   )}

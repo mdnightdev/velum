@@ -167,7 +167,7 @@ export function useLoungeData({
     try {
       let finalIconUrl = editIconUrl;
       if (iconFile) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(iconFile, 'avatars', 'webp');
+        const uploadedUrl = await streamFileDirectToCloudStorage(iconFile, 'avatars', iconFile.type.split('/')[1] || 'webp');
         if (uploadedUrl) {
           finalIconUrl = uploadedUrl;
           setEditIconUrl(uploadedUrl);

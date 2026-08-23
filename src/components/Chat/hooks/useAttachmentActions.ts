@@ -125,12 +125,12 @@ export function useAttachmentActions({
       try {
         if (file.type.startsWith('image/')) {
           const blob = await compressImageToBlob(file);
-          const url = await streamFileDirectToCloudStorage(blob, 'media', 'jpg');
+          const url = await streamFileDirectToCloudStorage(blob, 'media', blob.type.split('/')[1] || 'jpg');
           const sizeStr = `${(blob.size / 1024).toFixed(0)} KB`;
-          payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:image/jpeg url:${url}]`);
+          payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:${blob.type || 'image/jpeg'} url:${url}]`);
         } else {
           // Document / non-image attachment
-          const url = await streamFileDirectToCloudStorage(file, 'media', file.name.split('.').pop() || 'bin');
+          const url = await streamFileDirectToCloudStorage(file, 'media', file.type.split('/')[1] || file.name.split('.').pop() || 'bin');
           const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${(file.size / 1024).toFixed(0)} KB`;
           payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:${file.type || 'application/octet-stream'} url:${url}]`);
         }

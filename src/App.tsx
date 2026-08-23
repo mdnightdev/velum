@@ -5,6 +5,7 @@ import { CartProvider } from './context/CartContext';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { useWebSocket } from './hooks/useWebSocket';
 import LoadingFallback from './components/LoadingFallback';
+import { initAppearance } from './utils/appearance';
 const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const DashboardLayout = lazy(() => import('./components/DashboardLayout'));
 const ProfileMigration = lazy(() => import('./components/ProfileMigration'));
@@ -17,6 +18,11 @@ function AppContent() {
   const [activeRoomId, setActiveRoomId] = useState<string>('');
   const [activeChatPeer, setActiveChatPeer] = useState<{ userId: number; username: string; avatar?: string } | null>(null);
   const [migrationUser, setMigrationUser] = useState<{ userId: number; username: string } | null>(null);
+
+  // Initialize global appearance settings
+  useEffect(() => {
+    initAppearance();
+  }, []);
 
   // Set up visual viewport height tracking to handle mobile keyboard resizing properly
   useEffect(() => {

@@ -85,7 +85,7 @@ export function useLoungeSettings({
       };
       reader.readAsDataURL(compressedBlob);
 
-      const uploadedUrl = await streamFileDirectToCloudStorage(compressedBlob, 'avatars', 'webp');
+      const uploadedUrl = await streamFileDirectToCloudStorage(compressedBlob, 'avatars', compressedBlob.type.split('/')[1] || 'webp');
       if (uploadedUrl) {
         setEditIconUrl(uploadedUrl);
       }

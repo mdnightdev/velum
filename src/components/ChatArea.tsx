@@ -310,7 +310,7 @@ export default function ChatArea({
           const response = await fetch(`data:audio/webm;base64,${audioBase64}`);
           const blob = await response.blob();
           
-          const url = await streamFileDirectToCloudStorage(blob, 'media', 'webm');
+          const url = await streamFileDirectToCloudStorage(blob, 'media', blob.type.split('/')[1] || 'webm');
           onSendMessage(`[Voice Note  duration:${durationSeconds}s url:${url}]`, null, false);
         } catch (err) {
           log.error('Audio upload failed', { error: (err as Error).message });
@@ -372,8 +372,7 @@ export default function ChatArea({
             ? dataURItoBlob(selectedAttachment.data)
             : await (await fetch(selectedAttachment.data)).blob();
           
-          const ext = selectedAttachment.name.split('.').pop() || 'bin';
-          const url = await streamFileDirectToCloudStorage(blob, 'media', ext);
+          const url = await streamFileDirectToCloudStorage(blob, 'media', blob.type.split('/')[1] || selectedAttachment.name.split('.').pop() || 'bin');
           textToSend = `[Attachment: ${selectedAttachment.name} size:${selectedAttachment.size} type:${selectedAttachment.type} url:${url}] ${inputText.trim()}`.trim();
         } catch (err) {
           log.error('Attachment upload failed', { error: (err as Error).message });

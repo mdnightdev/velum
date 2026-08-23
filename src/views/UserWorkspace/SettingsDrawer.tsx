@@ -8,6 +8,12 @@ import {
 import PasswordInput from '../../components/PasswordInput';
 import { SettingsPrivacyTab } from './SettingsTabs/SettingsPrivacyTab';
 import { SettingsAccountTab } from './SettingsTabs/SettingsAccountTab';
+import { SettingsAppearanceTab } from './SettingsTabs/SettingsAppearanceTab';
+import { SettingsNotificationsTab } from './SettingsTabs/SettingsNotificationsTab';
+import { SettingsMediaTab } from './SettingsTabs/SettingsMediaTab';
+import { SettingsLanguageTab } from './SettingsTabs/SettingsLanguageTab';
+import { SettingsDiagnosticsTab } from './SettingsTabs/SettingsDiagnosticsTab';
+import { SettingsAboutTab } from './SettingsTabs/SettingsAboutTab';
 
 import { useResponsive } from '../../hooks/useResponsive';
 import { useBuildVersion } from '../../hooks/useBuildVersion';
@@ -21,6 +27,7 @@ import { FULL_BUILD_VERSION } from '../../version';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { ImageCropperModal } from '../../components/ImageCropperModal';
 import { storage } from '../../services/storageService';
+import { getStoredAppearanceSettings, applyAppearanceSettings } from '../../utils/appearance';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -82,11 +89,12 @@ export default function SettingsDrawer({
   const [connectionsCount, setConnectionsCount] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Appearance states
-  const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'system'>('dark');
-  const [messageScaling, setMessageScaling] = useState<'cozy' | 'compact'>('cozy');
-  const [fontAdjustment, setFontAdjustment] = useState<'small' | 'medium' | 'large'>('medium');
-  const [reducedMotion, setReducedMotion] = useState<boolean>(false);
+  // Appearance states initialized from live stored settings
+  const initialAppearance = getStoredAppearanceSettings();
+  const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'system'>(initialAppearance.theme);
+  const [messageScaling, setMessageScaling] = useState<'cozy' | 'compact'>(initialAppearance.messageScaling);
+  const [fontAdjustment, setFontAdjustment] = useState<'small' | 'medium' | 'large'>(initialAppearance.fontAdjustment);
+  const [reducedMotion, setReducedMotion] = useState<boolean>(initialAppearance.reducedMotion);
   const [appearanceMsg, setAppearanceMsg] = useState<string | null>(null);
 
   // Notifications states
@@ -101,27 +109,6 @@ export default function SettingsDrawer({
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [autoPlayVoice, setAutoPlayVoice] = useState(false);
-
-  // Diagnostics state
-  const [diagNotes, setDiagNotes] = useState('');
-  const [diagSubmitting, setDiagSubmitting] = useState(false);
-  const [diagResult, setDiagResult] = useState<{ success?: boolean; log_id?: string; error?: string } | null>(null);
-
-  const handleTransmitDiagnostics = async () => {
-    setDiagSubmitting(true);
-    setDiagResult(null);
-    try {
-      const res = await submitDiagnosticLogs(diagNotes);
-      setDiagResult(res);
-      if (res.success) {
-        setDiagNotes('');
-      }
-    } catch (err: any) {
-      setDiagResult({ success: false, error: err.message || 'Transmission failed.' });
-    } finally {
-      setDiagSubmitting(false);
-    }
-  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -423,7 +410,7 @@ export default function SettingsDrawer({
       };
 
       if (avatarFile && avatarPreview) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(avatarFile, 'avatars', 'webp');
+        const uploadedUrl = await streamFileDirectToCloudStorage(avatarFile, 'avatars', avatarFile.type.split('/')[1] || 'webp');
         finalAvatar = uploadedUrl;
         setAvatarUrl(uploadedUrl);
         await saveLocalMedia(`avatar_${currentUserId}`, avatarFile);
@@ -433,7 +420,7 @@ export default function SettingsDrawer({
       }
 
       if (bannerFile && bannerPreview) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(bannerFile, 'avatars', 'webp');
+        const uploadedUrl = await streamFileDirectToCloudStorage(bannerFile, 'avatars', bannerFile.type.split('/')[1] || 'webp');
         finalBanner = uploadedUrl;
         setBannerUrl(uploadedUrl);
         await saveLocalMedia(`banner_${currentUserId}`, bannerFile);
@@ -496,12 +483,19 @@ export default function SettingsDrawer({
   };
 
   const handleSaveAppearance = async (
+    newTheme: 'dark' | 'light' | 'system',
     newScaling: 'cozy' | 'compact', 
     newFont: 'small' | 'medium' | 'large',
     newReducedMotion?: boolean
   ) => {
     setAppearanceMsg(null);
     const motionVal = newReducedMotion !== undefined ? newReducedMotion : reducedMotion;
+    applyAppearanceSettings({
+      theme: newTheme,
+      messageScaling: newScaling,
+      fontAdjustment: newFont,
+      reducedMotion: motionVal
+    });
 
     try {
       const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
@@ -518,7 +512,7 @@ export default function SettingsDrawer({
           phone,
           bannerColor,
           settings: {
-            theme: 'dark',
+            theme: newTheme,
             messageScaling: newScaling,
             fontAdjustment: newFont,
             reducedMotion: motionVal,
@@ -531,13 +525,15 @@ export default function SettingsDrawer({
           }
         })
       });
-      setThemeMode('dark');
+      setThemeMode(newTheme);
       setMessageScaling(newScaling);
       setFontAdjustment(newFont);
       setReducedMotion(motionVal);
       setAppearanceMsg('Appearance profile updated.');
+      setTimeout(() => setAppearanceMsg(null), 2000);
     } catch {
       setAppearanceMsg('Network exception saving settings.');
+      setTimeout(() => setAppearanceMsg(null), 2000);
     }
   };
 
@@ -728,6 +724,8 @@ export default function SettingsDrawer({
                 <div className="space-y-1">
                   <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">App</div>
                   {[
+                    { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
+                    { id: 'media', label: t('settings.media', 'Media & Storage'), icon: Mic },
                     { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
                   ].map((cat) => {
                     const Icon = cat.icon;
@@ -854,131 +852,47 @@ export default function SettingsDrawer({
               />
             )}
 
-            {activeView === 'language' && (
-              <div className="w-full max-w-4xl space-y-6">
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">
-                    {t('language.title', 'Language Preferences')}
-                  </h3>
-                 </div>
-
-                <div className="space-y-3">
-                  {supportedLanguages.map((langOption) => {
-                    const isSelected = language === langOption.code;
-                    return (
-                      <button
-                        key={langOption.code}
-                        type="button"
-                        onClick={() => setLanguage(langOption.code)}
-                        className={`w-full p-4 rounded-xl border flex items-center justify-between transition text-left cursor-pointer select-none ${
-                          isSelected
-                            ? 'bg-velum-750 border-accent/70 text-text-primary shadow-lg ring-1 ring-accent/30'
-                            : 'bg-velum-750/50 border-white-5 hover:bg-velum-750 text-text-secondary hover:text-text-primary'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div>
-                            <span className="text-sm font-semibold block">{langOption.name}</span>
-                            <span className="text-xs text-text-disabled font-mono">{langOption.nativeName}</span>
-                          </div>
-                        </div>
-
-                        {isSelected && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono uppercase font-bold text-accent bg-accent/10 border border-accent/20 px-2 py-0.5 rounded">
-                              {t('language.active', 'Active')}
-                            </span>
-                            <CheckCircle className="w-4 h-4 text-accent" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            {activeView === 'notifications' && (
+              <SettingsNotificationsTab
+                desktopPopups={desktopPopups}
+                soundTriggers={soundTriggers}
+                unreadBadges={unreadBadges}
+                pushPreferences={pushPreferences}
+                notificationsMsg={notificationsMsg}
+                handleSaveNotifications={handleSaveNotifications}
+              />
             )}
 
+            {activeView === 'appearance' && (
+              <SettingsAppearanceTab
+                themeMode={themeMode}
+                messageScaling={messageScaling}
+                fontAdjustment={fontAdjustment}
+                reducedMotion={reducedMotion}
+                appearanceMsg={appearanceMsg}
+                handleSaveAppearance={handleSaveAppearance}
+                onToggleTheme={onToggleTheme}
+              />
+            )}
 
+            {activeView === 'media' && (
+              <SettingsMediaTab
+                voiceEnabled={voiceEnabled}
+                autoPlayVoice={autoPlayVoice}
+                mediaMsg={mediaMsg}
+                mediaError={mediaError}
+                currentUserId={currentUserId}
+                handleSaveMedia={handleSaveMedia}
+              />
+            )}
+
+            {activeView === 'language' && <SettingsLanguageTab />}
 
             {activeView === 'diagnostics' && (
-              <div className="w-full max-w-4xl space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono flex items-center gap-2">
-                    <Activity className="w-4 h-4" />
-                    {t('diagnostics')}
-                  </h3>
-                  <span className="px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent font-mono text-[10px] font-bold">
-                    Build {FULL_BUILD_VERSION}
-                  </span>
-                </div>
-
-                <div className="p-6 rounded-xl border border-white-10 bg-velum-750/50 space-y-4">
-                 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono font-bold uppercase text-text-secondary block">
-                      {t('diagnostics.notes_label')}
-                    </label>
-                    <textarea
-                      value={diagNotes}
-                      onChange={(e) => setDiagNotes(e.target.value)}
-                      className="w-full bg-velum-850/80 border border-white-10 text-text-primary rounded-xl p-3 text-xs outline-none focus:border-accent/50 resize-none h-24 font-mono"
-                    />
-                  </div>
-
-                  {diagResult && (
-                    <div className={`p-3.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 ${
-                      diagResult.success 
-                        ? 'bg-alert-success-bg text-alert-success' 
-                        : 'bg-alert-error-bg text-alert-error'
-                    }`}>
-                      {diagResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-                      <span>
-                        {diagResult.success 
-                          ? `${t('diagnostics.success')} (ID: ${diagResult.log_id})`
-                          : `${t('diagnostics.error')} (${diagResult.error})`}
-                      </span>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handleTransmitDiagnostics}
-                    disabled={diagSubmitting}
-                    className="w-full py-3 bg-accent hover:bg-accent-hover text-velum-950 font-mono font-bold text-xs uppercase tracking-wider rounded-xl transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {diagSubmitting ? (
-                      <span>{t('diagnostics.transmitting')}</span>
-                    ) : (
-                      <>
-                        
-                        <span>{t('diagnostics.transmit_btn')}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+              <SettingsDiagnosticsTab currentUserId={currentUserId} />
             )}
 
-            {activeView === 'about' && (
-              <div className="w-full max-w-4xl space-y-8">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">About Velum</h3>
-                <div className="p-8 rounded-xl border border-white-5 bg-velum-750/50 flex flex-col items-center text-center space-y-4">
-                  <div className="w-16 h-16 rounded-2xl bg-velum-800 border border-white/10 flex items-center justify-center">
-                    <div className="w-9 h-9 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold tracking-[0.2em] text-text-primary">VELUM</div>
-                    <div className="text-[10px] text-text-secondary font-mono tracking-widest mt-1">Secure conversations, refined.</div>
-                  </div>
-
-                 
-                  <div className="pt-2 w-full">
-                    <div className="text-[10px] text-text-secondary font-mono">Version {FULL_BUILD_VERSION || '2.2.0'}</div>
-                    <div className="text-[10px] text-text-secondary font-mono mt-1">© 2026 Velum Network. All rights reserved.</div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {activeView === 'about' && <SettingsAboutTab />}
 
           </div>
           )}

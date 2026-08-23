@@ -2,6 +2,7 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
+import path from 'path';
 import { config } from './config.js';
 import { globalErrorHandler } from './utils/errors.js';
 import { requestLogger, logger } from './utils/logger.js';
@@ -74,7 +75,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       connectSrc: ["'self'", "ws:", "wss:", "http:", "https:"],
       objectSrc: ["'none'"],
-      imgSrc: ["'self'", "data:", "https:"],
+      imgSrc: ["'self'", "data:", "http:", "https:"],
     }
   },
   hsts: {
@@ -132,6 +133,13 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Serve uploads statically
+app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads'), {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  }
+}));
 
 // Metrics endpoint for Prometheus scraping (only in production or when enabled)
 if (process.env.NODE_ENV === 'production' || process.env.ENABLE_METRICS === 'true') {

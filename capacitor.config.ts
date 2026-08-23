@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'velum',
   webDir: 'dist',
   server: {
-    url: 'http://127.0.0.1:3000',
+    url: 'https://edition-approval-ranked-article.trycloudflare.com',
     cleartext: true
   }
 };

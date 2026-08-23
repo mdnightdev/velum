@@ -5,6 +5,7 @@ import {
   Lock, Unlock, Settings, LogIn, LogOut, ShieldAlert as AlertIcon
 } from 'lucide-react';
 import logoSvg from '../assets/logo.svg?raw';
+import { resolveMediaUrl } from '../utils/mediaPipeline';
 
 export type UserProfileData = {
   userId: number;
@@ -126,7 +127,14 @@ export default function ProfileCard({
               <div className="relative group mb-5">
                 <div className="w-28 h-28 rounded-full overflow-hidden bg-accent border-4 border-velum-900 avatar-shadow-ring flex items-center justify-center font-bold text-black text-3xl">
                   {lounge.avatarUrl ? (
-                    <img src={lounge.avatarUrl} alt={displayLoungeName} className="w-full h-full object-cover" />
+                    <img 
+                      src={resolveMediaUrl(lounge.avatarUrl)} 
+                      alt={displayLoungeName} 
+                      className="w-full h-full object-cover" 
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   ) : (
                     loungeAvatarText
                   )}
@@ -322,7 +330,14 @@ export default function ProfileCard({
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-16 h-16 rounded-full overflow-hidden bg-accent border border-white-10 shrink-0 flex items-center justify-center font-bold text-black text-xl">
                   {user.avatarUrl ? (
-                    <img src={user.avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                    <img 
+                      src={resolveMediaUrl(user.avatarUrl)} 
+                      alt={displayName} 
+                      className="w-full h-full object-cover" 
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   ) : user.userId === 999 ? (
                     <div className="w-10 h-10 [&>svg]:w-full [&>svg]:h-full [&_path]:stroke-current text-velum-900" dangerouslySetInnerHTML={{ __html: logoSvg }} />
                   ) : (
@@ -445,7 +460,14 @@ export default function ProfileCard({
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-full bg-accent border-2 border-zinc-900 shadow-sm flex items-center justify-center font-bold text-black text-sm overflow-hidden shrink-0">
                 {user.avatarUrl ? (
-                  <img src={user.avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                  <img 
+                    src={resolveMediaUrl(user.avatarUrl)} 
+                    alt={displayName} 
+                    className="w-full h-full object-cover" 
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
                 ) : user.userId === 999 ? (
                   <div className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full [&_path]:stroke-current text-velum-900" dangerouslySetInnerHTML={{ __html: logoSvg }} />
                 ) : (
@@ -541,7 +563,14 @@ export default function ProfileCard({
           <div className="flex flex-col items-center mt-6 mb-8 text-center">
             <div className="w-32 h-32 rounded-full overflow-hidden bg-accent border-4 border-velum-900 avatar-shadow-ring flex items-center justify-center font-bold text-black text-4xl mb-5">
               {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                <img 
+                  src={resolveMediaUrl(user.avatarUrl)} 
+                  alt={displayName} 
+                  className="w-full h-full object-cover" 
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
               ) : user.userId === 999 ? (
                 <div className="w-20 h-20 [&>svg]:w-full [&>svg]:h-full [&_path]:stroke-current text-velum-900" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               ) : (

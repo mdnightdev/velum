@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { getRedisClient } from '../../db/redis.js';
+import { logger } from '../../utils/logger.js';
 
 export interface PresignedUploadRequest {
   filename: string;
@@ -51,17 +53,58 @@ export function validateUploadParameters(params: PresignedUploadRequest): { vali
 
 const activePresignedTokens = new Map<string, { userId: number; expiresAt: number; filename: string; folder: string }>();
 
-export function registerPresignedToken(token: string, data: { userId: number; expiresAt: number; filename: string; folder: string }) {
+export async function registerPresignedToken(token: string, data: { userId: number; expiresAt: number; filename: string; folder: string }) {
+  const ttlSeconds = Math.max(1, Math.floor((data.expiresAt - Date.now()) / 1000));
+  
+  // Try Redis first for persistence
+  const redis = await getRedisClient();
+  if (redis) {
+    try {
+      const tokenKey = `presigned_upload:${token}`;
+      await redis.set(tokenKey, JSON.stringify(data), { EX: ttlSeconds });
+      logger.debug('Presigned token stored in Redis', { token, ttlSeconds });
+      return;
+    } catch (err) {
+      logger.warn('Failed to store presigned token in Redis, falling back to memory', { error: (err as Error).message });
+    }
+  }
+  
+  // Fallback to in-memory storage
   activePresignedTokens.set(token, data);
+  logger.debug('Presigned token stored in memory fallback', { token, ttlSeconds });
 }
 
-export function validatePresignedToken(token: string): { valid: boolean; userId?: number; folder?: string; filename?: string } {
+export async function validatePresignedToken(token: string): Promise<{ valid: boolean; userId?: number; folder?: string; filename?: string }> {
+  // Try Redis first
+  const redis = await getRedisClient();
+  if (redis) {
+    try {
+      const tokenKey = `presigned_upload:${token}`;
+      const data = await redis.get(tokenKey);
+      if (data) {
+        const rawStr = typeof data === 'string' ? data : JSON.stringify(data);
+        const parsed = JSON.parse(rawStr) as { userId: number; expiresAt: number; filename: string; folder: string };
+        if (Date.now() <= parsed.expiresAt) {
+          logger.debug('Presigned token validated from Redis', { token, userId: parsed.userId });
+          return { valid: true, userId: parsed.userId, folder: parsed.folder, filename: parsed.filename };
+        } else {
+          await redis.del(tokenKey);
+          logger.debug('Presigned token expired in Redis', { token });
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to validate presigned token in Redis, falling back to memory', { error: (err as Error).message });
+    }
+  }
+  
+  // Fallback to in-memory storage
   const entry = activePresignedTokens.get(token);
   if (!entry) return { valid: false };
   if (Date.now() > entry.expiresAt) {
     activePresignedTokens.delete(token);
     return { valid: false };
   }
+  logger.debug('Presigned token validated from memory fallback', { token, userId: entry.userId });
   return { valid: true, userId: entry.userId, folder: entry.folder, filename: entry.filename };
 }
 
@@ -76,7 +119,7 @@ export async function generatePresignedUpload(
   const mediaId = `media_${Date.now()}_${randomToken.slice(0, 8)}`;
   const cleanFilename = `${mediaId}${ext}`;
 
-  registerPresignedToken(randomToken, {
+  await registerPresignedToken(randomToken, {
     userId,
     expiresAt: Date.now() + 900 * 1000,
     filename: cleanFilename,

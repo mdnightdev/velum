@@ -10,6 +10,7 @@ import { getSessionId } from '../../utils/auth';
 import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { ReactionPicker } from './ReactionPicker';
+import { resolveMediaUrl } from '../../utils/mediaPipeline';
 
 const SYSTEM_ROLES: Record<number, { name: string; style: string }> = {
   1: { name: 'MIDNIGHT (executive)', style: 'bg-velum-700 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
@@ -136,7 +137,7 @@ export function MessageItem({
     <div
       key={msg.message_id || msg.id || msg.nonce || (msg.created_at ? `${msg.user_id}-${msg.created_at}` : undefined) || `msg-${index}`}
       id={`msg-${msg.message_id}`}
-      className={`flex message-bubble-container max-w-[88%] sm:max-w-[78%] md:max-w-[70%] lg:max-w-[62%] group relative gap-2 select-none ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
+      className={`flex message-bubble-container group relative gap-2 select-none ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
       data-message-id={msg.message_id}
       style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       onTouchStart={() => handleTouchStart(msg)}
@@ -199,7 +200,14 @@ export function MessageItem({
             }}
           >
             {msg.avatar ? (
-              <img src={msg.avatar} alt={cleanName} className="w-full h-full object-cover" />
+              <img 
+                src={resolveMediaUrl(msg.avatar)} 
+                alt={cleanName} 
+                className="w-full h-full object-cover" 
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             ) : (
               <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider">{cleanName ? cleanName.slice(0, 2).toUpperCase() : (msg.user_id ? String(msg.user_id).slice(-2) : '')}</span>
             )}
@@ -316,14 +324,14 @@ export function MessageItem({
         {/* Content Bubble Card */}
         <div className={
           isVoiceNote || isImageCard || isVideo
-            ? "relative font-sans text-[13px] select-none"
-            : `px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed break-words font-sans relative select-none ${
+            ? "relative select-none"
+            : `chat-bubble ${
                 isSpecialTheme && customBubbleClass
                   ? customBubbleClass
                   : isMe 
-                    ? 'bg-bubble-me text-bubble-me-text border border-bubble-me-border shadow-sm' 
-                    : 'bg-bubble-peer text-bubble-peer-text border border-bubble-peer-border shadow-sm'
-              } ${msg.deleted ? 'italic text-text-secondary opacity-60 font-mono text-[10px]' : ''}`
+                    ? 'chat-bubble-me' 
+                    : 'chat-bubble-peer'
+              } ${msg.deleted ? 'italic opacity-60 font-mono text-[10px]' : ''}`
         }>
           {msg.deleted ? (
             'Message deleted'

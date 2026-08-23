@@ -1,10 +1,87 @@
+import { storage } from '../services/storageService';
+import { registerPushNotifications } from './pushNotifications';
+
+export interface NotificationPreferences {
+  desktopPopups: boolean;
+  soundTriggers: boolean;
+  unreadBadges: boolean;
+  pushPreferences: boolean;
+}
+
+const STORAGE_KEY = 'velum-notification-prefs';
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
+  desktopPopups: true,
+  soundTriggers: true,
+  unreadBadges: true,
+  pushPreferences: false
+};
+
+export function getNotificationPreferences(): NotificationPreferences {
+  if (typeof window === 'undefined') return DEFAULT_NOTIFICATION_PREFS;
+  try {
+    const raw = storage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return { ...DEFAULT_NOTIFICATION_PREFS, ...parsed };
+    }
+  } catch {}
+  return DEFAULT_NOTIFICATION_PREFS;
+}
+
+export function saveNotificationPreferences(prefs: Partial<NotificationPreferences>): NotificationPreferences {
+  if (typeof window === 'undefined') return DEFAULT_NOTIFICATION_PREFS;
+  const current = getNotificationPreferences();
+  const next: NotificationPreferences = { ...current, ...prefs };
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {}
+  return next;
+}
+
 /**
- * Web Notification Utilities for Velum Chat
+ * Synthesizes a crisp, pleasant chime using Web Audio API (0 network assets needed).
  */
+export function playNotificationSound(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+
+    // Primary note: high crystal chime
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now); // D5
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.08); // A5
+
+    gain1.gain.setValueAtTime(0.22, now);
+    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.35);
+
+    // Harmonic bell shimmer
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1174.66, now + 0.04); // D6
+    gain2.gain.setValueAtTime(0.12, now + 0.04);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.04);
+    osc2.stop(now + 0.28);
+  } catch {}
+}
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
-  if (!('Notification' in window)) {
-    console.warn('Desktop notifications are not supported in this browser environment.');
+  if (typeof window === 'undefined' || !('Notification' in window)) {
     return false;
   }
 
@@ -13,8 +90,12 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
   }
 
   if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    return permission === 'granted';
+    try {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    } catch {
+      return false;
+    }
   }
 
   return false;
@@ -24,13 +105,10 @@ export const sendDesktopNotification = (
   title: string,
   options?: { body?: string; icon?: string; tag?: string }
 ) => {
-  if (!('Notification' in window)) return;
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
-  if (!document.hidden) return; // Only notify if window is inactive or tab in background
 
   try {
-    // In Android Chrome, Service Worker, or iframe contexts, new Notification() is an illegal constructor.
-    // Try standard constructor, or fallback to ServiceWorker.
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.ready
         .then((registration) => {
@@ -40,9 +118,7 @@ export const sendDesktopNotification = (
             tag: options?.tag || 'velum-chat',
           });
         })
-        .catch(() => {
-          // Ignore service worker notification errors
-        });
+        .catch(() => {});
       return;
     }
 
@@ -57,9 +133,80 @@ export const sendDesktopNotification = (
       notification.close();
     };
 
-    // Auto close after 5 seconds
     setTimeout(() => notification.close(), 5000);
-  } catch (err) {
-    // Silently handle if notification construction is forbidden or unsupported in current context
-  }
+  } catch {}
 };
+
+export function updateAppBadge(unreadCount: number): void {
+  if (typeof window === 'undefined') return;
+  const prefs = getNotificationPreferences();
+  if (!prefs.unreadBadges) {
+    document.title = 'Velum';
+    if ('clearAppBadge' in navigator) {
+      (navigator as any).clearAppBadge().catch(() => {});
+    }
+    return;
+  }
+
+  if (unreadCount > 0) {
+    document.title = `(${unreadCount}) Velum`;
+    if ('setAppBadge' in navigator) {
+      (navigator as any).setAppBadge(unreadCount).catch(() => {});
+    }
+  } else {
+    document.title = 'Velum';
+    if ('clearAppBadge' in navigator) {
+      (navigator as any).clearAppBadge().catch(() => {});
+    }
+  }
+}
+
+/**
+ * Handles incoming WebSocket message alerts (sound, desktop popup, in-app toast, app badge)
+ */
+export function handleInboundMessageNotification(msg: {
+  senderName?: string;
+  content?: string;
+  isFromMe?: boolean;
+  roomId?: string;
+  activeRoomId?: string;
+}): void {
+  if (msg.isFromMe) return;
+
+  const prefs = getNotificationPreferences();
+
+  // 1. Audio chime
+  if (prefs.soundTriggers) {
+    playNotificationSound();
+  }
+
+  // 2. Desktop & In-App Popups
+  if (prefs.desktopPopups) {
+    const isBackground = typeof document !== 'undefined' && document.hidden;
+    const isDifferentRoom = msg.roomId !== msg.activeRoomId;
+
+    let previewText = msg.content || 'Sent a message';
+    if (previewText.startsWith('e2ee:v1:') || previewText.startsWith('VEL_E2EE[')) {
+      previewText = 'New message';
+    }
+
+    // In-app visual toast
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('velum-inapp-toast', {
+        detail: {
+          title: msg.senderName || 'Velum',
+          body: previewText,
+          roomId: msg.roomId
+        }
+      }));
+    }
+
+    // System desktop banner
+    if (isBackground || isDifferentRoom) {
+      sendDesktopNotification(msg.senderName || 'Velum', {
+        body: previewText,
+        tag: msg.roomId || 'velum-chat'
+      });
+    }
+  }
+}

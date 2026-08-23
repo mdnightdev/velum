@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createAuthMiddleware } from '../middleware/auth.js';
@@ -11,7 +12,6 @@ import { relationships } from '../db/schema/relationships.js';
 import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema/lounges.js';
 import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
-import type { Request, Response } from 'express';
 import { SystemBot } from '../services/systemBot.js';
 
 export const userRouter = Router();
@@ -330,70 +330,68 @@ userRouter.post('/profile', authMiddleware, async (req: Request, res: Response) 
   }
 });
 
-userRouter.post('/upload-avatar', authMiddleware, (req, res, next) => {
-  const chunks: Buffer[] = [];
-  req.on('data', (chunk) => chunks.push(chunk));
-  req.on('end', async () => {
-    try {
-      const buffer = Buffer.concat(chunks);
-      if (buffer.length === 0) {
-        return res.status(400).json({ error: 'Empty file payload' });
-      }
-      
-      const uploadsDir = path.join(process.cwd(), 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-      
-      const filename = `avatar-${req.user!.userId}-${Date.now()}.webp`;
-      const filepath = path.join(uploadsDir, filename);
-      fs.writeFileSync(filepath, buffer);
-      
-      res.status(200).json({ url: `/uploads/${filename}` });
-    } catch (err) {
-      next(err);
+userRouter.post('/upload-avatar', authMiddleware, express.raw({ type: '*/*', limit: '50mb' }), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const buffer: Buffer = Buffer.isBuffer(req.body) 
+      ? req.body 
+      : (typeof req.body === 'string' ? Buffer.from(req.body) : Buffer.alloc(0));
+
+    if (buffer.length === 0) {
+      return res.status(400).json({ error: 'Empty file payload' });
     }
-  });
+    
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    
+    const filename = `avatar-${req.user!.userId}-${Date.now()}.webp`;
+    const filepath = path.join(uploadsDir, filename);
+    await fs.promises.writeFile(filepath, buffer);
+    
+    res.status(200).json({ url: `/uploads/avatars/${filename}` });
+  } catch (err) {
+    next(err);
+  }
 });
 
-userRouter.post('/upload-media', authMiddleware, (req, res, next) => {
-  const chunks: Buffer[] = [];
-  req.on('data', (chunk) => chunks.push(chunk));
-  req.on('end', async () => {
-    try {
-      const buffer = Buffer.concat(chunks);
-      if (buffer.length === 0) {
-        return res.status(400).json({ error: 'Empty file payload' });
-      }
+userRouter.post('/upload-media', authMiddleware, express.raw({ type: '*/*', limit: '50mb' }), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const buffer: Buffer = Buffer.isBuffer(req.body) 
+      ? req.body 
+      : (typeof req.body === 'string' ? Buffer.from(req.body) : Buffer.alloc(0));
 
-      const uploadsDir = path.join(process.cwd(), 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-
-      const contentType = req.headers['content-type'] || '';
-      let extension = 'webp';
-      if (contentType.includes('audio/webm') || contentType.includes('video/webm')) {
-        extension = 'webm';
-      } else if (contentType.includes('audio/mp4') || contentType.includes('video/mp4') || contentType.includes('audio/m4a')) {
-        extension = 'mp4';
-      } else if (contentType.includes('image/png')) {
-        extension = 'png';
-      } else if (contentType.includes('image/jpeg')) {
-        extension = 'jpg';
-      } else if (contentType.includes('image/gif')) {
-        extension = 'gif';
-      }
-
-      const filename = `media-${req.user!.userId}-${Date.now()}.${extension}`;
-      const filepath = path.join(uploadsDir, filename);
-      fs.writeFileSync(filepath, buffer);
-
-      res.status(200).json({ url: `/uploads/${filename}` });
-    } catch (err) {
-      next(err);
+    if (buffer.length === 0) {
+      return res.status(400).json({ error: 'Empty file payload' });
     }
-  });
+
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'media');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const contentType = req.headers['content-type'] || '';
+    let extension = 'webp';
+    if (contentType.includes('audio/webm') || contentType.includes('video/webm')) {
+      extension = 'webm';
+    } else if (contentType.includes('audio/mp4') || contentType.includes('video/mp4') || contentType.includes('audio/m4a')) {
+      extension = 'mp4';
+    } else if (contentType.includes('image/png')) {
+      extension = 'png';
+    } else if (contentType.includes('image/jpeg')) {
+      extension = 'jpg';
+    } else if (contentType.includes('image/gif')) {
+      extension = 'gif';
+    }
+
+    const filename = `media-${req.user!.userId}-${Date.now()}.${extension}`;
+    const filepath = path.join(uploadsDir, filename);
+    await fs.promises.writeFile(filepath, buffer);
+
+    res.status(200).json({ url: `/uploads/media/${filename}` });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Get unread counts from Redis (with persistent Postgres fallback)

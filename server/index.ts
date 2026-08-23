@@ -57,7 +57,7 @@ app.get('/privacy', (_req, res) => {
 app.use(v2App);
 
 // Serve uploads statically
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
 
 export const server = createHttpServer(app);
 

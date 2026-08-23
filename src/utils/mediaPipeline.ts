@@ -153,9 +153,10 @@ export const streamFileDirectToCloudStorage = async (
   fileExtension: string
 ): Promise<string> => {
   const sid = getSessionId();
+  const mimeType = processedBlob.type || 'image/webp';
 
   try {
-    const cleanExt = fileExtension.replace(/^\./, '');
+    const cleanExt = mimeType.split('/')[1] || fileExtension.replace(/^\./, '') || 'webp';
     const filename = `upload_${Date.now()}.${cleanExt}`;
     // 1. Fetch secure upload config from Velum node
     const tokenNegotiator = await fetch('/v2/storage/upload-token', {
@@ -166,7 +167,7 @@ export const streamFileDirectToCloudStorage = async (
       },
       body: JSON.stringify({
         filename,
-        mimeType: processedBlob.type || (cleanExt === 'webp' ? 'image/webp' : 'application/octet-stream'),
+        mimeType: mimeType,
         fileSizeBytes: processedBlob.size || 1024,
         folder: folderDestination,
         extension: cleanExt,
@@ -184,7 +185,7 @@ export const streamFileDirectToCloudStorage = async (
         const httpPipe = await fetch(uploadUrl, {
           method: "PUT",
           headers: {
-            "Content-Type": processedBlob.type || "application/octet-stream",
+            "Content-Type": mimeType,
             ...(data.presigned?.headers || {})
           },
           body: processedBlob
@@ -204,7 +205,7 @@ export const streamFileDirectToCloudStorage = async (
   const uploadRes = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      'Content-Type': processedBlob.type || 'application/octet-stream',
+      'Content-Type': mimeType,
       'Authorization': `Bearer ${sid}`
     },
     body: processedBlob
@@ -217,4 +218,26 @@ export const streamFileDirectToCloudStorage = async (
   const data = await uploadRes.json();
   return data.url; 
 };
+
+/**
+ * Resolves media/avatar URLs to ensure valid absolute/relative resolution across Web, PWA, and Capacitor APKs.
+ */
+export function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  const isCapacitorOrLocalApk = typeof window !== 'undefined' && (
+    window.location.protocol === 'capacitor:' || 
+    window.location.protocol === 'ionic:'
+  );
+
+  if (isCapacitorOrLocalApk) {
+    const backendBase = 'https://edition-approval-ranked-article.trycloudflare.com';
+    return `${backendBase}${url.startsWith('/') ? '' : '/'}${url}`;
+  }
+
+  return url;
+}
 
