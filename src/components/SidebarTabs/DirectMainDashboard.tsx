@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Bot, Menu, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search } from 'lucide-react';
+import { MessageSquare, Bot, Menu, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search, Info } from 'lucide-react';
 import { decryptMessage, decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -159,6 +159,7 @@ export default function DirectMainDashboard({
   const [contextPeer, setContextPeer] = useState<{ userId: number; username: string; dmRoomId: string; isArchived: boolean } | null>(null);
   const [isNewChatPickerOpen, setIsNewChatPickerOpen] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState('');
+  const [quickAvatarPeer, setQuickAvatarPeer] = useState<{ userId: number; username: string; displayName?: string; avatarUrl?: string; bio?: string } | null>(null);
 
   const touchTimerRef = useRef<any>(null);
   const isLongPressRef = useRef(false);
@@ -452,7 +453,16 @@ export default function DirectMainDashboard({
           >
             <div className="min-w-0 flex items-center gap-3 flex-1">
               <div 
-                className="w-10 h-10 rounded-xl bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQuickAvatarPeer({
+                    userId: 999,
+                    username: 'VELUM',
+                    displayName: 'Velum',
+                    bio: 'Official Velum Platform Bot'
+                  });
+                }}
+                className="w-10 h-10 rounded-xl bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden flex-shrink-0 cursor-pointer active:scale-95 transition-transform"
                 title="Velum"
               >
                 <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
@@ -609,7 +619,20 @@ export default function DirectMainDashboard({
                 }`}
               >
                 <div className="min-w-0 flex items-center gap-3 flex-1">
-                  <div className="w-10 h-10 rounded-xl bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQuickAvatarPeer({
+                        userId: friendId,
+                        username: friendName,
+                        displayName: friendName,
+                        avatarUrl: friendAvatar,
+                        bio: r.bio
+                      });
+                    }}
+                    className="w-10 h-10 rounded-xl bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative cursor-pointer active:scale-95 transition-transform"
+                    title="View Photo"
+                  >
                     {friendAvatar ? (
                       <img 
                         src={resolveMediaUrl(friendAvatar)} 
@@ -797,6 +820,80 @@ export default function DirectMainDashboard({
                     </div>
                   );
                 })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Avatar Preview Modal */}
+      {quickAvatarPeer && (
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center modal-backdrop bg-black/75 p-4 animate-in fade-in duration-150 select-none"
+          onClick={() => setQuickAvatarPeer(null)}
+        >
+          <div
+            className="w-72 max-w-[85vw] bg-velum-850 border border-velum-600 rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 text-text-primary flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Bar with Name */}
+            <div className="p-3 bg-velum-800 border-b border-velum-600/60 flex items-center justify-between">
+              <span className="text-sm font-bold text-white truncate">{quickAvatarPeer.displayName || quickAvatarPeer.username}</span>
+            </div>
+
+            {/* Large Square Image Preview */}
+            <div className="w-full aspect-square bg-velum-900 flex items-center justify-center overflow-hidden relative">
+              {quickAvatarPeer.avatarUrl ? (
+                <img
+                  src={resolveMediaUrl(quickAvatarPeer.avatarUrl)}
+                  alt={quickAvatarPeer.username}
+                  className="w-full h-full object-cover"
+                />
+              ) : quickAvatarPeer.userId === 999 ? (
+                <div className="w-24 h-24 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+              ) : (
+                <div className="w-24 h-24 rounded-full bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-3xl text-accent uppercase">
+                  {(quickAvatarPeer.username || 'U').slice(0, 2)}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Action Bar */}
+            <div className="p-2.5 bg-velum-800 border-t border-velum-600/60 flex items-center justify-around">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onSelectPeer) onSelectPeer({ userId: quickAvatarPeer.userId, username: quickAvatarPeer.username, avatar: quickAvatarPeer.avatarUrl });
+                  if (onSectionView) onSectionView('chat');
+                  setQuickAvatarPeer(null);
+                }}
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-accent hover:bg-accent/15 active:bg-accent/20 transition cursor-pointer"
+                title="Chat"
+                aria-label="Chat"
+              >
+                <MessageSquare className="w-5 h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const peer = quickAvatarPeer;
+                  setQuickAvatarPeer(null);
+                  if (loadAndShowProfileCard) {
+                    loadAndShowProfileCard({
+                      userId: peer.userId,
+                      username: peer.username,
+                      displayName: peer.displayName || peer.username,
+                      avatarUrl: peer.avatarUrl,
+                      bio: peer.bio
+                    });
+                  }
+                }}
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-accent hover:bg-accent/15 active:bg-accent/20 transition cursor-pointer"
+                title="Profile Info"
+                aria-label="Profile Info"
+              >
+                <Info className="w-5 h-5" />
+              </button>
             </div>
           </div>
         </div>

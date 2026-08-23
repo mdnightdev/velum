@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import logoSvg from '../assets/logo.svg?raw';
 import { resolveMediaUrl } from '../utils/mediaPipeline';
+import { formatLastSeen } from '../utils/datetime';
 
 export type UserProfileData = {
   userId: number;
@@ -309,259 +310,50 @@ export default function ProfileCard({
         </div>
       );
     }
-  }
-
-  // Render User / Admin Profile Card
+  }  // Render User / Admin Profile Card
   if ((type === 'user' || type === 'admin') && user) {
     const displayName = user.displayName || user.username;
     const avatarText = displayName.slice(0, 2).toUpperCase();
     const isAdminMode = type === 'admin' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_OPERATOR';
 
-    if (variant === 'mobile') {
-      return (
-        <div className="fixed inset-0 z-[99999] flex flex-col justify-end modal-backdrop animate-fadeIn">
-          <div className="w-full bg-velum-800 border-t border-white-10 rounded-t-3xl mobile-modal-shadow translate-y-0 transition-transform duration-300">
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-12 h-1.5 bg-text-primary/10 rounded-full" />
-            </div>
-            
-            <div className="px-6 pb-8 pt-2">
-              {/* Header */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-16 h-16 rounded-full overflow-hidden bg-accent border border-white-10 shrink-0 flex items-center justify-center font-bold text-black text-xl">
-                  {user.avatarUrl ? (
-                    <img 
-                      src={resolveMediaUrl(user.avatarUrl)} 
-                      alt={displayName} 
-                      className="w-full h-full object-cover" 
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  ) : user.userId === 999 ? (
-                    <div className="w-10 h-10 [&>svg]:w-full [&>svg]:h-full [&_path]:stroke-current text-velum-900" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-                  ) : (
-                    avatarText
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h2 className="text-xl font-bold text-white truncate">{displayName}</h2>
-                    {isAdminMode && (
-                      <span className="px-1.5 py-0.5 bg-status-dnd-bg text-status-dnd text-[8px] font-mono font-bold uppercase rounded">
-                        {user.role || 'ADMIN'}
-                      </span>
-                    )}
-                  </div>
-                  {/* Removed @username display as requested */}
-                  <div className="text-xs text-text-secondary mt-1">{user.status || 'Active now'}</div>
-                </div>
-                <button onClick={onClose} className="p-2 -mr-2 text-text-secondary hover:text-white rounded-full bg-text-primary/5">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              {/* Sub-Header */}
-              {user.bio && (
-                <div className="mb-4 border-l-2 border-accent pl-3">
-                  <p className="text-sm text-text-primary italic">&quot;{user.bio}&quot;</p>
-                </div>
-              )}
-              <div className="flex items-center gap-4 text-xs font-mono text-text-secondary uppercase tracking-wider mb-6">
-                {user.location && (
-                  <div className="flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-text-secondary" />
-                    <span>{user.location}</span>
-                  </div>
-                )}
-                {user.joinedDate && (
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-text-secondary" />
-                    <span>Joined {user.joinedDate}</span>
-                  </div>
-                )}
-              </div>
-              
-              {/* Stats Bar */}
-              {user.stats && (
-                <div className="grid grid-cols-2 gap-3 mb-6 bg-black/40 p-3 rounded-2xl border border-white-5">
-                  <div className="flex flex-col items-center justify-center py-2">
-                    <MessageSquare className="w-4 h-4 text-text-secondary mb-2" />
-                    <div className="text-lg font-bold text-white mb-1">{user.stats.loungesCount}</div>
-                    <div className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">Lounges</div>
-                  </div>
-                  <div className="flex flex-col items-center justify-center py-2 border-l border-white-5">
-                    <Users className="w-4 h-4 text-text-secondary mb-2" />
-                    <div className="text-lg font-bold text-white mb-1">{user.stats.connectionsCount}</div>
-                    <div className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">Connections</div>
-                  </div>
-                </div>
-              )}
-              
-              {/* Action List */}
-              <div className="flex flex-col gap-1 mb-6">
-                {onViewProfile && (
-                  <button onClick={onViewProfile} className="w-full flex items-center justify-between p-3.5 bg-text-primary/[0.02] hover:bg-text-primary/[0.06] rounded-xl transition text-text-primary hover:text-white">
-                    <div className="flex items-center gap-3">
-                      <Search className="w-5 h-5 text-text-secondary" />
-                      <span className="text-sm font-medium">View Profile</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-text-secondary" />
-                  </button>
-                )}
-                {onSearchMessages && (
-                  <button onClick={onSearchMessages} className="w-full flex items-center justify-between p-3.5 bg-text-primary/[0.02] hover:bg-text-primary/[0.06] rounded-xl transition text-text-primary hover:text-white">
-                    <div className="flex items-center gap-3">
-                      <Search className="w-5 h-5 text-text-secondary" />
-                      <span className="text-sm font-medium">Search Messages</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-text-secondary" />
-                  </button>
-                )}
-              </div>
-              
-              {/* Footer Utilities */}
-              <div className="grid grid-cols-4 gap-2">
-                {onMute && (
-                  <button onClick={onMute} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-velum-800 border border-white-5 hover:bg-velum-800 transition text-text-secondary hover:text-white">
-                    {user.isMuted ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-                    <span className="text-[9px] uppercase font-mono font-semibold">{user.isMuted ? 'Unmute' : 'Mute'}</span>
-                  </button>
-                )}
-                {onBlock && (
-                  <button onClick={onBlock} className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition ${user.isBlocked ? 'bg-velum-800 border-white-5 hover:bg-velum-800 text-text-secondary hover:text-white' : 'bg-status-dnd-bg text-status-dnd hover:bg-status-dnd-bg'}`}>
-                    {user.isBlocked ? <ShieldAlert className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                    <span className="text-[9px] uppercase font-mono font-semibold">{user.isBlocked ? 'Unblock' : 'Block'}</span>
-                  </button>
-                )}
-                {onDeleteChat && (
-                  <button onClick={onDeleteChat} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-velum-800 border border-white-5 hover:bg-status-dnd-bg hover:text-status-dnd transition text-text-secondary">
-                    <Trash2 className="w-4 h-4" />
-                    <span className="text-[9px] uppercase font-mono font-semibold">Delete</span>
-                  </button>
-                )}
-                {onReport && (
-                  <button onClick={onReport} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-velum-800 border border-white-5 hover:bg-status-dnd-bg hover:text-status-dnd transition text-text-secondary">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-[9px] uppercase font-mono font-semibold">Report</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
+    const [isChatLocked, setIsChatLocked] = React.useState(false);
+    const [isFavourite, setIsFavourite] = React.useState(false);
+    const [isMutedLocal, setIsMutedLocal] = React.useState(!!user.isMuted);
+    const [disappearingMode, setDisappearingMode] = React.useState('Off');
 
-    if (variant === 'popover') {
-      return (
-        <div className="absolute top-0 left-0 w-[280px] bg-velum-800 border border-white-10 rounded-2xl shadow-2xl z-50 overflow-hidden text-white font-sans animate-fadeIn">
-          <div className="p-4 bg-gradient-to-b from-white/[0.04] to-transparent border-b border-white-5">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-accent border-2 border-zinc-900 shadow-sm flex items-center justify-center font-bold text-black text-sm overflow-hidden shrink-0">
-                {user.avatarUrl ? (
-                  <img 
-                    src={resolveMediaUrl(user.avatarUrl)} 
-                    alt={displayName} 
-                    className="w-full h-full object-cover" 
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                ) : user.userId === 999 ? (
-                  <div className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full [&_path]:stroke-current text-velum-900" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-                ) : (
-                  avatarText
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1">
-                  <h3 className="font-bold text-[14px] truncate">{displayName}</h3>
-                  {isAdminMode && (
-                    <span className="px-1 py-0.2 bg-status-dnd-bg text-status-dnd text-[7px] font-mono font-bold uppercase rounded">
-                      ADMIN
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] text-text-secondary mt-0.5">{user.status || 'Active now'}</div>
-              </div>
-              <button onClick={onClose} className="p-1.5 self-start text-text-secondary hover:text-white rounded-md hover:bg-text-primary/10">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {user.bio && (
-              <div className="mb-3 border-l-2 border-accent pl-2">
-                <p className="text-xs text-text-primary italic line-clamp-2">&quot;{user.bio}&quot;</p>
-              </div>
-            )}
-            <div className="flex flex-col gap-1.5 text-[10px] font-mono text-text-secondary uppercase tracking-wider">
-              {user.location && (
-                <div className="flex items-center gap-1.5">
-                  <Globe className="w-3 h-3 text-text-secondary" />
-                  <span>{user.location}</span>
-                </div>
-              )}
-              {user.joinedDate && (
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="w-3 h-3 text-text-secondary" />
-                  <span>Joined {user.joinedDate}</span>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          <div className="p-2 border-b border-white-5 flex gap-2">
-            {onViewProfile && (
-              <button onClick={onViewProfile} className="flex-1 py-2 bg-velum-800 hover:bg-velum-800 rounded-lg text-xs font-semibold text-center transition border border-white-5">
-                View Profile
-              </button>
-            )}
-            {onMessage && (
-              <button onClick={onMessage} className="flex-1 py-2 bg-accent hover:bg-accent-hover text-black rounded-lg text-xs font-semibold text-center transition">
-                Message
-              </button>
-            )}
-          </div>
-           
-          <div className="p-1.5 flex flex-col">
-            {onMute && (
-              <button onClick={onMute} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-text-primary/5 transition text-left text-text-primary hover:text-white">
-                {user.isMuted ? <BellOff className="w-4 h-4 text-text-secondary" /> : <Bell className="w-4 h-4 text-text-secondary" />}
-                <span className="text-xs font-medium">{user.isMuted ? 'Unmute' : 'Mute'}</span>
-              </button>
-            )}
-            {onBlock && (
-              <button onClick={onBlock} className={`flex items-center gap-3 w-full p-2.5 rounded-lg transition text-left ${user.isBlocked ? 'hover:bg-text-primary/5 text-text-primary hover:text-white' : 'hover:bg-status-dnd-bg text-status-dnd hover:text-status-dnd/80'}`}>
-                {user.isBlocked ? <ShieldAlert className={`w-4 h-4 ${user.isBlocked ? 'text-text-secondary' : ''}`} /> : <Ban className="w-4 h-4" />}
-                <span className="text-xs font-medium">{user.isBlocked ? 'Unblock' : 'Block'}</span>
-              </button>
-            )}
-            {onDeleteChat && (
-              <button onClick={onDeleteChat} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-status-dnd-bg transition text-left text-status-dnd hover:text-status-dnd/80">
-                <Trash2 className="w-4 h-4" />
-                <span className="text-xs font-medium">Delete Chat</span>
-              </button>
-            )}
-          </div>
-        </div>
-      );
-    }
+    const statusText = user.userId === 999 
+      ? 'Official System Bot' 
+      : formatLastSeen(user.status || (user as any).lastSeen || (user as any).peerPresence || (user as any).last_seen || null);
 
-    // Expanded Variant (Full Screen View)
     return (
-      <div className="fixed inset-0 z-[999999] bg-velum-900 flex flex-col text-white animate-fadeIn font-sans overflow-y-auto">
-        <div className="flex items-center justify-between p-4 bg-transparent shrink-0">
-          <button onClick={onClose} className="p-2.5 rounded-full border border-white-10 text-text-primary hover:text-white hover:bg-text-primary/5 transition">
+      <div className="fixed inset-0 z-[999999] bg-[#0D1117] flex flex-col text-white animate-in fade-in slide-in-from-right duration-200 font-sans overflow-y-auto select-none">
+        {/* Top App Bar with Solid Background */}
+        <div className="sticky top-0 z-30 flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] pb-3 bg-[#0D1117] border-b border-white-5 shrink-0">
+          <button 
+            type="button"
+            onClick={onClose} 
+            className="w-10 h-10 rounded-full flex items-center justify-center text-text-secondary hover:text-white hover:bg-white-5 active:bg-white-10 transition cursor-pointer shrink-0"
+            title="Back"
+            aria-label="Back"
+          >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <button className="p-2.5 rounded-full text-text-secondary hover:text-white hover:bg-text-primary/5 transition">
-            <MoreVertical className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button 
+              type="button"
+              className="w-10 h-10 rounded-full flex items-center justify-center text-text-secondary hover:text-white hover:bg-white-5 active:bg-white-10 transition cursor-pointer"
+              title="Options"
+              aria-label="Options"
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         
-        <div className="flex-1 px-6 pb-12 flex flex-col max-w-2xl mx-auto w-full">
-          <div className="flex flex-col items-center mt-6 mb-8 text-center">
-            <div className="w-32 h-32 rounded-full overflow-hidden bg-accent border-4 border-velum-900 avatar-shadow-ring flex items-center justify-center font-bold text-black text-4xl mb-5">
+        <div className="flex-1 px-4 sm:px-6 pb-16 flex flex-col max-w-xl mx-auto w-full space-y-6">
+          {/* Hero Section */}
+          <div className="flex flex-col items-center pt-4 text-center">
+            <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden bg-velum-800 border-4 border-velum-800 shadow-2xl flex items-center justify-center font-bold text-accent text-3xl sm:text-4xl mb-4 relative">
               {user.avatarUrl ? (
                 <img 
                   src={resolveMediaUrl(user.avatarUrl)} 
@@ -572,103 +364,188 @@ export default function ProfileCard({
                   }}
                 />
               ) : user.userId === 999 ? (
-                <div className="w-20 h-20 [&>svg]:w-full [&>svg]:h-full [&_path]:stroke-current text-velum-900" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+                <div className="w-16 h-16 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               ) : (
                 avatarText
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-bold mb-1">{displayName}</h1>
+
+            <h1 className="text-xl sm:text-2xl font-bold text-white mb-1 flex items-center justify-center gap-2">
+              {displayName}
               {isAdminMode && (
-                <span className="px-2 py-0.5 bg-status-dnd-bg text-status-dnd text-[10px] font-mono font-bold uppercase rounded">
-                  {user.role || 'ADMIN'}
+                <span className="px-1.5 py-0.5 bg-accent/15 text-accent text-[9px] font-mono font-bold uppercase rounded-md">
+                  Staff
                 </span>
               )}
-            </div>
-            <div className="text-base text-accent font-mono mb-2">@{user.username}</div>
-            <div className="text-sm text-text-secondary">{user.status || 'Active now'}</div>
-            
-            <div className="flex items-center justify-center gap-4 text-xs font-mono text-text-secondary uppercase tracking-wider mt-4">
-              {user.location && (
-                <div className="flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-text-secondary" />
-                  <span>{user.location}</span>
-                </div>
+            </h1>
+            <p className="text-xs sm:text-sm font-mono text-text-secondary mb-2">@{user.username}</p>
+            {user.bio && (
+              <p className="text-xs sm:text-sm text-text-primary italic max-w-md mx-auto mb-2 px-4 leading-relaxed">
+                &quot;{user.bio}&quot;
+              </p>
+            )}
+            <p className="text-xs text-text-secondary">{statusText}</p>
+
+            {/* Quick Action Pills */}
+            <div className="flex items-center justify-center gap-4 mt-5 w-full max-w-xs">
+              {onMessage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onMessage();
+                  }}
+                  className="flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-velum-800 border border-white-5 hover:bg-velum-750 active:scale-95 transition cursor-pointer group"
+                >
+                  <MessageSquare className="w-5 h-5 text-accent group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium text-text-primary">Chat</span>
+                </button>
               )}
-              {user.joinedDate && (
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-text-secondary" />
-                  <span>Joined {user.joinedDate}</span>
-                </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onMute) {
+                    setIsMutedLocal(!isMutedLocal);
+                    onMute();
+                  }
+                }}
+                className="flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-velum-800 border border-white-5 hover:bg-velum-750 active:scale-95 transition cursor-pointer group"
+              >
+                {isMutedLocal ? <BellOff className="w-5 h-5 text-text-secondary" /> : <Bell className="w-5 h-5 text-accent" />}
+                <span className="text-[11px] font-medium text-text-primary">{isMutedLocal ? 'Unmute' : 'Mute'}</span>
+              </button>
+              {onSearchMessages && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onSearchMessages();
+                  }}
+                  className="flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-velum-800 border border-white-5 hover:bg-velum-750 active:scale-95 transition cursor-pointer group"
+                >
+                  <Search className="w-5 h-5 text-accent group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium text-text-primary">Search</span>
+                </button>
               )}
             </div>
           </div>
-          
-          {user.stats && (
-            <div className="grid grid-cols-2 bg-velum-800/50 rounded-2xl border border-white-5 p-4 mb-8 text-center max-w-md mx-auto w-full shadow-inner">
-              <div className="flex flex-col border-r border-white-5">
-                <span className="text-2xl font-bold text-white">{user.stats.loungesCount}</span>
-                <span className="text-[10px] text-text-secondary uppercase font-mono tracking-widest mt-1">Lounges</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-2xl font-bold text-white">{user.stats.connectionsCount}</span>
-                <span className="text-[10px] text-text-secondary uppercase font-mono tracking-widest mt-1">Connections</span>
-              </div>
-            </div>
-          )}
 
-          {isAdminMode && (
-            <div className="bg-status-dnd-bg rounded-2xl p-4 mb-8 max-w-md mx-auto w-full text-center">
-              <div className="flex items-center justify-center gap-2 text-status-dnd text-xs font-mono font-bold uppercase tracking-wider">
-                <AlertIcon className="w-4 h-4" />
-                <span>Security Diagnostics Console Active</span>
+          {/* Media, links, and docs Strip */}
+          <div className="rounded-2xl bg-velum-850 border border-velum-600/50 p-4 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between cursor-pointer">
+              <span className="text-xs font-semibold text-text-primary">Media, links, and docs</span>
+              <div className="flex items-center gap-1 text-xs text-text-secondary">
+                <span>0</span>
+                <ChevronRight className="w-4 h-4" />
               </div>
-              <p className="text-[10px] text-text-secondary mt-1 font-mono uppercase">
-                Session is active.
-              </p>
             </div>
-          )}
-          
-          {user.bio && (
-            <div className="mb-10 max-w-lg mx-auto w-full">
-              <blockquote className="border-l-2 border-accent pl-5 py-1">
-                <p className="text-sm md:text-base text-text-primary leading-relaxed italic">
-                  &quot;{user.bio}&quot;
-                </p>
-              </blockquote>
-            </div>
-          )}
-          
-          <div className="mt-auto flex flex-col gap-3 max-w-lg mx-auto w-full">
-            {onMessage && (
-              <div className="grid grid-cols-1 gap-3">
-                <button onClick={onMessage} className="py-3.5 px-2 bg-accent hover:bg-accent-hover text-black font-semibold rounded-xl transition flex flex-col items-center justify-center gap-1.5 text-xs shadow-lg">
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Message</span>
-                </button>
+            <div className="flex items-center gap-2 overflow-x-auto py-1">
+              <div className="w-16 h-16 rounded-xl bg-velum-750 border border-velum-600/50 flex flex-col items-center justify-center shrink-0 text-text-secondary">
+                <Globe className="w-5 h-5 mb-1" />
+                <span className="text-[9px]">Media</span>
               </div>
+            </div>
+          </div>
+
+          {/* Chat Settings & Controls */}
+          <div className="rounded-2xl bg-velum-850 border border-velum-600/50 divide-y divide-white-5 shadow-lg overflow-hidden">
+            {/* Disappearing messages */}
+            <div 
+              onClick={() => {
+                const modes = ['Off', '24 hours', '7 days', '90 days'];
+                const curIdx = modes.indexOf(disappearingMode);
+                setDisappearingMode(modes[(curIdx + 1) % modes.length]);
+              }}
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-white-5 transition"
+            >
+              <div className="flex items-center gap-3">
+                <Calendar className="w-5 h-5 text-text-secondary" />
+                <div className="flex flex-col text-left">
+                  <span className="text-sm font-medium text-text-primary">Disappearing messages</span>
+                  <span className="text-xs text-text-secondary">{disappearingMode}</span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-text-disabled" />
+            </div>
+
+            {/* Chat lock */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3 min-w-0 pr-2">
+                <Lock className="w-5 h-5 text-text-secondary shrink-0" />
+                <div className="flex flex-col text-left">
+                  <span className="text-sm font-medium text-text-primary">Chat lock</span>
+                  <span className="text-xs text-text-secondary">Lock and hide this chat on this device</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsChatLocked(!isChatLocked)}
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
+                  isChatLocked ? 'bg-accent justify-end' : 'bg-velum-700 justify-start'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${isChatLocked ? 'bg-velum-900' : 'bg-white'}`} />
+              </button>
+            </div>
+
+            {/* Add to Favourites */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <Users className="w-5 h-5 text-text-secondary" />
+                <span className="text-sm font-medium text-text-primary">Add to Favourites</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFavourite(!isFavourite)}
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
+                  isFavourite ? 'bg-accent justify-end' : 'bg-velum-700 justify-start'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${isFavourite ? 'bg-velum-900' : 'bg-white'}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Safety & Moderation Actions */}
+          <div className="rounded-2xl bg-velum-850 border border-velum-600/50 divide-y divide-white-5 shadow-lg overflow-hidden">
+            {/* Clear Chat */}
+            {onDeleteChat && (
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteChat();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-3.5 p-4 text-left hover:bg-white-5 transition cursor-pointer text-text-primary"
+              >
+                <Trash2 className="w-5 h-5 text-text-secondary" />
+                <span className="text-sm font-medium">Clear chat</span>
+              </button>
             )}
-            
-            <div className="grid grid-cols-3 gap-3">
-              {onMute && (
-                <button onClick={onMute} className="py-3 px-2 bg-velum-900/50 border border-white-5 hover:bg-velum-800 text-text-secondary hover:text-white font-semibold rounded-xl transition flex flex-col items-center justify-center gap-1 text-[11px] uppercase font-mono">
-                  {user.isMuted ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-                  <span>{user.isMuted ? 'Unmute' : 'Mute'}</span>
-                </button>
-              )}
-              {onBlock && (
-                <button onClick={onBlock} className={`py-3 px-2 rounded-xl border transition flex flex-col items-center justify-center gap-1 text-[11px] uppercase font-mono font-semibold ${user.isBlocked ? 'bg-velum-900/50 border-white-5 hover:bg-velum-800 text-text-secondary hover:text-white' : 'bg-status-dnd-bg hover:bg-status-dnd-bg text-status-dnd'}`}>
-                  {user.isBlocked ? <ShieldAlert className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                  <span>{user.isBlocked ? 'Unblock' : 'Block'}</span>
-                </button>
-              )}
-              {onDeleteChat && (
-                <button onClick={onDeleteChat} className="py-3 px-2 bg-velum-900/50 border border-white-5 hover:bg-status-dnd-bg text-status-dnd font-semibold rounded-xl transition flex flex-col items-center justify-center gap-1 text-[11px] uppercase font-mono">
-                  <Trash2 className="w-4 h-4" />
-                  <span>Delete Chat</span>
-                </button>
-              )}
-            </div>
+
+            {/* Block Contact */}
+            {onBlock && (
+              <button
+                type="button"
+                onClick={onBlock}
+                className="w-full flex items-center gap-3.5 p-4 text-left hover:bg-white-5 transition cursor-pointer text-alert-error"
+              >
+                <Ban className="w-5 h-5 text-alert-error" />
+                <span className="text-sm font-medium">{user.isBlocked ? `Unblock ${displayName}` : `Block ${displayName}`}</span>
+              </button>
+            )}
+
+            {/* Report Contact */}
+            {onReport && (
+              <button
+                type="button"
+                onClick={onReport}
+                className="w-full flex items-center gap-3.5 p-4 text-left hover:bg-white-5 transition cursor-pointer text-alert-error"
+              >
+                <ShieldAlert className="w-5 h-5 text-alert-error" />
+                <span className="text-sm font-medium">Report {displayName}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
