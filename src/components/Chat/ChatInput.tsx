@@ -166,7 +166,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="px-4 py-3 border-t flex-shrink-0 bg-velum-900 border-white-5">
+    <div className="px-3 pb-2 pt-1 flex-shrink-0 bg-transparent">
       <div className="max-w-5xl mx-auto">
         {/* Mic Error Banner */}
         {micError && (

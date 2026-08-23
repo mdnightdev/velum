@@ -16,6 +16,10 @@
   --theme-white-10: rgba(255, 255, 255, 0.1);
   --theme-white-15: rgba(255, 255, 255, 0.15);
   --theme-white-20: rgba(255, 255, 255, 0.2);
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
 html.light,

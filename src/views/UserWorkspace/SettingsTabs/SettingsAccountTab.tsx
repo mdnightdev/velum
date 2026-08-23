@@ -34,10 +34,10 @@ export function SettingsAccountTab({
   const [avatarLoadError, setAvatarLoadError] = useState(false);
   const [bannerLoadError, setBannerLoadError] = useState(false);
 
-  const rawAvatarSrc = avatarPreview || (avatarColor === 'custom' && avatarUrl ? avatarUrl : null);
+  const rawAvatarSrc = avatarPreview || avatarUrl || (avatarColor === 'custom' ? avatarUrl : null);
   const resolvedAvatarSrc = rawAvatarSrc ? resolveMediaUrl(rawAvatarSrc) : null;
 
-  const rawBannerSrc = bannerPreview || (bannerColor === 'custom' && bannerUrl ? bannerUrl : null);
+  const rawBannerSrc = bannerPreview || bannerUrl || (bannerColor === 'custom' ? bannerUrl : null);
   const resolvedBannerSrc = rawBannerSrc ? resolveMediaUrl(rawBannerSrc) : null;
 
   return (

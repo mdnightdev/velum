@@ -538,7 +538,7 @@ export default function AdminPanel({
         ) : (
           <PullToRefresh>
             <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none">
-              <div className="lg:hidden flex items-center justify-between pb-2 mb-2 border-b border-velum-600 shrink-0">
+              <div className="lg:hidden flex items-center justify-between pt-[env(safe-area-inset-top,0px)] pb-2 mb-2 border-b border-velum-600 shrink-0">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsMobileDrawerOpen(true)}

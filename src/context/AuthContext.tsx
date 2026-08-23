@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(verifiedUser);
             setSessionId(sId);
             try {
-              storage.setItem('velum-user', JSON.stringify(verifiedUser));
+              storage.setItem('velum-user', verifiedUser);
             } catch (_) {}
             setIsLoadingSession(false);
             return;

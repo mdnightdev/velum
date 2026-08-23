@@ -67,7 +67,7 @@ export function ChatHeader({
       rawText = selectedMessage.content && !selectedMessage.content.includes('VEL_E2EE') ? selectedMessage.content : 'Encrypted Message';
     }
     return (
-      <div className="px-4 py-3 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20">
+      <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-3 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             type="button"
@@ -90,73 +90,47 @@ export function ChatHeader({
             <button
               type="button"
               onClick={() => onReplySelected(selectedMessage)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-accent hover:bg-accent-10 cursor-pointer flex items-center justify-center transition-colors shrink-0"
-              title="Reply"
+              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
+              title="Reply to message"
             >
               <Reply className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           )}
-
-          {onCopySelected && (
-            <button
-              type="button"
-              onClick={() => onCopySelected(selectedMessage)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-accent hover:bg-accent-10 cursor-pointer flex items-center justify-center transition-colors shrink-0"
-              title="Copy message"
-            >
-              <Copy className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          )}
-
-          {isOwnSelectedMessage && onEditSelected && (
+          {canEdit && onEditSelected && (
             <button
               type="button"
               onClick={() => onEditSelected(selectedMessage)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-accent hover:bg-accent-10 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Edit message"
             >
-              <Pencil className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Edit2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           )}
-
-          {onForwardSelected && (
-            <button
-              type="button"
-              onClick={() => onForwardSelected(selectedMessage)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-accent hover:bg-accent-10 cursor-pointer flex items-center justify-center transition-colors shrink-0"
-              title="Forward"
-            >
-              <Forward className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          )}
-
           {onPinSelected && (
             <button
               type="button"
               onClick={() => onPinSelected(selectedMessage)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-accent hover:bg-accent-10 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title={selectedMessage.is_pinned ? "Unpin message" : "Pin message"}
             >
-              <Pin className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Pin className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedMessage.is_pinned ? 'text-accent fill-accent' : ''}`} />
             </button>
           )}
-
-          {!isOwnSelectedMessage && onReportSelected && (
+          {onReportSelected && !isOwnSelectedMessage && (
             <button
               type="button"
               onClick={() => onReportSelected(selectedMessage)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-alert-error hover:bg-alert-error-bg cursor-pointer flex items-center justify-center transition-colors shrink-0"
+              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-alert-warning hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Report message"
             >
-              <Flag className="w-4 h-4 sm:w-5 sm:h-5 text-alert-error" />
+              <AlertOctagon className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           )}
-
-          {isOwnSelectedMessage && onDeleteSelected && (
+          {canDelete && onDeleteSelected && (
             <button
               type="button"
               onClick={() => onDeleteSelected(selectedMessage)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-alert-error hover:bg-alert-error-bg cursor-pointer flex items-center justify-center transition-colors shrink-0"
+              className="p-2 sm:p-2.5 rounded-full text-text-secondary hover:text-alert-error hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
               title="Delete message"
             >
               <Trash2 className="w-4 h-4 sm:w-5 sm:h-5 text-alert-error" />
@@ -171,12 +145,7 @@ export function ChatHeader({
 
   // Standard Header Mode
   return (
-    <div className="px-4 py-3 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
-      {!wsConnected && (
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-2.5 py-1 bg-accent/10 border border-accent/20 text-accent text-[9px] font-mono font-bold uppercase rounded-lg animate-pulse tracking-widest pointer-events-none z-50">
-          reconnecting...
-        </div>
-      )}
+    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-3 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
       <div className="flex items-center gap-3">
         {isMobile && onBackToDeck && (
           <button
@@ -211,11 +180,15 @@ export function ChatHeader({
           {/* Title & Status */}
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-white">{chatTitle}</span>
-            {activeChatPeer && activeChatPeer.userId !== 999 && (
+            {!wsConnected ? (
+              <span className="text-[10px] font-mono text-accent animate-pulse">
+                connecting...
+              </span>
+            ) : activeChatPeer && activeChatPeer.userId !== 999 ? (
               <span className="text-[11px] text-text-secondary">
                 {formatLastSeen(peerPresence)}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
