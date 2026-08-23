@@ -22,7 +22,7 @@ jobs:
 
       - name: Install and Build Web
         run: |
-          npm install
+          npm install --force
           npm run build
 
       - name: Sync Capacitor
