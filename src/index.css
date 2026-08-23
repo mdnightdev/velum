@@ -113,10 +113,10 @@ html, body, #root {
 /* Base Chat Bubble */
 .chat-bubble {
   position: relative;
-  border-radius: 1rem;
-  padding: 0.625rem 1rem;
-  font-size: 0.8125rem; /* 13px */
-  line-height: 1.5;
+  border-radius: 1.125rem;
+  padding: 0.625rem 0.95rem;
+  font-size: 0.9375rem; /* 15px */
+  line-height: 1.55;
   word-break: break-word;
   overflow-wrap: anywhere;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);

@@ -579,7 +579,7 @@ export function ChatInput({
                       if (!isSending) onSend(e);
                     }
                   }}
-                  className="flex-1 bg-velum-800 border border-white-5 focus:border-accent/40 rounded-2xl px-4 py-2 text-[13.5px] text-white outline-none resize-none max-h-32 min-h-[40px] leading-relaxed placeholder:text-text-disabled font-sans"
+                  className="flex-1 bg-velum-800 border border-white-5 focus:border-accent/40 rounded-2xl px-4 py-2 text-[15px] text-white outline-none resize-none max-h-32 min-h-[42px] leading-relaxed placeholder:text-text-disabled font-sans"
                 />
 
                 {/* Right Action Button */}
