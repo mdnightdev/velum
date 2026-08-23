@@ -1,13 +1,14 @@
-import React from 'react';
-import { MessageSquare, Bot, Menu, Check, CheckCheck } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { MessageSquare, Bot, Menu, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X } from 'lucide-react';
 import { decryptMessage, decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview, parseAttachment, formatVoiceNotePreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
-import { getLocalMessages } from '../../utils/indexedDb';
+import { getLocalMessages, flushLoungeCache } from '../../utils/indexedDb';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
+import { getSessionId } from '../../utils/auth';
 
 function renderPreviewWithIcons(content: string) {
   if (!content) return null;
@@ -140,8 +141,49 @@ export default function DirectMainDashboard({
     }
     return [];
   })();
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [decryptedPreviews, setDecryptedPreviews] = React.useState<Record<number, string>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [decryptedPreviews, setDecryptedPreviews] = useState<Record<number, string>>({});
+  const [filterTab, setFilterTab] = useState<'active' | 'archived'>('active');
+  const [archivedUserIds, setArchivedUserIds] = useState<number[]>(() => {
+    try {
+      const saved = localStorage.getItem(`velum_archived_dms_${currentUserId}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [deletedDmRooms, setDeletedDmRooms] = useState<Set<string>>(new Set());
+  const [contextPeer, setContextPeer] = useState<{ userId: number; username: string; dmRoomId: string; isArchived: boolean } | null>(null);
+
+  const toggleArchive = (peerId: number) => {
+    setArchivedUserIds(prev => {
+      const next = prev.includes(peerId) ? prev.filter(id => id !== peerId) : [...prev, peerId];
+      try {
+        localStorage.setItem(`velum_archived_dms_${currentUserId}`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    setContextPeer(null);
+  };
+
+  const handleDeleteConversation = async (peerId: number, peerName: string, dmRoomId: string) => {
+    if (!window.confirm(`Delete entire conversation with ${peerName}? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      const sId = getSessionId();
+      await fetch(`/v2/user/${peerId}/chat`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${sId}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      await flushLoungeCache(dmRoomId, currentUserId);
+      setDeletedDmRooms(prev => new Set(prev).add(dmRoomId));
+      setContextPeer(null);
+    } catch (e) {
+      console.warn('Failed to delete conversation:', e);
+    }
+  };
 
   React.useEffect(() => {
     let isMounted = true;
@@ -299,206 +341,296 @@ export default function DirectMainDashboard({
         </div>
       </div>
 
+      {/* Filter Tabs (All vs Archived) */}
+      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-velum-600 bg-velum-850 shrink-0 text-xs">
+        <button
+          type="button"
+          onClick={() => setFilterTab('active')}
+          className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+            filterTab === 'active' 
+              ? 'bg-accent/15 text-accent' 
+              : 'text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          Chats
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterTab('archived')}
+          className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+            filterTab === 'archived' 
+              ? 'bg-accent/15 text-accent' 
+              : 'text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          <Archive className="w-3.5 h-3.5" />
+          <span>Archived</span>
+          {archivedUserIds.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-velum-750 border border-velum-600">
+              {archivedUserIds.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Directory List */}
       <div className="flex-1 overflow-y-auto w-full flex flex-col">
-        {/* Default Secure VELUM System Contact */}
-        <div
-          onClick={() => {
-            if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
-            if (onSectionView) onSectionView('chat');
-            if (onMarkAsRead) onMarkAsRead('', velumRoomId);
-          }}
-          className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
-        >
-          <div className="min-w-0 flex items-center gap-3 flex-1">
-            <div 
-              className="w-9 h-9 rounded-lg bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden flex-shrink-0"
-              title="Velum"
-            >
-              <div className="w-4.5 h-4.5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-text-primary flex items-center gap-1.5 truncate">
-                  Velum
-                  <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-accent/15 text-accent">System</span>
-                </p>
-                {velumTimeStr && (
-                  <span className={`text-[10px] shrink-0 ${velumUnread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
-                    {velumTimeStr}
-                  </span>
-                )}
+        {/* Default Secure VELUM System Contact (only in active tab) */}
+        {filterTab === 'active' && (
+          <div
+            onClick={() => {
+              if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
+              if (onSectionView) onSectionView('chat');
+              if (onMarkAsRead) onMarkAsRead('', velumRoomId);
+            }}
+            className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
+          >
+            <div className="min-w-0 flex items-center gap-3 flex-1">
+              <div 
+                className="w-9 h-9 rounded-lg bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden flex-shrink-0"
+                title="Velum"
+              >
+                <div className="w-4.5 h-4.5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
               </div>
-              <div className="flex items-center justify-between gap-2 mt-0.5">
-                <p className={`text-xs flex items-center gap-1 truncate ${velumUnread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
-                  {velumIsMe && velumMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
-                  {velumIsMe && velumMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
-                  {velumIsMe && velumMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-accent shrink-0" />}
-                  {velumTxt && renderPreviewWithIcons(velumTxt)}
-                </p>
-                {velumUnread > 0 && (
-                  <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-accent text-black shrink-0 min-w-[18px] text-center">
-                    {velumUnread}
-                  </span>
-                )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-text-primary flex items-center gap-1.5 truncate">
+                    Velum
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-accent/15 text-accent">System</span>
+                  </p>
+                  {velumTimeStr && (
+                    <span className={`text-[10px] shrink-0 ${velumUnread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
+                      {velumTimeStr}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <p className={`text-xs flex items-center gap-1 truncate ${velumUnread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
+                    {velumIsMe && velumMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                    {velumIsMe && velumMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                    {velumIsMe && velumMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-accent shrink-0" />}
+                    {velumTxt && renderPreviewWithIcons(velumTxt)}
+                  </p>
+                  {velumUnread > 0 && (
+                    <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-accent text-black shrink-0 min-w-[18px] text-center">
+                      {velumUnread}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Other friends/contacts */}
-        {filteredFriends.sort((a, b) => {
-          const dmA = `dm_${Math.min(currentUserId, a.friendId)}_${Math.max(currentUserId, a.friendId)}`;
-          const dmB = `dm_${Math.min(currentUserId, b.friendId)}_${Math.max(currentUserId, b.friendId)}`;
-          const lm = lastMessages || {};
-          const lastA = lm[dmA] || a.last_message;
-          const lastB = lm[dmB] || b.last_message;
-          
-          const timeA = lastA ? new Date(lastA.createdAt || lastA.created_at || lastA.timestamp || 0).getTime() : 0;
-          const timeB = lastB ? new Date(lastB.createdAt || lastB.created_at || lastB.timestamp || 0).getTime() : 0;
-          
-          return timeB - timeA;
-        }).map(r => {
-          const friendId = r.friendId;
-          const friendName = stripAt(r.username || r.displayName);
-          const friendAvatar = r.avatarUrl;
-          const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
-          const candidateKeys = [
-            dmRoomId,
-            `dm_${friendId}`,
-            `dm_${currentUserId}_${friendId}`,
-            `dm_${friendId}_${currentUserId}`
-          ];
+        {filteredFriends
+          .filter(r => {
+            const isArchived = archivedUserIds.includes(r.friendId);
+            return filterTab === 'archived' ? isArchived : !isArchived;
+          })
+          .sort((a, b) => {
+            const dmA = `dm_${Math.min(currentUserId, a.friendId)}_${Math.max(currentUserId, a.friendId)}`;
+            const dmB = `dm_${Math.min(currentUserId, b.friendId)}_${Math.max(currentUserId, b.friendId)}`;
+            const lm = lastMessages || {};
+            const lastA = lm[dmA] || a.last_message;
+            const lastB = lm[dmB] || b.last_message;
+            
+            const timeA = lastA ? new Date(lastA.createdAt || lastA.created_at || lastA.timestamp || 0).getTime() : 0;
+            const timeB = lastB ? new Date(lastB.createdAt || lastB.created_at || lastB.timestamp || 0).getTime() : 0;
+            
+            return timeB - timeA;
+          })
+          .map(r => {
+            const friendId = r.friendId;
+            const friendName = stripAt(r.username || r.displayName);
+            const friendAvatar = r.avatarUrl;
+            const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
+            const isDeletedLocally = deletedDmRooms.has(dmRoomId);
+            const isArchived = archivedUserIds.includes(friendId);
+            const candidateKeys = [
+              dmRoomId,
+              `dm_${friendId}`,
+              `dm_${currentUserId}_${friendId}`,
+              `dm_${friendId}_${currentUserId}`
+            ];
 
-          let unread = typeof r.unread_count === 'number' ? r.unread_count : 0;
-          for (const k of candidateKeys) {
-            if (k && unreadCounts && typeof unreadCounts[k] === 'number') {
-              unread = unreadCounts[k];
-              break;
+            let unread = typeof r.unread_count === 'number' ? r.unread_count : 0;
+            for (const k of candidateKeys) {
+              if (k && unreadCounts && typeof unreadCounts[k] === 'number') {
+                unread = unreadCounts[k];
+                break;
+              }
             }
-          }
 
-          const lm = lastMessages || {};
-          let last = r.last_message || null as any;
-          for (const k of candidateKeys) {
-            if (k && lm[k]) { last = lm[k]; break; }
-          }
+            const lm = lastMessages || {};
+            let last = isDeletedLocally ? null : (r.last_message || null as any);
+            for (const k of candidateKeys) {
+              if (!isDeletedLocally && k && lm[k]) { last = lm[k]; break; }
+            }
 
-          let lastTxt = '';
-          let lastTimeStr = '';
-          let isFailed = false;
-          let lastMsgStatus = '';
-          let isMe = false;
+            let lastTxt = '';
+            let lastTimeStr = '';
+            let isFailed = false;
+            let lastMsgStatus = '';
+            let isMe = false;
 
-          if (last) {
-            isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-            const raw = last.content || last.message || last.body || last.text || '';
-            const isEnc = !!(last.is_encrypted || last.isEncrypted);
-            const actualRoomId = last.room_id || dmRoomId;
-            const displayTxt = decryptedPreviews[friendId] || (function() {
-              // Own outgoing e2ee:v1 messages can't be decrypted here - only
-              // the recipient holds the key. If no plaintext was cached
-              // locally at send time (e.g. after a reload), show a neutral
-              // placeholder instead of raw ciphertext or attempting a
-              // guaranteed-to-fail decrypt.
-              if (isStatelessDmEnvelope(raw)) {
-                if (isMe) return last.plaintext || last.client_plaintext || 'Message sent';
-                return '';
-              }
-              try {
-                return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
-              } catch (e) {
-                return raw || '';
-              }
-            })();
-            lastTxt = getCleanPreview(displayTxt);
-            if (last.status === 'failed' || last.delivery_status === 'failed') {
-              isFailed = true;
-            } else if (isMe) {
-              if (last.status) {
-                lastMsgStatus = last.status;
-              } else {
-                lastMsgStatus = 'sent';
-                const readArr = last.readBy ? last.readBy.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
-                const delArr = last.deliveredTo ? last.deliveredTo.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
-                if (readArr.includes(friendId)) {
-                  lastMsgStatus = 'read';
-                } else if (delArr.includes(friendId)) {
-                  lastMsgStatus = 'delivered';
+            if (last) {
+              isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
+              const raw = last.content || last.message || last.body || last.text || '';
+              const isEnc = !!(last.is_encrypted || last.isEncrypted);
+              const actualRoomId = last.room_id || dmRoomId;
+              const displayTxt = decryptedPreviews[friendId] || (function() {
+                if (isStatelessDmEnvelope(raw)) {
+                  if (isMe) return last.plaintext || last.client_plaintext || 'Message sent';
+                  return '';
+                }
+                try {
+                  return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
+                } catch (e) {
+                  return raw || '';
+                }
+              })();
+              lastTxt = getCleanPreview(displayTxt);
+              if (last.status === 'failed' || last.delivery_status === 'failed') {
+                isFailed = true;
+              } else if (isMe) {
+                if (last.status) {
+                  lastMsgStatus = last.status;
+                } else {
+                  lastMsgStatus = 'sent';
+                  const readArr = last.readBy ? last.readBy.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
+                  const delArr = last.deliveredTo ? last.deliveredTo.split(',').map(Number).filter((id: number) => !isNaN(id)) : [];
+                  if (readArr.includes(friendId)) {
+                    lastMsgStatus = 'read';
+                  } else if (delArr.includes(friendId)) {
+                    lastMsgStatus = 'delivered';
+                  }
                 }
               }
+              const ts = last.created_at || last.timestamp || last.createdAt;
+              if (ts) {
+                lastTimeStr = formatMessageTimestamp(ts);
+              }
             }
-            const ts = last.created_at || last.timestamp || last.createdAt;
-            if (ts) {
-              lastTimeStr = formatMessageTimestamp(ts);
-            }
-          }
 
-          return (
-            <div
-              key={friendId}
-              onClick={() => {
-                try {
-                  const lastId = last ? (last.message_id || last.id || last.messageId) : undefined;
-                  if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
-                } catch (e) {}
+            return (
+              <div
+                key={friendId}
+                onClick={() => {
+                  try {
+                    const lastId = last ? (last.message_id || last.id || last.messageId) : undefined;
+                    if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
+                  } catch (e) {}
 
-                if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
-                if (onSectionView) onSectionView('chat');
-              }}
-              className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
-            >
-              <div className="min-w-0 flex items-center gap-3 flex-1">
-                <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
-                  {friendAvatar ? (
-                    <img 
-                      src={resolveMediaUrl(friendAvatar)} 
-                      alt={friendName} 
-                      className="w-full h-full object-cover" 
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <span className="uppercase text-xs font-semibold text-text-primary">{friendName.slice(0, 2)}</span>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className={`text-xs ${unread > 0 ? 'font-bold text-text-primary' : 'font-medium text-text-primary'} truncate`}>
-                      {friendName}
-                    </p>
-                    {lastTimeStr && (
-                      <span className={`text-[10px] shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
-                        {lastTimeStr}
-                      </span>
+                  if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
+                  if (onSectionView) onSectionView('chat');
+                }}
+                className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors group relative"
+              >
+                <div className="min-w-0 flex items-center gap-3 flex-1">
+                  <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
+                    {friendAvatar ? (
+                      <img 
+                        src={resolveMediaUrl(friendAvatar)} 
+                        alt={friendName} 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <span className="uppercase text-xs font-semibold text-text-primary">{friendName.slice(0, 2)}</span>
                     )}
                   </div>
-                  <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <p className={`text-xs flex items-center gap-1 truncate ${unread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
-                      {isMe && !isFailed && lastMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
-                      {isMe && !isFailed && lastMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
-                      {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-accent shrink-0" />}
-                      {lastTxt && renderPreviewWithIcons(lastTxt)}
-                    </p>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {isFailed ? (
-                        <span className="text-[10px] font-semibold text-status-dnd">
-                          Failed
-                        </span>
-                      ) : unread > 0 ? (
-                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-accent text-black shrink-0 min-w-[18px] text-center">
-                          {unread}
-                        </span>
-                      ) : null}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className={`text-xs ${unread > 0 ? 'font-bold text-text-primary' : 'font-medium text-text-primary'} truncate`}>
+                        {friendName}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        {lastTimeStr && (
+                          <span className={`text-[10px] shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
+                            {lastTimeStr}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setContextPeer({ userId: friendId, username: friendName, dmRoomId, isArchived });
+                          }}
+                          className="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-velum-600 opacity-60 group-hover:opacity-100 transition cursor-pointer"
+                          title="Chat Options"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <p className={`text-xs flex items-center gap-1 truncate ${unread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
+                        {isMe && !isFailed && lastMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                        {isMe && !isFailed && lastMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
+                        {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-accent shrink-0" />}
+                        {lastTxt && renderPreviewWithIcons(lastTxt)}
+                      </p>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isFailed ? (
+                          <span className="text-[10px] font-semibold text-status-dnd">
+                            Failed
+                          </span>
+                        ) : unread > 0 ? (
+                          <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-accent text-black shrink-0 min-w-[18px] text-center">
+                            {unread}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
+
+      {/* Conversation Options Modal */}
+      {contextPeer && (
+        <div 
+          className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center modal-backdrop bg-black/60 p-4"
+          onClick={() => setContextPeer(null)}
+        >
+          <div 
+            className="w-full max-w-xs bg-velum-850 border border-velum-600 rounded-2xl p-4 space-y-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150 text-text-primary"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-velum-600">
+              <span className="text-xs font-bold text-text-primary truncate">{contextPeer.username}</span>
+              <button
+                type="button"
+                onClick={() => setContextPeer(null)}
+                className="p-1 rounded-full text-text-secondary hover:text-text-primary cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleArchive(contextPeer.userId)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+            >
+              {contextPeer.isArchived ? <ArchiveRestore className="w-4 h-4 text-accent" /> : <Archive className="w-4 h-4 text-accent" />}
+              <span>{contextPeer.isArchived ? 'Unarchive Conversation' : 'Archive Conversation'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteConversation(contextPeer.userId, contextPeer.username, contextPeer.dmRoomId)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-alert-error hover:bg-alert-error/10 transition cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 text-alert-error" />
+              <span>Delete Entire Conversation</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

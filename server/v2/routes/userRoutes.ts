@@ -244,6 +244,14 @@ userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Respons
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
 
+    const dmSlug = targetUserId === 999 
+      ? `dm_velum_${currentUserId}`
+      : `dm_${Math.min(currentUserId, targetUserId)}_${Math.max(currentUserId, targetUserId)}`;
+
+    // Delete messages matching dmSlug directly
+    await db.delete(messages).where(eq(messages.loungeId, dmSlug));
+
+    // Also delete messages in any registered DM lounges
     const dmLounges = await db.select().from(lounges).where(eq(lounges.type, 'dm'));
     const members = await db.select().from(loungeMembers).where(inArray(loungeMembers.userId, [currentUserId, targetUserId]));
     
