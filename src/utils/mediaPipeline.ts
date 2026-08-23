@@ -234,7 +234,7 @@ export function resolveMediaUrl(url: string | null | undefined): string {
   );
 
   if (isCapacitorOrLocalApk) {
-    const backendBase = 'https://edition-approval-ranked-article.trycloudflare.com';
+    const backendBase = 'http://127.0.0.1:3000';
     return `${backendBase}${url.startsWith('/') ? '' : '/'}${url}`;
   }
 

@@ -13,7 +13,7 @@ if (typeof window !== 'undefined') {
       window.location.protocol === 'ionic:';
 
     if (isCapacitorOrLocalApk && (url.startsWith('/v2/') || url.startsWith('/api/'))) {
-      const targetUrl = `https://edition-approval-ranked-article.trycloudflare.com${url.startsWith('/') ? '' : '/'}${url}`;
+      const targetUrl = `http://127.0.0.1:3000${url.startsWith('/') ? '' : '/'}${url}`;
       if (typeof input === 'string' || input instanceof URL) {
         input = targetUrl;
       } else {
