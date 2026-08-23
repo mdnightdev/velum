@@ -102,186 +102,170 @@ export default function SystemHealthTab({ adminFetch }: SystemHealthTabProps) {
     return `${minutes}m ${secs}s`;
   };
 
-  const panelClass = 'bg-velum-800 border border-velum-600 rounded-xl p-4';
-  const borderClass = 'border-velum-600';
-
   return (
-    <div className="space-y-6 animate-fadeIn text-text-primary">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white-10">
-        <div>
-          <div className="flex items-center gap-2">
-            <Activity className="w-5 h-5 text-accent" />
-            <h3 className="text-base font-bold uppercase tracking-wider font-mono">
-              System Observability & Health Diagnostics
-            </h3>
-          </div>
-          <p className="text-xs text-text-secondary mt-1">
-            Real-time platform metrics, WebSocket session states, database latency, and live audit event stream.
-          </p>
-        </div>
-
+    <div className="space-y-3 text-text-primary">
+      {/* Top Action Bar (Compact) */}
+      <div className="flex items-center justify-end">
         <button
           onClick={fetchHealthData}
           disabled={isRefreshing}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white-5 hover:bg-white-10 border border-white-10 text-xs font-semibold cursor-pointer transition disabled:opacity-50 self-start sm:self-auto"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-velum-800 hover:bg-velum-700 border border-velum-600 text-xs font-medium cursor-pointer transition disabled:opacity-50 text-text-primary"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-accent ${isRefreshing ? 'animate-spin' : ''}`} />
-          <span>{isRefreshing ? 'Refreshing...' : 'Refresh Diagnostics'}</span>
+          <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
         </button>
       </div>
 
       {error && (
-        <div className="p-3 bg-status-dnd-bg/20 border border-status-dnd/40 rounded-xl text-status-dnd text-xs flex items-center gap-2">
+        <div className="p-2.5 bg-status-dnd/10 border border-status-dnd/30 rounded-lg text-status-dnd text-xs flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Primary KPI Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Metrics Grid (Embedded Single Row) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
         {/* Build Version */}
-        <div className={panelClass}>
-          <div className="flex items-center justify-between text-text-secondary mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest font-mono">Build Version</span>
-            <Layers className="w-4 h-4 text-accent" />
+        <div className="bg-velum-750 border border-velum-600 rounded-lg p-3">
+          <div className="flex items-center justify-between text-text-secondary mb-1">
+            <span className="text-xs font-medium">Version</span>
+            <Layers className="w-3.5 h-3.5 text-accent" />
           </div>
-          <div className="text-lg font-mono font-bold text-text-primary truncate">
-            {diagnostics?.buildVersion || '2.2.0-v2-prod'}
+          <div className="text-base font-bold text-text-primary truncate">
+            {diagnostics?.buildVersion || '2.2.0'}
           </div>
-          <div className="text-[10px] text-text-secondary mt-1 font-mono">
-            Env: {diagnostics?.env || 'production'}
+          <div className="text-xs text-text-secondary mt-0.5 capitalize">
+            {diagnostics?.env || 'production'}
           </div>
         </div>
 
         {/* Database Health & Latency */}
-        <div className={panelClass}>
-          <div className="flex items-center justify-between text-text-secondary mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest font-mono">Database Status</span>
-            <Database className="w-4 h-4 text-accent" />
+        <div className="bg-velum-750 border border-velum-600 rounded-lg p-3">
+          <div className="flex items-center justify-between text-text-secondary mb-1">
+            <span className="text-xs font-medium">Database</span>
+            <Database className="w-3.5 h-3.5 text-accent" />
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${diagnostics?.dbConnection.healthy ? 'bg-status-online shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-status-dnd'}`} />
-            <span className="text-lg font-mono font-bold">
-              {diagnostics?.dbConnection.healthy ? 'ONLINE' : 'DEGRADED'}
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${diagnostics?.dbConnection.healthy ? 'bg-status-online' : 'bg-status-dnd'}`} />
+            <span className="text-base font-bold text-text-primary">
+              {diagnostics?.dbConnection.healthy ? 'Online' : 'Degraded'}
             </span>
           </div>
-          <div className="text-[10px] text-text-secondary mt-1 font-mono">
-            Query Latency: {diagnostics?.dbConnection.latencyMs ?? 0} ms
+          <div className="text-xs text-text-secondary mt-0.5">
+            Latency: {diagnostics?.dbConnection.latencyMs ?? 0} ms
           </div>
         </div>
 
         {/* WebSocket Sessions */}
-        <div className={panelClass}>
-          <div className="flex items-center justify-between text-text-secondary mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest font-mono">Active WS Sessions</span>
-            <Wifi className="w-4 h-4 text-accent" />
+        <div className="bg-velum-750 border border-velum-600 rounded-lg p-3">
+          <div className="flex items-center justify-between text-text-secondary mb-1">
+            <span className="text-xs font-medium">Connections</span>
+            <Wifi className="w-3.5 h-3.5 text-accent" />
           </div>
-          <div className="text-lg font-mono font-bold text-text-primary">
+          <div className="text-base font-bold text-text-primary">
             {diagnostics?.websocketState.activeSessionsCount ?? 0}
           </div>
-          <div className="text-[10px] text-text-secondary mt-1 font-mono flex justify-between">
+          <div className="text-xs text-text-secondary mt-0.5 flex justify-between">
             <span>Conn: {diagnostics?.websocketState.activeConnections ?? 0}</span>
             <span>Rooms: {diagnostics?.websocketState.activeRoomsCount ?? 0}</span>
           </div>
         </div>
 
         {/* Server Process Uptime */}
-        <div className={panelClass}>
-          <div className="flex items-center justify-between text-text-secondary mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest font-mono">Process Uptime</span>
-            <Clock className="w-4 h-4 text-accent" />
+        <div className="bg-velum-750 border border-velum-600 rounded-lg p-3">
+          <div className="flex items-center justify-between text-text-secondary mb-1">
+            <span className="text-xs font-medium">Uptime</span>
+            <Clock className="w-3.5 h-3.5 text-accent" />
           </div>
-          <div className="text-lg font-mono font-bold text-text-primary">
+          <div className="text-base font-bold text-text-primary">
             {diagnostics ? formatUptime(diagnostics.uptimeSeconds) : '0m 0s'}
           </div>
-          <div className="text-[10px] text-text-secondary mt-1 font-mono">
+          <div className="text-xs text-text-secondary mt-0.5">
             Reconnects: {diagnostics?.websocketState.reconnectCount ?? 0}
           </div>
         </div>
       </div>
 
-      {/* Secondary Metrics / Diagnostics Detail */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Real-time Telemetry Card */}
-        <div className={`${panelClass} lg:col-span-1 space-y-4`}>
-          <div className="flex items-center gap-2 border-b border-white-5 pb-3">
+      {/* Detail Section: Telemetry + Audit Log */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-1">
+        {/* Telemetry Key-Values */}
+        <div className="bg-velum-750 border border-velum-600 rounded-lg p-3.5 lg:col-span-1 space-y-3">
+          <div className="flex items-center gap-2 border-b border-velum-600 pb-2">
             <Cpu className="w-4 h-4 text-accent" />
-            <h4 className="text-xs font-bold uppercase tracking-wider font-mono">System Telemetry</h4>
+            <h4 className="text-xs font-semibold text-text-primary">Telemetry</h4>
           </div>
 
-          <div className="space-y-3 text-xs font-mono">
-            <div className="flex justify-between items-center p-2.5 rounded-lg bg-white-[0.02] border border-white-5">
+          <div className="divide-y divide-velum-600 text-xs">
+            <div className="flex justify-between items-center py-2">
               <span className="text-text-secondary">Last Server Event</span>
-              <span className="text-text-primary font-bold">
+              <span className="text-text-primary font-medium">
                 {diagnostics?.lastServerEventTimestamp 
                   ? new Date(diagnostics.lastServerEventTimestamp).toLocaleTimeString()
                   : 'N/A'}
               </span>
             </div>
 
-            <div className="flex justify-between items-center p-2.5 rounded-lg bg-white-[0.02] border border-white-5">
-              <span className="text-text-secondary">Pool Connection</span>
-              <span className="text-status-online font-bold">ACTIVE</span>
+            <div className="flex justify-between items-center py-2">
+              <span className="text-text-secondary">Pool Status</span>
+              <span className="text-status-online font-medium">Active</span>
             </div>
 
-            <div className="flex justify-between items-center p-2.5 rounded-lg bg-white-[0.02] border border-white-5">
-              <span className="text-text-secondary">Diagnostics Auth Role</span>
-              <span className="text-accent font-bold">{diagnostics?.authContext?.role || 'ANONYMOUS'}</span>
+            <div className="flex justify-between items-center py-2">
+              <span className="text-text-secondary">Auth Role</span>
+              <span className="text-accent font-medium">{diagnostics?.authContext?.role || 'User'}</span>
             </div>
 
-            <div className="flex justify-between items-center p-2.5 rounded-lg bg-white-[0.02] border border-white-5">
+            <div className="flex justify-between items-center py-2">
               <span className="text-text-secondary">Timestamp</span>
-              <span className="text-text-primary font-bold">
+              <span className="text-text-primary font-medium">
                 {diagnostics?.timestamp ? new Date(diagnostics.timestamp).toLocaleTimeString() : 'N/A'}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Live Audit Log Stream */}
-        <div className={`${panelClass} lg:col-span-2 space-y-4`}>
-          <div className="flex items-center justify-between border-b border-white-5 pb-3">
+        {/* Audit Log Stream */}
+        <div className="bg-velum-750 border border-velum-600 rounded-lg p-3.5 lg:col-span-2 space-y-3">
+          <div className="flex items-center justify-between border-b border-velum-600 pb-2">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-accent" />
-              <h4 className="text-xs font-bold uppercase tracking-wider font-mono">
-                Live Audit Event Stream ({auditLogs.length})
+              <h4 className="text-xs font-semibold text-text-primary">
+                Audit Logs ({auditLogs.length})
               </h4>
             </div>
-            <span className="text-[10px] text-text-secondary font-mono">Structured Audit Logs</span>
           </div>
 
-          <div className="max-h-[340px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+          <div className="max-h-[300px] overflow-y-auto space-y-1.5 pr-1">
             {auditLogs.length === 0 ? (
-              <div className="text-center py-8 text-xs text-text-secondary font-mono">
+              <div className="text-center py-8 text-xs text-text-secondary">
                 No audit events recorded yet.
               </div>
             ) : (
               auditLogs.map((log) => (
                 <div
                   key={log.id || log.logId}
-                  className="p-3 rounded-xl bg-white-[0.02] hover:bg-white-[0.04] border border-white-5 transition space-y-1 text-xs"
+                  className="p-2.5 rounded-lg bg-velum-800 border border-velum-600 text-xs space-y-1"
                 >
-                  <div className="flex items-center justify-between font-mono">
-                    <span className="px-2 py-0.5 rounded bg-accent-10 text-accent font-bold text-[10px] uppercase tracking-wide">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 rounded bg-accent/15 text-accent font-medium text-xs">
                       {log.action}
                     </span>
-                    <span className="text-[10px] text-text-secondary">
-                      {new Date(log.timestamp).toLocaleString()}
+                    <span className="text-xs text-text-secondary">
+                      {new Date(log.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-text-primary font-sans pt-1">
-                    <span className="font-semibold text-text-primary">
-                      Admin: <span className="text-accent">{log.adminName}</span> (ID: {log.adminId})
+                  <div className="flex items-center justify-between text-text-primary pt-0.5">
+                    <span className="text-text-primary">
+                      Admin: <span className="text-accent font-medium">{log.adminName}</span>
                     </span>
                     {log.targetId && (
-                      <span className="text-[10px] font-mono text-text-secondary">
+                      <span className="text-xs text-text-secondary">
                         Target: {log.targetId}
                       </span>
                     )}
                   </div>
                   {log.reason && (
-                    <p className="text-[11px] text-text-secondary font-mono pt-0.5">
+                    <p className="text-xs text-text-secondary pt-0.5">
                       Reason: {log.reason}
                     </p>
                   )}

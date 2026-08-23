@@ -143,11 +143,11 @@ export async function submitDiagnosticLogs(notes?: string): Promise<{ success: b
 
     const data = await response.json();
     if (!response.ok) {
-      return { success: false, error: data.error || 'Failed to submit diagnostics.' };
+      return { success: false, error: data.error || 'Submission Failed.' };
     }
 
     return { success: true, log_id: data.log_id };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Network exception transmitting log payload.' };
+    return { success: false, error: err.message || 'Network error.' };
   }
 }

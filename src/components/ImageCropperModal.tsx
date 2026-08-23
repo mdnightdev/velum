@@ -5,8 +5,8 @@ export interface ImageCropperModalProps {
   imageSrc: string;
   fileName?: string;
   aspectRatio?: '1:1' | '4:3' | '16:9' | 'free';
-  onCancel: () => void;
   onCropComplete: (croppedDataUrl: string, croppedFile: File) => void;
+  onCancel: () => void;
 }
 
 type Aspect = '1:1' | '4:3' | '16:9' | 'free';
@@ -315,21 +315,7 @@ export function ImageCropperModal({
         </div>
 
         {/* Bottom strip — aspect pills + rotate, no border/box, just floating on black */}
-        <div className="flex items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-1">
-            {(['free', '1:1', '4:3', '16:9'] as const).map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setAspect(r)}
-                className={`px-2.5 py-1 rounded-full text-[10px] font-mono capitalize transition cursor-pointer ${
-                  aspect === r ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
+          <div>
           <button
             type="button"
             onClick={() => setRotation((r) => (r + 90) % 360)}

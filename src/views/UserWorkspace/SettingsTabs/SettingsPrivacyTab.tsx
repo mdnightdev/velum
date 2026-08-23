@@ -163,11 +163,9 @@ export function SettingsPrivacyTab({
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-text-primary">
-              Passkeys & Biometrics
+              Passkeys
             </h3>
-            <p className="text-xs text-text-secondary mt-0.5">
-              Sign in with biometric hardware or device credentials.
-            </p>
+           
           </div>
           <button
             type="button"
@@ -238,10 +236,7 @@ export function SettingsPrivacyTab({
           <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-text-primary">
             Change Password
           </h3>
-          <p className="text-xs text-text-secondary mt-0.5">
-            Update your account login password.
-          </p>
-        </div>
+          </div>
 
         {accountMsg && (
           <div className="p-3 bg-status-online/10 border border-status-online/20 text-status-online text-xs rounded-lg flex items-center gap-2">
@@ -300,24 +295,19 @@ export function SettingsPrivacyTab({
           <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-red-400">
             Danger Zone
           </h3>
-          <p className="text-xs text-text-secondary mt-0.5">
-            Emergency session termination and local account reset.
-          </p>
-        </div>
+         </div>
 
-        <div className="p-4 bg-red-500/5 rounded-xl border border-red-500/20 flex items-center justify-between">
+        <div className="p-4 bg-red-500/5 rounded-xl  flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-xs font-medium text-text-primary block">Reset Session & Local Data</span>
-            <span className="text-[11px] text-text-secondary block">
-              Clears current session credentials and resets authentication state.
-            </span>
+            <span className="text-xs font-medium text-text-primary block">DELETE ACCOUNT</span>
+           
           </div>
           <button
             type="button"
             onClick={handleAccountWipe}
             className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-xs font-medium transition cursor-pointer shrink-0"
           >
-            Reset
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </section>

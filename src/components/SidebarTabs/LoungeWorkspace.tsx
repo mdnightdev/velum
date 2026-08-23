@@ -223,6 +223,66 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     props.currentUserRole === 'owner' ||
     loungeData.isParentAdmin;
 
+  const isMember = isLoungeCreator || isSystemExecutive || loungeData.members.some(
+    m => String(m.user_id) === String(props.currentUserId) && (m.status === 'active' || m.status === 'approved' || !m.status)
+  );
+
+  const [isJoiningLounge, setIsJoiningLounge] = useState(false);
+  const [isApplyingLounge, setIsApplyingLounge] = useState(false);
+  const [copiedInviteLink, setCopiedInviteLink] = useState(false);
+  const [appliedSuccess, setAppliedSuccess] = useState(false);
+
+  const handleJoinLounge = async () => {
+    setIsJoiningLounge(true);
+    try {
+      const sId = getSessionId();
+      const res = await fetch('/v2/lounges/join', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lounge_id: props.loungeId })
+      });
+      if (res.ok) {
+        const memRes = await fetch(`/v2/lounges/${props.loungeId}/members`, { headers: { 'Authorization': `Bearer ${sId}` } });
+        if (memRes.ok) {
+          const data = await memRes.json();
+          loungeData.setMembers(data.filter((u: any) => u.user_id !== 999 && !(u.username?.toLowerCase() === 'members' || u.username?.toLowerCase() === 'velum-msg')));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to join lounge', e);
+    } finally {
+      setIsJoiningLounge(false);
+    }
+  };
+
+  const handleApplyLounge = async () => {
+    setIsApplyingLounge(true);
+    try {
+      const sId = getSessionId();
+      const res = await fetch(`/v2/lounges/${props.loungeId}/apply`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        setAppliedSuccess(true);
+      }
+    } catch (e) {
+      console.error('Failed to apply to lounge', e);
+    } finally {
+      setIsApplyingLounge(false);
+    }
+  };
+
+  const handleCopyInviteLink = () => {
+    const code = loungeData.loungeDetails?.invite_code;
+    const link = code 
+      ? `${window.location.origin}/?invite=${code}` 
+      : `${window.location.origin}/?lounge=${props.loungeId}`;
+    navigator.clipboard.writeText(link);
+    setCopiedInviteLink(true);
+    setTimeout(() => setCopiedInviteLink(false), 2000);
+  };
+
   const activeRoom = displayRooms.find(r => getRoomId(r) === props.activeRoomId);
   const activeRoomName = activeRoom ? activeRoom.name : '';
   const isPrivateSublounge = activeRoom ? (activeRoom.is_locked || activeRoom.visibility === 'private' || activeRoom.is_private === 1 || activeRoom.is_private === true) : false;
@@ -233,6 +293,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
   const isOfficialLounge = loungeData.loungeDetails?.is_official || loungeData.loungeDetails?.is_system || props.loungeId === 'velum_master_lounge';
   const canCreateSublounge = !isOfficialLounge && (loungeData.isParentAdmin || isLoungeCreator);
+  const loungeAvatar = loungeData.loungeDetails?.avatar_url || loungeData.loungeDetails?.avatarUrl || loungeData.loungeDetails?.icon_url || loungeData.loungeDetails?.iconUrl;
 
   const handleMarkAsRead = (messageId: string, roomId: string) => {
     props.onMarkAsRead?.(messageId, roomId);
@@ -259,28 +320,39 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
 
     return (
       <>
-        <div className="flex-1 flex w-full h-full overflow-hidden min-h-0 bg-transparent">
+        <div className="flex-1 flex w-full h-full overflow-hidden min-h-0 bg-transparent text-text-primary">
           {/* Persistent Sidebar Directory Column */}
-          <div className={`flex-shrink-0 flex flex-col h-full min-h-0 border-r border-white-5 bg-black/10 transition-all duration-300 ${
-            isSubloungeCollapsed ? 'w-14 min-w-[56px]' : 'w-64 min-w-[256px]'
+          <div className={`flex-shrink-0 flex flex-col h-full min-h-0 border-r border-velum-600 bg-velum-850 transition-all duration-300 ${
+            isSubloungeCollapsed ? 'w-12 min-w-[48px]' : 'w-60 min-w-[240px]'
           }`}>
             <div className="flex-1 flex flex-col h-full min-h-0 bg-transparent overflow-hidden">
-              <div className="p-3 border-b border-white-5 flex items-center justify-between gap-2 shrink-0">
+              <div className="p-2.5 border-b border-velum-600 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <button
                     onClick={props.onBackToDirectory}
-                    className="p-2 -ml-1 rounded-lg text-text-secondary hover:text-white hover:bg-white-10 transition-colors cursor-pointer shrink-0"
+                    className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition-colors cursor-pointer shrink-0"
                     title="Back to Directory"
                   >
-                    <ChevronLeft className="w-5 h-5" />
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
                   {!isSubloungeCollapsed && (
-                    <span 
+                    <div 
                       onClick={() => setShowLoungeProfile(true)}
-                      className={`text-xs font-bold uppercase tracking-wider truncate cursor-pointer hover:underline ${props.isDark ? 'text-white' : 'text-gray-900'}`}
+                      className="flex items-center gap-2 min-w-0 cursor-pointer group"
                     >
-                      {props.loungeName}
-                    </span>
+                      <div className="w-5 h-5 rounded-md bg-velum-750 border border-velum-600 flex items-center justify-center overflow-hidden shrink-0">
+                        {loungeAvatar ? (
+                          <img src={loungeAvatar} alt={props.loungeName} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-[9px] font-bold text-accent font-mono">
+                            {(effectiveLoungeName || 'L').slice(0, 2).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-semibold text-text-primary truncate group-hover:underline">
+                        {props.loungeName}
+                      </span>
+                    </div>
                   )}
                 </div>
 
@@ -288,10 +360,10 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                   {!isSubloungeCollapsed && loungeData.isParentAdmin && (
                     <button
                       onClick={() => loungeData.setShowManageModal(true)}
-                      className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer"
+                      className="p-1.5 rounded-lg hover:bg-velum-750 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
                       title="Manage Lounge"
                     >
-                      <Settings className="w-4 h-4" />
+                      <Settings className="w-3.5 h-3.5" />
                     </button>
                   )}
                   {!isSubloungeCollapsed && canCreateSublounge && (
@@ -300,18 +372,18 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                         loungeData.setStatusMessage('');
                         loungeData.setShowCreateModal(true);
                       }}
-                      className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer"
-                      title="Create Room / Sublounge"
+                      className="p-1.5 rounded-lg hover:bg-velum-750 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+                      title="Create Room"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-3.5 h-3.5" />
                     </button>
                   )}
                   <button
                     onClick={() => setIsSubloungeCollapsed(prev => !prev)}
-                    className="p-1.5 rounded-lg hover:bg-white-10 text-text-secondary hover:text-white transition-colors cursor-pointer"
+                    className="p-1.5 rounded-lg hover:bg-velum-750 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
                     title={isSubloungeCollapsed ? "Expand Directory" : "Collapse Directory"}
                   >
-                    {isSubloungeCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                    {isSubloungeCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
@@ -336,14 +408,14 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               )}
 
               {!isSubloungeCollapsed && isLoungeCreator && loungeData.loungeDetails?.invite_code && (
-                <div className="p-4 border-t border-white-5 bg-transparent">
-                  <div className="p-3 bg-velum-800 border border-white-5 rounded-xl flex flex-col gap-1.5 shadow-lg shadow-black/20">
-                    <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary select-none">Lounge Invite</div>
+                <div className="p-3 border-t border-velum-600 bg-transparent">
+                  <div className="p-2.5 bg-velum-800 border border-velum-600 rounded-xl flex flex-col gap-1 shadow-sm">
+                    <div className="text-[10px] font-medium text-text-secondary select-none">Lounge Invite</div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono text-xs font-bold text-accent tracking-wider select-all truncate">{loungeData.loungeDetails.invite_code}</span>
                       <button
                         onClick={handleCopyInvite}
-                        className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest bg-accent-10 hover:bg-accent-20 text-accent rounded transition active:scale-95 cursor-pointer shrink-0"
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-accent/15 hover:bg-accent/25 text-accent rounded transition cursor-pointer shrink-0"
                       >
                         {copiedInvite ? 'Copied' : 'Copy'}
                       </button>
@@ -355,7 +427,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           </div>
 
           {/* Right Content Panel (Chat Area) */}
-          <div className="flex-1 min-w-0 relative min-h-0 flex flex-col h-full bg-velum-900 overflow-hidden">
+          <div className="flex-1 min-w-0 relative min-h-0 flex flex-col h-full bg-velum-800 overflow-hidden">
             <PrivateSubloungeBanner
               activeRoom={activeRoom}
               isPrivateSublounge={isPrivateSublounge}
@@ -386,60 +458,72 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 onToggleSidebar={props.onToggleSidebar}
                 roomName={activeRoomName}
                 isPrivateSublounge={isPrivateSublounge}
+                isMember={isMember}
+                onJoinLounge={handleJoinLounge}
+                avatarUrl={loungeAvatar}
               />
             ) : (
               <LoungeOverview
+                loungeId={props.loungeId}
                 loungeName={effectiveLoungeName}
                 loungeDetails={loungeData.loungeDetails}
                 memberCount={loungeData.members.length}
                 isDark={props.isDark}
+                isMember={isMember}
                 isLoungeCreator={isLoungeCreator}
                 handleCopyInvite={handleCopyInvite}
                 copiedInvite={copiedInvite}
+                handleCopyInviteLink={handleCopyInviteLink}
+                copiedInviteLink={copiedInviteLink}
+                onJoinLounge={handleJoinLounge}
+                onApplyLounge={handleApplyLounge}
+                isJoining={isJoiningLounge}
+                isApplying={isApplyingLounge}
+                appliedSuccess={appliedSuccess}
               />
             )}
           </div>
           
           {/* Members Sidebar (Desktop) */}
-          <div className="w-60 flex-shrink-0 flex flex-col min-h-0 border-l border-white-5 bg-black/10 overflow-y-auto hidden lg:flex select-none">
-            <div className="p-4 border-b border-white-5">
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Lounge Roster</h3>
+          <div className="w-56 flex-shrink-0 flex flex-col min-h-0 border-l border-velum-600 bg-velum-850 overflow-y-auto hidden lg:flex select-none">
+            <div className="p-3 border-b border-velum-600">
+              <h3 className="text-xs font-semibold text-text-secondary">Members ({loungeData.members.length})</h3>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-4">
+            <div className="flex-1 overflow-y-auto p-2 space-y-3">
               {['owner', 'admin', 'moderator', 'member'].map(role => {
                 const roleMembers = loungeData.members.filter(m => m.role === role);
                 if (roleMembers.length === 0) return null;
                 return (
                   <div key={role} className="space-y-1">
-                    <div className="px-2 text-[9px] font-bold uppercase tracking-widest text-text-secondary/60 mb-2">
+                    <div className="px-2 text-[10px] font-semibold text-text-secondary/70 capitalize">
                       {role} — {roleMembers.length}
                     </div>
                     {roleMembers.map((m: any) => (
                       <div 
                         key={m.user_id} 
-                        className={`flex items-center gap-2 p-2 rounded-xl transition-colors cursor-pointer ${props.isDark ? 'hover:bg-white-5 text-text-primary' : 'hover:bg-black/5 text-velum-900'}`}
+                        className="flex items-center gap-2 p-1.5 rounded-lg transition-colors cursor-pointer hover:bg-velum-750 text-text-primary"
                         onClick={() => setSelectedMember(m)}
                       >
-                        <div className="relative">
+                        <div className="relative shrink-0">
                           {m.avatar ? (
-                            <img src={m.avatar} alt={m.username} className="w-8 h-8 rounded-full object-cover border border-white-10" referrerPolicy="no-referrer" />
+                            <img src={m.avatar} alt={m.username} className="w-7 h-7 rounded-lg object-cover border border-velum-600" referrerPolicy="no-referrer" />
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-velum-800 border border-white-10 flex items-center justify-center text-[10px] font-bold uppercase text-accent font-mono">
+                            <div className="w-7 h-7 rounded-lg bg-velum-800 border border-velum-600 flex items-center justify-center text-xs font-bold uppercase text-accent font-mono">
                               {m.username.replace('@', '').charAt(0)}
                             </div>
                           )}
-                          <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-velum-900 ${
+                          <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-velum-850 ${
                             m.status === 'online' ? 'bg-status-online' :
                             m.status === 'away' ? 'bg-status-away' :
                             m.status === 'dnd' ? 'bg-status-dnd' : 'bg-status-invisible'
                           }`} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-[11px] font-bold truncate">
+                          <div className="text-xs font-medium truncate">
                             {m.displayName || m.username.replace('@', '')}
                           </div>
                           {m.status_text && (
-                            <div className="text-[9px] text-text-secondary truncate">
+                            <div className="text-[10px] text-text-secondary truncate">
                               {m.status_text}
                             </div>
                           )}
@@ -598,6 +682,9 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           onToggleSidebar={props.onToggleSidebar}
           roomName={activeRoomName}
           isPrivateSublounge={isPrivateSublounge}
+          isMember={isMember}
+          onJoinLounge={handleJoinLounge}
+          avatarUrl={loungeAvatar}
         />
       </div>
     );
@@ -606,65 +693,80 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   // Lounge Home View on Mobile
   return (
     <>
-      <div className="w-full h-full flex flex-col min-h-0 bg-transparent">
-        <div className="p-4 border-b border-white-5 bg-black/20">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-2 min-w-0">
+      <div className="w-full h-full flex flex-col min-h-0 bg-transparent text-text-primary">
+        <div className="p-3 border-b border-velum-600 bg-velum-850">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
               {props.onToggleSidebar && (
                 <button 
                   onClick={props.onToggleSidebar} 
-                  className="p-2 rounded-full bg-white-5 text-text-secondary hover:text-white shrink-0 cursor-pointer" 
+                  className="p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 shrink-0 cursor-pointer" 
                   aria-label="Open sidebar menu"
                   title="Open Navigation"
                 >
-                  <Menu className="w-5 h-5" />
+                  <Menu className="w-4 h-4" />
                 </button>
               )}
-              <button onClick={props.onBackToDirectory} className="p-2 rounded-full bg-white-5 text-text-secondary shrink-0" aria-label="Back to directory">
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <h1 
-                onClick={() => setShowLoungeProfile(true)}
-                className="text-lg font-black uppercase tracking-widest text-accent truncate cursor-pointer hover:underline"
+              <button 
+                onClick={props.onBackToDirectory} 
+                className="p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 shrink-0 cursor-pointer" 
+                aria-label="Back to directory"
               >
-                {effectiveLoungeName}
-              </h1>
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div 
+                onClick={() => setShowLoungeProfile(true)}
+                className="flex items-center gap-2 min-w-0 cursor-pointer group"
+              >
+                <div className="w-5 h-5 rounded-md bg-velum-750 border border-velum-600 flex items-center justify-center overflow-hidden shrink-0">
+                  {loungeAvatar ? (
+                    <img src={loungeAvatar} alt={props.loungeName} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-[9px] font-bold text-accent font-mono">
+                      {(effectiveLoungeName || 'L').slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <h1 className="text-xs font-bold uppercase tracking-wider text-text-primary truncate group-hover:underline">
+                  {effectiveLoungeName}
+                </h1>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               {loungeData.isParentAdmin && (
                 <button
                   onClick={() => loungeData.setShowManageModal(true)}
-                  className="p-2.5 bg-white-5 border border-white-5 hover:bg-white-10 text-text-secondary hover:text-white rounded-xl transition cursor-pointer"
+                  className="p-1.5 bg-velum-800 border border-velum-600 hover:border-accent/40 text-text-secondary hover:text-text-primary rounded-lg transition cursor-pointer"
                   title="Manage Lounge"
                 >
-                  <Settings className="w-4 h-4" />
+                  <Settings className="w-3.5 h-3.5" />
                 </button>
               )}
               {canCreateSublounge && (
-              <button
-                onClick={() => {
-                  loungeData.setStatusMessage('');
-                  loungeData.setShowCreateModal(true);
-                }}
-                className="p-2.5 bg-white-5 border border-white-5 hover:bg-white-10 text-text-secondary hover:text-white rounded-xl transition cursor-pointer"
-                title="Create Room"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+                <button
+                  onClick={() => {
+                    loungeData.setStatusMessage('');
+                    loungeData.setShowCreateModal(true);
+                  }}
+                  className="p-1.5 bg-velum-800 border border-velum-600 hover:border-accent/40 text-text-secondary hover:text-text-primary rounded-lg transition cursor-pointer"
+                  title="Create Room"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
           </div>
         </div>
 
-        <div className="flex border-b border-white-5 bg-black/10">
-          {['rooms', 'members', 'about'].map(tab => (
+        <div className="flex border-b border-velum-600 bg-velum-850">
+          {(['rooms', 'members', 'about'] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setMobileTab(tab as any)}
-              className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+              onClick={() => setMobileTab(tab)}
+              className={`flex-1 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer ${
                 mobileTab === tab 
-                  ? (props.isDark ? 'text-white border-b-2 border-accent' : 'text-velum-900 border-b-2 border-accent')
-                  : 'text-text-secondary border-b-2 border-transparent'
+                  ? 'text-text-primary border-b-2 border-accent' 
+                  : 'text-text-secondary border-b-2 border-transparent hover:text-text-primary'
               }`}
             >
               {tab}
@@ -698,13 +800,22 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           )}
           {mobileTab === 'about' && (
             <LoungeOverview
+              loungeId={props.loungeId}
               loungeName={effectiveLoungeName}
               loungeDetails={loungeData.loungeDetails}
               memberCount={loungeData.members.length}
               isDark={props.isDark}
+              isMember={isMember}
               isLoungeCreator={isLoungeCreator}
               handleCopyInvite={handleCopyInvite}
               copiedInvite={copiedInvite}
+              handleCopyInviteLink={handleCopyInviteLink}
+              copiedInviteLink={copiedInviteLink}
+              onJoinLounge={handleJoinLounge}
+              onApplyLounge={handleApplyLounge}
+              isJoining={isJoiningLounge}
+              isApplying={isApplyingLounge}
+              appliedSuccess={appliedSuccess}
             />
           )}
         </div>

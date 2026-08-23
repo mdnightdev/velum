@@ -84,7 +84,7 @@ export function MessageList({
           <div className="h-full flex flex-col items-center justify-center p-8 text-center select-none">
             <div className="max-w-md bg-white/[0.03] backdrop-blur-md rounded-2xl p-6 border border-white-5 text-center">
               <p className="text-xs text-text-secondary font-medium font-sans">
-                No messages in this workspace yet. Write the first message below to start the conversation.
+               ​Quiet in here... break the ice.
               </p>
             </div>
           </div>

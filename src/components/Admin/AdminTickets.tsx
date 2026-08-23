@@ -108,11 +108,7 @@ export default function AdminTickets({
         {/* Header and Live Search Filters Panel */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-velum-600 pb-3 mb-3">
           <div className="flex items-center gap-2">
-            <HelpCircle className="w-4 h-4 text-accent" />
-            <h3 className="font-semibold text-sm text-text-primary">
-              Tickets
-            </h3>
-          </div>
+           </div>
 
           {/* Filtering Controllers */}
           <div className="flex items-center gap-2 w-full md:w-auto">
@@ -148,11 +144,11 @@ export default function AdminTickets({
           <table className="w-full text-xs font-sans text-left border-collapse">
             <thead>
               <tr className="text-text-secondary/30 text-[9px] font-black uppercase tracking-widest border-b border-white-5">
-                <th className="py-3.5 pl-4">Ticket ID</th>
+                <th className="py-3.5 pl-4">ID</th>
                 <th className="py-3.5">User</th>
                 <th className="py-3.5">Subject</th>
-                <th className="py-3.5">Trust Score</th>
-                <th className="py-3.5">Created At</th>
+                <th className="py-3.5">Trust</th>
+                <th className="py-3.5">Date</th>
                 <th className="py-3.5">Status</th>
                 <th className="py-3.5 text-right pr-4">Action</th>
               </tr>
@@ -189,7 +185,7 @@ export default function AdminTickets({
                     <td className="py-3.5">
                       <div className="flex flex-col">
                         <span className="text-text-primary font-bold">
-                          @{ticket.username || 'Anonymous'}
+                         {ticket.username || 'User'}
                         </span>
                         <span className="text-[9px] font-mono text-text-secondary">
                           ID: {ticket.user_id}
@@ -238,7 +234,7 @@ export default function AdminTickets({
                         }}
                         className="inline-flex items-center gap-1 bg-accent-10 text-accent hover:bg-accent hover:text-text-primary px-3 py-1.5 rounded-lg text-[9.5px] font-black uppercase font-mono tracking-wider border border-accent-20 transition duration-150 cursor-pointer"
                       >
-                        <span>Inspect</span>
+                        <span>Open</span>
                         <ChevronRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
                       </button>
                     </td>
@@ -252,7 +248,7 @@ export default function AdminTickets({
                     colSpan={7}
                     className="py-20 text-center text-text-disabled font-mono text-[10px] uppercase font-bold tracking-widest bg-black/10"
                   >
-                    No tickets match filter criteria
+                   
                   </td>
                 </tr>
               )}
@@ -284,7 +280,7 @@ export default function AdminTickets({
                   </span>
                   <div
                     className={`w-2.5 h-2.5 rounded-full shadow-sm ${
-                      (activeTicket.status || '').toLowerCase() === 'open'
+                      (activeTicket.status || '').toLowerCase() === ''
                         ? 'bg-status-dnd shadow-status-dnd/20'
                         : (activeTicket.status || '').toLowerCase() === 'resolved'
                         ? 'bg-status-online shadow-status-online/20'
@@ -325,11 +321,11 @@ export default function AdminTickets({
                   <div className="space-y-2 text-text-secondary">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-[9px] uppercase tracking-wider">Tracking ID:</span>
-                      <span className="text-text-primary break-all">{activeTicket.tracking_id || activeTicket.tracking_id || 'N/A'}</span>
+                      <span className="text-text-primary break-all">{activeTicket.tracking_id || activeTicket.tracking_id || ''}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-[9px] uppercase tracking-wider">User:</span>
-                      <span className="text-text-primary">{activeTicket.user_id} (@{activeTicket.username || 'Anonymous'})</span>
+                      <span className="text-text-primary">{activeTicket.user_id}</span>
                     </div>
                   </div>
                   

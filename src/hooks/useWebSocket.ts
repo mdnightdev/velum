@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
-import { getLocalMessages, saveLocalMessages, rotateAndReEncryptLocalMessages } from '../utils/indexedDb';
+import { getLocalMessages, saveLocalMessages, rotateAndReEncryptLocalMessages, deleteLocalMessage } from '../utils/indexedDb';
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 import { storage } from '../services/storageService';
@@ -358,6 +358,7 @@ export function useWebSocket({
           }));
         } else if (data.type === 'message_deleted') {
           setMessages(prev => prev.filter(m => String(m.message_id) !== String(data.message_id) && String(m.db_message_id) !== String(data.message_id)));
+          deleteLocalMessage(data.message_id, userId || undefined);
         } else if (data.type === 'message_pinned') {
           setMessages(prev => prev.map(m => {
             if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
@@ -424,7 +425,25 @@ export function useWebSocket({
           
           if (data.room_id) {
             const newMessage = data as Message;
-            setLastMessages(prev => ({ ...prev, [data.room_id]: newMessage }));
+            setLastMessages(prev => {
+              const existing = prev[data.room_id];
+              const sameMessage = existing && (
+                (existing.message_id && String(existing.message_id) === String(newMessage.message_id)) ||
+                (existing.client_msg_id && String(existing.client_msg_id) === String(newMessage.client_msg_id)) ||
+                (existing.nonce && existing.nonce === newMessage.nonce)
+              );
+              // The server echo never carries plaintext. If this update is
+              // just the ack for a message we already know the plaintext of
+              // (via optimistic send), keep our known plaintext instead of
+              // letting the server's ciphertext-only version clobber it.
+              const mergedPlaintext = sameMessage
+                ? (existing.plaintext || newMessage.plaintext)
+                : newMessage.plaintext;
+              return {
+                ...prev,
+                [data.room_id]: { ...newMessage, plaintext: mergedPlaintext }
+              };
+            });
           }
 
           if (data.room_id === activeRoomIdRef.current) {
@@ -557,6 +576,13 @@ export function useWebSocket({
     if (destRoomId === activeRoomId) {
       setMessages(prev => [...prev, optMessage]);
     }
+
+    // The server never sees plaintext, so any lastMessages update sourced
+    // from server data (summary fetch, history load, WS broadcast echo)
+    // can never carry our own sent text. Update lastMessages here, from the
+    // optimistic message we just built locally, so the sidebar preview has
+    // the real text immediately instead of falling back to a placeholder.
+    setLastMessages(prev => ({ ...prev, [destRoomId]: optMessage }));
 
     const outboxPayload = {
       client_msg_id: nonce,

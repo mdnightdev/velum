@@ -513,7 +513,7 @@ export default function AdminPanel({
       )}
 
       {/* Main Workspace Frame */}
-      <main className={`flex-1 min-w-0 min-h-0 h-full bg-velum-900 flex flex-col overflow-hidden relative ${activeTab === 'velum_lounge' ? 'p-0' : 'p-6'}`}>
+      <main className={`flex-1 min-w-0 min-h-0 h-full bg-velum-800 flex flex-col overflow-hidden relative ${activeTab === 'velum_lounge' ? 'p-0' : 'p-3 sm:p-4'}`}>
         {activeTab === 'velum_lounge' ? (
           <LoungeWorkspace
             currentUserId={user?.userId}
@@ -537,18 +537,17 @@ export default function AdminPanel({
           />
         ) : (
           <PullToRefresh>
-            <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
-              <div className="lg:hidden flex items-center justify-between pb-4 mb-4 border-b border-white-5 shrink-0">
-                <div className="flex items-center gap-3">
+            <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none">
+              <div className="lg:hidden flex items-center justify-between pb-2 mb-2 border-b border-velum-600 shrink-0">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsMobileDrawerOpen(true)}
-                    className="p-2 rounded-xl bg-white-5 text-text-secondary hover:text-white hover:bg-white-10 transition cursor-pointer"
+                    className="p-1.5 rounded-lg bg-velum-800 text-text-secondary hover:text-text-primary hover:bg-velum-700 transition cursor-pointer"
                     aria-label="Open admin sidebar menu"
                     title="Open Navigation"
                   >
-                    <Menu className="w-5 h-5" />
+                    <Menu className="w-4 h-4" />
                   </button>
-                  
                 </div>
               </div>
 

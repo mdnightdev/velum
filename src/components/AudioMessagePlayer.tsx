@@ -31,7 +31,14 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ content,
     if (urlMatch) {
       src = urlMatch[1];
     } else if (dataMatch) {
-      src = dataMatch[1].startsWith('data:') ? dataMatch[1] : `data:audio/webm;base64,${dataMatch[1]}`;
+      const rawData = dataMatch[1].trim();
+      if (rawData.startsWith('data:')) {
+        src = rawData;
+      } else if (rawData.startsWith('audio/') || rawData.startsWith('video/') || rawData.startsWith('image/')) {
+        src = `data:${rawData}`;
+      } else {
+        src = `data:audio/webm;base64,${rawData}`;
+      }
     }
 
     // Resolve relative URL for Capacitor APK / local backend

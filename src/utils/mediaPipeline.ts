@@ -153,8 +153,10 @@ export const streamFileDirectToCloudStorage = async (
   fileExtension: string
 ): Promise<string> => {
   const sid = getSessionId();
-  
+
   try {
+    const cleanExt = fileExtension.replace(/^\./, '');
+    const filename = `upload_${Date.now()}.${cleanExt}`;
     // 1. Fetch secure upload config from Velum node
     const tokenNegotiator = await fetch('/v2/storage/upload-token', {
       method: "POST",
@@ -162,7 +164,14 @@ export const streamFileDirectToCloudStorage = async (
         "Content-Type": "application/json",
         "Authorization": `Bearer ${sid}`
       },
-      body: JSON.stringify({ extension: fileExtension, type: folderDestination })
+      body: JSON.stringify({
+        filename,
+        mimeType: processedBlob.type || (cleanExt === 'webp' ? 'image/webp' : 'application/octet-stream'),
+        fileSizeBytes: processedBlob.size || 1024,
+        folder: folderDestination,
+        extension: cleanExt,
+        type: folderDestination
+      })
     });
 
     if (tokenNegotiator.ok) {

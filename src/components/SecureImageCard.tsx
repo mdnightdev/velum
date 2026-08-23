@@ -59,7 +59,7 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
           </button>
         </div>
 
-        {/* Floating Time & Status overlay in bottom-right corner (Telegram style) */}
+        {/* Floating Time & Status overlay in bottom-right corneri*/}
         {children && (
           <div className="absolute bottom-2.5 right-2.5 bg-black/45 backdrop-blur-[var(--blur-backdrop-sm)] px-2 py-0.5 rounded-full flex items-center gap-1 text-[9px] font-mono text-white select-none z-10 border border-white/5">
             {children}

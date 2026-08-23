@@ -111,7 +111,7 @@ export default function PrivateSubloungeBanner({
         <div className="bg-velum-850/90 border-b border-white-10 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 select-none">
           <div className="flex items-center gap-2 text-xs min-w-0">
             <span className="font-bold text-accent uppercase tracking-wider text-[10px] shrink-0">
-              🔒 Private Sublounge
+               Private Sublounge
             </span>
             <span className="text-text-secondary truncate text-[11px]">
               Applications restricted. Joining is by invite link shared directly by the room creator.
@@ -125,7 +125,7 @@ export default function PrivateSubloungeBanner({
       <div className="bg-velum-850/90 border-b border-white-10 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 select-none">
         <div className="flex items-center gap-2 text-xs min-w-0">
           <span className="font-bold text-accent uppercase tracking-wider text-[10px] shrink-0">
-            🔒 Private Lounge
+            Private Lounge
           </span>
           <span className="text-text-secondary truncate text-[11px]">
             {applyMessage || 'This community requires approval to join.'}

@@ -47,7 +47,7 @@ html, body, #root {
 
 .message-bubble-container {
   min-width: 0;
-  max-width: 88%;
+  max-width: 58%;
 }
 
 @media (min-width: 640px) {
@@ -436,20 +436,44 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 
 /* Ambient Velum Dark Canvas Texture & Soft Radial Vignette */
 .chat-wallpaper {
-  background-color: #111319;
-  background-image: 
-    radial-gradient(circle at 50% 30%, rgba(22, 25, 34, 0.95), #0d0f14),
-    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23C89B8A' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-  position: relative;
+  background-color: #111113;
+  background-image:
+    radial-gradient(
+      circle at 10% 15%,
+      rgba(200, 155, 138, 0.07) 0,
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 90% 30%,
+      rgba(200, 155, 138, 0.035) 0,
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 30% 100%,
+      rgba(145, 180, 170, 0.035) 0,
+      transparent 30%
+    );
+      position: relative;
+      z-index: 0;
 }
 
 .chat-wallpaper::before {
   content: '';
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(200, 155, 138, 0.02) 0%, transparent 70%),
-              radial-gradient(circle at 50% 50%, transparent 40%, rgba(11, 13, 18, 0.85) 100%);
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(200, 155, 138, 0.02) 0%,
+      transparent 70%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      transparent 40%,
+      rgba(11, 13, 18, 0.85) 100%
+    );
   pointer-events: none;
+  z-index: 0;
 }
 
 @keyframes bounce-slow {

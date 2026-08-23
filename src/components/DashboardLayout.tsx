@@ -378,7 +378,7 @@ export default function DashboardLayout({
 
         {/* Desktop / Tablet Navigation Sidebar */}
         {!isMobile && (
-          <aside className={`h-full flex flex-col transition-all duration-300 z-30 bg-velum-850 border-r border-white-5 relative shrink-0 overflow-x-hidden ${
+          <aside className={`h-full flex flex-col transition-all duration-300 z-30 bg-velum-850 border-r border-velum-600 relative shrink-0 overflow-x-hidden ${
             isSidebarExpanded ? 'w-60 min-w-[240px]' : 'w-14 min-w-[56px]'
           }`}>
             <UserSidebar
@@ -437,7 +437,7 @@ export default function DashboardLayout({
           </aside>
         )}
 
-        <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden glass-panel border-y-0 border-r-0 rounded-none">
+        <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden bg-velum-800 border-none rounded-none text-text-primary">
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">

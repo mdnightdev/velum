@@ -114,6 +114,42 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
 }
 
 /**
+ * Removes a single message from the local cache by any of its known ids.
+ * Needed so server-side deletions actually clear the cached copy - without
+ * this, a deleted message stays in IndexedDB until its 24h TTL expires and
+ * briefly reappears (then vanishes on the next server sync) every time the
+ * room is reopened in the meantime.
+ */
+export async function deleteLocalMessage(messageId: string | number, userId?: number): Promise<void> {
+  if (!messageId) return;
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+    const target = String(messageId);
+
+    // Try direct key delete first (covers the common case where id === messageId)
+    await tx.store.delete(target);
+
+    // Also sweep for records where message_id/db_message_id/client_msg_id/nonce
+    // match but the primary key (id) differs, e.g. an optimistic record whose
+    // key was the client nonce, later confirmed under a different db id.
+    const all = await tx.store.getAll();
+    for (const rec of all) {
+      const candidateIds = [rec.id, rec.message_id, rec.db_message_id, rec.client_msg_id, rec.nonce]
+        .filter(Boolean)
+        .map(String);
+      if (candidateIds.includes(target)) {
+        await tx.store.delete(rec.id);
+      }
+    }
+
+    await tx.done;
+  } catch (err) {
+    console.warn('[IndexedDB] deleteLocalMessage error:', err);
+  }
+}
+
+/**
  * Flushes cache for a specific room.
  */
 export async function flushLoungeCache(loungeId: string, userId?: number): Promise<void> {

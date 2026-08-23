@@ -55,6 +55,9 @@ export interface ChatAreaProps {
   isMobile?: boolean;
   roomName?: string;
   isPrivateSublounge?: boolean;
+  isMember?: boolean;
+  onJoinLounge?: () => void;
+  avatarUrl?: string;
 }
 
 function dataURItoBlob(dataURI: string): Blob {
@@ -99,6 +102,9 @@ export default function ChatArea({
   roomName,
   isPrivateSublounge,
   roomAccessLevel,
+  isMember,
+  onJoinLounge,
+  avatarUrl,
 }: ChatAreaProps) {
   const { t } = useLanguage();
 
@@ -479,6 +485,7 @@ export default function ChatArea({
         isMobile={isMobile}
         onBackToDeck={onBackToDeck}
         activeChatPeer={activeChatPeer}
+        avatarUrl={avatarUrl}
         chatTitle={chatTitle}
         peerPresence={peerPresence}
         conversationMessages={conversationMessages}
@@ -519,10 +526,10 @@ export default function ChatArea({
           setSelectedMessage(null);
         }}
         onReportSelected={async (msg) => {
-          const reason = prompt("Enter the reason for reporting this message:");
+          const reason = prompt("Enter the reason for reporting :");
           if (reason === null) return;
           if (!reason.trim()) {
-            alert("Reporting cancelled: A reason is required.");
+            alert("reason is required.");
             return;
           }
           try {
@@ -536,7 +543,7 @@ export default function ChatArea({
               body: JSON.stringify({ targetUserId: msg.user_id, reason: reason.trim() })
             });
             if (res.ok) {
-              alert("Message reported successfully to system administrators.");
+              alert(" reported submitted.");
             } else {
               const errData = await res.json();
               alert(errData.error || "Failed to submit report.");
@@ -686,6 +693,8 @@ export default function ChatArea({
         onTriggerPhotoInput={handleTriggerPhotoInput}
         onTriggerDocInput={handleTriggerDocInput}
         isPrivateSublounge={isPrivateSublounge}
+        isMember={isMember}
+        onJoinLounge={onJoinLounge}
       />
     </div>
   );

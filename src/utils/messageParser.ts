@@ -64,7 +64,14 @@ export function parseVoiceNote(content: string): VoiceNotePayload | null {
   if (urlMatch) {
     url = urlMatch[1];
   } else if (dataMatch) {
-    url = dataMatch[1].startsWith('data:') ? dataMatch[1] : `data:${dataMatch[1]}`;
+    const rawData = dataMatch[1].trim();
+    if (rawData.startsWith('data:')) {
+      url = rawData;
+    } else if (rawData.startsWith('audio/') || rawData.startsWith('video/') || rawData.startsWith('image/')) {
+      url = `data:${rawData}`;
+    } else {
+      url = `data:audio/webm;base64,${rawData}`;
+    }
   }
 
   return { duration, url };

@@ -61,11 +61,11 @@ export function MarketListingsView({
           Loading...
         </div>
       ) : listings.length === 0 ? (
-        <div className="text-[10px] text-text-secondary font-mono bg-text-primary/[0.01] border border-white-5 p-6 rounded-2xl text-center">
+        <div className="text-xs text-text-secondary bg-velum-800 border border-velum-600 p-6 rounded-xl text-center">
           No active listings.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {listings.map((listing, index) => {
             const isOwner = Number(listing.seller_id) === currentUserId;
             const hasActiveSale = listing.discount_price !== undefined && listing.discount_price !== null;
@@ -76,70 +76,70 @@ export function MarketListingsView({
               <div 
                 key={listing.listing_id || `listing-${index}`} 
                 onClick={() => onSelectListing(listing)}
-                className="bg-velum-850/75 hover:bg-velum-850 border border-white-5 hover:border-accent/15 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition-all hover:scale-[1.01] duration-150 cursor-pointer group relative overflow-hidden animate-in fade-in duration-150"
+                className="bg-velum-800 hover:bg-velum-750 border border-velum-600 hover:border-accent/40 rounded-xl p-3.5 flex flex-col justify-between space-y-3 transition-colors cursor-pointer group"
               >
-                <div className="space-y-3">
-                  {/* Category-specific icon card (S3-free design) */}
-                  <div className={`h-28 rounded-xl bg-gradient-to-br ${cat.bg} border flex flex-col items-center justify-center relative overflow-hidden shrink-0 transition-transform duration-300 group-hover:scale-[1.02]`}>
-                    <div className="absolute top-2.5 left-2.5 text-[8px] font-mono tracking-widest text-neutral-400 uppercase font-black">
+                <div className="space-y-2.5">
+                  {/* Category-specific icon card */}
+                  <div className={`h-20 rounded-lg bg-gradient-to-br ${cat.bg} border border-velum-600 flex flex-col items-center justify-center relative overflow-hidden shrink-0`}>
+                    <div className="absolute top-2 left-2 text-[9px] text-text-secondary font-medium uppercase">
                       {cat.name}
                     </div>
                     {cat.icon}
                   </div>
 
-                  <div className="flex justify-between items-start gap-3">
+                  <div className="flex justify-between items-start gap-2">
                     <div className="space-y-1">
                       {listing.verification_status === 'PENDING_REVIEW' && (
-                        <span className="text-[8px] font-mono tracking-widest uppercase bg-status-away-bg text-status-away px-2 py-0.5 rounded-md leading-none">
-                          Pending Review
+                        <span className="text-[9px] uppercase bg-status-away/15 text-status-away px-1.5 py-0.5 rounded leading-none font-medium">
+                          Pending
                         </span>
                       )}
                       {listing.verification_status === 'REJECTED' && (
-                        <span className="text-[8px] font-mono tracking-widest uppercase bg-status-dnd-bg text-status-dnd px-2 py-0.5 rounded-md leading-none">
+                        <span className="text-[9px] uppercase bg-status-dnd/15 text-status-dnd px-1.5 py-0.5 rounded leading-none font-medium">
                           Rejected
                         </span>
                       )}
                       {(!listing.verification_status || listing.verification_status === 'APPROVED') && (
-                        <span className="text-[8px] font-mono tracking-widest uppercase bg-text-primary/[0.02] text-accent/80 border border-accent/5 px-2 py-0.5 rounded-md leading-none">
+                        <span className="text-[9px] uppercase bg-status-online/15 text-status-online px-1.5 py-0.5 rounded leading-none font-medium">
                           Available
                         </span>
                       )}
-                      <h4 className="text-xs font-sans font-extrabold text-text-primary group-hover:text-white transition line-clamp-1 mt-1">
+                      <h4 className="text-xs font-semibold text-text-primary group-hover:text-accent transition line-clamp-1 mt-0.5">
                         {listing.title}
                       </h4>
                     </div>
 
                     <div className="text-right shrink-0">
                       {hasActiveSale && (
-                        <span className="text-[9px] line-through text-text-disabled block font-mono">
+                        <span className="text-xs line-through text-text-disabled block font-mono">
                           ${Number(listing.price || 0).toFixed(2)}
                         </span>
                       )}
-                      <span className="text-xs font-mono font-black text-accent">
+                      <span className="text-xs font-bold font-mono text-accent">
                         ${Number(activeDisplayPrice || 0).toFixed(2)}
                       </span>
                     </div>
                   </div>
 
                   {listing.description && (
-                    <p className="text-[10px] text-text-secondary leading-relaxed line-clamp-2 font-sans font-medium">
+                    <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
                       {listing.description}
                     </p>
                   )}
 
-                  <div className="flex items-center justify-between text-[9px] font-mono text-text-disabled border-t border-white-5 pt-2.5">
+                  <div className="flex items-center justify-between text-xs text-text-secondary border-t border-velum-600 pt-2">
                     <div className="flex items-center gap-1">
                       <Star className={`w-3 h-3 ${listing.average_rating && listing.average_rating > 0 ? 'text-accent fill-accent' : 'text-text-disabled'}`} />
-                      <span className="font-bold text-text-primary">
+                      <span className="font-medium text-text-primary">
                         {listing.average_rating && listing.average_rating > 0 ? listing.average_rating : 'No ratings'}
                       </span>
                       {listing.review_count !== undefined && listing.review_count > 0 && (
                         <span className="text-text-disabled">({listing.review_count})</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <span>{listing.seller_username}</span>
-                      {isOwner && <span className="text-status-away font-extrabold tracking-wide uppercase text-[7.5px]">(Your Asset)</span>}
+                      {isOwner && <span className="text-status-away text-[10px] font-medium">(You)</span>}
                     </div>
                   </div>
                 </div>
@@ -157,33 +157,33 @@ export function MarketListingsView({
                         }
                       }}
                       disabled={isOwner || isOutOfStock || listing.verification_status === 'PENDING_REVIEW' || listing.verification_status === 'REJECTED'}
-                      className={`w-full py-2 rounded-xl text-[9px] uppercase font-sans font-black tracking-widest transition-all duration-150 flex items-center justify-center gap-1 cursor-pointer ${
+                      className={`w-full py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer ${
                         isOwner
-                          ? 'bg-velum-900 text-text-disabled border border-white-5 cursor-not-allowed'
+                          ? 'bg-velum-750 text-text-disabled border border-velum-600 cursor-not-allowed'
                           : isOutOfStock
-                            ? 'bg-status-dnd-bg text-status-dnd cursor-not-allowed'
+                            ? 'bg-status-dnd/15 text-status-dnd cursor-not-allowed'
                             : listing.verification_status === 'PENDING_REVIEW'
-                            ? 'bg-status-away-bg text-status-away cursor-not-allowed'
+                            ? 'bg-status-away/15 text-status-away cursor-not-allowed'
                             : listing.verification_status === 'REJECTED'
-                            ? 'bg-status-dnd-bg text-status-dnd cursor-not-allowed'
-                            : 'bg-text-primary/[0.03] hover:bg-accent hover:text-velum-900 border border-white-5 hover:border-accent text-white'
+                            ? 'bg-status-dnd/15 text-status-dnd cursor-not-allowed'
+                            : 'bg-accent text-black hover:bg-accent-hover'
                       }`}
                     >
                       <span>
                         {isOwner 
                           ? 'Owned' 
                           : isOutOfStock
-                          ? 'Sold Out'
+                          ? 'Sold out'
                           : listing.verification_status === 'PENDING_REVIEW' 
-                          ? 'Pending Review' 
+                          ? 'Pending' 
                           : listing.verification_status === 'REJECTED' 
                           ? 'Rejected' 
-                          : 'Purchase'}
+                          : 'Buy'}
                       </span>
                     </button>
                   );
                 })() : (
-                  <div className="w-full text-center py-2 text-[9px] font-mono font-black text-text-disabled border border-white-5 bg-velum-900 rounded-xl uppercase tracking-widest">
+                  <div className="w-full text-center py-1.5 text-xs text-text-disabled border border-velum-600 bg-velum-750 rounded-lg">
                     {listing.status}
                   </div>
                 )}

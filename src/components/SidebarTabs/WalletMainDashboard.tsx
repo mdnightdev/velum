@@ -43,34 +43,33 @@ const CustomDropdown = ({
   return (
     <div className={`relative ${className}`} ref={ref}>
       <div 
-        className="glass-input flex items-center justify-between cursor-pointer h-full"
+        className="bg-velum-750 border border-velum-600 rounded-lg px-2.5 py-1.5 flex items-center justify-between cursor-pointer h-full text-xs text-text-primary"
         onClick={() => setIsOpen(!isOpen)}
       >
         {selected ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {selected.icon}
-            <span className="text-sm font-medium">{selected.label}</span>
+            <span className="text-xs font-medium">{selected.label}</span>
           </div>
         ) : (
-          <span className="text-sm text-text-secondary">{placeholder || 'Select...'}</span>
+          <span className="text-xs text-text-secondary">{placeholder || 'Select...'}</span>
         )}
-        <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 text-text-secondary transition-transform duration-200 ${isOpen ? 'rotate-180 text-accent' : ''}`} />
       </div>
       
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-2 glass-panel p-1.5 z-50 max-h-60 overflow-y-auto rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-velum-800 border border-velum-600 p-1 z-50 max-h-60 overflow-y-auto rounded-lg shadow-xl">
           {options.map(opt => (
             <div 
               key={opt.value}
-              className={`flex items-center gap-2 px-3 py-2 cursor-pointer rounded-md transition-colors ${value === opt.value ? 'bg-white-10' : 'hover:bg-white-5'}`}
+              className={`flex items-center gap-2 px-2.5 py-1.5 cursor-pointer rounded-md text-xs transition-colors ${value === opt.value ? 'bg-accent/15 text-accent' : 'text-text-primary hover:bg-velum-750'}`}
               onClick={() => {
                 onChange(opt.value);
                 setIsOpen(false);
               }}
             >
               {opt.icon}
-              <span className="text-sm font-medium">{opt.label}</span>
-              {value === opt.value && <Check className="w-4 h-4 ml-auto text-accent" />}
+              <span className="font-medium">{opt.label}</span>
             </div>
           ))}
         </div>
@@ -375,32 +374,32 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
   const secondaryBalanceCents = secondaryBalanceObj ? secondaryBalanceObj.balance_cents : 0;
 
   return (
-    <div className="flex-1 bg-transparent p-4 sm:p-6 lg:p-8 select-none font-sans overflow-y-auto max-w-7xl mx-auto w-full min-h-[100dvh] text-text-primary">
+    <div className="flex-1 bg-transparent p-3 sm:p-4 select-none font-sans overflow-y-auto max-w-4xl mx-auto w-full text-text-primary">
       
-      {/* Top Nav (Removed Header "Wallet" as requested) */}
-      <div className="flex justify-between items-center mb-8">
+      {/* Top Nav */}
+      <div className="flex justify-between items-center mb-4">
         <div>
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
-              className="md:hidden p-2 rounded-xl border border-white-5 text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
+              className="md:hidden p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
               aria-label="Open sidebar menu"
               title="Open Navigation"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-4 h-4" />
             </button>
           )}
         </div>
-        <div className="flex glass-panel p-1 rounded-full shrink-0">
+        <div className="flex bg-velum-800 border border-velum-600 p-1 rounded-lg shrink-0">
           <button 
             onClick={() => setActiveTab('overview')} 
-            className={`px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'overview' ? 'bg-white-10 text-white shadow-sm' : 'text-text-secondary hover:text-white'}`}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${activeTab === 'overview' ? 'bg-accent/15 text-accent border border-accent/30' : 'text-text-secondary hover:text-text-primary'}`}
           >
             {t('wallet.accounts', 'Accounts')}
           </button>
           <button 
             onClick={() => setActiveTab('methods')} 
-            className={`px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'methods' ? 'bg-white-10 text-white shadow-sm' : 'text-text-secondary hover:text-white'}`}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${activeTab === 'methods' ? 'bg-accent/15 text-accent border border-accent/30' : 'text-text-secondary hover:text-text-primary'}`}
           >
             {t('wallet.cards_banks', 'Cards & Banks')}
           </button>
@@ -408,13 +407,13 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
       </div>
 
       {activeTab === 'overview' && (
-        <div className="space-y-8 animate-in fade-in duration-300 slide-in-from-bottom-2">
+        <div className="space-y-4">
           
           {/* Hero Balance */}
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm font-medium text-text-secondary">Main Balance</span>
-              <div className="w-24 h-8">
+          <div className="flex flex-col items-center justify-center py-6 bg-velum-800 border border-velum-600 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-text-secondary">Balance</span>
+              <div className="w-24 h-7">
                 <CustomDropdown 
                   options={fiatOptions} 
                   value={preferredFiat} 
@@ -422,111 +421,105 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
                 />
               </div>
             </div>
-            <h2 className="text-5xl md:text-7xl font-medium tracking-tighter mb-4 text-white">
+            <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-2 text-text-primary">
               {formatCurrency(animatedBalance, preferredFiat)}
             </h2>
-            <div className="flex items-center gap-2 text-text-secondary bg-white-5 px-4 py-1.5 rounded-full border border-white-5">
-              <span className="w-2 h-2 rounded-full bg-accent/80"></span>
-              <span className="text-sm font-medium tracking-wide">{totalInVLM.toLocaleString(undefined, { maximumFractionDigits: 2 })} VLM</span>
+            <div className="flex items-center gap-1.5 text-text-secondary bg-velum-750 px-3 py-1 rounded-full border border-velum-600">
+              <span className="w-2 h-2 rounded-full bg-accent"></span>
+              <span className="text-xs font-medium">{totalInVLM.toLocaleString(undefined, { maximumFractionDigits: 2 })} VLM</span>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-3 gap-3 md:gap-5 max-w-xl mx-auto mb-12">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <button 
               onClick={() => { setFundingType('RECHARGE'); setIsFundingModalOpen(true); }}
-              className="flex flex-col items-center justify-center p-5 glass-card hover:bg-white-10 transition-colors gap-3 group"
+              className="flex flex-col items-center justify-center p-3 bg-velum-800 border border-velum-600 rounded-xl hover:border-accent/40 transition-colors gap-1.5 cursor-pointer"
             >
-              <div className="w-12 h-12 bg-white-5 rounded-full flex items-center justify-center text-text-primary group-hover:bg-white text-white group-hover:text-black transition-all">
-                <Plus className="w-5 h-5" />
+              <div className="w-9 h-9 bg-accent/15 rounded-full flex items-center justify-center text-accent">
+                <Plus className="w-4 h-4" />
               </div>
-              <span className="text-sm font-medium text-text-secondary group-hover:text-white transition-colors">Add Money</span>
+              <span className="text-xs font-medium text-text-primary">Deposit</span>
             </button>
             <button 
               onClick={() => { setFundingType('WITHDRAW'); setIsFundingModalOpen(true); }}
-              className="flex flex-col items-center justify-center p-5 glass-card hover:bg-white-10 transition-colors gap-3 group"
+              className="flex flex-col items-center justify-center p-3 bg-velum-800 border border-velum-600 rounded-xl hover:border-accent/40 transition-colors gap-1.5 cursor-pointer"
             >
-              <div className="w-12 h-12 bg-white-5 rounded-full flex items-center justify-center text-text-primary group-hover:bg-white text-white group-hover:text-black transition-all">
-                <ArrowUpRight className="w-5 h-5" />
+              <div className="w-9 h-9 bg-accent/15 rounded-full flex items-center justify-center text-accent">
+                <ArrowUpRight className="w-4 h-4" />
               </div>
-              <span className="text-sm font-medium text-text-secondary group-hover:text-white transition-colors">Withdraw</span>
+              <span className="text-xs font-medium text-text-primary">Withdraw</span>
             </button>
             <button 
               onClick={() => setIsExchangeModalOpen(true)}
-              className="flex flex-col items-center justify-center p-5 glass-card hover:bg-white-10 transition-colors gap-3 group"
+              className="flex flex-col items-center justify-center p-3 bg-velum-800 border border-velum-600 rounded-xl hover:border-accent/40 transition-colors gap-1.5 cursor-pointer"
             >
-              <div className="w-12 h-12 bg-white-5 rounded-full flex items-center justify-center text-text-primary group-hover:bg-accent text-white transition-all">
-                <ArrowRightLeft className="w-5 h-5" />
+              <div className="w-9 h-9 bg-accent/15 rounded-full flex items-center justify-center text-accent">
+                <ArrowRightLeft className="w-4 h-4" />
               </div>
-              <span className="text-sm font-medium text-text-secondary group-hover:text-white transition-colors">Exchange</span>
+              <span className="text-xs font-medium text-text-primary">Exchange</span>
             </button>
           </div>
 
-          {/* Your Accounts Section */}
-          <div className="space-y-5 max-w-xl mx-auto mt-12 select-none animate-in fade-in duration-500">
-            <div className="flex justify-between items-center px-1">
-              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-text-secondary font-mono">
-                Asset Wallets
-              </h3>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-4">
+          {/* Asset Wallets Section */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               {/* Box 1: VLM */}
-              <div className="p-5 rounded-2xl border border-white-5 glass-card flex flex-col justify-between h-28 transition-all duration-300 hover:scale-[1.02] hover:border-accent/30 relative overflow-hidden group">
+              <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between h-24">
                 <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary font-mono">
+                  <span className="text-xs text-text-secondary font-medium">
                     Velum
                   </span>
-                  <div className="p-1.5 bg-accent/10 rounded-lg text-accent group-hover:bg-accent group-hover:text-black transition-all duration-300">
+                  <div className="p-1 bg-accent/10 rounded-md text-accent">
                     <Activity className="w-3.5 h-3.5" />
                   </div>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xl font-bold text-white truncate font-mono tracking-tight">
+                  <span className="text-base sm:text-lg font-bold text-text-primary truncate font-mono">
                     {(vlmBalanceCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className="text-[9px] font-black tracking-widest text-text-secondary uppercase mt-0.5">
-                    VLM Token
+                  <span className="text-xs text-text-secondary">
+                    VLM
                   </span>
                 </div>
               </div>
 
               {/* Box 2: Main Fiat */}
-              <div className="p-5 rounded-2xl border border-white-5 glass-card flex flex-col justify-between h-28 transition-all duration-300 hover:scale-[1.02] hover:border-white-15 relative overflow-hidden group">
+              <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between h-24">
                 <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary font-mono">
+                  <span className="text-xs text-text-secondary font-medium">
                     Primary
                   </span>
-                  <div className="p-1.5 bg-white-5 rounded-lg text-text-primary group-hover:bg-white group-hover:text-black transition-all duration-300">
+                  <div className="p-1 bg-velum-750 rounded-md text-text-primary">
                     <Landmark className="w-3.5 h-3.5" />
                   </div>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xl font-bold text-white truncate font-mono tracking-tight">
+                  <span className="text-base sm:text-lg font-bold text-text-primary truncate font-mono">
                     {formatCurrency(mainFiatBalanceCents / 100, preferredFiat)}
                   </span>
-                  <span className="text-[9px] font-black tracking-widest text-text-secondary uppercase mt-0.5">
-                    {(preferredFiat || 'USD').replace('_SIM', '')} Wallet
+                  <span className="text-xs text-text-secondary">
+                    {(preferredFiat || 'USD').replace('_SIM', '')}
                   </span>
                 </div>
               </div>
 
               {/* Box 3: Secondary Fiat */}
-              <div className="p-5 rounded-2xl border border-white-5 glass-card flex flex-col justify-between h-28 transition-all duration-300 hover:scale-[1.02] hover:border-white-15 relative overflow-hidden group">
+              <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between h-24">
                 <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary font-mono">
+                  <span className="text-xs text-text-secondary font-medium">
                     Secondary
                   </span>
-                  <div className="p-1.5 bg-white-5 rounded-lg text-text-primary group-hover:bg-white group-hover:text-black transition-all duration-300">
+                  <div className="p-1 bg-velum-750 rounded-md text-text-primary">
                     <Building className="w-3.5 h-3.5" />
                   </div>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xl font-bold text-white truncate font-mono tracking-tight">
+                  <span className="text-base sm:text-lg font-bold text-text-primary truncate font-mono">
                     {formatCurrency(secondaryBalanceCents / 100, secondaryCurrency)}
                   </span>
-                  <span className="text-[9px] font-black tracking-widest text-text-secondary uppercase mt-0.5">
-                    {(secondaryCurrency || 'EUR').replace('_SIM', '')} Wallet
+                  <span className="text-xs text-text-secondary">
+                    {(secondaryCurrency || 'EUR').replace('_SIM', '')}
                   </span>
                 </div>
               </div>
@@ -537,51 +530,43 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
       )}
 
       {activeTab === 'methods' && (
-        <div className="space-y-8 animate-in fade-in duration-300 slide-in-from-bottom-2">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-medium text-white">Linked Payment Methods</h3>
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold text-text-primary">Payment Methods</h3>
             <button 
               onClick={() => setIsMethodModalOpen(true)}
-              className="text-sm font-medium px-5 py-2.5 bg-white text-velum-900 rounded-full hover:bg-white/90 transition-colors flex items-center gap-2"
+              className="text-xs font-medium px-3 py-1.5 bg-accent text-black rounded-lg hover:bg-accent-hover transition-colors flex items-center gap-1.5 cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> Add Method
+              <Plus className="w-3.5 h-3.5" /> Add Method
             </button>
           </div>
           
           {methodsList.length === 0 ? (
-            <div className="text-center py-20 glass-card">
-              <CreditCard className="w-12 h-12 mx-auto mb-4 text-text-secondary opacity-50" />
-              <p className="text-text-secondary font-medium">No payment methods linked.</p>
+            <div className="text-center py-12 bg-velum-800 border border-velum-600 rounded-xl">
+              <CreditCard className="w-8 h-8 mx-auto mb-2 text-text-secondary opacity-50" />
+              <p className="text-text-secondary text-xs">No payment methods linked.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {methodsList.map(m => {
-                const isVelum = m.display_label.includes('Velum');
                 const isBank = m.method_type === 'BANK_ACCOUNT';
                 
                 return (
-                  <div key={m.payment_method_id} className={`p-6 rounded-2xl relative overflow-hidden group border ${isVelum ? 'bg-gradient-to-br from-velum-800 to-velum-900 border-accent/30' : isBank ? 'bg-gradient-to-br from-card-bank-start to-card-bank-end border-white-10' : 'bg-gradient-to-br from-card-credit-start to-card-credit-end border-white-10'}`}>
-                    {/* Decorative Elements */}
-                    <div className="absolute top-0 right-0 p-4 z-10">
-                      <button onClick={() => handleRemoveMethod(m.payment_method_id)} className="p-2 bg-black/40 hover:bg-alert-error/80 text-white rounded-full transition-colors opacity-0 group-hover:opacity-100">
-                        <Trash2 className="w-4 h-4" />
+                  <div key={m.payment_method_id} className="p-4 rounded-xl border border-velum-600 bg-velum-800 relative group">
+                    <div className="absolute top-2.5 right-2.5">
+                      <button onClick={() => handleRemoveMethod(m.payment_method_id)} className="p-1 text-text-secondary hover:text-status-dnd rounded-lg transition-colors cursor-pointer">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                    {isVelum && (
-                      <div className="absolute -bottom-6 -right-6 w-32 h-32 bg-accent/10 rounded-full blur-2xl pointer-events-none"></div>
-                    )}
                     
-                    <div className="flex items-center justify-between mb-8 relative z-10">
-                      <div className="flex items-center gap-2">
-                        {isBank ? <Landmark className="w-5 h-5 text-text-secondary" /> : <CreditCard className="w-5 h-5 text-text-secondary" />}
-                        <span className="text-xs font-medium tracking-widest text-text-secondary uppercase">{isBank ? 'Bank Account' : (isVelum ? 'Credit Card' : 'Debit Card')}</span>
-                      </div>
-                      {isVelum && <span className="text-[10px] uppercase font-bold tracking-widest text-accent bg-accent/10 px-2 py-0.5 rounded">Premium</span>}
+                    <div className="flex items-center gap-2 mb-3">
+                      {isBank ? <Landmark className="w-4 h-4 text-accent" /> : <CreditCard className="w-4 h-4 text-accent" />}
+                      <span className="text-xs font-medium text-text-secondary">{isBank ? 'Bank Account' : 'Card'}</span>
                     </div>
-                    <div className="text-lg font-mono tracking-[0.2em] mb-4 text-white opacity-90 relative z-10">
-                      •••• •••• •••• {m.display_label.slice(-4) || '1234'}
+                    <div className="text-sm font-mono tracking-widest mb-1 text-text-primary">
+                      •••• {m.display_label.slice(-4) || '1234'}
                     </div>
-                    <div className="text-sm font-medium tracking-wide text-white relative z-10">{m.display_label.split(' ')[0]} {isVelum ? 'Card' : ''}</div>
+                    <div className="text-xs text-text-secondary">{m.display_label.split(' ')[0]}</div>
                   </div>
                 );
               })}
@@ -594,55 +579,53 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
       
       {/* Exchange Modal */}
       {isExchangeModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4 animate-in fade-in duration-200">
-          <div className="glass-panel w-full max-w-md p-6 shadow-2xl relative">
-            <button onClick={() => setIsExchangeModalOpen(false)} className="absolute top-5 right-5 p-2 hover:bg-white-10 rounded-full transition-colors">
-              <X className="w-4 h-4 text-text-secondary" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
+          <div className="bg-velum-850 border border-velum-600 rounded-xl w-full max-w-md p-4 sm:p-5 shadow-2xl relative">
+            <button onClick={() => setIsExchangeModalOpen(false)} className="absolute top-4 right-4 p-1.5 text-text-secondary hover:text-text-primary rounded-lg transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
             </button>
-            <h3 className="text-xl font-medium mb-6 text-white">Exchange Currency</h3>
+            <h3 className="text-sm font-semibold mb-4 text-text-primary">Exchange Currency</h3>
             
-            {exchangeError && <div className="p-3 mb-5 text-sm text-alert-error bg-alert-error-bg rounded-lg border border-alert-error-border">{exchangeError}</div>}
-            {exchangeSuccess && <div className="p-3 mb-5 text-sm text-alert-success bg-alert-success-bg rounded-lg border border-alert-success-border">{exchangeSuccess}</div>}
+            {exchangeError && <div className="p-2.5 mb-3 text-xs text-status-dnd bg-status-dnd/10 rounded-lg border border-status-dnd/30">{exchangeError}</div>}
+            {exchangeSuccess && <div className="p-2.5 mb-3 text-xs text-status-online bg-status-online/10 rounded-lg border border-status-online/30">{exchangeSuccess}</div>}
             
-            <form onSubmit={handleExchange} className="space-y-4">
-              <div className="p-4 glass-card rounded-xl">
-                <div className="flex justify-between mb-3 items-center">
-                  <span className="text-sm font-medium text-text-secondary">Pay from</span>
-                  <div className="w-28 h-8">
+            <form onSubmit={handleExchange} className="space-y-3">
+              <div className="p-3 bg-velum-750 border border-velum-600 rounded-lg">
+                <div className="flex justify-between mb-2 items-center">
+                  <span className="text-xs text-text-secondary">From</span>
+                  <div className="w-28 h-7">
                     <CustomDropdown options={currencyOptions} value={exchangeFrom} onChange={setExchangeFrom} />
                   </div>
                 </div>
                 <input 
                   type="text" 
                   value={exchangeAmount} onChange={e => handleAmountMaskChange(e.target.value, setExchangeAmount)} 
-                  className="w-full bg-transparent text-3xl font-medium outline-none text-white placeholder:text-white/20 font-mono" 
+                  className="w-full bg-transparent text-2xl font-bold outline-none text-text-primary font-mono" 
                 />
               </div>
 
-              <div className="flex justify-center -my-3 relative z-10">
-                <div className="bg-velum-800 p-1 rounded-full border border-white-5">
-                  <div className="bg-white-5 p-2 rounded-full">
-                    <ArrowDownToLine className="w-4 h-4 text-text-secondary" />
-                  </div>
+              <div className="flex justify-center -my-1 relative z-10">
+                <div className="bg-velum-800 p-1 rounded-full border border-velum-600">
+                  <ArrowDownToLine className="w-3.5 h-3.5 text-accent" />
                 </div>
               </div>
 
-              <div className="p-4 glass-card rounded-xl">
-                <div className="flex justify-between mb-3 items-center">
-                  <span className="text-sm font-medium text-text-secondary">Receive</span>
-                  <div className="w-28 h-8">
+              <div className="p-3 bg-velum-750 border border-velum-600 rounded-lg">
+                <div className="flex justify-between mb-2 items-center">
+                  <span className="text-xs text-text-secondary">To</span>
+                  <div className="w-28 h-7">
                     <CustomDropdown options={currencyOptions} value={exchangeTo} onChange={setExchangeTo} />
                   </div>
                 </div>
-                <div className="text-3xl font-medium text-white opacity-90 overflow-hidden text-ellipsis font-mono">
+                <div className="text-2xl font-bold text-text-primary font-mono truncate">
                   {exchangeAmount && !isNaN(parseFloat(exchangeAmount.replace(/[^0-9.]/g, ''))) 
                     ? convertAmount(parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')), exchangeFrom, exchangeTo).toFixed(2)
                     : '0.00'}
                 </div>
               </div>
 
-              <div className="pt-6">
-                <button type="submit" disabled={parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-3.5 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Complete Exchange</button>
+              <div className="pt-2">
+                <button type="submit" disabled={parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-2.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">Exchange</button>
               </div>
             </form>
           </div>
@@ -651,32 +634,32 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
 
       {/* Funding Modal */}
       {isFundingModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4 animate-in fade-in duration-200">
-          <div className="glass-panel w-full max-w-md p-6 shadow-2xl relative">
-            <button onClick={() => setIsFundingModalOpen(false)} className="absolute top-5 right-5 p-2 hover:bg-white-10 rounded-full transition-colors">
-              <X className="w-4 h-4 text-text-secondary" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
+          <div className="bg-velum-850 border border-velum-600 rounded-xl w-full max-w-md p-4 sm:p-5 shadow-2xl relative">
+            <button onClick={() => setIsFundingModalOpen(false)} className="absolute top-4 right-4 p-1.5 text-text-secondary hover:text-text-primary rounded-lg transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
             </button>
-            <h3 className="text-xl font-medium mb-6 text-white">{fundingType === 'RECHARGE' ? 'Add Money' : 'Withdraw Funds'}</h3>
+            <h3 className="text-sm font-semibold mb-4 text-text-primary">{fundingType === 'RECHARGE' ? 'Deposit' : 'Withdraw'}</h3>
             
             {fundingMsg && (
-              <div className={`p-3 mb-5 text-sm font-medium rounded-lg border ${fundingMsg.includes('Success') ? 'bg-alert-success-bg text-alert-success border-alert-success-border' : 'bg-alert-error-bg text-alert-error border-alert-error-border'}`}>
+              <div className={`p-2.5 mb-3 text-xs rounded-lg border ${fundingMsg.includes('Success') ? 'bg-status-online/10 text-status-online border-status-online/30' : 'bg-status-dnd/10 text-status-dnd border-status-dnd/30'}`}>
                 {fundingMsg}
               </div>
             )}
             
-            <form onSubmit={handleFunding} className="space-y-5">
-              <div className="p-4 glass-card rounded-xl transition-colors focus-within:border-accent/40">
-                <span className="text-sm font-medium text-text-secondary block mb-3">Amount ({preferredFiat})</span>
+            <form onSubmit={handleFunding} className="space-y-3">
+              <div className="p-3 bg-velum-750 border border-velum-600 rounded-lg">
+                <span className="text-xs text-text-secondary block mb-1">Amount ({preferredFiat})</span>
                 <input 
                   type="text" 
                   value={fundingAmount} onChange={e => handleAmountMaskChange(e.target.value, setFundingAmount)} 
-                  className="w-full bg-transparent text-4xl font-medium outline-none text-white placeholder:text-white/20 font-mono" 
+                  className="w-full bg-transparent text-2xl font-bold outline-none text-text-primary font-mono" 
                 />
               </div>
 
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-text-secondary px-1 block">{fundingType === 'RECHARGE' ? 'From Method' : 'To Method'}</span>
-                <div className="h-12">
+              <div className="space-y-1">
+                <span className="text-xs text-text-secondary block">{fundingType === 'RECHARGE' ? 'Source' : 'Destination'}</span>
+                <div className="h-9">
                   <CustomDropdown 
                     options={fundingMethodOptions} 
                     value={fundingMethod} 
@@ -686,9 +669,9 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
                 </div>
               </div>
 
-              <div className="pt-4">
-                <button type="submit" disabled={!fundingMethod || parseFloat(fundingAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-3.5 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  Confirm {fundingType === 'RECHARGE' ? 'Deposit' : 'Withdrawal'}
+              <div className="pt-2">
+                <button type="submit" disabled={!fundingMethod || parseFloat(fundingAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-2.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+                  {fundingType === 'RECHARGE' ? 'Confirm Deposit' : 'Confirm Withdrawal'}
                 </button>
               </div>
             </form>
@@ -698,46 +681,46 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
 
       {/* Add Method Modal */}
       {isMethodModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4 animate-in fade-in duration-200">
-          <div className="glass-panel w-full max-w-lg p-6 md:p-8 shadow-2xl relative">
-            <button onClick={() => setIsMethodModalOpen(false)} className="absolute top-5 right-5 p-2 hover:bg-white-10 rounded-full transition-colors">
-              <X className="w-4 h-4 text-text-secondary" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
+          <div className="bg-velum-850 border border-velum-600 rounded-xl w-full max-w-md p-4 sm:p-5 shadow-2xl relative">
+            <button onClick={() => setIsMethodModalOpen(false)} className="absolute top-4 right-4 p-1.5 text-text-secondary hover:text-text-primary rounded-lg transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
             </button>
-            <h3 className="text-xl font-medium mb-6 text-white">Link New Account</h3>
+            <h3 className="text-sm font-semibold mb-4 text-text-primary">Add Payment Method</h3>
             
-            <form onSubmit={handleAddMethod} className="space-y-6">
+            <form onSubmit={handleAddMethod} className="space-y-3">
               
               {/* Category Selector */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <button 
                   type="button" 
                   onClick={() => { setNewMethodCategory('DEBIT'); setNewMethodIssuer('Visa'); }}
-                  className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition-colors ${newMethodCategory === 'DEBIT' ? 'border-white bg-white-10 text-white' : 'border-white-10 text-text-secondary hover:text-white hover:bg-white-5'}`}
+                  className={`p-2.5 rounded-lg border flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${newMethodCategory === 'DEBIT' ? 'border-accent bg-accent/15 text-accent' : 'border-velum-600 bg-velum-750 text-text-secondary hover:text-text-primary'}`}
                 >
-                  <CreditCard className="w-5 h-5" />
-                  <span className="text-xs font-medium">Debit Card</span>
+                  <CreditCard className="w-4 h-4" />
+                  <span className="text-xs font-medium">Debit</span>
                 </button>
                 <button 
                   type="button" 
                   onClick={() => { setNewMethodCategory('CREDIT'); setNewMethodIssuer('Velum Black'); }}
-                  className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition-colors ${newMethodCategory === 'CREDIT' ? 'border-accent bg-accent/10 text-accent' : 'border-white-10 text-text-secondary hover:text-accent hover:bg-accent/5'}`}
+                  className={`p-2.5 rounded-lg border flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${newMethodCategory === 'CREDIT' ? 'border-accent bg-accent/15 text-accent' : 'border-velum-600 bg-velum-750 text-text-secondary hover:text-text-primary'}`}
                 >
-                  <CreditCard className="w-5 h-5" />
-                  <span className="text-xs font-medium">Velum Credit</span>
+                  <CreditCard className="w-4 h-4" />
+                  <span className="text-xs font-medium">Credit</span>
                 </button>
                 <button 
                   type="button" 
                   onClick={() => { setNewMethodCategory('BANK'); setNewMethodIssuer('HSBC'); }}
-                  className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition-colors ${newMethodCategory === 'BANK' ? 'border-white bg-white-10 text-white' : 'border-white-10 text-text-secondary hover:text-white hover:bg-white-5'}`}
+                  className={`p-2.5 rounded-lg border flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${newMethodCategory === 'BANK' ? 'border-accent bg-accent/15 text-accent' : 'border-velum-600 bg-velum-750 text-text-secondary hover:text-text-primary'}`}
                 >
-                  <Landmark className="w-5 h-5" />
-                  <span className="text-xs font-medium">Bank Account</span>
+                  <Landmark className="w-4 h-4" />
+                  <span className="text-xs font-medium">Bank</span>
                 </button>
               </div>
 
-              <div className="space-y-2 relative z-20">
-                <label className="block text-sm font-medium text-text-secondary px-1">Provider / Issuer</label>
-                <div className="h-12">
+              <div className="space-y-1">
+                <label className="block text-xs text-text-secondary">Provider / Issuer</label>
+                <div className="h-9">
                   <CustomDropdown 
                     options={(newMethodCategory === 'DEBIT' ? DEBIT_ISSUERS : newMethodCategory === 'CREDIT' ? CREDIT_ISSUERS : BANK_ISSUERS).map(i => ({value: i, label: i}))}
                     value={newMethodIssuer}
@@ -747,14 +730,14 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
               </div>
 
               {addMethodError && (
-                <div className="p-3 bg-alert-error-bg border border-alert-error-border rounded-xl text-alert-error text-sm">
+                <div className="p-2.5 bg-status-dnd/10 border border-status-dnd/30 rounded-lg text-status-dnd text-xs">
                   {addMethodError}
                 </div>
               )}
 
               <div className="pt-2">
-                <button type="submit" className="w-full py-4 rounded-xl font-medium bg-white text-velum-900 hover:bg-white/90 transition-colors">
-                  Generate & Link Account
+                <button type="submit" className="w-full py-2.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent-hover transition-colors cursor-pointer">
+                  Link Account
                 </button>
               </div>
             </form>

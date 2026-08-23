@@ -219,7 +219,7 @@ export default function AdminProfile({
                     type="text"
                     value={safeWord}
                     onChange={(e) => setSafeWord(e.target.value)}
-                    placeholder="Safe word"
+                    
                     className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>
@@ -231,7 +231,7 @@ export default function AdminProfile({
                     type="text"
                     value={panicPhrase}
                     onChange={(e) => setPanicPhrase(e.target.value)}
-                    placeholder="Panic phrase"
+                   
                     className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>
@@ -275,7 +275,7 @@ export default function AdminProfile({
                     type="text"
                     value={rotatedUsername}
                     onChange={(e) => setRotatedUsername(e.target.value)}
-                    placeholder="Username"
+                    
                     className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>
@@ -286,7 +286,7 @@ export default function AdminProfile({
                   <PasswordInput
                     value={rotatedPassword}
                     onChange={(e) => setRotatedPassword(e.target.value)}
-                    placeholder="Password"
+                   
                     className="w-full p-2 rounded-lg outline-none bg-velum-750 border border-velum-600 text-text-primary text-xs"
                   />
                 </div>

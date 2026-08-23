@@ -771,6 +771,24 @@ export async function postLoungeMessage(user: any, rawId: string, content: strin
     return { error: 'Executive Lounge access restricted to system staff.', status: 403 };
   }
 
+  if (target.type !== 'dm' && target.slug !== 'velum_master_lounge') {
+    const parentId = target.parentLoungeId || target.id;
+    const isOwner = target.ownerId === currentUserId;
+    const isSysAdmin = checkIsSystemAdmin(user);
+    if (!isOwner && !isSysAdmin) {
+      const mem = await db.select().from(loungeMembers)
+        .where(and(
+          eq(loungeMembers.loungeId, parentId),
+          eq(loungeMembers.userId, currentUserId),
+          eq(loungeMembers.status, 'active')
+        ))
+        .limit(1);
+      if (mem.length === 0) {
+        return { error: 'You must be a member of this lounge to post messages.', status: 403 };
+      }
+    }
+  }
+
   if (clientMsgId) {
     const existing = await db.select()
       .from(messages)

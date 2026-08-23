@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Plus, X, Link, Menu } from 'lucide-react';
+import {Lock, Globe, Plus, X, Link, Menu } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
 import { useLanguage } from '../../i18n/LanguageContext';
 import logoSvg from '../../assets/logo.svg?raw';
 import { formatMessageTimestamp } from '../../utils/time';
+import { parseAttachment, formatVoiceNotePreview } from '../../utils/messageParser';
 import { getSessionId } from '../../utils/auth';
 import { storage } from '../../services/storageService';
 
@@ -277,15 +278,15 @@ export default function LoungeMainDashboard({
     <div className={`flex-1 flex flex-col w-full h-full select-none font-sans relative ${isDark ? 'bg-transparent' : 'bg-transparent'}`}>
       
       {/* Search Header Bar */}
-      <div className={`p-3 border-b flex-shrink-0 flex items-center gap-2 ${isDark ? 'border-white-5 bg-velum-850' : 'border-velum-600 bg-white-10'}`}>
+      <div className="p-2.5 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
-            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer shrink-0"
+            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
             aria-label="Open sidebar menu"
             title="Open Navigation"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-4 h-4" />
           </button>
         )}
         <div className="relative flex-1 flex items-center">
@@ -294,11 +295,7 @@ export default function LoungeMainDashboard({
             placeholder={t('lounge.search', 'Search lounges...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none transition-all ${
-              isDark 
-                ? 'bg-velum-800 border-white-10 text-white placeholder:text-text-disabled focus:border-white-10' 
-                : 'bg-white-10 border-velum-600 text-velum-900 placeholder:text-text-disabled focus:border-accent'
-            }`}
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-velum-600 bg-velum-750 text-text-primary placeholder:text-text-disabled outline-none focus:border-accent/40 transition-all"
           />
           <span className="absolute left-2.5 text-text-secondary">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.603 10.603Z" /></svg>
@@ -307,7 +304,7 @@ export default function LoungeMainDashboard({
       </div>
 
       {/* Main Flat List Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {(() => {
           const loungesList = Array.isArray(lounges) ? lounges : [];
           const q = searchQuery.trim().toLowerCase();
@@ -317,9 +314,10 @@ export default function LoungeMainDashboard({
               const nameMatch = (lounge.name || '').toLowerCase().includes(q);
               const descMatch = (lounge.description || '').toLowerCase().includes(q);
               const slugMatch = (lounge.slug || '').toLowerCase().includes(q);
-              return nameMatch || descMatch || slugMatch;
+              const codeMatch = (lounge.invite_code || '').toLowerCase().includes(q);
+              return nameMatch || descMatch || slugMatch || codeMatch;
             })
-            .sort((a, b) => {
+.sort((a, b) => {
               const lm = lastMessages || {};
               const keyA = a.slug || a.lounge_id;
               const keyB = b.slug || b.lounge_id;
@@ -331,7 +329,7 @@ export default function LoungeMainDashboard({
             });
           if (filtered.length === 0) {
             return (
-              <div className={`p-8 text-center font-mono text-[10px] uppercase tracking-widest ${isDark ? 'text-text-secondary/60' : 'text-text-disabled'}`}>
+              <div className="p-8 text-center text-xs text-text-secondary">
                 {t('lounge.no_lounges', 'No lounges found')}
               </div>
             );
@@ -339,41 +337,97 @@ export default function LoungeMainDashboard({
           return filtered.map((lounge) => {
             const loungeKey = lounge.slug || lounge.lounge_id;
             const loungeLast = lastMessages ? (lastMessages[loungeKey] || lastMessages[lounge.lounge_id]) : null;
-            let lastTxt = '';
+            let lastPreviewNode: React.ReactNode = null;
             let lastTimeStr = '';
             if (loungeLast) {
-              lastTxt = loungeLast.content || loungeLast.message || loungeLast.text || '';
+              const raw = loungeLast.content || loungeLast.message || loungeLast.text || '';
+              if (raw.startsWith('[Voice Note')) {
+                lastPreviewNode = (
+                  <span className="flex items-center gap-1 text-xs text-text-secondary truncate">
+                    <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="23" />
+                      <line x1="8" y1="23" x2="16" y2="23" />
+                    </svg>
+                    <span>{formatVoiceNotePreview(raw)}</span>
+                  </span>
+                );
+              } else if (raw.includes('[Attachment:')) {
+                const attachments = parseAttachment(raw);
+                const att = attachments[0];
+                const isVid = att && (att.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name) || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data));
+                const isImg = att && att.type.startsWith('image/');
+
+                if (isVid) {
+                  lastPreviewNode = (
+                    <span className="flex items-center gap-1 text-xs text-text-secondary truncate">
+                      <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="23 7 16 12 23 17 23 7" />
+                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                      </svg>
+                      <span>{att ? (att.caption ? `Video ${att.caption}` : 'Video') : 'Video'}</span>
+                    </span>
+                  );
+                } else if (isImg) {
+                  lastPreviewNode = (
+                    <span className="flex items-center gap-1 text-xs text-text-secondary truncate">
+                      <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2.5" y="2.5" width="19" height="19" rx="4" />
+                        <circle cx="8.5" cy="8.5" r="2" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      <span>{att ? (att.caption ? `Photo ${att.caption}` : 'Photo') : 'Photo'}</span>
+                    </span>
+                  );
+                } else {
+                  lastPreviewNode = (
+                    <span className="flex items-center gap-1 text-xs text-text-secondary truncate">
+                      <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      <span>{att ? (att.caption ? `${att.name} ${att.caption}` : att.name) : 'Attachment'}</span>
+                    </span>
+                  );
+                }
+              } else if (raw.startsWith('ratchet:v2:') || raw.startsWith('VEL_E2EE[')) {
+                lastPreviewNode = <span className="text-xs text-text-secondary truncate">Encrypted message</span>;
+              } else {
+                lastPreviewNode = <span className="text-xs text-text-secondary truncate">{raw}</span>;
+              }
               const ts = loungeLast.created_at || loungeLast.timestamp || loungeLast.createdAt;
               if (ts) lastTimeStr = formatMessageTimestamp(ts);
             }
             const unread = unreadCounts ? (unreadCounts[loungeKey] || unreadCounts[lounge.lounge_id] || 0) : 0;
+            const loungeAvatar = lounge.avatar_url || lounge.avatarUrl || lounge.icon_url || lounge.iconUrl;
 
             return (
               <div
                 key={lounge.lounge_id}
                 onClick={() => onLoungeSelect(lounge.lounge_id, lounge.name)}
-                className={`glass-card p-4 cursor-pointer transition-all duration-200 flex items-center gap-4 hover:-translate-y-0.5 group`}
+                className="p-3 rounded-xl border border-velum-600 bg-velum-800 hover:border-accent/40 cursor-pointer transition-colors flex items-center gap-3 group"
               >
-                {lounge.icon_url ? (
-                  <img src={lounge.icon_url} alt={lounge.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white-10 group-hover:border-accent transition-colors" />
+                {loungeAvatar ? (
+                  <img src={loungeAvatar} alt={lounge.name} className="w-9 h-9 rounded-lg object-cover shrink-0 border border-velum-600" />
                 ) : (
-                  <div className="w-10 h-10 rounded-xl bg-velum-800 border border-white-10 text-accent flex items-center justify-center shrink-0 group-hover:border-accent transition-colors font-bold text-xs font-mono uppercase tracking-wider">
+                  <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 text-accent flex items-center justify-center shrink-0 font-semibold text-xs">
                     {lounge.name ? lounge.name.slice(0, 2).toUpperCase() : 'L'}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <div className={`font-bold text-sm capitalize tracking-wider truncate transition-colors ${isDark ? 'text-text-primary group-hover:text-accent' : 'text-velum-900'}`}>{lounge.name}</div>
-                    {lastTimeStr && <div className="text-[10px] text-text-secondary shrink-0 font-mono">{lastTimeStr}</div>}
+                    <div className="font-semibold text-xs text-text-primary group-hover:text-accent truncate transition-colors">{lounge.name}</div>
+                    {lastTimeStr && <div className="text-xs text-text-secondary shrink-0">{lastTimeStr}</div>}
                   </div>
-                  {lastTxt && (
-                    <div className="text-xs text-text-secondary truncate mt-0.5">
-                      {lastTxt}
+                  {lastPreviewNode && (
+                    <div className="mt-0.5 min-w-0">
+                      {lastPreviewNode}
                     </div>
                   )}
                 </div>
                 {unread > 0 && (
-                  <span className="px-1.5 py-0.2 min-w-[18px] text-[10px] font-bold rounded-full bg-accent text-velum-950 flex items-center justify-center shrink-0">
+                  <span className="px-1.5 py-0.2 min-w-[18px] text-xs font-bold rounded-full bg-accent text-black flex items-center justify-center shrink-0">
                     {unread}
                   </span>
                 )}
@@ -438,235 +492,255 @@ export default function LoungeMainDashboard({
         </div>
       )}
       
+      {/* Create Lounge Right-Anchored Drawer */}
       {showCreateLoungeModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center modal-backdrop pt-20 px-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex justify-end modal-backdrop animate-fade-in" onClick={() => { setShowCreateLoungeModal(false); setLoungeError(''); }}>
           <div 
-            className={`w-full max-w-sm rounded-2xl p-5 border shadow-2xl backdrop-blur-[var(--blur-backdrop-xl)] transition-all duration-300 ${
-              isDark 
-                ? 'bg-velum-900 border-white-10 text-white shadow-black-60' 
-                : 'bg-white-10 border-velum-600 text-velum-900 shadow-xl'
-            }`}
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm h-full bg-velum-850 border-l border-velum-600 p-5 flex flex-col justify-between shadow-2xl text-text-primary select-none animate-slide-left"
           >
-            <div className="flex justify-between items-center mb-5">
-              <div className="flex flex-col">
-                <h3 className="text-xs font-black uppercase tracking-widest text-accent">Create Lounge</h3>
-                <span className="text-[10px] opacity-60 uppercase tracking-wider font-mono">Create a new lounge room</span>
-              </div>
-              <button 
-                onClick={() => {
-                  setShowCreateLoungeModal(false);
-                  setLoungeError('');
-                }} 
-                className={`p-1 rounded-full hover:bg-white-10 transition cursor-pointer ${isDark ? 'text-text-secondary hover:text-white' : 'text-text-secondary hover:text-velum-900'}`}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {loungeError && (
-              <p className="text-status-dnd text-[10.5px] font-mono bg-status-dnd-bg p-2.5 rounded-xl mb-4 uppercase tracking-wide">
-                {loungeError}
-              </p>
-            )}
-
             <div className="space-y-4">
-              <div>
-                <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Lounge Name *</label>
-                <input
-                  type="text"
-                  value={newLoungeName}
-                  onChange={(e) => setNewLoungeName(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border text-xs outline-none transition font-mono ${
-                    isDark
-                      ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20'
-                      : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
-                  }`}
-                  placeholder="e.g. general-lounge"
-                />
+              <div className="flex justify-between items-center pb-3 border-b border-velum-600">
+                <h3 className="text-sm font-semibold text-text-primary">Create Lounge</h3>
+                <button 
+                  onClick={() => {
+                    setShowCreateLoungeModal(false);
+                    setLoungeError('');
+                  }} 
+                  className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div>
-                <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Overview / Topic</label>
-                <textarea
-                  value={newLoungeDescription}
-                  onChange={(e) => setNewLoungeDescription(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border text-xs outline-none resize-none h-20 transition ${
-                    isDark 
-                      ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
-                      : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
-                  }`}
-                  placeholder="Describe your lounge topic or rules..."
-                />
-              </div>
-              <div>
-                <label className="block text-[9.5px] font-bold uppercase tracking-widest mb-1.5 opacity-60">Join Access Key (Optional)</label>
-                <input
-                  type="text"
-                  value={newLoungeInviteCode}
-                  onChange={(e) => setNewLoungeInviteCode(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border text-xs outline-none transition uppercase font-mono ${
-                    isDark 
-                      ? 'bg-velum-900 border-white-10 text-white focus:border-accent-20' 
-                      : 'bg-white-10 border-velum-600 text-velum-900 focus:border-accent'
-                  }`}
-                  placeholder="Optional access code"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="lounge-private-toggle"
-                  checked={newLoungeIsPrivate}
-                  onChange={(e) => setNewLoungeIsPrivate(e.target.checked)}
-                  className="cursor-pointer w-4 h-4 rounded border-white-10 text-accent focus:ring-accent"
-                />
-                <label htmlFor="lounge-private-toggle" className="text-[10px] uppercase font-bold tracking-wider cursor-pointer">
-                  Private Lounge (Requires invite or access key)
-                </label>
+
+              {loungeError && (
+                <p className="text-status-dnd text-xs bg-status-dnd/10 border border-status-dnd/20 p-2.5 rounded-lg">
+                  {loungeError}
+                </p>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Lounge Name</label>
+                  <input
+                    type="text"
+                    value={newLoungeName}
+                    onChange={(e) => setNewLoungeName(e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-velum-600 bg-velum-750 text-xs text-text-primary outline-none focus:border-accent/40 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Topic</label>
+                  <textarea
+                    value={newLoungeDescription}
+                    onChange={(e) => setNewLoungeDescription(e.target.value)}
+                    rows={3}
+                    className="w-full p-2.5 rounded-lg border border-velum-600 bg-velum-750 text-xs text-text-primary outline-none resize-none focus:border-accent/40 transition"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-lg border border-velum-600 bg-velum-750">
+                  <span className="text-xs font-medium text-text-primary">Private Lounge</span>
+                  <input
+                    type="checkbox"
+                    id="lounge-private-toggle"
+                    checked={newLoungeIsPrivate}
+                    onChange={(e) => setNewLoungeIsPrivate(e.target.checked)}
+                    className="w-4 h-4 rounded border-velum-600 bg-velum-800 text-accent focus:ring-0 cursor-pointer"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2 text-[10px] font-bold uppercase tracking-wider">
+            <div className="pt-4 border-t border-velum-600 flex gap-2">
               <button
+                type="button"
                 onClick={() => {
                   setShowCreateLoungeModal(false);
                   setLoungeError('');
                 }}
-                className={`px-4 py-2.5 rounded-xl cursor-pointer transition ${isDark ? 'hover:bg-white-5 text-text-secondary hover:text-white' : 'hover:bg-white-5 text-text-secondary'}`}
+                className="flex-1 py-2 rounded-lg border border-velum-600 text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateLounge}
-                disabled={isSubmittingLounge}
-                className="px-5 py-2.5 bg-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed text-velum-900 rounded-xl cursor-pointer transition flex items-center justify-center gap-2"
+                disabled={isSubmittingLounge || !newLoungeName.trim()}
+                className="flex-1 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-black rounded-lg text-xs font-semibold transition cursor-pointer"
               >
-                {isSubmittingLounge ? 'Initializing...' : 'Initialize'}
+                {isSubmittingLounge ? 'Creating...' : 'Create Lounge'}
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Create Room / Sublounge Right-Anchored Drawer */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
-          <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-white text-sm font-bold uppercase tracking-wider">Create Lounge Room</h3>
-              <button 
-                onClick={() => setShowCreateModal(false)} 
+        <div className="fixed inset-0 z-50 flex justify-end modal-backdrop animate-fade-in" onClick={() => setShowCreateModal(false)}>
+          <div 
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm h-full bg-velum-850 border-l border-velum-600 p-5 flex flex-col justify-between shadow-2xl text-text-primary select-none animate-slide-left"
+          >
+            <div className="space-y-4">
+              <div className="flex justify-between items-center pb-3 border-b border-velum-600">
+                <h3 className="text-sm font-semibold text-text-primary">Create Room</h3>
+                <button 
+                  onClick={() => setShowCreateModal(false)} 
+                  disabled={isSubmittingRoom}
+                  className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer disabled:opacity-40"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Room Name</label>
+                  <input
+                    type="text"
+                    value={newRoomName}
+                    disabled={isSubmittingRoom}
+                    onChange={e => setNewRoomName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !isSubmittingRoom && newRoomName.trim()) {
+                        handleCreateRoom();
+                      }
+                    }}
+                    className="w-full bg-velum-750 border border-velum-600 rounded-lg p-2.5 text-xs text-text-primary outline-none focus:border-accent/40 transition disabled:opacity-50"
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between p-3 rounded-lg border border-velum-600 bg-velum-750">
+                  <span className="text-xs font-medium text-text-primary">VIP Room</span>
+                  <input 
+                    type="checkbox" 
+                    id="isLocked"
+                    checked={newRoomLocked}
+                    disabled={isSubmittingRoom}
+                    onChange={e => setNewRoomLocked(e.target.checked)}
+                    className="w-4 h-4 rounded border-velum-600 bg-velum-800 text-accent focus:ring-0 cursor-pointer disabled:opacity-50"
+                  />
+                </div>
+
+                {statusMessage && <div className="text-accent text-xs bg-accent/10 border border-accent/20 p-2.5 rounded-lg">{statusMessage}</div>}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-velum-600 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
                 disabled={isSubmittingRoom}
-                className="text-text-secondary hover:text-white disabled:opacity-40"
+                className="flex-1 py-2 rounded-lg border border-velum-600 text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                Cancel
+              </button>
+              <button 
+                onClick={handleCreateRoom}
+                disabled={isSubmittingRoom || !newRoomName.trim()}
+                className="flex-1 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-black rounded-lg text-xs font-semibold transition cursor-pointer"
+              >
+                {isSubmittingRoom ? 'Creating...' : 'Create Room'}
               </button>
             </div>
-            
-            <input
-              type="text"
-              placeholder="Room name"
-              value={newRoomName}
-              disabled={isSubmittingRoom}
-              onChange={e => setNewRoomName(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !isSubmittingRoom) {
-                  handleCreateRoom();
-                }
-              }}
-              className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white focus:border-accent focus:outline-none disabled:opacity-50"
-            />
-            
-            <div className="flex items-center gap-3">
-              <input 
-                type="checkbox" 
-                id="isLocked"
-                checked={newRoomLocked}
-                disabled={isSubmittingRoom}
-                onChange={e => setNewRoomLocked(e.target.checked)}
-                className="w-4 h-4 bg-velum-900 border border-white-10 accent-accent disabled:opacity-50"
-              />
-              <label htmlFor="isLocked" className="text-xs text-text-secondary uppercase tracking-wider">Locked VIP Room</label>
-            </div>
-
-            {statusMessage && <div className="text-accent text-[10px] font-mono">{statusMessage}</div>}
-
-            <button 
-              onClick={handleCreateRoom}
-              disabled={isSubmittingRoom}
-              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
-            >
-              {isSubmittingRoom ? 'Creating Room...' : 'Create Room'}
-            </button>
           </div>
         </div>
       )}
-      {showJoinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
-          <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-white text-sm font-bold uppercase tracking-wider">Locked Private Room</h3>
-              <button onClick={() => { setShowJoinModal(false); setApplyMessage(''); }} className="text-text-secondary hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
-            </div>
-            
-            <p className="text-xs text-text-secondary font-mono">This room is private. Enter an invite code or submit a join application like Telegram.</p>
-            
-            <input 
-              type="text" 
-              placeholder="INVITE CODE" 
-              value={inviteCodeInput}
-              onChange={e => setInviteCodeInput(e.target.value.toUpperCase())}
-              className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white uppercase focus:border-accent focus:outline-none tracking-[0.2em] font-mono text-center"
-            />
-            
-            {statusMessage && <div className="text-accent text-[10px] font-mono text-center">{statusMessage}</div>}
-            {applyMessage && <div className="text-accent text-[10px] font-mono text-center bg-accent/10 p-2 rounded-lg border border-accent/20">{applyMessage}</div>}
 
-            <div className="space-y-2">
+      {/* Join Room Right-Anchored Drawer */}
+      {showJoinModal && (
+        <div className="fixed inset-0 z-50 flex justify-end modal-backdrop animate-fade-in" onClick={() => { setShowJoinModal(false); setApplyMessage(''); }}>
+          <div 
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm h-full bg-velum-850 border-l border-velum-600 p-5 flex flex-col justify-between shadow-2xl text-text-primary select-none animate-slide-left"
+          >
+            <div className="space-y-4">
+              <div className="flex justify-between items-center pb-3 border-b border-velum-600">
+                <h3 className="text-sm font-semibold text-text-primary">Join Room</h3>
+                <button 
+                  onClick={() => { setShowJoinModal(false); setApplyMessage(''); }} 
+                  className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                <label className="block text-xs font-medium text-text-secondary mb-1">Invite Code</label>
+                <input 
+                  type="text" 
+                  value={inviteCodeInput}
+                  onChange={e => setInviteCodeInput(e.target.value.toUpperCase())}
+                  className="w-full bg-velum-750 border border-velum-600 rounded-lg p-2.5 text-xs text-text-primary uppercase outline-none focus:border-accent/40 font-mono tracking-widest text-center"
+                />
+                
+                {statusMessage && <div className="text-accent text-xs text-center">{statusMessage}</div>}
+                {applyMessage && <div className="text-accent text-xs text-center bg-accent/10 p-2.5 rounded-lg border border-accent/20">{applyMessage}</div>}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-velum-600 space-y-2">
               <button 
                 onClick={() => handleJoinRoom(targetLoungeId, joinRoomId, inviteCodeInput)}
-                className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+                disabled={!inviteCodeInput.trim()}
+                className="w-full py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-black rounded-lg text-xs font-semibold transition cursor-pointer"
               >
-                Verify Code
+                Join Room
               </button>
 
               <button
                 onClick={() => handleApplyToJoin(joinRoomId || targetLoungeId)}
                 disabled={isApplying}
-                className="w-full bg-white-5 hover:bg-white-10 text-white p-2.5 rounded-lg text-[10.5px] font-bold uppercase tracking-wider transition cursor-pointer border border-white-10 disabled:opacity-50"
+                className="w-full py-2 bg-velum-750 hover:bg-velum-700 text-text-primary rounded-lg text-xs font-medium transition cursor-pointer border border-velum-600 disabled:opacity-50"
               >
-                {isApplying ? 'Submitting Application...' : 'Apply to Join (Request Access)'}
+                {isApplying ? 'Submitting...' : 'Request Access'}
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Join Lounge Right-Anchored Drawer */}
       {showJoinLoungeMobileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
-          <div className="bg-velum-850 border border-white-10 p-6 rounded-2xl w-full max-w-sm space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-white text-sm font-bold uppercase tracking-wider">Join a Lounge</h3>
-              <button onClick={() => { setShowJoinLoungeMobileModal(false); setApplyMessage(''); }} className="text-text-secondary hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
+        <div className="fixed inset-0 z-50 flex justify-end modal-backdrop animate-fade-in" onClick={() => { setShowJoinLoungeMobileModal(false); setApplyMessage(''); }}>
+          <div 
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm h-full bg-velum-850 border-l border-velum-600 p-5 flex flex-col justify-between shadow-2xl text-text-primary select-none animate-slide-left"
+          >
+            <div className="space-y-4">
+              <div className="flex justify-between items-center pb-3 border-b border-velum-600">
+                <h3 className="text-sm font-semibold text-text-primary">Join Lounge</h3>
+                <button 
+                  onClick={() => { setShowJoinLoungeMobileModal(false); setApplyMessage(''); }} 
+                  className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                <label className="block text-xs font-medium text-text-secondary mb-1">Invite Code</label>
+                <input 
+                  type="text" 
+                  value={loungeInviteCodeInput}
+                  onChange={e => setLoungeInviteCodeInput(e.target.value.toUpperCase())}
+                  className="w-full bg-velum-750 border border-velum-600 rounded-lg p-2.5 text-xs text-text-primary uppercase outline-none focus:border-accent/40 font-mono tracking-widest text-center"
+                />
+                
+                {loungeStatusMessage && <div className="text-accent text-xs text-center">{loungeStatusMessage}</div>}
+                {applyMessage && <div className="text-accent text-xs text-center bg-accent/10 p-2.5 rounded-lg border border-accent/20">{applyMessage}</div>}
+              </div>
             </div>
-            
-            <p className="text-xs text-text-secondary font-mono">Enter a lounge code or apply directly to join.</p>
-            
-            <input 
-              type="text" 
-              placeholder="LOUNGE CODE" 
-              value={loungeInviteCodeInput}
-              onChange={e => setLoungeInviteCodeInput(e.target.value.toUpperCase())}
-              className="w-full bg-velum-900 border border-white-10 rounded-lg p-3 text-xs text-white uppercase focus:border-accent focus:outline-none tracking-[0.2em] font-mono text-center"
-            />
-            
-            {loungeStatusMessage && <div className="text-accent text-[10px] font-mono text-center">{loungeStatusMessage}</div>}
-            {applyMessage && <div className="text-accent text-[10px] font-mono text-center bg-accent/10 p-2 rounded-lg border border-accent/20">{applyMessage}</div>}
 
-            <div className="space-y-2">
+            <div className="pt-4 border-t border-velum-600 space-y-2">
               <button 
                 onClick={handleJoinLoungeMobile}
-                className="w-full bg-accent hover:bg-accent-hover text-velum-900 p-3 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+                disabled={!loungeInviteCodeInput.trim()}
+                className="w-full py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-black rounded-lg text-xs font-semibold transition cursor-pointer"
               >
-                Verify Code
+                Join Lounge
               </button>
             </div>
           </div>

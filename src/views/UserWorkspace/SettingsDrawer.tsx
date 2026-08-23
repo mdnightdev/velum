@@ -828,11 +828,7 @@ export default function SettingsDrawer({
                   connectionsCount={connectionsCount}
                   currentUsername={currentUsername}
                   currentUserRole={currentUserRole}
-                  email={email}
-                  setEmail={setEmail}
-                  phone={phone}
-                  setPhone={setPhone}
-                  setDisplayName={setDisplayName}
+              	  setDisplayName={setDisplayName}
                   setBio={setBio}
                   handleFileChange={handleFileChange}
                   handleDeleteAvatar={handleRemovePhoto}
@@ -864,10 +860,7 @@ export default function SettingsDrawer({
                   <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">
                     {t('language.title', 'Language Preferences')}
                   </h3>
-                  <p className="text-xs text-text-secondary mt-1">
-                    {t('language.subtitle', 'Select your preferred display language for Velum interface and system messages.')}
-                  </p>
-                </div>
+                 </div>
 
                 <div className="space-y-3">
                   {supportedLanguages.map((langOption) => {
@@ -884,7 +877,6 @@ export default function SettingsDrawer({
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <span className="text-xl">{langOption.flag}</span>
                           <div>
                             <span className="text-sm font-semibold block">{langOption.name}</span>
                             <span className="text-xs text-text-disabled font-mono">{langOption.nativeName}</span>
@@ -913,7 +905,7 @@ export default function SettingsDrawer({
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono flex items-center gap-2">
                     <Activity className="w-4 h-4" />
-                    {t('diagnostics.title')}
+                    {t('diagnostics')}
                   </h3>
                   <span className="px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent font-mono text-[10px] font-bold">
                     Build {FULL_BUILD_VERSION}
@@ -921,10 +913,7 @@ export default function SettingsDrawer({
                 </div>
 
                 <div className="p-6 rounded-xl border border-white-10 bg-velum-750/50 space-y-4">
-                  <p className="text-xs text-text-secondary leading-relaxed">
-                    {t('diagnostics.subtitle')}
-                  </p>
-
+                 
                   <div className="space-y-2">
                     <label className="text-[10px] font-mono font-bold uppercase text-text-secondary block">
                       {t('diagnostics.notes_label')}
@@ -961,7 +950,7 @@ export default function SettingsDrawer({
                       <span>{t('diagnostics.transmitting')}</span>
                     ) : (
                       <>
-                        <Activity className="w-4 h-4" />
+                        
                         <span>{t('diagnostics.transmit_btn')}</span>
                       </>
                     )}

@@ -60,6 +60,8 @@ export interface ChatInputProps {
   onTriggerPhotoInput?: () => void;
   onTriggerDocInput?: () => void;
   isPrivateSublounge?: boolean;
+  isMember?: boolean;
+  onJoinLounge?: () => void;
 }
 
 export function ChatInput({
@@ -102,7 +104,9 @@ export function ChatInput({
   onTriggerFileInput,
   onTriggerPhotoInput,
   onTriggerDocInput,
-  isPrivateSublounge
+  isPrivateSublounge,
+  isMember,
+  onJoinLounge,
 }: ChatInputProps) {
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
@@ -309,7 +313,6 @@ export function ChatInput({
                     <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                       <polygon points="5 3 19 12 5 21 5 3" />
                     </svg>
-                    <span>LISTEN</span>
                   </>
                 )}
               </button>
@@ -391,13 +394,25 @@ export function ChatInput({
               </div>
             )}
           </div>
+        ) : isMember === false ? (
+          <div className="w-full bg-velum-850 border border-velum-600 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs text-text-secondary select-none">
+            <span>You must be a member of this lounge to send messages.</span>
+            {onJoinLounge && (
+              <button
+                type="button"
+                onClick={onJoinLounge}
+                className="px-3.5 py-1.5 bg-accent hover:bg-accent-hover text-black rounded-lg text-xs font-semibold cursor-pointer shrink-0"
+              >
+                Join Lounge
+              </button>
+            )}
+          </div>
         ) : (
           <>
             {editingMessageId && (
               <div className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 mb-2.5 flex justify-between items-center text-[10px] text-text-secondary select-none font-mono tracking-wider">
                 <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
-                  <span>EDITING MESSAGE</span>
+  
                 </div>
                 <button
                   type="button"
@@ -462,8 +477,8 @@ export function ChatInput({
                         {/* Grabber handle */}
                         <div className="w-9 h-1 bg-white/20 rounded-full mx-auto mb-4" />
 
-                        <div className="flex items-center justify-around gap-4 px-4">
-                          {/* Photo or Video / Gallery */}
+                        <div className="flex items-center justify-around gap-2 px-2">
+                          {/* Photo / Image */}
                           <button
                             type="button"
                             onClick={() => {
@@ -474,14 +489,55 @@ export function ChatInput({
                             className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white-5 active:scale-95 transition-all cursor-pointer group"
                           >
                             <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#7B2CBF] to-[#9D4EDD] text-white flex items-center justify-center shadow-md shadow-purple-950/40 group-hover:scale-105 transition-transform">
-                              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="3" width="18" height="18" rx="4" />
-                                <circle cx="8.5" cy="8.5" r="1.5" />
-                                <polyline points="21 15 16 10 5 21" />
+                              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm8 3a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6z" />
                               </svg>
                             </div>
                             <span className="text-[11px] font-medium text-text-primary group-hover:text-white font-sans">
-                              Gallery
+                              Photo
+                            </span>
+                          </button>
+
+                          {/* Video */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAttachmentMenuOpen(false);
+                              if (onTriggerPhotoInput) onTriggerPhotoInput();
+                              else if (onTriggerFileInput) onTriggerFileInput();
+                            }}
+                            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white-5 active:scale-95 transition-all cursor-pointer group"
+                          >
+                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#E63946] to-[#F77F00] text-white flex items-center justify-center shadow-md shadow-red-950/40 group-hover:scale-105 transition-transform">
+                              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polygon points="23 7 16 12 23 17 23 7" />
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                              </svg>
+                            </div>
+                            <span className="text-[11px] font-medium text-text-primary group-hover:text-white font-sans">
+                              Video
+                            </span>
+                          </button>
+
+                          {/* Voice Note */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAttachmentMenuOpen(false);
+                              onToggleRecording();
+                            }}
+                            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white-5 active:scale-95 transition-all cursor-pointer group"
+                          >
+                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#2A9D8F] to-[#48CAE4] text-white flex items-center justify-center shadow-md shadow-teal-950/40 group-hover:scale-105 transition-transform">
+                              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                <line x1="12" y1="19" x2="12" y2="23" />
+                                <line x1="8" y1="23" x2="16" y2="23" />
+                              </svg>
+                            </div>
+                            <span className="text-[11px] font-medium text-text-primary group-hover:text-white font-sans">
+                              Voice
                             </span>
                           </button>
 
@@ -523,7 +579,6 @@ export function ChatInput({
                       if (!isSending) onSend(e);
                     }
                   }}
-                  placeholder={chatTitle ? t('chat.message_peer', 'Message {name}').replace('{name}', chatTitle) : t('chat.message_placeholder', 'Write a message...')}
                   className="flex-1 bg-velum-800 border border-white-5 focus:border-accent/40 rounded-2xl px-4 py-2 text-[13.5px] text-white outline-none resize-none max-h-32 min-h-[40px] leading-relaxed placeholder:text-text-disabled font-sans"
                 />
 

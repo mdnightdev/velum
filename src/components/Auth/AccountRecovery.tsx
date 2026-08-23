@@ -174,25 +174,22 @@ export default function AccountRecovery({
                   onClick={() => setRecoveryView('reset')}
                   className="w-full text-left p-3.5 bg-text-primary/[0.02] hover:bg-text-primary/[0.04] rounded-xl border border-white-5 hover:border-accent/50 transition text-text-primary cursor-pointer"
                 >
-                  <p className="text-sm font-semibold text-white">Option A: Reset Password</p>
-                  <p className="text-[12px] text-text-secondary mt-1">Use your recovery key (VEL-REC-XXXX) and secret word to set a new password.</p>
-                </button>
+                  <p className="text-sm font-semibold text-white"> Reset Password</p>
+                  </button>
 
                 <button
                   onClick={() => setRecoveryView('redeem')}
                   className="w-full text-left p-3.5 bg-text-primary/[0.02] hover:bg-text-primary/[0.04] rounded-xl border border-white-5 hover:border-accent/50 transition text-text-primary cursor-pointer"
                 >
-                  <p className="text-sm font-semibold text-white">Option B: Redeem Restoration Code</p>
-                  <p className="text-[12px] text-text-secondary mt-1">If support administrators approved your request and issued a restoration code (LGN-REC-XXXX), redeem it here.</p>
-                </button>
+                 <p className="text-sm font-semibold text-white"> Redeem Restoration Code</p>
+                  </button>
 
                 <button
                   onClick={() => setRecoveryView('track')}
                   className="w-full text-left p-3.5 bg-text-primary/[0.02] hover:bg-text-primary/[0.04] rounded-xl border border-white-5 hover:border-accent/50 transition text-text-primary cursor-pointer"
                 >
-                  <p className="text-sm font-semibold text-white">Option C: Track Support Ticket</p>
-                  <p className="text-[12px] text-text-secondary mt-1">Enter your ticket ID to view status and chat with support operators.</p>
-                </button>
+                  <p className="text-sm font-semibold text-white"> Track Support Ticket</p>
+                  </button>
               </div>
             </div>
           )}
@@ -205,7 +202,7 @@ export default function AccountRecovery({
                   type="text"
                   value={recoveryUsername}
                   onChange={(e) => setRecoveryUsername(e.target.value)}
-                  placeholder="Enter your username"
+                  placeholder=""
                   className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle focus:border-accent focus:outline-none"
                   required
                 />
@@ -217,7 +214,7 @@ export default function AccountRecovery({
                   type="text"
                   value={recoverySafeWord}
                   onChange={(e) => setRecoverySafeWord(e.target.value)}
-                  placeholder="Enter your secret word"
+                  placeholder=""
                   className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle focus:border-accent focus:outline-none"
                   required
                 />
@@ -240,7 +237,7 @@ export default function AccountRecovery({
                 <PasswordInput
                   value={recoveryNewPassword}
                   onChange={(e) => setRecoveryNewPassword(e.target.value)}
-                  placeholder="Choose a strong new password"
+                  placeholder=""
                   className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle focus:border-accent focus:outline-none"
                   required
                 />
@@ -272,7 +269,7 @@ export default function AccountRecovery({
                   type="text"
                   value={redeemUsername}
                   onChange={(e) => setRedeemUsername(e.target.value)}
-                  placeholder="Enter your username"
+                  placeholder=""
                   className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle focus:border-accent focus:outline-none"
                   required
                 />
@@ -295,7 +292,7 @@ export default function AccountRecovery({
                 <PasswordInput
                   value={redeemNewPassword}
                   onChange={(e) => setRedeemNewPassword(e.target.value)}
-                  placeholder="Choose a strong new password"
+                  placeholder=""
                   className="w-full bg-velum-850 border border-white-5 rounded-xl px-4 py-3 text-xs text-white align-middle focus:border-accent focus:outline-none"
                   required
                 />

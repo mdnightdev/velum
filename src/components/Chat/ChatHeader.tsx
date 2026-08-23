@@ -25,6 +25,7 @@ interface ChatHeaderProps {
   onDeleteSelected?: (msg: Message) => void;
   onReportSelected?: (msg: Message) => void;
   currentUserId?: number;
+  avatarUrl?: string;
 }
 
 export function ChatHeader({
@@ -47,7 +48,8 @@ export function ChatHeader({
   onPinSelected,
   onDeleteSelected,
   onReportSelected,
-  currentUserId
+  currentUserId,
+  avatarUrl
 }: ChatHeaderProps) {
   const initials = (activeChatPeer?.displayName || activeChatPeer?.username || chatTitle || '?').slice(0, 2).toUpperCase();
   const isOwnSelectedMessage = selectedMessage && currentUserId && selectedMessage.user_id === currentUserId;
@@ -58,24 +60,26 @@ export function ChatHeader({
     if (!rawText || rawText.includes('VEL_E2EE') || rawText.includes('d%/dr/') || rawText.startsWith('m.')) {
       rawText = selectedMessage.content && !selectedMessage.content.includes('VEL_E2EE') ? selectedMessage.content : 'Encrypted Message';
     }
-    // Clean up residual [Attachment: ...] tags
-    const cleanSnippet = rawText.replace(/^\[Attachment:\s*[^\]]+\]\s*/i, '').trim() || 'Attachment';
-
     return (
-      <div className="px-4 py-3 border-b flex items-center justify-between flex-shrink-0 bg-velum-800/95 border-accent/20 transition-all select-none z-20 shadow-md">
-        <div className="flex items-center gap-3 shrink-0">
+      <div className="px-4 py-3 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             type="button"
             onClick={onClearSelection}
-            className="w-10 h-10 rounded-full text-text-secondary hover:text-white hover:bg-white-10 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
             title="Cancel selection"
           >
-            <X className="w-5 h-5 text-accent" />
+            <X className="w-5 h-5" />
           </button>
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-semibold text-accent uppercase tracking-wider">1 selected</span>
+            <span className="text-[11px] text-text-secondary truncate max-w-xs sm:max-w-md">
+              {rawText}
+            </span>
+          </div>
         </div>
 
-        {/* Action Icons Toolbar (Remapped to Header) */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {onReplySelected && (
             <button
               type="button"
@@ -142,7 +146,7 @@ export function ChatHeader({
             </button>
           )}
 
-          {onDeleteSelected && (
+          {isOwnSelectedMessage && onDeleteSelected && (
             <button
               type="button"
               onClick={() => onDeleteSelected(selectedMessage)}
@@ -156,6 +160,8 @@ export function ChatHeader({
       </div>
     );
   }
+
+  const headerAvatar = activeChatPeer?.avatar || avatarUrl;
 
   // Standard Header Mode
   return (
@@ -178,15 +184,11 @@ export function ChatHeader({
         )}
         <div className="flex items-center gap-3">
           {/* Avatar */}
-          {activeChatPeer ? (
+          {headerAvatar ? (
             <div 
               className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
             >
-              {activeChatPeer.avatar ? (
-                <img src={activeChatPeer.avatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="text-xs font-mono font-bold uppercase text-accent">{initials}</span>
-              )}
+              <img src={headerAvatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             </div>
           ) : (
             <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">

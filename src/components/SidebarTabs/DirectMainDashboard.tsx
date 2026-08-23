@@ -4,8 +4,89 @@ import { decryptMessage, decryptMessageSync } from '../../services/encryptionSer
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
-import { getCleanPreview } from '../../utils/messageParser';
+import { getCleanPreview, parseAttachment, formatVoiceNotePreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
+
+function renderPreviewWithIcons(content: string) {
+  if (!content) return null;
+  if (content.startsWith('[Voice Note') || content.startsWith('Voice message')) {
+    const text = content.startsWith('[Voice Note') ? formatVoiceNotePreview(content) : content;
+    return (
+      <span className="inline-flex items-center gap-1 truncate">
+        <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="23" />
+          <line x1="8" y1="23" x2="16" y2="23" />
+        </svg>
+        <span className="truncate">{text}</span>
+      </span>
+    );
+  }
+  if (content.includes('[Attachment:')) {
+    const attachments = parseAttachment(content);
+    const att = attachments[0];
+    const isVid = att && (att.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name) || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data));
+    const isImg = att && att.type.startsWith('image/');
+
+    if (isVid) {
+      return (
+        <span className="inline-flex items-center gap-1 truncate">
+          <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>
+          <span className="truncate">{att ? (att.caption ? `Video ${att.caption}` : 'Video') : 'Video'}</span>
+        </span>
+      );
+    }
+    if (isImg) {
+      return (
+        <span className="inline-flex items-center gap-1 truncate">
+          <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2.5" y="2.5" width="19" height="19" rx="4" />
+            <circle cx="8.5" cy="8.5" r="2" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+          <span className="truncate">{att ? (att.caption ? `Photo ${att.caption}` : 'Photo') : 'Photo'}</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 truncate">
+        <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        <span className="truncate">{att ? (att.caption ? `${att.name} ${att.caption}` : att.name) : 'Attachment'}</span>
+      </span>
+    );
+  }
+  if (content.startsWith('Photo')) {
+    return (
+      <span className="inline-flex items-center gap-1 truncate">
+        <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2.5" y="2.5" width="19" height="19" rx="4" />
+          <circle cx="8.5" cy="8.5" r="2" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+        <span className="truncate">{content}</span>
+      </span>
+    );
+  }
+  if (content.startsWith('Video')) {
+    return (
+      <span className="inline-flex items-center gap-1 truncate">
+        <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="23 7 16 12 23 17 23 7" />
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+        </svg>
+        <span className="truncate">{content}</span>
+      </span>
+    );
+  }
+  return <span className="truncate">{content}</span>;
+}
 
 // e2ee:v1: envelopes are stateless-ECDH DMs and can only be decrypted async
 // (they hit IndexedDB for the local identity key). decryptMessageSync only
@@ -74,6 +155,19 @@ export default function DirectMainDashboard({
         }
         if (last) {
           const raw = last.content || last.message || last.body || last.text || '';
+          const isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
+          // Own outgoing e2ee:v1 messages can never be decrypted here - they
+          // were sealed with the PEER's identity key, not ours. Only the
+          // recipient can reverse that. Use the plaintext we already know
+          // locally (set at send time) instead of attempting a decrypt that
+          // is structurally guaranteed to fail.
+          if (isMe && isStatelessDmEnvelope(raw)) {
+            const known = last.plaintext || last.client_plaintext || '';
+            if (isMounted && known) {
+              setDecryptedPreviews(prev => ({ ...prev, [friendId]: known }));
+            }
+            continue;
+          }
           if (raw) {
             try {
               const decrypted = isStatelessDmEnvelope(raw)
@@ -104,8 +198,15 @@ export default function DirectMainDashboard({
       }
       const raw = velumLastForEffect.content || velumLastForEffect.message || velumLastForEffect.body || velumLastForEffect.text || '';
       const actualRoomId = velumLastForEffect.room_id || velumRoomIdKey;
+      const isMe = (velumLastForEffect.user_id === currentUserId) || (velumLastForEffect.senderId === currentUserId);
       if (!raw) {
         if (isMounted) setVelumDecrypted('');
+        return;
+      }
+      if (isMe && isStatelessDmEnvelope(raw)) {
+        // Can't decrypt our own outgoing message here - only the recipient
+        // can. Use the plaintext we already know locally, if it's still around.
+        if (isMounted) setVelumDecrypted(velumLastForEffect.plaintext || velumLastForEffect.client_plaintext || '');
         return;
       }
       try {
@@ -138,7 +239,7 @@ export default function DirectMainDashboard({
     const raw = velumLast.content || velumLast.message || velumLast.body || velumLast.text || '';
     // Stateless e2ee:v1 envelopes are resolved async via the effect above and
     // land in velumDecrypted; never fall back to sync-decrypting them here.
-    velumTxt = velumDecrypted || (isStatelessDmEnvelope(raw) ? '' : raw || '');
+    velumTxt = velumDecrypted || (isStatelessDmEnvelope(raw) ? (velumIsMe ? (velumLast.plaintext || velumLast.client_plaintext || 'Message sent') : '') : raw || '');
     if (velumIsMe) {
       if (velumLast.status) {
         velumMsgStatus = velumLast.status;
@@ -158,26 +259,26 @@ export default function DirectMainDashboard({
   }
 
   return (
-    <div className="flex-1 flex flex-col w-full h-full select-none font-sans bg-transparent">
+    <div className="flex-1 flex flex-col w-full h-full select-none font-sans bg-transparent text-text-primary">
       {/* Header */}
-      <div className="px-6 py-3 border-b flex-shrink-0 border-white-5 bg-transparent flex items-center gap-2">
+      <div className="p-2.5 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
-            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer shrink-0"
+            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
             aria-label="Open sidebar menu"
             title="Open Navigation"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-4 h-4" />
           </button>
         )}
-        <div className="relative flex-1 flex items-center h-9 px-3 rounded-full border bg-transparent border-white-5 focus-within:border-accent">
+        <div className="relative flex-1 flex items-center h-8 px-2.5 rounded-lg border border-velum-600 bg-velum-750 focus-within:border-accent/40">
           <input
             type="text"
-            placeholder={t('chats.search', 'Search chats...')}
+            placeholder={t('chats.search', 'Search messages...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent border-none outline-none text-xs ml-1 text-text-primary"
+            className="w-full bg-transparent border-none outline-none text-xs text-text-primary placeholder-text-disabled"
           />
         </div>
       </div>
@@ -191,38 +292,36 @@ export default function DirectMainDashboard({
             if (onSectionView) onSectionView('chat');
             if (onMarkAsRead) onMarkAsRead('', velumRoomId);
           }}
-          className={`w-full px-5 py-3.5 border-b flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-            isDark ? 'border-white-5 hover:bg-text-primary/[0.03]' : 'border-gray-100 hover:bg-gray-50'
-          }`}
+          className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
         >
           <div className="min-w-0 flex items-center gap-3 flex-1">
             <div 
-              className="w-11 h-11 rounded-full bg-velum-800 border border-accent/20 flex items-center justify-center font-black text-xs text-accent overflow-hidden flex-shrink-0 cursor-pointer hover:opacity-80"
-              title="VELUM System"
+              className="w-9 h-9 rounded-lg bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden flex-shrink-0"
+              title="Velum"
             >
-              <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+              <div className="w-4.5 h-4.5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <p className={`text-sm font-bold capitalize flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                <p className="text-xs font-semibold text-text-primary flex items-center gap-1.5 truncate">
                   Velum
-                  <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-accent/10 text-accent uppercase tracking-wider">System</span>
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-accent/15 text-accent">System</span>
                 </p>
                 {velumTimeStr && (
-                  <span className={`text-[11px] font-mono shrink-0 ${velumUnread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
+                  <span className={`text-[10px] shrink-0 ${velumUnread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
                     {velumTimeStr}
                   </span>
                 )}
               </div>
               <div className="flex items-center justify-between gap-2 mt-0.5">
-                <p className={`text-xs flex items-center gap-1 truncate ${velumUnread > 0 ? 'font-semibold text-white' : 'text-text-secondary'}`}>
+                <p className={`text-xs flex items-center gap-1 truncate ${velumUnread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
                   {velumIsMe && velumMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                   {velumIsMe && velumMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
-                  {velumIsMe && velumMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                  {velumTxt && <span className="truncate">{velumTxt}</span>}
+                  {velumIsMe && velumMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-accent shrink-0" />}
+                  {velumTxt && renderPreviewWithIcons(velumTxt)}
                 </p>
                 {velumUnread > 0 && (
-                  <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-unread-badge text-white shadow-sm shrink-0 min-w-[20px] text-center">
+                  <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-accent text-black shrink-0 min-w-[18px] text-center">
                     {velumUnread}
                   </span>
                 )}
@@ -281,10 +380,15 @@ export default function DirectMainDashboard({
             const isEnc = !!(last.is_encrypted || last.isEncrypted);
             const actualRoomId = last.room_id || dmRoomId;
             const displayTxt = decryptedPreviews[friendId] || (function() {
-              // Stateless e2ee:v1 envelopes can only be decrypted async - the
-              // effect above will populate decryptedPreviews shortly. Never
-              // show the raw ciphertext or attempt a sync decrypt on it.
-              if (isStatelessDmEnvelope(raw)) return '';
+              // Own outgoing e2ee:v1 messages can't be decrypted here - only
+              // the recipient holds the key. If no plaintext was cached
+              // locally at send time (e.g. after a reload), show a neutral
+              // placeholder instead of raw ciphertext or attempting a
+              // guaranteed-to-fail decrypt.
+              if (isStatelessDmEnvelope(raw)) {
+                if (isMe) return last.plaintext || last.client_plaintext || 'Message sent';
+                return '';
+              }
               try {
                 return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
               } catch (e) {
@@ -326,83 +430,41 @@ export default function DirectMainDashboard({
                 if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
                 if (onSectionView) onSectionView('chat');
               }}
-              className={`w-full px-5 py-3.5 border-b flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                isDark ? 'border-white-5 hover:bg-text-primary/[0.03]' : 'border-gray-100 hover:bg-gray-50'
-              }`}
+              className="w-full px-3.5 py-2.5 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
             >
               <div className="min-w-0 flex items-center gap-3 flex-1">
-                <div className="w-11 h-11 rounded-full bg-velum-800 border border-white-10 flex items-center justify-center font-black text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
+                <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative">
                   {friendAvatar ? (
                     <img src={friendAvatar} alt={friendName} className="w-full h-full object-cover" />
                   ) : (
-                    <span className="uppercase text-xs font-bold text-white/80">{friendName.slice(0, 2)}</span>
+                    <span className="uppercase text-xs font-semibold text-text-primary">{friendName.slice(0, 2)}</span>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className={`text-sm ${unread > 0 ? 'font-bold text-white' : 'font-semibold text-white/90'} capitalize truncate`}>
+                    <p className={`text-xs ${unread > 0 ? 'font-bold text-text-primary' : 'font-medium text-text-primary'} truncate`}>
                       {friendName}
                     </p>
                     {lastTimeStr && (
-                      <span className={`text-[11px] font-mono shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
+                      <span className={`text-[10px] shrink-0 ${unread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
                         {lastTimeStr}
                       </span>
                     )}
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <p className={`text-xs flex items-center gap-1 truncate ${unread > 0 ? 'font-semibold text-white' : 'text-text-secondary'}`}>
+                    <p className={`text-xs flex items-center gap-1 truncate ${unread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
                       {isMe && !isFailed && lastMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                       {isMe && !isFailed && lastMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
-                      {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                      {lastTxt && (() => {
-                        const lower = lastTxt.toLowerCase();
-                        const isVoice = lastTxt.startsWith('Voice message');
-                        const isVid = lower.startsWith('video');
-                        const isPhoto = lower.startsWith('photo') || lower.includes('photos');
-                        const isDoc = !isVoice && !isVid && !isPhoto && (lower.includes('.pdf') || lower.includes('.doc') || lower.includes('.zip') || lower.includes('.txt') || lower.includes('.xlsx') || lower.includes('attachment'));
-
-                        return (
-                          <span className="truncate inline-flex items-center gap-1.5">
-                            {isVoice && (
-                              <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                                <line x1="12" y1="19" x2="12" y2="23" />
-                                <line x1="8" y1="23" x2="16" y2="23" />
-                              </svg>
-                            )}
-                            {isPhoto && (
-                              <svg className="w-3.5 h-3.5 text-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                                <circle cx="12" cy="13" r="4" />
-                              </svg>
-                            )}
-                            {isVid && (
-                              <svg className="w-3.5 h-3.5 text-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polygon points="23 7 16 12 23 17 23 7" />
-                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                              </svg>
-                            )}
-                            {isDoc && (
-                              <svg className="w-3.5 h-3.5 text-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                <polyline points="14 2 14 8 20 8" />
-                              </svg>
-                            )}
-                            <span className="truncate">{lastTxt}</span>
-                          </span>
-                        );
-                      })()}
-                      
-                      
+                      {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-accent shrink-0" />}
+                      {lastTxt && renderPreviewWithIcons(lastTxt)}
                     </p>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isFailed ? (
-                        <span className="text-[10px] font-mono font-bold text-status-dnd uppercase tracking-wider">
+                        <span className="text-[10px] font-semibold text-status-dnd">
                           Failed
                         </span>
                       ) : unread > 0 ? (
-                        <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-unread-badge text-white shadow-sm shrink-0 min-w-[20px] text-center">
+                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-accent text-black shrink-0 min-w-[18px] text-center">
                           {unread}
                         </span>
                       ) : null}

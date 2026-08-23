@@ -247,7 +247,7 @@ export function MessageItem({
                       body: JSON.stringify({ targetUserId: popoverPeer.userId, reason: reason.trim() })
                     });
                     if (res.ok) {
-                      alert("User reported successfully to system administrators.");
+                      alert("User reported.");
                     } else {
                       const errData = await res.json();
                       alert(errData.error || "Failed to submit report.");
@@ -289,10 +289,10 @@ export function MessageItem({
                       const willBeBlocked = !popoverPeer.isBlocked;
                       setPopoverPeer({ ...popoverPeer, isBlocked: willBeBlocked });
                       if (willBeBlocked) {
-                        alert(`Blocked ${popoverPeer.username}. This peer is now permanently purged from your view.`);
+                        alert(`Block ${popoverPeer.username}.`);
                         if (onBackToDeck) onBackToDeck();
                       } else {
-                        alert(`Unblocked ${popoverPeer.username}.`);
+                        alert(`Unblock ${popoverPeer.username}.`);
                       }
                     }
                   } catch (e) {}
@@ -305,7 +305,7 @@ export function MessageItem({
                       headers: { 'Authorization': `Bearer ${sId}` }
                     });
                     if (res.ok) {
-                      alert(`Chat with ${popoverPeer.username} securely deleted and purged.`);
+                      alert(`Chat with ${popoverPeer.username} Deleted `);
                       if (onBackToDeck) onBackToDeck();
                     }
                   } catch (e) {}
@@ -330,7 +330,7 @@ export function MessageItem({
               } ${msg.deleted ? 'italic text-text-secondary opacity-60 font-mono text-[10px]' : ''}`
         }>
           {msg.deleted ? (
-            'Message deleted by sender'
+            'Message deleted'
           ) : (
             <>
               {msg.reply_to && (() => {

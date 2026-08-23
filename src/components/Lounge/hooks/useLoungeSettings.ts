@@ -62,7 +62,7 @@ export function useLoungeSettings({
         throw new Error(err.error || 'Failed to update lounge settings.');
       }
 
-      setSettingsSuccess('Lounge parameters updated successfully.');
+      setSettingsSuccess('updated.');
       if (onSuccess) onSuccess();
     } catch (err: any) {
       setSettingsError(err.message || 'Error updating settings.');

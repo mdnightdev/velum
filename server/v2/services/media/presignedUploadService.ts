@@ -49,6 +49,22 @@ export function validateUploadParameters(params: PresignedUploadRequest): { vali
   return { valid: true };
 }
 
+const activePresignedTokens = new Map<string, { userId: number; expiresAt: number; filename: string; folder: string }>();
+
+export function registerPresignedToken(token: string, data: { userId: number; expiresAt: number; filename: string; folder: string }) {
+  activePresignedTokens.set(token, data);
+}
+
+export function validatePresignedToken(token: string): { valid: boolean; userId?: number; folder?: string; filename?: string } {
+  const entry = activePresignedTokens.get(token);
+  if (!entry) return { valid: false };
+  if (Date.now() > entry.expiresAt) {
+    activePresignedTokens.delete(token);
+    return { valid: false };
+  }
+  return { valid: true, userId: entry.userId, folder: entry.folder, filename: entry.filename };
+}
+
 export async function generatePresignedUpload(
   params: PresignedUploadRequest,
   userId: number,
@@ -59,6 +75,13 @@ export async function generatePresignedUpload(
   const randomToken = crypto.randomBytes(16).toString('hex');
   const mediaId = `media_${Date.now()}_${randomToken.slice(0, 8)}`;
   const cleanFilename = `${mediaId}${ext}`;
+
+  registerPresignedToken(randomToken, {
+    userId,
+    expiresAt: Date.now() + 900 * 1000,
+    filename: cleanFilename,
+    folder
+  });
 
   const relativePath = `/uploads/${folder}/${cleanFilename}`;
 

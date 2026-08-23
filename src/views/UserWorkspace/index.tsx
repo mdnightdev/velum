@@ -92,7 +92,7 @@ export default function UserWorkspace({
       ref={containerRef}
       id="user-workspace-root"
       className={`relative w-full h-full overflow-hidden max-w-7xl mx-auto w-full select-none transition-colors duration-200 ${
-        isDark ? 'bg-velum-900 text-text-primary' : 'bg-text-primary text-text-disabled'
+        isDark ? 'bg-velum-800 text-text-primary' : 'bg-text-primary text-text-disabled'
       }`}
     >
       {/* Settings Drawer Slide out overlay */}
@@ -230,7 +230,7 @@ export default function UserWorkspace({
         <div id="desktop-viewport-grid" className="w-full h-full flex overflow-hidden">
           
           {/* Column 1: Unified Navigation Sidebar (Left Column, expanded width 300px) */}
-          <div className="w-[300px] h-full flex-shrink-0 border-r border-white-5 bg-velum-900 z-10 select-none">
+          <div className="w-[300px] h-full flex-shrink-0 border-r border-velum-600 bg-velum-850 z-10 select-none">
             <UserSidebar
               currentUserId={user ? user.userId : 0}
               currentUsername={user ? user.username : 'Guest'}
@@ -264,7 +264,7 @@ export default function UserWorkspace({
           </div>
 
           {/* Column 2: Full-Fidelity Active Chat Stream Canvas / Workspace Desk (Right Column, flex-1) */}
-          <div className={`flex-1 h-full flex flex-col overflow-hidden min-w-0`}>
+          <div className={`flex-1 h-full flex flex-col overflow-hidden min-w-0 bg-velum-800`}>
             {activeRoomId || activeChatPeer ? (
               <ChatArea
                 currentUserId={user ? user.userId : 0}
@@ -288,7 +288,7 @@ export default function UserWorkspace({
                 }}
               />
             ) : (
-              <div className={`flex-1 flex flex-col items-center justify-center p-8 text-center relative overflow-hidden ${isDark ? 'bg-velum-900 text-text-secondary' : 'bg-gray-50 text-gray-700'}`}>
+              <div className={`flex-1 flex flex-col items-center justify-center p-8 text-center relative overflow-hidden bg-velum-800 text-text-secondary`}>
                 {/* Decorative background glow */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-accent/5 rounded-full blur-[80px] pointer-events-none" />
                 

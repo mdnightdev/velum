@@ -7,6 +7,7 @@ import { userRepository } from '../repositories/userRepository.js';
 import {
   validateUploadParameters,
   generatePresignedUpload,
+  validatePresignedToken,
   verifyFileSha256
 } from '../services/media/presignedUploadService.js';
 
@@ -113,13 +114,23 @@ function safeUploadFolder(rawFolder: string | undefined): string {
 const handlePresignedUpload = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
-    const { filename, mime_type, file_size_bytes, sha256_checksum, folder } = req.body;
+    const rawExt = (req.body.extension || 'bin').replace(/^\./, '');
+    const filename = req.body.filename || `upload_${Date.now()}.${rawExt}`;
+    const rawMime = req.body.mime_type || req.body.mimeType || (
+      rawExt === 'webp' ? 'image/webp' :
+      rawExt === 'png' ? 'image/png' :
+      rawExt === 'jpg' || rawExt === 'jpeg' ? 'image/jpeg' :
+      rawExt === 'webm' ? 'audio/webm' :
+      rawExt === 'mp4' ? 'video/mp4' : 'image/webp'
+    );
+    const fileSizeBytes = Number(req.body.file_size_bytes || req.body.fileSizeBytes || 1024 * 1024);
+    const folder = safeUploadFolder(req.body.folder || req.body.type || 'media') as any;
 
     const validation = validateUploadParameters({
       filename,
-      mimeType: mime_type || req.body.mimeType,
-      fileSizeBytes: Number(file_size_bytes || req.body.fileSizeBytes),
-      sha256Checksum: sha256_checksum || req.body.sha256Checksum,
+      mimeType: rawMime,
+      fileSizeBytes,
+      sha256Checksum: req.body.sha256_checksum || req.body.sha256Checksum,
       folder
     });
 
@@ -131,9 +142,9 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
     const presignedData = await generatePresignedUpload(
       {
         filename,
-        mimeType: mime_type || req.body.mimeType,
-        fileSizeBytes: Number(file_size_bytes || req.body.fileSizeBytes),
-        sha256Checksum: sha256_checksum || req.body.sha256Checksum,
+        mimeType: rawMime,
+        fileSizeBytes,
+        sha256Checksum: req.body.sha256_checksum || req.body.sha256Checksum,
         folder
       },
       userId,
@@ -142,7 +153,9 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
 
     res.json({
       status: 'ok',
-      presigned: presignedData
+      presigned: presignedData,
+      uploadUrl: presignedData.uploadUrl,
+      relativeDbPath: presignedData.relativePath
     });
   } catch (err) {
     next(err);
@@ -219,5 +232,22 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
-mediaRouter.put('/media/upload', auth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
-mediaRouter.post('/media/upload', auth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
+const uploadAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const queryToken = req.query.token as string;
+  if (queryToken) {
+    const tokenResult = validatePresignedToken(queryToken);
+    if (tokenResult.valid) {
+      req.user = {
+        userId: tokenResult.userId || 1,
+        username: 'uploader',
+        role: 'USER',
+        duress_active: false
+      };
+      return next();
+    }
+  }
+  return auth(req, res, next);
+};
+
+mediaRouter.put('/media/upload', uploadAuth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
+mediaRouter.post('/media/upload', uploadAuth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
