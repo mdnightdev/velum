@@ -6,6 +6,8 @@ import { LanguageProvider } from './i18n/LanguageContext';
 import { useWebSocket } from './hooks/useWebSocket';
 import LoadingFallback from './components/LoadingFallback';
 import { initAppearance } from './utils/appearance';
+import { LocalNotifications } from '@capacitor/local-notifications';
+
 const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const DashboardLayout = lazy(() => import('./components/DashboardLayout'));
 const ProfileMigration = lazy(() => import('./components/ProfileMigration'));
@@ -23,6 +25,26 @@ function AppContent() {
   useEffect(() => {
     initAppearance();
   }, []);
+
+
+   // Request notification permission on login via Capacitor
+ useEffect(() => {
+  if (isAuthenticated) {
+    LocalNotifications.requestPermissions().then(() => {
+      // Create high-priority notification channel for popups/heads-up banners
+      LocalNotifications.createChannel({
+        id: 'velum_messages',
+        name: 'Velum Messages',
+        description: 'New chat messages and alerts',
+        importance: 5, // 5 = High importance (makes it pop up on screen)
+        visibility: 1,
+        vibration: true,
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+}, [isAuthenticated]);
+
+ 
 
   // Set up visual viewport height tracking to handle mobile keyboard resizing properly
   useEffect(() => {

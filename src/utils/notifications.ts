@@ -1,6 +1,8 @@
 import { storage } from '../services/storageService';
 import { registerPushNotifications } from './pushNotifications';
 
+import { LocalNotifications } from '@capacitor/local-notifications';
+
 export interface NotificationPreferences {
   desktopPopups: boolean;
   soundTriggers: boolean;
@@ -105,36 +107,54 @@ export const sendDesktopNotification = (
   title: string,
   options?: { body?: string; icon?: string; tag?: string }
 ) => {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
+  if (typeof window === 'undefined') return;
 
-  try {
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.ready
-        .then((registration) => {
-          registration.showNotification(title, {
-            body: options?.body || '',
-            icon: options?.icon || '/icon.png',
-            tag: options?.tag || 'velum-chat',
-          });
-        })
-        .catch(() => {});
-      return;
-    }
+  // 1. Native Mobile Notification (Capacitor)
+  LocalNotifications.schedule({
+    notifications: [
+      {
+        title: title,
+        body: options?.body || '',
+        id: Math.floor(Math.random() * 100000),
+        channelId: 'velum_messages',
+        schedule: { at: new Date(Date.now() + 100) },
+        sound: undefined,
+        actionTypeId: '',
+        extra: { tag: options?.tag || 'velum-chat' }
+      }
+    ]
+  }).catch(() => {
+    // 2. Web Browser Fallback
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
-    const notification = new Notification(title, {
-      body: options?.body || '',
-      icon: options?.icon || '/icon.png',
-      tag: options?.tag || 'velum-chat',
-    });
+    try {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready
+          .then((registration) => {
+            registration.showNotification(title, {
+              body: options?.body || '',
+              icon: options?.icon || '/icon.png',
+              tag: options?.tag || 'velum-chat',
+            });
+          })
+          .catch(() => {});
+        return;
+      }
 
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-    };
+      const notification = new Notification(title, {
+        body: options?.body || '',
+        icon: options?.icon || '/icon.png',
+        tag: options?.tag || 'velum-chat',
+      });
 
-    setTimeout(() => notification.close(), 5000);
-  } catch {}
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+
+      setTimeout(() => notification.close(), 5000);
+    } catch {}
+  });
 };
 
 export function updateAppBadge(unreadCount: number): void {

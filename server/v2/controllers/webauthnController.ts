@@ -22,7 +22,7 @@ const authMiddleware = createAuthMiddleware(async (tokenHash) => {
 });
 
 // TTL in-memory challenge store for stateless WebAuthn handshakes
-const challengeStore = new Map<string, { challenge: string; origin: string; rpID: string; expiresAt: number }>();
+const challengeStore = new Map<string, { challenge: string; allowedOrigins: string[]; rpID: string; expiresAt: number }>();
 
 function cleanupChallenges() {
   const now = Date.now();
@@ -33,15 +33,68 @@ function cleanupChallenges() {
   }
 }
 
-function getOriginAndRpId(req: Request) {
-  const origin = req.headers.origin || (req.headers.host ? `${req.protocol}://${req.headers.host}` : 'http://localhost:3000');
-  let rpID = 'localhost';
-  try {
-    rpID = new URL(origin).hostname;
-  } catch {
-    rpID = req.hostname || 'localhost';
+function resolveWebauthnContext(req: Request) {
+  // 1. Resolve host and protocol (handling reverse proxies like Nginx/Cloudflare)
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const hostHeader = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || req.headers.host || req.hostname || 'localhost';
+  const rawHost = String(hostHeader).split(',')[0].trim();
+  const hostname = rawHost.split(':')[0]; // strip port
+
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const proto = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) || req.protocol || (req.secure ? 'https' : 'http');
+
+  // 2. Resolve rpID dynamically:
+  // If explicitly configured via RP_ID env, respect it; otherwise extract clean root/subdomain hostname
+  let rpID = process.env.RP_ID || hostname;
+  if (rpID === '127.0.0.1' || rpID === '0.0.0.0') {
+    rpID = 'localhost';
   }
-  return { origin, rpID };
+
+  // 3. Resolve allowed origins dynamically:
+  const allowedOrigins = new Set<string>();
+
+  if (process.env.ORIGIN) {
+    process.env.ORIGIN.split(',').forEach(o => allowedOrigins.add(o.trim()));
+  }
+
+  const reqOrigin = req.headers.origin;
+  if (reqOrigin) {
+    allowedOrigins.add(reqOrigin);
+  }
+
+  const reqReferer = req.headers.referer;
+  if (reqReferer) {
+    try {
+      const parsed = new URL(reqReferer);
+      allowedOrigins.add(parsed.origin);
+    } catch {}
+  }
+
+  // Constructed origins matching current host
+  allowedOrigins.add(`${proto}://${rawHost}`);
+  allowedOrigins.add(`https://${rawHost}`);
+  allowedOrigins.add(`http://${rawHost}`);
+
+  // Mobile / Capacitor / PWA origin bindings
+  allowedOrigins.add('https://localhost');
+  allowedOrigins.add('http://localhost');
+  allowedOrigins.add('capacitor://localhost');
+  allowedOrigins.add('ionic://localhost');
+
+  // Development environment ports
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    allowedOrigins.add('http://localhost:3000');
+    allowedOrigins.add('http://localhost:5173');
+    allowedOrigins.add('http://127.0.0.1:3000');
+    allowedOrigins.add('http://127.0.0.1:5173');
+    allowedOrigins.add('https://localhost:3000');
+    allowedOrigins.add('https://localhost:5173');
+  }
+
+  return {
+    rpID,
+    allowedOrigins: Array.from(allowedOrigins)
+  };
 }
 
 export class WebauthnController {
@@ -55,7 +108,7 @@ export class WebauthnController {
 
     try {
       cleanupChallenges();
-      const { origin, rpID } = getOriginAndRpId(req);
+      const { rpID, allowedOrigins } = resolveWebauthnContext(req);
       const options = await webauthnService.generateRegistrationOptions(
         user.userId,
         user.username,
@@ -64,7 +117,7 @@ export class WebauthnController {
       
       challengeStore.set(`reg_${user.userId}`, {
         challenge: options.challenge,
-        origin,
+        allowedOrigins,
         rpID,
         expiresAt: Date.now() + 300000 // 5 mins
       });
@@ -96,7 +149,7 @@ export class WebauthnController {
         user.userId,
         response,
         stored.challenge,
-        stored.origin,
+        stored.allowedOrigins,
         stored.rpID
       );
 
@@ -126,7 +179,7 @@ export class WebauthnController {
 
     try {
       cleanupChallenges();
-      const { origin, rpID } = getOriginAndRpId(req);
+      const { rpID, allowedOrigins } = resolveWebauthnContext(req);
       const options = await webauthnService.generateAuthenticationOptions(
         username || undefined,
         rpID
@@ -135,7 +188,7 @@ export class WebauthnController {
       const key = username ? `auth_${username.trim()}` : 'auth_anonymous';
       challengeStore.set(key, {
         challenge: options.challenge,
-        origin,
+        allowedOrigins,
         rpID,
         expiresAt: Date.now() + 300000
       });
@@ -161,7 +214,7 @@ export class WebauthnController {
       const authResult = await webauthnService.verifyAuthentication(
         response,
         stored.challenge,
-        stored.origin,
+        stored.allowedOrigins,
         stored.rpID
       );
 

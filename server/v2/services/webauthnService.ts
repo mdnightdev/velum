@@ -40,7 +40,7 @@ async function ensureWebauthnTable() {
 
 export class WebauthnService {
   // Generate registration options for new passkey
-  async generateRegistrationOptions(userId: number, username: string, rpID: string = 'localhost') {
+  async generateRegistrationOptions(userId: number, username: string, rpID: string) {
     await ensureWebauthnTable();
     const user = await userRepository.findById(userId);
     if (!user) {
@@ -60,10 +60,9 @@ export class WebauthnService {
       userName: username,
       excludeCredentials: existingCredentials.map(cred => ({
         id: cred.credentialId,
-        transports: ['internal'] as any
+        transports: (cred as any).transports || undefined
       })),
       authenticatorSelection: {
-        authenticatorAttachment: 'platform',
         userVerification: 'preferred',
         residentKey: 'preferred'
       },
@@ -78,8 +77,8 @@ export class WebauthnService {
     userId: number,
     response: any,
     expectedChallenge: string,
-    expectedOrigin: string = 'http://localhost:3000',
-    expectedRPID: string = 'localhost'
+    expectedOrigin: string | string[],
+    expectedRPID: string | string[]
   ) {
     await ensureWebauthnTable();
     const verification = await verifyRegistrationResponse({
@@ -132,7 +131,7 @@ export class WebauthnService {
       userVerification: 'preferred',
       allowCredentials: userCredentials.map(cred => ({
         id: cred.credentialId,
-        transports: (cred.transports as any) || ['internal']
+        transports: (cred.transports as any) || undefined
       }))
     });
 
@@ -143,8 +142,8 @@ export class WebauthnService {
   async verifyAuthentication(
     response: any,
     expectedChallenge: string,
-    expectedOrigin: string = 'http://localhost:3000',
-    expectedRPID: string = 'localhost'
+    expectedOrigin: string | string[],
+    expectedRPID: string | string[]
   ) {
     await ensureWebauthnTable();
     const credentialId = response.id;
