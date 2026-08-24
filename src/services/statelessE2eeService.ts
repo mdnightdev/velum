@@ -25,29 +25,30 @@ class StatelessE2eeService {
   private peerKeyCache = new Map<number, { keyHex: string; timestamp: number }>();
   private readonly CACHE_TTL_MS = 60 * 1000; // 1 minute fresh cache
 
-  public setLocalUserId(userId: number): void {
+    public setLocalUserId(userId: number | null): void {
     this.localUserId = userId;
+    this.peerKeyCache.clear();
   }
 
   public getLocalUserId(): number | null {
-    if (!this.localUserId) {
-      try {
-        if (typeof window !== 'undefined') {
-          const cached = storage.getItem<any>('velum-user');
-          if (cached) {
-            const u = typeof cached === 'string' ? JSON.parse(cached) : cached;
-            const id = u?.id || u?.userId;
-            if (id) {
-              this.localUserId = Number(id);
-            }
+    try {
+      if (typeof window !== 'undefined') {
+        const cached = storage.getItem<any>('velum-user');
+        if (cached) {
+          const u = typeof cached === 'string' ? JSON.parse(cached) : cached;
+          const id = u?.id || u?.userId;
+          if (id) {
+            this.localUserId = Number(id);
+            return this.localUserId;
           }
         }
-      } catch {}
-    }
+      }
+    } catch {}
     return this.localUserId;
   }
 
   public clearCache(): void {
+    this.localUserId = null;
     this.peerKeyCache.clear();
   }
 

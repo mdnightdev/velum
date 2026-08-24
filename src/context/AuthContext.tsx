@@ -1,7 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, startTransition } from 'react';
 import { createLogger } from '../utils/logger';
-import { purgeCryptoVault } from '../services/cryptoDbStore';
-import { purgeLocalMessages } from '../utils/indexedDb';
 import { statelessE2eeService } from '../services/statelessE2eeService';
 import { storage } from '../services/storageService';
 
@@ -53,8 +51,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const handleLoginSuccess = (loginUser: AuthUser, sId: string, dId: string, destination: string) => {
     if (user && user.userId !== loginUser.userId) {
       log.warn('Cross-identity login detected. Purging crypto vault.');
-      purgeCryptoVault().catch(() => {});
-      purgeLocalMessages().catch(() => {});
       statelessE2eeService.clearCache();
     }
 
@@ -80,9 +76,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = () => {
-    // Purge E2EE decryption keys from IndexedDB
-    purgeCryptoVault().catch(() => {});
-    purgeLocalMessages().catch(() => {});
     statelessE2eeService.clearCache();
 
     // Purge plaintext saved notes from localStorage for vault safety
