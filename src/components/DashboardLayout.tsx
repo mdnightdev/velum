@@ -331,6 +331,7 @@ export default function DashboardLayout({
                 currentUserId={user?.userId || 0}
                 currentUsername={user?.username || 'Guest'}
                 currentUserRole={user?.role || 'USER'}
+                currentUserAvatar={user?.avatar}
                 activeRoomId={activeRoomId}
                 onRoomSelect={(rid) => { 
                   onRoomSelect(rid); 
@@ -393,6 +394,7 @@ export default function DashboardLayout({
               currentUserId={user?.userId || 0}
               currentUsername={user?.username || 'Guest'}
               currentUserRole={user?.role || 'USER'}
+              currentUserAvatar={user?.avatar}
               activeRoomId={activeRoomId}
               onRoomSelect={(rid) => { 
                 onRoomSelect(rid); 
@@ -600,7 +602,7 @@ export default function DashboardLayout({
                 lastMessages={(computedLastMessages as any) || {}}
                 loadAndShowProfileCard={handleLoadProfileCard}
                 getCountryOnly={(loc) => {
-                  if (!loc) return 'Poland';
+                  if (!loc) return '';
                   const parts = loc.split(',');
                   return parts[parts.length - 1].trim();
                 }}

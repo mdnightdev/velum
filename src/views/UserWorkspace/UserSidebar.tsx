@@ -45,12 +45,15 @@ interface UserSidebarProps {
   friendRequests?: any[];
   isSidebarExpanded?: boolean;
   onToggleExpand?: () => void;
+  currentUserAvatar?: string;
+  
 }
 
 export default function UserSidebar({
   currentUserId,
   currentUsername,
   currentUserRole,
+  currentUserAvatar: initialAvatarProp,
   activeRoomId,
   onRoomSelect,
   onLogout,
@@ -102,8 +105,18 @@ export default function UserSidebar({
   const [loungeStatusMessage, setLoungeStatusMessage] = useState('');
 
   // User Profile details
-  const [currentUserAvatar, setCurrentUserAvatar] = useState<string>('emerald');
-  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string>('');
+  const isCustom = (val?: string) =>
+    Boolean(val && (val.startsWith('http') || val.startsWith('data:') || val.startsWith('/')));
+  
+  const [currentUserAvatar, setCurrentUserAvatar] = useState<string>(() => {
+    if (!initialAvatarProp) return 'emerald';
+    return isCustom(initialAvatarProp) ? 'custom' : initialAvatarProp;
+  });
+  
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string>(() => {
+    return isCustom(initialAvatarProp) ? initialAvatarProp! : '';
+  });
+  
 
   const fetchSessionId = () => getSessionId();
   const headers = {
