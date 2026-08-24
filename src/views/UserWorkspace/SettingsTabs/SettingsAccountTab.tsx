@@ -25,6 +25,7 @@ export function SettingsAccountTab({
   setBio,
   handleFileChange,
   handleDeleteAvatar,
+  handleDeleteBanner,
   bannerPreview,
   bannerUrl,
   bannerColor,

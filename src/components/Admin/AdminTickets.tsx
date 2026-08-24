@@ -1,6 +1,7 @@
 import React from 'react';
-import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key, Send, X } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key, Send, X, Image as ImageIcon } from 'lucide-react';
 import { Ticket } from '../../types';
+import { resolveMediaUrl } from '../../utils/mediaPipeline';
 
 interface AdminTicketsProps {
   tickets: Ticket[];
@@ -386,6 +387,25 @@ export default function AdminTickets({
                         <p className="font-normal whitespace-pre-wrap font-sans">
                           {m.content}
                         </p>
+                        {m.attachments && Array.isArray(m.attachments) && m.attachments.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2 pt-1 border-t border-white-5">
+                            {m.attachments.map((att: string, aIdx: number) => (
+                              <a
+                                key={aIdx}
+                                href={resolveMediaUrl(att)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block w-20 h-20 rounded-lg overflow-hidden border border-velum-600 bg-velum-900 hover:opacity-80 transition cursor-pointer"
+                              >
+                                <img
+                                  src={resolveMediaUrl(att)}
+                                  alt="Report attachment"
+                                  className="w-full h-full object-cover"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

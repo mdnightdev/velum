@@ -160,15 +160,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (err?.name !== 'AbortError') {
           log.error('Session verification notice', { error: (err as Error).message });
         }
-        // Fall back to cached session user if server is slow or unreachable
-        const cachedUserStr = storage.getItem('velum-user');
-        if (cachedUserStr) {
+        const cachedUserRaw = storage.getItem('velum-user');
+        if (cachedUserRaw) {
           try {
-            const cachedUser = JSON.parse(cachedUserStr);
-            setUser(cachedUser);
-            setSessionId(sId);
-            setIsLoadingSession(false);
-            return;
+            const cachedUser = typeof cachedUserRaw === 'string' ? JSON.parse(cachedUserRaw) : cachedUserRaw;
+            if (cachedUser && cachedUser.userId) {
+              setUser(cachedUser);
+              setSessionId(sId);
+              setIsLoadingSession(false);
+              return;
+            }
           } catch (_) {}
         }
         setIsLoadingSession(false);

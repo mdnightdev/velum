@@ -12,14 +12,14 @@ interface StoragePolicy {
 
 // Storage policies for different data types
 const STORAGE_POLICIES: Record<string, StoragePolicy> = {
-  // Authentication - localStorage for persistence across app switches, tabs, and reloads
-  'session_token': { storageType: 'local' },
-  'velum-sessionId': { storageType: 'local' },
-  'velum_sessionId': { storageType: 'local' },
-  'velum-user': { storageType: 'local' },
-  'velum_user': { storageType: 'local' },
-  'velum-deviceId': { storageType: 'local' },
-  'auth_state': { storageType: 'local' },
+  // Authentication - sessionStorage for per-tab isolation, prevents cross-tab identity collisions and E2EE corruption
+  'session_token': { storageType: 'session' },
+  'velum-sessionId': { storageType: 'session' },
+  'velum_sessionId': { storageType: 'session' },
+  'velum-user': { storageType: 'session' },
+  'velum_user': { storageType: 'session' },
+  'velum-deviceId': { storageType: 'session' },
+  'auth_state': { storageType: 'session' },
   'oauth_state': { storageType: 'session' },
   'webauthn_challenge': { storageType: 'session' },
   
@@ -77,14 +77,22 @@ class StorageService {
     
     const storage = this.getStorage(policy);
     
+    // 7 days default TTL for persistent sessions on web/PWA (indefinite on native APK)
+    const isNative = typeof window !== 'undefined' && !!((window as any).Capacitor?.isNativePlatform?.());
+    const defaultTtl = isNative ? 0 : (policy.ttl || (policy.storageType === 'session' ? 7 * 24 * 60 * 60 * 1000 : undefined));
+
     const item = {
       value,
       timestamp: Date.now(),
-      ttl: options?.ttl || policy.ttl
+      ttl: options?.ttl || defaultTtl
     };
     
     try {
       storage.setItem(key, JSON.stringify(item));
+      // For session-isolated auth keys, mirror to localStorage for 7-day persistence across browser restarts
+      if (policy.storageType === 'session') {
+        try { localStorage.setItem(key, JSON.stringify(item)); } catch {}
+      }
     } catch (error) {
       console.error(`Storage set failed for key: ${key}`, error);
       // Handle quota exceeded
@@ -105,7 +113,14 @@ class StorageService {
     const storage = this.getStorage(policy);
     
     try {
-      const item = storage.getItem(key);
+      let item = storage.getItem(key);
+      if ((item === null || item === undefined) && policy.storageType === 'session') {
+        const localItem = localStorage.getItem(key);
+        if (localItem !== null && localItem !== undefined) {
+          try { sessionStorage.setItem(key, localItem); } catch {}
+          item = localItem;
+        }
+      }
       if (item === null || item === undefined) return null;
       
       let parsed: any;

@@ -17,7 +17,7 @@ import { useResponsiveLayout } from '../hooks/useResponsive';
 import { BadgeCheck, Terminal, Radio, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
 import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
-import { getLocalKV, setLocalKV } from '../utils/indexedDb';
+import { getLocalKV, setLocalKV, flushLoungeCache } from '../utils/indexedDb';
 
 interface DashboardLayoutProps {
   user: any;
@@ -682,13 +682,8 @@ export default function DashboardLayout({
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
                   if (res.ok) {
-                    const willBeMuted = !profileCardUser.isMuted;
-                    setProfileCardUser({...profileCardUser, isMuted: willBeMuted});
-                    if (willBeMuted) {
-                      alert(`Muted ${profileCardUser.username}. They can no longer disturb you.`);
-                    } else {
-                      alert(`Unmuted ${profileCardUser.username}.`);
-                    }
+                    const data = await res.json();
+                    setProfileCardUser((prev: any) => prev ? { ...prev, isMuted: data.isMuted } : null);
                   }
                 } catch(e) {}
               }}
@@ -700,50 +695,56 @@ export default function DashboardLayout({
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
                   if (res.ok) {
-                    const willBeBlocked = !profileCardUser.isBlocked;
-                    setProfileCardUser({...profileCardUser, isBlocked: willBeBlocked});
-                    if (willBeBlocked) {
-                      alert(`Blocked ${profileCardUser.username}. User Blocked!`);
+                    const data = await res.json();
+                    setProfileCardUser((prev: any) => prev ? { ...prev, isBlocked: data.isBlocked } : null);
+                    if (data.isBlocked) {
                       if (onRoomSelect) onRoomSelect('');
                       if (onClearChatPeer) onClearChatPeer();
-                      setActiveCategory('direct');
-                    } else {
-                      alert(`Unblocked ${profileCardUser.username}.`);
                     }
                   }
                 } catch(e) {}
               }}
               onDeleteChat={async () => {
+                const targetId = profileCardUser.userId;
+                const dmRoomId = targetId === 999 
+                  ? `dm_velum_${user.userId}`
+                  : `dm_${Math.min(user.userId, targetId)}_${Math.max(user.userId, targetId)}`;
+
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch(`/v2/user/${profileCardUser.userId}/chat`, {
+                  // 1. Hard purge from server database
+                  await fetch(`/v2/user/${targetId}/chat`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
-                  if (res.ok) {
-                    alert(`Chat with ${profileCardUser.username} Deleted!`);
-                    if (onRoomSelect) onRoomSelect('');
-                    if (onClearChatPeer) onClearChatPeer();
-                    setActiveCategory('direct');
-                  }
+
+                  // 2. Wipe local device cache for this DM room
+                  await flushLoungeCache(dmRoomId, user.userId);
+
+                  // 3. Mark deletion timestamp in localStorage
+                  try {
+                    const saved = localStorage.getItem(`velum_deleted_dms_${user.userId}`);
+                    const map = saved ? JSON.parse(saved) : {};
+                    map[targetId] = Date.now();
+                    localStorage.setItem(`velum_deleted_dms_${user.userId}`, JSON.stringify(map));
+                  } catch {}
+
+                  if (onRoomSelect) onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                  setActiveCategory('direct');
                 } catch(e) {}
                 setProfileCardUser(null);
               }}
-              onReport={async () => {
-                const reason = prompt(`Reason for reporting ${profileCardUser.username}:`);
+              onReport={async (reason?: string, attachments?: string[]) => {
                 if (!reason || !reason.trim()) return;
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch('/v2/user/report', {
+                  await fetch('/v2/user/report', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ targetUserId: profileCardUser.userId, reason: reason.trim() })
+                    body: JSON.stringify({ targetUserId: profileCardUser.userId, reason: reason.trim(), attachments: attachments || [] })
                   });
-                  if (res.ok) alert(`Report submitted for ${profileCardUser.username}.`);
-                } catch(e) {
-                  alert("Failed to report user.");
-                }
-                setProfileCardUser(null);
+                } catch(e) {}
               }}
             />
           )}

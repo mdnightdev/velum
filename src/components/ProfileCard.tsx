@@ -2,10 +2,11 @@ import React from 'react';
 import { 
   Globe, Calendar, MessageSquare, MoreVertical, Search, ShieldAlert, Ban, Trash2, 
   ChevronRight, X, ArrowLeft, AlertCircle, Bell, BellOff, ShieldCheck, Users, 
-  Lock, Unlock, Settings, LogIn, LogOut, ShieldAlert as AlertIcon
+  Lock, Unlock, Settings, LogIn, LogOut, ShieldAlert as AlertIcon, Check,
+  Paperclip, Image as ImageIcon, Loader2
 } from 'lucide-react';
 import logoSvg from '../assets/logo.svg?raw';
-import { resolveMediaUrl } from '../utils/mediaPipeline';
+import { resolveMediaUrl, streamFileDirectToCloudStorage } from '../utils/mediaPipeline';
 import { formatLastSeen } from '../utils/datetime';
 
 export type UserProfileData = {
@@ -56,7 +57,7 @@ type ProfileCardProps = {
   onMute?: () => void;
   onBlock?: () => void;
   onDeleteChat?: () => void;
-  onReport?: () => void;
+  onReport?: (reason?: string, attachments?: string[]) => void;
   onViewProfile?: () => void;
   onSearchMessages?: () => void;
   onForceRekey?: () => void;
@@ -321,12 +322,62 @@ export default function ProfileCard({
     const [isMutedLocal, setIsMutedLocal] = React.useState(!!user.isMuted);
     const [disappearingMode, setDisappearingMode] = React.useState('Off');
 
+    const [showBlockModal, setShowBlockModal] = React.useState(false);
+    const [showReportModal, setShowReportModal] = React.useState(false);
+    const [showClearModal, setShowClearModal] = React.useState(false);
+    const [selectedReportReason, setSelectedReportReason] = React.useState('Spam');
+    const [reportDetails, setReportDetails] = React.useState('');
+    const [reportAttachments, setReportAttachments] = React.useState<string[]>([]);
+    const [isUploadingAttachment, setIsUploadingAttachment] = React.useState(false);
+    const reportFileInputRef = React.useRef<HTMLInputElement | null>(null);
+    const [actionFeedback, setActionFeedback] = React.useState<string | null>(null);
+
+    const triggerFeedback = (msg: string) => {
+      setActionFeedback(msg);
+      setTimeout(() => setActionFeedback(null), 3000);
+    };
+
+    const resetReportModal = () => {
+      setShowReportModal(false);
+      setSelectedReportReason('Spam');
+      setReportDetails('');
+      setReportAttachments([]);
+      setIsUploadingAttachment(false);
+      if (reportFileInputRef.current) reportFileInputRef.current.value = '';
+    };
+
+    const handleReportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+      const file = files[0];
+      try {
+        setIsUploadingAttachment(true);
+        const url = await streamFileDirectToCloudStorage(file, 'media', file.name.split('.').pop() || 'jpg');
+        if (url) {
+          setReportAttachments(prev => [...prev, url]);
+        }
+      } catch (err) {
+        console.warn('Failed to upload report attachment:', err);
+      } finally {
+        setIsUploadingAttachment(false);
+        if (reportFileInputRef.current) reportFileInputRef.current.value = '';
+      }
+    };
+
     const statusText = user.userId === 999 
       ? 'Official System Bot' 
       : formatLastSeen(user.status || (user as any).lastSeen || (user as any).peerPresence || (user as any).last_seen || null);
 
     return (
       <div className="fixed inset-0 z-[999999] bg-[#0D1117] flex flex-col text-white animate-in fade-in slide-in-from-right duration-200 font-sans overflow-y-auto select-none">
+        {/* Toast feedback banner */}
+        {actionFeedback && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000000] px-4 py-2 bg-velum-800 border border-accent/40 rounded-full shadow-2xl text-xs font-medium text-white flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+            <Check className="w-4 h-4 text-accent" />
+            <span>{actionFeedback}</span>
+          </div>
+        )}
+
         {/* Top App Bar with Solid Background */}
         <div className="sticky top-0 z-30 flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] pb-3 bg-[#0D1117] border-b border-white-5 shrink-0">
           <button 
@@ -407,6 +458,7 @@ export default function ProfileCard({
                   if (onMute) {
                     setIsMutedLocal(!isMutedLocal);
                     onMute();
+                    triggerFeedback(isMutedLocal ? 'Unmuted notifications' : 'Muted notifications');
                   }
                 }}
                 className="flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-velum-800 border border-white-5 hover:bg-velum-750 active:scale-95 transition cursor-pointer group"
@@ -454,7 +506,9 @@ export default function ProfileCard({
               onClick={() => {
                 const modes = ['Off', '24 hours', '7 days', '90 days'];
                 const curIdx = modes.indexOf(disappearingMode);
-                setDisappearingMode(modes[(curIdx + 1) % modes.length]);
+                const nextMode = modes[(curIdx + 1) % modes.length];
+                setDisappearingMode(nextMode);
+                triggerFeedback(`Disappearing messages set to ${nextMode}`);
               }}
               className="flex items-center justify-between p-4 cursor-pointer hover:bg-white-5 transition"
             >
@@ -479,7 +533,10 @@ export default function ProfileCard({
               </div>
               <button
                 type="button"
-                onClick={() => setIsChatLocked(!isChatLocked)}
+                onClick={() => {
+                  setIsChatLocked(!isChatLocked);
+                  triggerFeedback(!isChatLocked ? 'Chat locked on this device' : 'Chat unlocked');
+                }}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
                   isChatLocked ? 'bg-accent justify-end' : 'bg-velum-700 justify-start'
                 }`}
@@ -496,7 +553,10 @@ export default function ProfileCard({
               </div>
               <button
                 type="button"
-                onClick={() => setIsFavourite(!isFavourite)}
+                onClick={() => {
+                  setIsFavourite(!isFavourite);
+                  triggerFeedback(!isFavourite ? 'Added to favourites' : 'Removed from favourites');
+                }}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
                   isFavourite ? 'bg-accent justify-end' : 'bg-velum-700 justify-start'
                 }`}
@@ -512,10 +572,7 @@ export default function ProfileCard({
             {onDeleteChat && (
               <button
                 type="button"
-                onClick={() => {
-                  onDeleteChat();
-                  onClose();
-                }}
+                onClick={() => setShowClearModal(true)}
                 className="w-full flex items-center gap-3.5 p-4 text-left hover:bg-white-5 transition cursor-pointer text-text-primary"
               >
                 <Trash2 className="w-5 h-5 text-text-secondary" />
@@ -527,7 +584,14 @@ export default function ProfileCard({
             {onBlock && (
               <button
                 type="button"
-                onClick={onBlock}
+                onClick={() => {
+                  if (user.isBlocked) {
+                    onBlock();
+                    triggerFeedback(`Unblocked ${displayName}`);
+                  } else {
+                    setShowBlockModal(true);
+                  }
+                }}
                 className="w-full flex items-center gap-3.5 p-4 text-left hover:bg-white-5 transition cursor-pointer text-alert-error"
               >
                 <Ban className="w-5 h-5 text-alert-error" />
@@ -539,7 +603,7 @@ export default function ProfileCard({
             {onReport && (
               <button
                 type="button"
-                onClick={onReport}
+                onClick={() => setShowReportModal(true)}
                 className="w-full flex items-center gap-3.5 p-4 text-left hover:bg-white-5 transition cursor-pointer text-alert-error"
               >
                 <ShieldAlert className="w-5 h-5 text-alert-error" />
@@ -548,6 +612,208 @@ export default function ProfileCard({
             )}
           </div>
         </div>
+
+        {/* Block Confirmation Modal */}
+        {showBlockModal && (
+          <div 
+            className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={() => setShowBlockModal(false)}
+          >
+            <div 
+              className="w-full max-w-sm bg-velum-850 border border-velum-600 rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-150 text-text-primary space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-white">Block {displayName}?</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Blocked contacts will no longer be able to message you. You can unblock them at any time.
+              </p>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBlockModal(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBlockModal(false);
+                    if (onBlock) onBlock();
+                    triggerFeedback(`Blocked ${displayName}`);
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-alert-error text-white hover:bg-alert-error/80 active:scale-95 transition cursor-pointer"
+                >
+                  Block
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Report Contact Modal */}
+        {showReportModal && (
+          <div 
+            className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={resetReportModal}
+          >
+            <div 
+              className="w-full max-w-sm bg-velum-850 border border-velum-600 rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-150 text-text-primary space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-white">Report {displayName}</h3>
+                <button 
+                  type="button" 
+                  onClick={resetReportModal}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-text-secondary hover:text-white hover:bg-white-5"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Select a reason for reporting this contact. A confidential support review ticket will be created.
+              </p>
+              
+              <div className="space-y-1.5 py-1">
+                {['Spam', 'Harassment or bullying', 'Impersonation', 'Scam or fraud', 'Inappropriate content'].map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setSelectedReportReason(reason)}
+                    className={`w-full flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs font-medium transition cursor-pointer text-left ${
+                      selectedReportReason === reason 
+                        ? 'bg-accent/15 border-accent text-accent' 
+                        : 'bg-velum-800 border-velum-600/60 text-text-secondary hover:text-white'
+                    }`}
+                  >
+                    <span>{reason}</span>
+                    {selectedReportReason === reason && <Check className="w-4 h-4 text-accent shrink-0" />}
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                value={reportDetails}
+                onChange={(e) => setReportDetails(e.target.value)}
+                placeholder="Additional details (optional)..."
+                rows={2}
+                className="w-full p-3 rounded-xl bg-velum-900 border border-velum-600/60 text-xs text-white placeholder-text-disabled focus:outline-none focus:border-accent resize-none"
+              />
+
+              {/* Photo attachments */}
+              <div className="space-y-2">
+                <input
+                  ref={reportFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleReportFile}
+                  className="hidden"
+                />
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-text-secondary font-medium">Evidence / Screenshots</span>
+                  <button
+                    type="button"
+                    disabled={isUploadingAttachment}
+                    onClick={() => reportFileInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 text-xs text-accent hover:underline cursor-pointer disabled:opacity-50"
+                  >
+                    {isUploadingAttachment ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Paperclip className="w-3.5 h-3.5" />
+                        <span>Attach photo</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {reportAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {reportAttachments.map((url, idx) => (
+                      <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-velum-600 bg-velum-900 group">
+                        <img src={resolveMediaUrl(url)} alt="evidence" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setReportAttachments(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/80 text-white flex items-center justify-center hover:bg-alert-error transition"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={resetReportModal}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const reasonString = reportDetails.trim() ? `${selectedReportReason}: ${reportDetails.trim()}` : selectedReportReason;
+                    const atts = [...reportAttachments];
+                    resetReportModal();
+                    if (onReport) onReport(reasonString, atts);
+                    triggerFeedback('Report submitted. Thank you.');
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-alert-error text-white hover:bg-alert-error/80 active:scale-95 transition cursor-pointer"
+                >
+                  Submit Report
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Clear Chat Confirmation Modal */}
+        {showClearModal && (
+          <div 
+            className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={() => setShowClearModal(false)}
+          >
+            <div 
+              className="w-full max-w-sm bg-velum-850 border border-velum-600 rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-150 text-text-primary space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-white">Clear chat?</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                This will delete all messages in this conversation from your device cache.
+              </p>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowClearModal(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-text-secondary hover:text-white hover:bg-white-5 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowClearModal(false);
+                    if (onDeleteChat) onDeleteChat();
+                    onClose();
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-alert-error text-white hover:bg-alert-error/80 active:scale-95 transition cursor-pointer"
+                >
+                  Clear Chat
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

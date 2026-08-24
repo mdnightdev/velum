@@ -254,7 +254,22 @@ export default function DirectMainDashboard({
         } catch {}
         return next;
       });
+
+      // 1. Wipe local cache for this DM room
       await flushLoungeCache(dmRoomId, currentUserId);
+
+      // 2. Call server to purge messages from DB
+      try {
+        const sId = getSessionId();
+        await fetch(`/v2/user/${peerId}/chat`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${sId}` }
+        });
+      } catch (err) {
+        console.warn('Server chat deletion call failed:', err);
+      }
+
+      // 3. Clear preview cache
       setDecryptedPreviews(prev => {
         const copy = { ...prev };
         delete copy[peerId];
@@ -820,11 +835,7 @@ export default function DirectMainDashboard({
               {(!newChatSearch || 'velum'.includes(newChatSearch.toLowerCase())) && (
                 <div
                   onClick={() => {
-                    setDeletedUserIds(prev => {
-                      const next = prev.filter(id => id !== 999);
-                      try { localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next)); } catch {}
-                      return next;
-                    });
+                    unDeleteContact(999);
                     if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
                     if (onMarkAsRead) onMarkAsRead('', velumRoomId);
                     setIsNewChatPickerOpen(false);

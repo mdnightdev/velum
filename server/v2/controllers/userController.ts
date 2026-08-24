@@ -235,7 +235,7 @@ export class UserController {
   async reportUser(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
 
-    const { targetUserId, reason } = req.body;
+    const { targetUserId, reason, attachments } = req.body;
     
     if (!targetUserId || !reason) {
       throw new BadRequestError('Target user ID and reason are required.');
@@ -246,16 +246,29 @@ export class UserController {
       throw new NotFoundError('Target user not found.');
     }
 
+    const trackingId = `REP-${Date.now().toString(36).toUpperCase()}`;
+    const initialMessage = {
+      sender_id: req.user.userId,
+      sender_name: req.user.username,
+      content: `User @${req.user.username} reported @${targetUser.username} (${targetUser.displayName || targetUser.username}).\n\nReason: ${reason}`,
+      attachments: Array.isArray(attachments) ? attachments : [],
+      timestamp: new Date().toISOString()
+    };
+
     // Create a support ticket for the report
     const { tickets } = await import('../db/schema/tickets.js');
     await db.insert(tickets).values({
       userId: req.user.userId,
-      subject: `User Report: ${targetUser.username}`,
-      description: `User ${req.user.username} reported ${targetUser.username} for: ${reason}`,
-      status: 'open'
+      subject: `User Report: @${targetUser.username}`,
+      description: `Reported @${targetUser.username} for: ${reason}`,
+      issueType: 'user_misconduct',
+      trackingId,
+      status: 'open',
+      credibilityScore: 90,
+      messages: [initialMessage]
     });
 
-    res.status(200).json({ message: 'User reported successfully. Support ticket created.' });
+    res.status(200).json({ success: true, trackingId, message: 'User reported successfully. Support ticket created.' });
   }
 }
 
