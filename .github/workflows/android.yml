@@ -9,33 +9,43 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: 21
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Install and Build Web
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Configure SDK Location
         run: |
-          npm install --force
-          npm run build
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Sync Capacitor
+      - name: Install Node Dependencies
+        run: npm install --force
+
+      - name: Build Web Bundle
+        run: npm run build
+
+      - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Build Release APK
+      - name: Build APKs with Gradle
         working-directory: ./android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Upload Release APK Artifact
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Velum-Release-APK
           path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
