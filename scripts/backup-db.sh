@@ -17,12 +17,12 @@ mkdir -p "$BACKUP_DIR"
 echo "Starting database backup at $(date)"
 
 # Extract database connection details from DATABASE_URL
-if [[ $DATABASE_URL =~ postgres://([^:]+):([^@]+)@([^:]+):([0-9]+)/(.+) ]]; then
-    DB_USER="${BASH_REMATCH[1]}"
-    DB_PASSWORD="${BASH_REMATCH[2]}"
-    DB_HOST="${BASH_REMATCH[3]}"
-    DB_PORT="${BASH_REMATCH[4]}"
-    DB_NAME="${BASH_REMATCH[5]}"
+if [[ $DATABASE_URL =~ (postgres|postgresql)://([^:]+):([^@]+)@([^:/]+):?([0-9]*)/([^?]+) ]]; then
+    DB_USER="${BASH_REMATCH[2]}"
+    DB_PASSWORD="${BASH_REMATCH[3]}"
+    DB_HOST="${BASH_REMATCH[4]}"
+    DB_PORT="${BASH_REMATCH[5]:-5432}"
+    DB_NAME="${BASH_REMATCH[6]}"
 else
     echo "Error: Invalid DATABASE_URL format"
     exit 1

@@ -23,7 +23,8 @@
     "secrets:generate-env": "tsx scripts/secrets-manager.ts generate-env",
     "secrets:status": "tsx scripts/secrets-manager.ts status",
     "db:backup": "bash scripts/backup-db.sh",
-    "db:restore": "bash scripts/restore-db.sh"
+    "db:restore": "bash scripts/restore-db.sh",
+    "messages:clear-legacy": "bash server/v2/scripts/clear-legacy-messages.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1090.0",
