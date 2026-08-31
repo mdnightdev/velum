@@ -134,11 +134,13 @@ export function SettingsPrivacyTab({
     }
   };
 
-  const handleAccountWipe = async () => {
-    if (!window.confirm('Are you sure you want to delete account data and reset this session?')) {
-      return;
-    }
+  // Modal confirmation states (no browser popups)
+  const [confirmCompromiseOpen, setConfirmCompromiseOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
+  const handleMarkCompromised = async () => {
+    setActionLoading(true);
     try {
       const token = getSessionToken();
       await fetch('/api/v2/auth/panic', {
@@ -149,7 +151,27 @@ export function SettingsPrivacyTab({
         }
       });
     } catch {
-      // Continue cleanup regardless
+      // Proceed with cleanup
+    } finally {
+      storage.clear();
+      window.location.reload();
+    }
+  };
+
+  const handleScheduleDeletion = async () => {
+    setActionLoading(true);
+    try {
+      const token = getSessionToken();
+      await fetch('/api/v2/user/deactivate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ reason: 'Self-deactivation' })
+      });
+    } catch {
+      // Proceed with cleanup
     } finally {
       storage.clear();
       window.location.reload();
@@ -165,7 +187,6 @@ export function SettingsPrivacyTab({
             <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-text-primary">
               Passkeys
             </h3>
-           
           </div>
           <button
             type="button"
@@ -236,7 +257,7 @@ export function SettingsPrivacyTab({
           <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-text-primary">
             Change Password
           </h3>
-          </div>
+        </div>
 
         {accountMsg && (
           <div className="p-3 bg-status-online/10 border border-status-online/20 text-status-online text-xs rounded-lg flex items-center gap-2">
@@ -297,43 +318,102 @@ export function SettingsPrivacyTab({
           </h3>
         </div>
 
-        <div className="space-y-2">
-          <div className="p-4 bg-red-500/5 rounded-xl flex items-center justify-between">
-            <span className="text-xs font-medium text-text-primary">Clear Session Data</span>
+        <div className="space-y-3">
+          <div className="p-3.5 bg-red-500/5 border border-red-500/15 rounded-xl flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-text-primary">Account Compromise</div>
+              <div className="text-[11px] text-text-secondary">Flag account and terminate active sessions</div>
+            </div>
             <button
               type="button"
-              onClick={handleAccountWipe}
+              onClick={() => setConfirmCompromiseOpen(true)}
               className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-xs font-medium transition cursor-pointer"
             >
-              Clear Data
+              Report Compromised
             </button>
           </div>
 
-          <div className="p-4 bg-red-500/10 rounded-xl flex items-center justify-between border border-red-500/20">
-            <span className="text-xs font-medium text-red-400 font-bold">Delete Account</span>
+          <div className="p-3.5 bg-red-500/5 border border-red-500/15 rounded-xl flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-text-primary">Account Deletion</div>
+              <div className="text-[11px] text-text-secondary">Schedule permanent deletion (7-day grace period)</div>
+            </div>
             <button
               type="button"
-              onClick={async () => {
-                try {
-                  const token = getSessionToken();
-                  await fetch('/v2/user/deactivate', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(token ? { Authorization: `Bearer ${token}` } : {})
-                    }
-                  });
-                } catch {}
-                storage.clear();
-                window.location.reload();
-              }}
-              className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
             >
               Delete Account
             </button>
           </div>
         </div>
       </section>
+
+      {/* Confirmation Modal - Compromised Account */}
+      {confirmCompromiseOpen && (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-velum-900 border border-white-10 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h4 className="text-sm font-semibold text-text-primary">Report Compromised Account</h4>
+            </div>
+            <p className="text-xs text-text-secondary leading-relaxed">
+              Your account will be flagged as compromised and all active sessions will be terminated immediately.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setConfirmCompromiseOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-white-5 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={handleMarkCompromised}
+                className="px-4 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? 'Flagging...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal - 7-Day Account Deletion */}
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-velum-900 border border-white-10 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h4 className="text-sm font-semibold text-text-primary">Delete Account</h4>
+            </div>
+            <p className="text-xs text-text-secondary leading-relaxed">
+              Your account will be deactivated and scheduled for permanent deletion in 7 days. You can cancel this before the deadline.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setConfirmDeleteOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-white-5 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={handleScheduleDeletion}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? 'Scheduling...' : 'Confirm Deletion'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

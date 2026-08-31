@@ -41,8 +41,14 @@ export async function handleUsersCommand(sub: string, rawArgs: string[], flags: 
         let deadlineStr = '-';
         if (u.scheduledDeletionAt) {
           const diffMs = new Date(u.scheduledDeletionAt).getTime() - Date.now();
-          const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-          deadlineStr = daysLeft > 0 ? `${daysLeft}d left` : 'Expired';
+          if (diffMs <= 0) {
+            deadlineStr = 'Expired';
+          } else {
+            const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const days = Math.floor(totalHours / 24);
+            const hours = totalHours % 24;
+            deadlineStr = days > 0 ? `${days}d ${hours}h left` : `${hours}h left`;
+          }
         }
         return {
           id: u.id,
@@ -203,8 +209,14 @@ export async function handleUsersCommand(sub: string, rawArgs: string[], flags: 
         let deadlineStr = '-';
         if (u.scheduledDeletionAt) {
           const diffMs = new Date(u.scheduledDeletionAt).getTime() - Date.now();
-          const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-          deadlineStr = daysLeft > 0 ? `${daysLeft}d left` : 'Expired';
+          if (diffMs <= 0) {
+            deadlineStr = 'Expired';
+          } else {
+            const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const days = Math.floor(totalHours / 24);
+            const hours = totalHours % 24;
+            deadlineStr = days > 0 ? `${days}d ${hours}h left` : `${hours}h left`;
+          }
         }
         return {
           id: u.id,

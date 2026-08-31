@@ -178,29 +178,53 @@ app.use('/v2/webauthn', webauthnRouter);
 app.use('/api/v2/webauthn', webauthnRouter);
 
 app.use('/v2/bank', apiLimiter, v2BankRouter);
+app.use('/api/v2/bank', apiLimiter, v2BankRouter);
+
 app.use('/v2/marketplace', apiLimiter, v2MarketRouter);
+app.use('/api/v2/marketplace', apiLimiter, v2MarketRouter);
+
 app.use('/v2/user', apiLimiter, v2UserRouter);
+app.use('/api/v2/user', apiLimiter, v2UserRouter);
+
 app.use('/v2/lounges', apiLimiter, v2LoungeRouter);
+app.use('/api/v2/lounges', apiLimiter, v2LoungeRouter);
+
 app.use('/v2', apiLimiter, messagingRouter);
+app.use('/api/v2', apiLimiter, messagingRouter);
+
 app.use('/v2', apiLimiter, mediaRouter);
 app.use('/api/v2', apiLimiter, mediaRouter);
+
 app.use('/v2', apiLimiter, cryptoRouter);
 app.use('/api/v2', apiLimiter, cryptoRouter);
+
 app.use('/v2/notifications', apiLimiter, notificationRouter);
 app.use('/api/v2/notifications', apiLimiter, notificationRouter);
+
 app.use('/v2/cards', apiLimiter, v2CardRouter);
+app.use('/api/v2/cards', apiLimiter, v2CardRouter);
+
 app.use('/v2/payments', apiLimiter, v2PaymentRouter);
+app.use('/api/v2/payments', apiLimiter, v2PaymentRouter);
+
 app.use('/v2', apiLimiter, ticketRouter);
+app.use('/api/v2', apiLimiter, ticketRouter);
+
 app.use('/v2/friends', apiLimiter, friendRouter);
+app.use('/api/v2/friends', apiLimiter, friendRouter);
+
 app.use('/v2/admin', apiLimiter, adminRouter);
+app.use('/api/v2/admin', apiLimiter, adminRouter);
+
 app.use('/v2', apiLimiter, utilityRouter);
+app.use('/api/v2', apiLimiter, utilityRouter);
 
 // Fallback for unmounted endpoints to prevent HTML responses
-app.use('/v2/*', (req, res) => {
+app.use(['/v2/*', '/api/v2/*'], (req, res) => {
   res.status(404).json({ error: 'V2 API endpoint not found or not yet implemented.' });
 });
 
-// Fallback for V1 unmounted endpoints
+// Fallback for deprecated V1 unmounted endpoints
 app.use('/api/*', (req, res) => {
   res.status(410).json({ error: 'V1 API is deprecated and has been unmounted. Please use V2 endpoints.' });
 });

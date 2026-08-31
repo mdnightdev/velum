@@ -671,14 +671,14 @@ export default function SettingsDrawer({
 
   return (
     <div className="fixed inset-0 z-[99999] flex overflow-hidden select-none font-sans">
-      {/* Backdrop with a premium blur */}
+      {/* Dark backdrop */}
       <div 
-        className="absolute inset-0 modal-backdrop transition-opacity duration-300"
+        className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-200"
         onClick={onClose}
       />
-      <div className="glass-panel w-full max-w-md ml-auto h-full bg-velum-900 border-l border-white-5 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none shadow-2xl animate-in slide-in-from-right duration-200">
+      <div className="w-full max-w-md ml-auto h-full bg-velum-900 border-l border-white-10 flex flex-col relative overflow-hidden z-10 shadow-2xl animate-in slide-in-from-right duration-200">
         
-        <div className="p-4 md:p-4 border-b border-white-5 flex items-center justify-between flex-shrink-0 bg-velum-850">
+        <div className="p-4 md:p-4 border-b border-white-10 flex items-center justify-between flex-shrink-0 bg-velum-900">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-widest text-accent font-mono">Settings</h2>
           </div>

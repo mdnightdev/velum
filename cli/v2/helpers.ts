@@ -19,12 +19,52 @@ export async function resolveUser(idOrUsername: string) {
   return userRepository.findByUsername(idOrUsername);
 }
 
-export function requireArg(rawArgs: string[], index: number, usage: string): string | null {
+export function requireArg(
+  rawArgs: string[],
+  index: number,
+  usage: string,
+  options?: {
+    type?: 'string' | 'number' | 'username' | 'id';
+    maxLength?: number;
+    minLength?: number;
+    pattern?: RegExp;
+  }
+): string | null {
   const val = rawArgs[index];
   if (!val) {
     console.log(`Usage: ${usage}`);
     return null;
   }
+
+  if (options?.type === 'number') {
+    if (isNaN(parseInt(val, 10))) {
+      console.log(`${theme.red}[ERROR] Expected numeric argument: "${val}"${theme.reset}`);
+      return null;
+    }
+  }
+
+  if (options?.maxLength && val.length > options.maxLength) {
+    console.log(`${theme.red}[ERROR] Argument too long (max ${options.maxLength} characters)${theme.reset}`);
+    return null;
+  }
+
+  if (options?.minLength && val.length < options.minLength) {
+    console.log(`${theme.red}[ERROR] Argument too short (min ${options.minLength} characters)${theme.reset}`);
+    return null;
+  }
+
+  if (options?.pattern && !options.pattern.test(val)) {
+    console.log(`${theme.red}[ERROR] Argument format invalid${theme.reset}`);
+    return null;
+  }
+
+  if (options?.type === 'username') {
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(val)) {
+      console.log(`${theme.red}[ERROR] Invalid username format${theme.reset}`);
+      return null;
+    }
+  }
+
   return val;
 }
 
