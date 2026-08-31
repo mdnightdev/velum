@@ -62,9 +62,14 @@ export class VelumV2Shell {
       this.currentPath !== '/'
         ? ` ${riskColor(nsRisk)}[${nsRisk}]${theme.reset}`
         : '';
-    process.stdout.write(
-      `${theme.cyan}velum-v2${theme.reset}:${theme.yellow}${this.currentPath}${theme.reset}${riskBadge}$ `
-    );
+    const promptStr = `${theme.cyan}velum-v2${theme.reset}:${theme.yellow}${this.currentPath}${theme.reset}${riskBadge}$ `;
+    
+    if (this.rl) {
+      this.rl.setPrompt(promptStr);
+      this.rl.prompt(true);
+    } else {
+      process.stdout.write(promptStr);
+    }
   }
 
   private parseCommandLine(line: string): { verb: string; args: string[]; flags: Record<string, any> } | null {
@@ -152,8 +157,7 @@ export class VelumV2Shell {
     }
 
     if (fullCmd === 'clear' || fullCmd === 'cls') {
-      console.clear();
-      process.stdout.write('\x1b[3J\x1b[H');
+      process.stdout.write('\x1b[2J\x1b[3J\x1b[H\x1bc');
       return;
     }
 
@@ -222,16 +226,16 @@ export class VelumV2Shell {
 
     if (fullCmd === 'ls') {
       if (this.currentPath === '/') {
-        console.log('\nAvailable Administrative Namespaces:');
-        for (const [nsPath] of Object.entries(V2_COMMAND_REGISTRY)) {
-          const maxR = namespaceMaxRisk(nsPath);
-          console.log(`  ${theme.cyan}${nsPath.padEnd(16)}${theme.reset} ${riskColor(maxR)}[${maxR}]${theme.reset}`);
+        console.log('\nNamespaces:');
+        const list = Object.keys(V2_COMMAND_REGISTRY);
+        for (let i = 0; i < list.length; i += 3) {
+          console.log('  ' + list.slice(i, i + 3).map(n => n.padEnd(20)).join(''));
         }
       } else {
-        const commands = V2_COMMAND_REGISTRY[this.currentPath] || {};
+        const commands = Object.keys(V2_COMMAND_REGISTRY[this.currentPath] || {});
         console.log(`\nCommands in ${this.currentPath}:`);
-        for (const [cmdName, meta] of Object.entries(commands)) {
-          console.log(`  ${theme.green}${cmdName.padEnd(18)}${theme.reset} ${riskColor(meta.risk)}[${meta.risk.padEnd(8)}]${theme.reset} ${meta.desc}`);
+        for (let i = 0; i < commands.length; i += 3) {
+          console.log('  ' + commands.slice(i, i + 3).map(c => c.padEnd(20)).join(''));
         }
       }
       return;
@@ -251,6 +255,21 @@ export class VelumV2Shell {
         if (rawArgs.length > 0 && sub !== 'ls' && sub !== 'help') {
           rawArgs.shift();
         }
+      }
+    } else if (this.currentPath === '/') {
+      // Direct root alias support: 'list' -> '/users list', 'wallets' -> '/bank wallets', etc.
+      if (['list', 'ls', 'cat', 'view', 'create', 'deactivate', 'cancel', 'restore', 'pending', 'purge'].includes(fullCmd)) {
+        ns = '/users';
+        sub = fullCmd;
+      } else if (['wallets', 'tx', 'wire', 'fundc', 'fundt', 'funde', 'bankf', 'bankad'].includes(fullCmd)) {
+        ns = '/bank';
+        sub = fullCmd;
+      } else if (['config', 'maint', 'main-on', 'maint-off', 'fee', 'tax', 'rate'].includes(fullCmd)) {
+        ns = '/devops';
+        sub = fullCmd;
+      } else if (['integrity', 'orphans', 'clean', 'vacuum', 'wipe'].includes(fullCmd)) {
+        ns = '/db';
+        sub = fullCmd;
       }
     }
 

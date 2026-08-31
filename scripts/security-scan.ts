@@ -18,7 +18,11 @@ let securityRedisClient: ReturnType<typeof createClient> | null = null;
 async function getSecurityRedisClient() {
   if (securityRedisClient) return securityRedisClient;
   
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const redisUrl = config.REDIS_URL || process.env.REDIS_URL;
+  if (!redisUrl) {
+    return null;
+  }
+
   securityRedisClient = createClient({ url: redisUrl });
   
   securityRedisClient.on('error', (err) => {

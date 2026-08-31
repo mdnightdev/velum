@@ -13,20 +13,29 @@ export function formatTable(
     return;
   }
 
-  // Detect terminal column width (fallback to 80 on desktop/PWA or standard terminals)
+  // Detect terminal column width
   const termWidth = process.stdout.columns || 80;
-  const isCompact = termWidth < 80;
+  if (termWidth < 70) {
+    // Narrow portrait mobile layout - print clean structured cards
+    for (const row of data) {
+      const primaryKey = columns[0]?.key || 'id';
+      const secondKey = columns[1]?.key || 'username';
+      const thirdKey = columns[2]?.key || 'role';
+      const extra = columns.slice(3).map(c => `${c.label}: ${row[c.key] ?? '-'}`).join(' • ');
+      
+      console.log(`[#${row[primaryKey] ?? '-'}] ${row[secondKey] ?? '-'} (${row[thirdKey] ?? '-'}) ${extra ? '• ' + extra : ''}`);
+    }
+    return;
+  }
 
-  // Calculate maximum content widths per column with responsive limits
+  // Calculate maximum content widths per column
   const calculatedWidths = columns.map((c) => {
-    if (c.width && !isCompact) return c.width;
+    if (c.width && termWidth >= 100) return c.width;
     const maxContentLen = Math.max(
       c.label.length,
       ...data.map((d) => String(d[c.key] ?? '-').length)
     );
-    // On small/mobile screens, cap individual columns to avoid border wrapping
-    const maxWidthCap = isCompact ? Math.max(6, Math.floor(termWidth / columns.length) - 3) : 40;
-    return Math.min(maxWidthCap, Math.max(c.label.length, maxContentLen));
+    return Math.max(c.label.length, maxContentLen);
   });
 
   const header = columns
