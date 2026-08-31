@@ -30,3 +30,5 @@ gradle-*.zip
 public/ota/*.zip
 photos/
 pgdata/
+emergency/
+*.bak

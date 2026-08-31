@@ -8,6 +8,61 @@ import { globalErrorHandler } from './utils/errors.js';
 import { requestLogger, logger } from './utils/logger.js';
 import { metricsMiddleware, metrics } from './utils/metrics.js';
 
+// Memory monitoring middleware
+const memoryMonitor = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const memoryUsage = process.memoryUsage();
+  const memoryMB = memoryUsage.heapUsed / 1024 / 1024;
+  
+  // Log warning if memory usage is high
+  if (memoryMB > 500) {
+    logger.warn('High memory usage detected', { 
+      heapUsed: `${memoryMB.toFixed(2)}MB`,
+      heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)}MB`,
+      external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)}MB`
+    });
+  }
+  
+  // Reject requests if memory is critically high
+  if (memoryMB > 800) {
+    logger.error('Critical memory usage, rejecting request', { heapUsed: `${memoryMB.toFixed(2)}MB` });
+    return res.status(503).json({ error: 'Service temporarily unavailable due to high load' });
+  }
+  
+  next();
+};
+
+// Connection queue middleware
+const activeConnections = new Map<string, number>();
+const MAX_CONCURRENT_CONNECTIONS = 200;
+
+const connectionQueue = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  const currentConnections = activeConnections.get(clientIp) || 0;
+  
+  if (currentConnections > 10) {
+    logger.warn('Too many concurrent connections from single IP', { ip: clientIp, connections: currentConnections });
+    return res.status(429).json({ error: 'Too many concurrent connections from your IP' });
+  }
+  
+  if (activeConnections.size > MAX_CONCURRENT_CONNECTIONS) {
+    logger.warn('Server at maximum connection capacity', { totalConnections: activeConnections.size });
+    return res.status(503).json({ error: 'Service temporarily unavailable due to high load' });
+  }
+  
+  activeConnections.set(clientIp, currentConnections + 1);
+  
+  res.on('finish', () => {
+    const remaining = activeConnections.get(clientIp) || 0;
+    if (remaining <= 1) {
+      activeConnections.delete(clientIp);
+    } else {
+      activeConnections.set(clientIp, remaining - 1);
+    }
+  });
+  
+  next();
+};
+
 // V2 Routes
 import { authRouter as v2AuthRouter } from './routes/authRoutes.js';
 import { duressRouter } from './routes/duressRoutes.js';
@@ -35,6 +90,8 @@ import { SystemBot } from './services/systemBot.js';
 export const app = express();
 
 app.use(metricsMiddleware);
+app.use(memoryMonitor); // Add memory monitoring
+app.use(connectionQueue); // Add connection queue management
 
 app.get('/metrics', async (_req, res) => {
   try {
@@ -47,23 +104,23 @@ app.get('/metrics', async (_req, res) => {
 
 
 // app.set('trust proxy', true);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' })); // Limit request body size to prevent large payload attacks
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Rate limiting middleware (disabled in development)
+// Rate limiting middleware (now enabled in development for testing with higher limits)
 const isDevelopment = config.NODE_ENV === 'development' || config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test';
 
-const authLimiter = isDevelopment ? (_req, res, next) => next() : rateLimit({
+const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window
+  max: isDevelopment ? 50 : 5, // Higher limit in development for testing
   message: 'Too many authentication attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false
 });
 
-const apiLimiter = isDevelopment ? (_req, res, next) => next() : rateLimit({
+const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per window
+  max: isDevelopment ? 500 : 100, // Higher limit in development for testing
   standardHeaders: true,
   legacyHeaders: false
 });

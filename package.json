@@ -28,7 +28,10 @@
     "dev:start": "bash scripts/dev-start.sh",
     "dev:stop": "bash scripts/dev-stop.sh",
     "security:scan": "tsx scripts/security-scan.ts",
-    "ddos:recovery": "bash scripts/ddos-recovery.sh"
+    "ddos:recovery": "bash scripts/ddos-recovery.sh",
+    "ddos:simulate": "bash scripts/simulate-ddos.sh",
+    "dev:resilient": "PG_MAX_POOL=100 npm run dev:start",
+    "monitor:server": "bash scripts/monitor-server.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1090.0",

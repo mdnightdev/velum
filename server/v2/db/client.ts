@@ -14,10 +14,10 @@ const dbCircuitBreaker = createCircuitBreaker(
     return await fn();
   },
   {
-    timeout: 5000,
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    rollingWindow: 10
+    timeout: 3000, // Reduced from 5000ms for faster failure detection
+    errorThresholdPercentage: 40, // More sensitive (lower threshold)
+    resetTimeout: 15000, // Faster recovery (reduced from 30000ms)
+    rollingWindow: 20 // More samples for better detection
   }
 );
 
@@ -50,9 +50,9 @@ export function getPgPool(): pg.Pool {
         rejectUnauthorized: config.NODE_ENV === 'production',
         ca: process.env.DATABASE_CA_CERT ? fs.readFileSync(process.env.DATABASE_CA_CERT) : undefined
       } : false,
-      max: Number(process.env.PG_MAX_POOL) || 20,
+      max: Number(process.env.PG_MAX_POOL) || 100, // Increased from 20 to handle higher concurrency
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 15000,
+      connectionTimeoutMillis: 10000, // Reduced from 15000ms for faster connection attempts
       maxUses: 7500,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000

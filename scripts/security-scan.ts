@@ -154,7 +154,7 @@ class SecurityScanner {
     try {
       // Check for common SQL injection patterns in recent queries
       const suspiciousQueries = await pool.query(`
-        SELECT query, calls, total_time
+        SELECT query, calls, total_exec_time
         FROM pg_stat_statements 
         WHERE query LIKE '%=%=%' 
         OR query LIKE '%1=1%'
@@ -176,7 +176,7 @@ class SecurityScanner {
 
       // Check for excessive query rates
       const highFrequencyQueries = await pool.query(`
-        SELECT query, calls, total_time, mean_time
+        SELECT query, calls, total_exec_time, mean_exec_time
         FROM pg_stat_statements 
         WHERE calls > 1000
         ORDER BY calls DESC
@@ -311,7 +311,7 @@ class SecurityScanner {
         'message_reactions', 'messages', 'outbox_events', 'push_subscriptions',
         'reports', 'support_admin_nominations', 'system_config', 'transactions',
         'user_devices', 'user_prekeys', 'user_read_cursors', 'user_unread_counts',
-        'webauthn_credentials'
+        'webauthn_credentials', 'blacklist', 'pg_stat_statements', 'pg_stat_statements_info', 'blacklist', 'pg_stat_statements', 'pg_stat_statements_info', 'blacklist', 'pg_stat_statements', 'pg_stat_statements_info'
       ];
 
       // Check for missing tables
