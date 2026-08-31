@@ -232,6 +232,13 @@ app.use('/api/*', (req, res) => {
 app.use(globalErrorHandler);
 
 export function startV2Server(port = config.PORT) {
+  // Start automated 7-day / 3-day deletion retention sweeper
+  import('./services/userDeletionService.js').then(({ UserDeletionService }) => {
+    UserDeletionService.startBackgroundSweeper();
+  }).catch((err) => {
+    logger.error('Failed to initialize UserDeletionService background sweeper:', err);
+  });
+
   return app.listen(port, () => {
     logger.info(`V2 Server started`, { port, environment: config.NODE_ENV });
   });

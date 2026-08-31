@@ -31,45 +31,43 @@ export async function handleUsersCommand(sub: string, rawArgs: string[], flags: 
     }
 
     const pageUsers = await query.orderBy(desc(users.createdAt)).limit(pageSize).offset(offset);
-    const totalCountRes = await db.select({ count: sql<number>`count(*)` }).from(users);
-    const totalCount = Number(totalCountRes[0]?.count || 0);
-    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-    console.log(`\n=== Registered Users (Page ${page}/${totalPages}, ${pageUsers.length} shown, ${totalCount} total) ===`);
     formatTable(
       pageUsers.map(u => {
-        let deadlineStr = '-';
+        let role = 'user';
+        if (u.role === 'CLI_ADMIN') role = 'cli';
+        else if (u.role === 'LOGIN_ADMIN') role = 'login';
+        else if (u.role === 'SUPPORT_ADMIN') role = 'support';
+        else if (u.role === 'ADMIN') role = 'admin';
+
+        let status = 'active';
+        if (u.scheduledDeletionAt) status = 'pending';
+        else if (u.role === 'BLOCKED') status = 'blocked';
+        else if (u.role === 'RESTRICTED') status = 'restricted';
+
+        let scheduled = '-';
         if (u.scheduledDeletionAt) {
-          const diffMs = new Date(u.scheduledDeletionAt).getTime() - Date.now();
-          if (diffMs <= 0) {
-            deadlineStr = 'Expired';
-          } else {
-            const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
-            const days = Math.floor(totalHours / 24);
-            const hours = totalHours % 24;
-            deadlineStr = days > 0 ? `${days}d ${hours}h left` : `${hours}h left`;
-          }
+          scheduled = new Date(u.scheduledDeletionAt).toISOString().replace('T', ' ').substring(0, 16);
         }
+
         return {
           id: u.id,
           username: u.username,
-          role: u.role,
-          deadline: deadlineStr,
+          role,
+          status,
+          scheduled,
           created: u.createdAt ? new Date(u.createdAt).toISOString().split('T')[0] : '-'
         };
       }),
       [
         { key: 'id', label: 'ID', width: 6 },
-        { key: 'username', label: 'Username', width: 20 },
-        { key: 'role', label: 'Role', width: 14 },
-        { key: 'deadline', label: 'Deletion Deadline', width: 18 },
-        { key: 'created', label: 'Created', width: 12 }
+        { key: 'username', label: 'USERNAME', width: 18 },
+        { key: 'role', label: 'ROLE', width: 8 },
+        { key: 'status', label: 'STATUS', width: 10 },
+        { key: 'scheduled', label: 'SCHEDULED', width: 18 },
+        { key: 'created', label: 'CREATED', width: 12 }
       ]
     );
-
-    if (page < totalPages) {
-      console.log(`${theme.dim}Tip: Use "list --page ${page + 1}" to navigate.${theme.reset}`);
-    }
     return;
   }
 
@@ -245,11 +243,42 @@ export async function handleUsersCommand(sub: string, rawArgs: string[], flags: 
       return;
     }
     try {
-      const res = await userRepository.purgeUserCompletely(user.id, 'CLI_ADMIN_PURGE');
+      const { UserDeletionService } = await import('../../../server/v2/services/userDeletionService.js');
+      const res = await UserDeletionService.executeInstantPurge(user.id, 'CLI_ADMIN_MANUAL_PURGE');
       console.log(`[OK] User ${user.username} (ID ${user.id}) permanently purged across ${res.purgedTables.length} tables.`);
       await logAudit('/users/purge', String(user.id), `Permanently purged user ${user.username}`);
     } catch (err) {
       console.log(`${theme.red}[ERROR] Failed to purge user: ${(err as Error).message}${theme.reset}`);
+    }
+    return;
+  }
+
+  if (sub === 'fraud' || sub === 'seize') {
+    const user = await requireUser(rawArgs, 'fraud <id_or_username> [reason]');
+    if (!user) return;
+    if (SYSTEM_USER_IDS.has(user.id)) {
+      console.log(`${theme.red}[ERROR] Cannot sanction core system accounts.${theme.reset}`);
+      return;
+    }
+    const reason = rawArgs.slice(1).join(' ') || 'Platform Fraud & Security Violation';
+    try {
+      const { UserDeletionService } = await import('../../../server/v2/services/userDeletionService.js');
+      const res = await UserDeletionService.executeFraudSeizure(user.id, 'CLI_ADMIN', reason);
+      console.log(`[OK] User @${user.username} marked as FRAUD_SEIZURE. Assets seized: $${res.seizedAmount.toFixed(2)}. Devices/IPs blacklisted.`);
+      await logAudit('/users/fraud', String(user.id), `Fraud seizure executed: ${reason}`);
+    } catch (err) {
+      console.log(`${theme.red}[ERROR] Failed to execute fraud seizure: ${(err as Error).message}${theme.reset}`);
+    }
+    return;
+  }
+
+  if (sub === 'sweep' || sub === 'purge-expired') {
+    try {
+      const { UserDeletionService } = await import('../../../server/v2/services/userDeletionService.js');
+      const res = await UserDeletionService.sweepExpiredDeletions();
+      console.log(`[OK] Deletion sweep completed: ${res.purgedCount} expired user(s) permanently purged.`);
+    } catch (err) {
+      console.log(`${theme.red}[ERROR] Deletion sweep failed: ${(err as Error).message}${theme.reset}`);
     }
     return;
   }

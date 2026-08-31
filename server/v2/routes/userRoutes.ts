@@ -619,25 +619,37 @@ userRouter.post('/nomination/decline', authMiddleware, async (req: Request, res:
   }
 });
 
-// POST /v2/user/deactivate - Schedule account deactivation with 7-day grace period
+// POST /v2/user/deactivate - Schedule account deactivation (Tier 1: 7-day grace period)
 userRouter.post('/deactivate', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const deletionDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    
-    await db.update(users)
-      .set({
-        role: 'DEACTIVATED',
-        scheduledDeletionAt: deletionDate,
-        updatedAt: new Date()
-      })
-      .where(eq(users.id, userId));
-
-    await userRepository.deleteAllSessionsForUser(userId);
+    const { reason = 'Self-deactivation' } = req.body || {};
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+    const result = await UserDeletionService.requestUserDeactivation(userId, String(reason));
 
     res.json({
       success: true,
-      scheduledDeletionAt: deletionDate.toISOString(),
+      scheduledDeletionAt: result.scheduledDeletionAt.toISOString(),
+      daysRemaining: 7,
+      message: 'Account scheduled for deletion in 7 days.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to schedule account deactivation.' });
+  }
+});
+
+// POST /v2/user/delete - Alias for self-deactivation request
+userRouter.post('/delete', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { reason = 'Self-deactivation' } = req.body || {};
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+    const result = await UserDeletionService.requestUserDeactivation(userId, String(reason));
+
+    res.json({
+      success: true,
+      scheduledDeletionAt: result.scheduledDeletionAt.toISOString(),
+      daysRemaining: 7,
       message: 'Account scheduled for deletion in 7 days.'
     });
   } catch (err) {

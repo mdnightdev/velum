@@ -106,12 +106,9 @@ export class VelumV2Shell {
       console.log(`No manual entry for "${ns}/${sub}".`);
       return;
     }
-    printDetail(`Manual: ${ns}/${sub}`, {
-      Description: meta.desc,
-      Risk: `${riskColor(meta.risk)}${meta.risk}${theme.reset}`,
-      Arguments: meta.args?.length ? meta.args.join(' ') : 'None',
-      Flags: meta.flags ? Object.keys(meta.flags).join(', ') : 'None'
-    });
+    console.log(`${ns}/${sub}: ${meta.desc}`);
+    if (meta.args?.length) console.log(`  Usage: ${sub} ${meta.args.join(' ')}`);
+    if (meta.flags) console.log(`  Flags: ${Object.keys(meta.flags).join(', ')}`);
   }
 
   private async confirmAction(
@@ -220,18 +217,12 @@ export class VelumV2Shell {
     }
 
     if (fullCmd === 'ls') {
-      if (this.currentPath === '/') {
-        console.log('\nNamespaces:');
-        const list = Object.keys(V2_COMMAND_REGISTRY);
-        for (let i = 0; i < list.length; i += 3) {
-          console.log('  ' + list.slice(i, i + 3).map(n => n.padEnd(20)).join(''));
-        }
-      } else {
-        const commands = Object.keys(V2_COMMAND_REGISTRY[this.currentPath] || {});
-        console.log(`\nCommands in ${this.currentPath}:`);
-        for (let i = 0; i < commands.length; i += 3) {
-          console.log('  ' + commands.slice(i, i + 3).map(c => c.padEnd(20)).join(''));
-        }
+      const items = this.currentPath === '/'
+        ? Object.keys(V2_COMMAND_REGISTRY)
+        : Object.keys(V2_COMMAND_REGISTRY[this.currentPath] || {});
+      
+      for (let i = 0; i < items.length; i += 4) {
+        console.log(items.slice(i, i + 4).map(item => item.padEnd(16)).join(''));
       }
       return;
     }

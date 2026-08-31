@@ -525,43 +525,84 @@ adminRouter.post('/broadcast', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v2/admin/users/:id/delete - Delete user (admin)
+// POST /v2/admin/users/:id/delete - Delete or schedule user deactivation based on admin tier
 adminRouter.post('/users/:id/delete', async (req: Request, res: Response) => {
   try {
     const targetUserId = parseInt(req.params.id, 10);
-    const currentUserRole = req.user!.role;
+    const currentUser = req.user!;
+    const { reason = 'Admin initiated action', forceInstant = false } = req.body || {};
     
     if (!targetUserId) {
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
     
-    const targetUser = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
-    if (!targetUser.length) {
+    const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+    if (!targetUser) {
       return res.status(404).json({ error: 'User not found.' });
     }
     
-    if (targetUser[0].role === 'CLI_ADMIN' && currentUserRole !== 'CLI_ADMIN') {
-      return res.status(403).json({ error: 'Cannot delete CLI_ADMIN users.' });
+    if (targetUser.id === 1 || targetUser.id === 2 || targetUser.id === 999) {
+      return res.status(403).json({ error: 'Cannot delete core system accounts.' });
     }
     
-    await db.transaction(async (tx) => {
-      await tx.delete(sessions).where(eq(sessions.userId, targetUserId));
-      await tx.delete(users).where(eq(users.id, targetUserId));
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+
+    // Tier 3: CLI_ADMIN or forceInstant purge (Instant 0-day)
+    if (currentUser.role === 'CLI_ADMIN' && forceInstant) {
+      const purgeRes = await UserDeletionService.executeInstantPurge(targetUserId, String(reason));
+      return res.json({
+        success: true,
+        type: 'INSTANT_PURGE',
+        purgedTables: purgeRes.purgedTables,
+        message: 'User permanently purged instantly.'
+      });
+    }
+
+    // Tier 2: LOGIN_ADMIN / Standard Admin (3-day grace period)
+    const deactRes = await UserDeletionService.scheduleAdminDeactivation(targetUserId, currentUser.userId, String(reason));
+    
+    res.json({
+      success: true,
+      type: 'SCHEDULED_DELETION',
+      scheduledDeletionAt: deactRes.scheduledDeletionAt.toISOString(),
+      daysRemaining: 3,
+      message: 'Account scheduled for deletion in 3 days.'
     });
-    
-    // Invalidate cache
-    const redis = await getRedisClient();
-    if (redis) {
-      await redis.del('users:all');
-    }
-    
-    res.json({ message: 'User deleted successfully.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user.' });
   }
 });
 
-// POST /v2/admin/users/:id/restore - Restore deleted user
+// POST /v2/admin/users/:id/fraud - Tier 4: Fraud Sanction & Asset Seizure
+adminRouter.post('/users/:id/fraud', async (req: Request, res: Response) => {
+  try {
+    const targetUserId = parseInt(req.params.id, 10);
+    const currentUser = req.user!;
+    const { reason = 'Platform Fraud & Security Violation' } = req.body || {};
+
+    if (!['CLI_ADMIN', 'LOGIN_ADMIN', 'ADMIN'].includes(currentUser.role)) {
+      return res.status(403).json({ error: 'Admin permission required.' });
+    }
+
+    if (targetUserId === 1 || targetUserId === 2 || targetUserId === 999) {
+      return res.status(403).json({ error: 'Cannot sanction core system accounts.' });
+    }
+
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+    const result = await UserDeletionService.executeFraudSeizure(targetUserId, currentUser.username, String(reason));
+
+    res.json({
+      success: true,
+      type: 'FRAUD_SEIZURE',
+      seizedAmount: result.seizedAmount,
+      message: 'User assets seized and identifiers blacklisted.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to execute fraud sanction.' });
+  }
+});
+
+// POST /v2/admin/users/:id/restore - Restore soft-deleted / pending deactivation user
 adminRouter.post('/users/:id/restore', async (req: Request, res: Response) => {
   try {
     const targetUserId = parseInt(req.params.id, 10);
@@ -569,9 +610,27 @@ adminRouter.post('/users/:id/restore', async (req: Request, res: Response) => {
     if (!targetUserId) {
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
-    
-    // Mock success - in production this would restore a soft-deleted user
-    res.json({ success: true, message: 'User restored successfully.' });
+
+    const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (targetUser.deletionInitiatedBy === 'FRAUD_SEIZURE') {
+      return res.status(403).json({ error: 'Fraud-seized accounts cannot be restored.' });
+    }
+
+    await db.update(users).set({
+      role: 'USER',
+      scheduledDeletionAt: null,
+      deletionReason: null,
+      deletionInitiatedBy: null,
+      isCompromised: false,
+      duressActive: false,
+      updatedAt: new Date()
+    }).where(eq(users.id, targetUserId));
+
+    res.json({ success: true, message: 'User restored to active status.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to restore user.' });
   }

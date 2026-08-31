@@ -107,9 +107,16 @@ export class UserRepository {
 
     await executeWithRetry(async () => {
       await db.transaction(async (tx) => {
-        // 1. Devices & Sessions & Keys
+        const { relationships } = await import('../db/schema/relationships.js');
+        const { webauthnCredentials } = await import('../db/schema/webauthn.js');
+        const { reports } = await import('../db/schema/tickets.js');
+
+        // 1. Devices & Sessions & Keys & Passkeys
         await tx.delete(sessions).where(eq(sessions.userId, userId));
         purgedTables.push('sessions');
+
+        await tx.delete(webauthnCredentials).where(eq(webauthnCredentials.userId, userId));
+        purgedTables.push('webauthn_credentials');
 
         await tx.delete(userDevices).where(eq(userDevices.userId, userId));
         purgedTables.push('user_devices');
@@ -119,6 +126,12 @@ export class UserRepository {
 
         await tx.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
         purgedTables.push('push_subscriptions');
+
+        await tx.delete(relationships).where(or(eq(relationships.userId, userId), eq(relationships.friendId, userId)));
+        purgedTables.push('relationships');
+
+        await tx.delete(reports).where(or(eq(reports.reporterId, userId), eq(reports.targetUserId, userId)));
+        purgedTables.push('reports');
 
         // 2. Chat & Lounge References
         await tx.delete(messageReactions).where(eq(messageReactions.userId, userId));
