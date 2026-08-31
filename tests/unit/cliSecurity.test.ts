@@ -110,6 +110,13 @@ describe('CLI V2 Modular & Security Verifications', () => {
     assert.strictEqual(V2_COMMAND_REGISTRY['/users']['cancel'], undefined);
     assert.ok(V2_COMMAND_REGISTRY['/users']['restore']);
     assert.ok(V2_COMMAND_REGISTRY['/users']['purge']);
+
+    assert.ok(V2_COMMAND_REGISTRY['/sanctions']['history']);
+    assert.ok(V2_COMMAND_REGISTRY['/sanctions']['flags']);
+    assert.ok(V2_COMMAND_REGISTRY['/sanctions']['blacklist']);
+    assert.strictEqual(V2_COMMAND_REGISTRY['/sanctions']['ban'], undefined);
+    assert.strictEqual(V2_COMMAND_REGISTRY['/sanctions']['mute'], undefined);
+    assert.strictEqual(V2_COMMAND_REGISTRY['/sanctions']['jail'], undefined);
   });
 
   it('instantiates the modular shell orchestrator', () => {

@@ -85,59 +85,15 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'LOW',
       args: ['[uid/username]']
     },
-    status: {
-      desc: 'Check mute, jail, or ban status',
-      risk: 'LOW',
-      args: ['<uid/username>']
-    },
-    kick: {
-      desc: 'Disconnect user session',
-      risk: 'MEDIUM',
-      args: ['<user_id>']
-    },
-    ban: {
-      desc: 'Ban user account',
-      risk: 'MEDIUM',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Reason for ban'
-      }
-    },
-    unban: {
-      desc: 'Remove ban from user account',
-      risk: 'MEDIUM',
-      args: ['<uid/username>']
-    },
-    mute: {
-      desc: 'Mute user globally',
-      risk: 'MEDIUM',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Reason for mute'
-      }
-    },
-    unmute: {
-      desc: 'Unmute user globally',
-      risk: 'MEDIUM',
-      args: ['<uid/username>']
-    },
-    jail: {
-      desc: 'Restrict user to limited channels',
-      risk: 'MEDIUM',
-      args: ['<uid/username>'],
-      flags: {
-        '--reason <reason>': 'Reason for restriction'
-      }
-    },
-    unjail: {
-      desc: 'Remove channel restriction from user',
-      risk: 'MEDIUM',
-      args: ['<uid/username>']
-    },
     flags: {
-      desc: 'Query active sanction flags across users',
+      desc: 'Query active security and moderation flags across users',
       risk: 'LOW',
       args: ['[uid/username]']
+    },
+    blacklist: {
+      desc: 'View or manage blacklisted accounts, IPs, and devices',
+      risk: 'HIGH',
+      args: ['[add|del|list]', '[type_or_id]', '[value]', '[reason]']
     }
   },
   '/tickets': {
