@@ -1,19 +1,12 @@
 #!/bin/bash
-
-# Velum Dev Environment Stopper
-# Gracefully stops local Redis daemon if running locally, without touching remote Redis
-# Strictly consumes REDIS_URL from .env file
-
 set -e
 
-# ANSI Output Styling
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Function to load .env file
 load_env() {
   local env_file="$1"
   if [ -f "$env_file" ]; then
@@ -33,8 +26,24 @@ load_env ".env"
 load_env ".env.local"
 load_env "server/v2/.env"
 
-echo -e "${YELLOW}[DEV-STOP] Stopping Velum local background services...${NC}"
+echo -e "${YELLOW}[DEV-STOP] Stopping Velum dev server and services...${NC}"
 
+# Stop Node / tsx dev server process
+pkill -f "tsx.*server/index.ts" > /dev/null 2>&1 || true
+pkill -f "vite" > /dev/null 2>&1 || true
+echo -e "${GREEN}[DEV-STOP] Dev server processes stopped.${NC}"
+
+# Stop PostgreSQL
+if command -v pg_ctl &> /dev/null; then
+  if pg_ctl -D "$PREFIX/var/lib/postgresql" status > /dev/null 2>&1; then
+    pg_ctl -D "$PREFIX/var/lib/postgresql" stop -m fast > /dev/null 2>&1 || true
+    echo -e "${GREEN}[DEV-STOP] Local PostgreSQL stopped.${NC}"
+  else
+    echo -e "${YELLOW}[DEV-STOP] Local PostgreSQL was not running.${NC}"
+  fi
+fi
+
+# Stop Redis
 if [ -n "$REDIS_URL" ] && ([[ "$REDIS_URL" =~ localhost ]] || [[ "$REDIS_URL" =~ 127\.0\.0\.1 ]]); then
   REDIS_PORT=6379
   if [[ "$REDIS_URL" =~ :([0-9]+) ]]; then
@@ -42,7 +51,7 @@ if [ -n "$REDIS_URL" ] && ([[ "$REDIS_URL" =~ localhost ]] || [[ "$REDIS_URL" =~
   fi
   
   if redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
-    redis-cli -p "$REDIS_PORT" shutdown
+    redis-cli -p "$REDIS_PORT" shutdown > /dev/null 2>&1 || true
     echo -e "${GREEN}[DEV-STOP] Local Redis daemon stopped on port ${REDIS_PORT}.${NC}"
   else
     echo -e "${YELLOW}[DEV-STOP] Local Redis was not running.${NC}"

@@ -120,16 +120,42 @@ export class UserDeletionService {
           }
         }
 
-        // 2. Fetch user devices and blacklist them
+        // 2. Fetch user devices and hardware fingerprints to blacklist device permanently
+        const { devices: devicesTable } = await import('../db/schema/devices.js');
         const userDevList = await tx.select().from(userDevices).where(eq(userDevices.userId, userId));
+        
         for (const dev of userDevList) {
+          // Blacklist device ID
           await tx.insert(blacklist).values({
             userId,
-            type: 'DEVICE',
+            type: 'DEVICE_ID',
             value: dev.deviceId,
             reason: `Fraud seizure: ${reason}`,
             bannedBy: adminName
           }).onConflictDoNothing();
+
+          // Query deep hardware fingerprint & specs
+          const [hwProfile] = await tx.select().from(devicesTable).where(eq(devicesTable.deviceId, dev.deviceId)).limit(1);
+          if (hwProfile && hwProfile.deviceFingerprint) {
+            await tx.insert(blacklist).values({
+              userId,
+              type: 'DEVICE_FINGERPRINT',
+              value: hwProfile.deviceFingerprint,
+              deviceFingerprint: hwProfile.deviceFingerprint,
+              platform: hwProfile.platform || undefined,
+              userAgent: hwProfile.userAgent || undefined,
+              hardwareSpecs: {
+                screenResolution: hwProfile.screenResolution || undefined,
+                hardwareConcurrency: hwProfile.hardwareConcurrency || undefined,
+                deviceMemory: hwProfile.deviceMemory || undefined,
+                webglVendor: hwProfile.webglVendor || undefined,
+                webglRenderer: hwProfile.webglRenderer || undefined,
+                timezone: hwProfile.timezone || undefined
+              },
+              reason: `Fraud device fingerprint ban: ${reason}`,
+              bannedBy: adminName
+            }).onConflictDoNothing();
+          }
         }
 
         // 3. Mark user role as BANNED & FRAUD_SEIZURE (retaining row for blacklist matching)

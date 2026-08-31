@@ -4,7 +4,7 @@ import { hashArgon2id, deriveKeyAsync, generateRandomToken, safeCompare, verifyA
 import { hashSessionToken } from '../middleware/auth.js';
 import { db } from '../db/client.js';
 import { tickets } from '../db/schema/tickets.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, ForbiddenError } from '../utils/errors.js';
 import type { RegisterInput, LoginInput, UpdateProfileInput } from '../schemas/auth.js';
 import { deviceFingerprintService } from '../services/deviceFingerprint.js';
@@ -205,7 +205,28 @@ export class AuthController {
     res.status(200).json({ success: true, message: 'Account successfully restored. You can now log in with your new password.' });
   }
   async register(req: Request<{}, {}, RegisterInput>, res: Response): Promise<void> {
-    const { username, password, hashedPassword, passcode, panicPhrase } = req.body;
+    const { username, password, hashedPassword, passcode, panicPhrase, deviceId, deviceFingerprint } = req.body as any;
+
+    const clientIp = getClientIp(req);
+    const userAgentStr = (req.headers['user-agent'] as string) || 'unknown-device';
+    const regFingerprint = deviceFingerprint || crypto.createHash('sha256').update(userAgentStr + clientIp).digest('hex');
+
+    // Hardware Blacklist Enforcement
+    const { blacklist } = await import('../db/schema/blacklist.js');
+    const { or, inArray } = await import('drizzle-orm');
+    
+    const blacklisted = await db.select().from(blacklist).where(
+      or(
+        eq(blacklist.value, clientIp),
+        deviceId ? eq(blacklist.value, deviceId) : sql`1=0`,
+        eq(blacklist.value, regFingerprint),
+        eq(blacklist.deviceFingerprint, regFingerprint)
+      )
+    ).limit(1);
+
+    if (blacklisted.length > 0) {
+      throw new ForbiddenError('Device or network identifier has been restricted from creating accounts.');
+    }
 
     const existingUser = await userRepository.findByUsername(username);
     if (existingUser) {
@@ -244,10 +265,6 @@ export class AuthController {
     const token = generateRandomToken(32);
     const tokenHash = hashSessionToken(token);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-    const clientIp = getClientIp(req);
-    const userAgentStr = (req.headers['user-agent'] as string) || 'unknown-device';
-    const regFingerprint = crypto.createHash('sha256').update(userAgentStr + clientIp).digest('hex');
 
     try {
       await deviceFingerprintService.recordDeviceAccess(newUser.id, regFingerprint, clientIp, {

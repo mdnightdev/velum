@@ -1,12 +1,4 @@
 #!/bin/bash
-
-# Velum Dev Environment Starter
-# 1. Loads .env configurations
-# 2. Checks & starts PostgreSQL if local service is stopped
-# 3. Checks & starts Redis if local
-# 4. Executes Drizzle schema push
-# 5. Launches development server
-
 set -e
 
 RED='\033[0;31m'
@@ -15,7 +7,6 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Function to load .env file
 load_env() {
   local env_file="$1"
   if [ -f "$env_file" ]; then
@@ -51,7 +42,9 @@ if [[ "$DATABASE_URL" =~ localhost ]] || [[ "$DATABASE_URL" =~ 127\.0\.0\.1 ]]; 
   if command -v pg_isready &> /dev/null; then
     if ! pg_isready -d "$DATABASE_URL" -q; then
       echo -e "${YELLOW}[DEV-START] Local PostgreSQL is not responding. Attempting service startup...${NC}"
-      if command -v service &> /dev/null; then
+      if command -v pg_ctl &> /dev/null; then
+        pg_ctl -D "$PREFIX/var/lib/postgresql" -l "$PREFIX/var/log/postgresql.log" start > /dev/null 2>&1 || true
+      elif command -v service &> /dev/null; then
         service postgresql start || true
       elif command -v systemctl &> /dev/null; then
         systemctl start postgresql || true
@@ -80,22 +73,19 @@ if [ -n "$REDIS_URL" ] && ([[ "$REDIS_URL" =~ localhost ]] || [[ "$REDIS_URL" =~
   if [[ "$REDIS_URL" =~ :([0-9]+) ]]; then
     REDIS_PORT="${BASH_REMATCH[1]}"
   fi
-  
+
   if redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
     echo -e "${GREEN}[DEV-START] Local Redis already active on port ${REDIS_PORT}.${NC}"
   else
-    # Resolve absolute directory path and touch logfile
     SCRIPT_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
     ABS_REDIS_DATA_DIR="${SCRIPT_ROOT_DIR}/redis-data"
     mkdir -p "$ABS_REDIS_DATA_DIR"
     touch "${ABS_REDIS_DATA_DIR}/redis.log"
 
     redis-server --port "$REDIS_PORT" --daemonize yes --dir "$ABS_REDIS_DATA_DIR" --logfile "${ABS_REDIS_DATA_DIR}/redis.log" || {
-      # Fallback without custom logfile if daemonize succeeds
       redis-server --port "$REDIS_PORT" --daemonize yes || true
     }
-    
-    # Verify Redis started
+
     for r in {1..5}; do
       if redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
         echo -e "${GREEN}[DEV-START] Local Redis started on port ${REDIS_PORT}.${NC}"
