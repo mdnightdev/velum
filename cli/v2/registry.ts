@@ -81,9 +81,9 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
   },
   '/sanctions': {
     history: {
-      desc: 'List user punishment and sanction history',
+      desc: 'Query user sanction and punishment history',
       risk: 'LOW',
-      args: ['[uid/username]']
+      args: ['<uid/username>']
     },
     flags: {
       desc: 'Query user abuse reports and risk behavior telemetry',
