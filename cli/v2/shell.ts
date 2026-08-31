@@ -31,7 +31,8 @@ export class VelumV2Shell {
   }
 
   public printPrompt(): void {
-    const promptStr = `${theme.cyan}velum${theme.reset}:${theme.yellow}${this.currentPath}${theme.reset}$ `;
+    const displayPath = this.currentPath === '/' ? '' : `:${this.currentPath.replace(/^\//, '')}`;
+const promptStr = `${theme.cyan}velum${theme.reset}${theme.yellow}${displayPath}${theme.reset}$ `;
     if (this.rl) {
       this.rl.setPrompt(promptStr);
       this.rl.prompt(true);
@@ -146,7 +147,7 @@ export class VelumV2Shell {
         ns = '/users';
       } else if (['wallets', 'tx', 'wire', 'fundc', 'fundt', 'funde', 'bankf', 'bankad'].includes(fullCmd)) {
         ns = '/bank';
-      } else if (['config', 'maint', 'main-on', 'maint-off', 'fee', 'tax', 'rate'].includes(fullCmd)) {
+      } else if (['config', 'maint', 'fee', 'tax', 'rate'].includes(fullCmd)) {
         ns = '/devops';
       } else if (['integrity', 'orphans', 'clean', 'vacuum', 'wipe'].includes(fullCmd)) {
         ns = '/db';
