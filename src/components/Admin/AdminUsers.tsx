@@ -244,7 +244,20 @@ export default function AdminUsers({
                           />
                         </div>
                         <div className="flex flex-col">
-                          <span className="font-bold">{u.username}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold">{u.username}</span>
+                            {u.scheduledDeletionAt && (
+                              <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
+                                {(() => {
+                                  const diffMs = new Date(u.scheduledDeletionAt).getTime() - Date.now();
+                                  if (diffMs <= 0) return 'Purge Pending';
+                                  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                                  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                                  return `${days}d ${hours}h left`;
+                                })()}
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[9px] font-mono text-text-secondary/50">
                             ID: #{u.id}
                           </span>

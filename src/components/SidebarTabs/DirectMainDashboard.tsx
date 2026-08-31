@@ -133,13 +133,18 @@ export default function DirectMainDashboard({
   const { t } = useLanguage();
 
   const relationshipsArray: any[] = (() => {
+    let raw: any[] = [];
     if (Array.isArray(friendRelationships)) {
-      return friendRelationships;
+      raw = friendRelationships;
+    } else if (friendRelationships && typeof friendRelationships === 'object' && 'relationships' in friendRelationships) {
+      raw = (friendRelationships as any).relationships || [];
     }
-    if (friendRelationships && typeof friendRelationships === 'object' && 'relationships' in friendRelationships) {
-      return (friendRelationships as any).relationships;
-    }
-    return [];
+    const SYSTEM_IDS = new Set([1, 2, 999]);
+    return raw.filter((r: any) => {
+      const fId = r.friendId || r.userId || r.user_id;
+      const uname = (r.username || r.displayName || '').toLowerCase();
+      return !SYSTEM_IDS.has(fId) && uname !== 'velum';
+    });
   })();
   const [searchQuery, setSearchQuery] = useState('');
   const [decryptedPreviews, setDecryptedPreviews] = useState<Record<number, string>>({});

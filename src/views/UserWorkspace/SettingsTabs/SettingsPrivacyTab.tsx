@@ -295,20 +295,43 @@ export function SettingsPrivacyTab({
           <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-red-400">
             Danger Zone
           </h3>
-         </div>
+        </div>
 
-        <div className="p-4 bg-red-500/5 rounded-xl  flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-xs font-medium text-text-primary block">DELETE ACCOUNT</span>
-           
+        <div className="space-y-2">
+          <div className="p-4 bg-red-500/5 rounded-xl flex items-center justify-between">
+            <span className="text-xs font-medium text-text-primary">Clear Session Data</span>
+            <button
+              type="button"
+              onClick={handleAccountWipe}
+              className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-xs font-medium transition cursor-pointer"
+            >
+              Clear Data
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleAccountWipe}
-            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-xs font-medium transition cursor-pointer shrink-0"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+
+          <div className="p-4 bg-red-500/10 rounded-xl flex items-center justify-between border border-red-500/20">
+            <span className="text-xs font-medium text-red-400 font-bold">Delete Account</span>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const token = getSessionToken();
+                  await fetch('/v2/user/deactivate', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    }
+                  });
+                } catch {}
+                storage.clear();
+                window.location.reload();
+              }}
+              className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+            >
+              Delete Account
+            </button>
+          </div>
         </div>
       </section>
     </div>

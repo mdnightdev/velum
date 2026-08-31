@@ -786,23 +786,6 @@ export default function SettingsDrawer({
                     );
                   })}
                 </div>
-
-                <div className="space-y-1 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      storage.clear();
-                      window.location.reload();
-                    }}
-                    className="w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer text-alert-error hover:bg-alert-error-bg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <LogOut className="w-4 h-4 shrink-0" />
-                      <span>Log Out</span>
-                    </div>
-                  </button>
-                </div>
-
               </div>
             </div>
           ) : (

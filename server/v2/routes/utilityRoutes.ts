@@ -159,3 +159,33 @@ utilityRouter.get('/ota/bundle.zip', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(zipPath);
 });
+
+utilityRouter.get('/public/system-status', async (_req, res) => {
+  try {
+    const { SystemConfigService } = await import('../services/systemConfigService.js');
+    const config = await SystemConfigService.getAll();
+    const gracePeriodEndsAt = await SystemConfigService.get('maintenance_grace_ends_at', '0');
+    res.json({
+      maintenanceMode: config.maintenanceMode,
+      gracePeriodEndsAt: parseInt(gracePeriodEndsAt, 10) || 0,
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    res.json({ maintenanceMode: false, gracePeriodEndsAt: 0, timestamp: Date.now() });
+  }
+});
+
+utilityRouter.get('/system-status', async (_req, res) => {
+  try {
+    const { SystemConfigService } = await import('../services/systemConfigService.js');
+    const config = await SystemConfigService.getAll();
+    const gracePeriodEndsAt = await SystemConfigService.get('maintenance_grace_ends_at', '0');
+    res.json({
+      maintenanceMode: config.maintenanceMode,
+      gracePeriodEndsAt: parseInt(gracePeriodEndsAt, 10) || 0,
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    res.json({ maintenanceMode: false, gracePeriodEndsAt: 0, timestamp: Date.now() });
+  }
+});

@@ -8,6 +8,9 @@ import LoadingFallback from './components/LoadingFallback';
 import { initAppearance } from './utils/appearance';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
+import { Toaster } from 'react-hot-toast';
+import MaintenanceBanner from './components/MaintenanceBanner';
+
 const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const DashboardLayout = lazy(() => import('./components/DashboardLayout'));
 const ProfileMigration = lazy(() => import('./components/ProfileMigration'));
@@ -234,6 +237,8 @@ export default function App() {
       <ErrorBoundary>
         <AuthProvider>
           <CartProvider>
+            <Toaster position="top-center" />
+            <MaintenanceBanner />
             <Suspense fallback={<LoadingFallback />}>
               <AppContent />
             </Suspense>

@@ -316,40 +316,15 @@ export default function AdminTickets({
 
             {/* Main Content Area (Split into Correspondence History Timeline, logs & details) */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0 flex flex-col">
-              {/* User Details & Trust Score */}
-              <div className="bg-velum-800 border border-white-5 p-4 rounded-xl mb-6">
-                <div className="flex flex-col sm:flex-row justify-between gap-4 font-mono text-xs">
-                  <div className="space-y-2 text-text-secondary">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">Tracking ID:</span>
-                      <span className="text-text-primary break-all">{activeTicket.tracking_id || activeTicket.tracking_id || ''}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">User:</span>
-                      <span className="text-text-primary">{activeTicket.user_id}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2 text-text-secondary sm:text-right">
-                    <div className="flex items-center sm:justify-end gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">Created:</span>
-                      <span className="text-text-primary">{new Date(activeTicket.created_at).toLocaleString()}</span>
-                    </div>
-                    <div className="flex items-center sm:justify-end gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">Trust Score:</span>
-                      <span
-                        className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
-                          activeTicket.credibility_score !== undefined && activeTicket.credibility_score >= 85
-                            ? 'bg-status-online-bg text-status-online'
-                            : 'bg-status-dnd-bg text-status-dnd'
-                        }`}
-                      >
-                        {activeTicket.credibility_score !== undefined
-                          ? `${activeTicket.credibility_score}%`
-                          : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
+              {/* Ticket Meta Details */}
+              <div className="bg-velum-800 border border-white-5 p-3.5 rounded-xl mb-4 font-mono text-xs flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-[9px] uppercase tracking-wider text-text-secondary">Tracking ID:</span>
+                  <span className="text-text-primary text-[11px] font-bold">{activeTicket.tracking_id || activeTicket.ticket_id}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-[9px] uppercase tracking-wider text-text-secondary">Opened:</span>
+                  <span className="text-text-primary text-[11px]">{new Date(activeTicket.created_at).toLocaleString()}</span>
                 </div>
               </div>
 

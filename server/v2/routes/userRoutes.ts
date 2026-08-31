@@ -307,33 +307,34 @@ userRouter.get('/:id/status', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v2/user/profile - Update user profile (frontend expects this)
+// POST /v2/user/profile - Update user profile
 userRouter.post('/profile', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
-    const { displayName, bio, avatar, location, email, phone, settings } = req.body;
+    const { displayName, bio, avatar, avatarUrl, location } = req.body;
     
-    const updateData: any = {};
-    if (displayName !== undefined) updateData.displayName = displayName;
-    if (bio !== undefined) updateData.bio = bio;
-    if (avatar !== undefined) updateData.avatarUrl = avatar;
-    if (location !== undefined) updateData.location = location;
-    if (email !== undefined) updateData.email = email;
-    if (phone !== undefined) updateData.phone = phone;
-    if (settings !== undefined) updateData.settings = settings;
+    const updateData: any = { updatedAt: new Date() };
+    if (displayName !== undefined) updateData.displayName = displayName ? String(displayName).trim() : null;
+    if (bio !== undefined) updateData.bio = bio ? String(bio).trim() : null;
+    if (avatar !== undefined || avatarUrl !== undefined) updateData.avatarUrl = avatar || avatarUrl || null;
+    if (location !== undefined) updateData.location = location ? String(location).trim() : null;
     
-    if (Object.keys(updateData).length > 0) {
-      await db.update(users).set(updateData).where(eq(users.id, currentUserId));
-    }
+    await db.update(users).set(updateData).where(eq(users.id, currentUserId));
     
     const updatedUser = await db.select().from(users).where(eq(users.id, currentUserId)).limit(1);
+    if (!updatedUser[0]) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
     
     res.json({
+      success: true,
       user: {
         userId: updatedUser[0].id,
+        id: updatedUser[0].id,
         username: updatedUser[0].username,
         displayName: updatedUser[0].displayName,
         avatar: updatedUser[0].avatarUrl,
+        avatarUrl: updatedUser[0].avatarUrl,
         bio: updatedUser[0].bio,
         location: updatedUser[0].location,
         role: updatedUser[0].role,
@@ -614,7 +615,33 @@ userRouter.post('/nomination/decline', authMiddleware, async (req: Request, res:
     
     res.json({ success: true, message: 'Nomination declined successfully.' });
   } catch (err) {
-    console.error('Failed to decline nomination:', err);
     res.status(500).json({ error: 'Failed to decline nomination.' });
   }
 });
+
+// POST /v2/user/deactivate - Schedule account deactivation with 7-day grace period
+userRouter.post('/deactivate', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const deletionDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    
+    await db.update(users)
+      .set({
+        role: 'DEACTIVATED',
+        scheduledDeletionAt: deletionDate,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    await userRepository.deleteAllSessionsForUser(userId);
+
+    res.json({
+      success: true,
+      scheduledDeletionAt: deletionDate.toISOString(),
+      message: 'Account scheduled for deletion in 7 days.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to schedule account deactivation.' });
+  }
+});
+

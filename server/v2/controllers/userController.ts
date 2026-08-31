@@ -241,34 +241,56 @@ export class UserController {
       throw new BadRequestError('Target user ID and reason are required.');
     }
 
-    const targetUser = await userRepository.findById(targetUserId);
+    const PROTECTED_SYSTEM_IDS = [1, 2, 999];
+    if (PROTECTED_SYSTEM_IDS.includes(Number(targetUserId))) {
+      throw new BadRequestError('Cannot report system staff accounts.');
+    }
+
+    const targetUser = await userRepository.findById(Number(targetUserId));
     if (!targetUser) {
       throw new NotFoundError('Target user not found.');
     }
 
-    const trackingId = `REP-${Date.now().toString(36).toUpperCase()}`;
-    const initialMessage = {
-      sender_id: req.user.userId,
-      sender_name: req.user.username,
-      content: `User @${req.user.username} reported @${targetUser.username} (${targetUser.displayName || targetUser.username}).\n\nReason: ${reason}`,
+    const { reports } = await import('../db/schema/tickets.js');
+    const { getRedisClient } = await import('../db/redis.js');
+
+    const result = await db.insert(reports).values({
+      reporterId: req.user.userId,
+      targetUserId: targetUser.id,
+      reason: String(reason).trim(),
       attachments: Array.isArray(attachments) ? attachments : [],
-      timestamp: new Date().toISOString()
-    };
+      status: 'pending',
+      type: 'user_misconduct',
+      priority: 'medium',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }).returning();
 
-    // Create a support ticket for the report
-    const { tickets } = await import('../db/schema/tickets.js');
-    await db.insert(tickets).values({
-      userId: req.user.userId,
-      subject: `User Report: @${targetUser.username}`,
-      description: `Reported @${targetUser.username} for: ${reason}`,
-      issueType: 'user_misconduct',
-      trackingId,
-      status: 'open',
-      credibilityScore: 90,
-      messages: [initialMessage]
-    });
+    const newReport = (result as any[])[0] || { id: 0, createdAt: new Date() };
 
-    res.status(200).json({ success: true, trackingId, message: 'User reported successfully. Support ticket created.' });
+    // Broadcast report event to admin channels via Redis
+    try {
+      const redis = await getRedisClient();
+      if (redis) {
+        await redis.publish('admin:reports', JSON.stringify({
+          type: 'new_report',
+          report: {
+            id: newReport.id,
+            reporterId: req.user.userId,
+            reporterUsername: req.user.username,
+            targetUserId: targetUser.id,
+            targetUsername: targetUser.username,
+            reason,
+            attachments: Array.isArray(attachments) ? attachments : [],
+            createdAt: newReport.createdAt
+          }
+        }));
+      }
+    } catch {
+      // Non-fatal if Redis broadcast fails
+    }
+
+    res.status(200).json({ success: true, reportId: newReport.id, message: 'Report submitted successfully.' });
   }
 }
 

@@ -600,7 +600,7 @@ export default function ProfileCard({
             )}
 
             {/* Report Contact */}
-            {onReport && (
+            {onReport && ![1, 2, 999].includes((user as any).userId || (user as any).id || 0) && user.username?.toLowerCase() !== 'velum' && (
               <button
                 type="button"
                 onClick={() => setShowReportModal(true)}

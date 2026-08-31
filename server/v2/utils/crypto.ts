@@ -157,3 +157,11 @@ export function getClientIp(req: any): string {
 
   return '127.0.0.1';
 }
+
+/**
+ * Hash a session token using SHA-256 for persistent database matching.
+ */
+export function hashSessionToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+

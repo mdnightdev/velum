@@ -344,6 +344,21 @@ export class AuthController {
       return;
     }
 
+    // Check if account is deactivated or restricted
+    if (user.role === 'DEACTIVATED') {
+      res.status(403).json({
+        error: 'Account is deactivated and scheduled for deletion. Please contact support or use recovery credentials to cancel deactivation.'
+      });
+      return;
+    }
+
+    if (user.role === 'BLOCKED' || user.role === 'RESTRICTED') {
+      res.status(403).json({
+        error: 'Account access has been suspended or restricted by administration.'
+      });
+      return;
+    }
+
     let isDuressTriggered = false;
     if (duressPasscode && user.passcodeHash) {
       const computedDuressHash = await hashArgon2id(duressPasscode, Buffer.from(user.salt, 'hex'));

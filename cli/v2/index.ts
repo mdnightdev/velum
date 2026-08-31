@@ -32,8 +32,7 @@ const rl = readline.createInterface({
 function printMotd(): void {
   console.log(`
 ==================================================
- Welcome to Velum V2 Secure Administrative CLI
- Engine: PostgreSQL + Drizzle ORM + Local Redis
+  Velum Administrative Console
 ==================================================
 `);
 }
@@ -87,7 +86,8 @@ async function bootstrap() {
 
       console.log('Operator session authenticated successfully.\n');
 
-      shell.start(rl);
+      shell.setReadline(rl);
+      await shell.start();
     });
   });
 }

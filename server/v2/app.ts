@@ -28,6 +28,7 @@ import { cryptoRouter } from './routes/cryptoRoutes.js';
 import { notificationRouter } from './routes/notificationRoutes.js';
 import { healthRouter } from './routes/healthRoutes.js';
 import { webauthnRouter } from './routes/webauthnRoutes.js';
+import { maintenanceMiddleware } from './middleware/maintenance.js';
 import { currencyConverter } from './services/currencyConverter.js';
 import { SystemBot } from './services/systemBot.js';
 
@@ -163,6 +164,8 @@ app.use('/api/v2/public', userPublicRouter);
 app.use('/v2', utilityRouter);
 app.use('/api/v2', utilityRouter);
 
+// Maintenance mode enforcement
+app.use(maintenanceMiddleware);
 
 // Authenticated routes with rate limiting
 app.use('/v2/auth', authLimiter, duressRouter);

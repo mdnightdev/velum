@@ -9,12 +9,14 @@ import { reserveRepository } from '../repositories/reserveRepository.js';
 
 const ADMIN_USERS = [
   {
+    id: 1,
     username: 'midnight',
     passwordEnv: 'MIDNIGHT_PASSWORD',
     role: 'CLI_ADMIN',
     displayName: 'Midnight Operator'
   },
   {
+    id: 2,
     username: 'lexie',
     passwordEnv: 'LEXIE_PASSWORD',
     role: 'LOGIN_ADMIN',
@@ -178,8 +180,8 @@ export async function ensureAdminSeeded() {
           continue;
         }
 
-        const existingUsers = await db.select().from(users).where(eq(users.username, adminUser.username)).limit(1);
-        const existing = existingUsers[0];
+        const existingUsers = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1);
+        const existing = existingUsers[0] || (await db.select().from(users).where(eq(users.username, adminUser.username)).limit(1))[0];
         
         if (!existing) {
           const salt = crypto.randomBytes(16);
@@ -187,6 +189,7 @@ export async function ensureAdminSeeded() {
           const passwordHash = await hashArgon2id(password, Buffer.from(saltHex, 'hex'));
           
           await db.insert(users).values({
+            id: adminUser.id,
             username: adminUser.username,
             passwordHash,
             salt: saltHex,
@@ -194,16 +197,16 @@ export async function ensureAdminSeeded() {
             displayName: adminUser.displayName
           });
           
-          console.log(`[AdminSeeder] Created admin user: ${adminUser.username}`);
+          console.log(`[AdminSeeder] Created admin user: ${adminUser.username} (ID: ${adminUser.id})`);
         } else {
           // Check if password needs update by re-hashing with existing salt
           const passwordHash = await hashArgon2id(password, Buffer.from(existing.salt, 'hex'));
           
           if (passwordHash !== existing.passwordHash) {
             await db.update(users).set({ passwordHash }).where(eq(users.id, existing.id));
-            console.log(`[AdminSeeder] Updated password for admin user: ${adminUser.username}`);
+            console.log(`[AdminSeeder] Updated password for admin user: ${existing.username} (ID: ${existing.id})`);
           } else {
-            console.log(`[AdminSeeder] Admin user already exists and password is current: ${adminUser.username}`);
+            console.log(`[AdminSeeder] Admin user already exists and password is current: ${existing.username} (ID: ${existing.id})`);
           }
         }
         const botUser = await db.select().from(users).where(eq(users.id, 999)).limit(1);
