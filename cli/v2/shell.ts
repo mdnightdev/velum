@@ -57,12 +57,7 @@ export class VelumV2Shell {
   }
 
   public printPrompt(): void {
-    const nsRisk = namespaceMaxRisk(this.currentPath);
-    const riskBadge =
-      this.currentPath !== '/'
-        ? ` ${riskColor(nsRisk)}[${nsRisk}]${theme.reset}`
-        : '';
-    const promptStr = `${theme.cyan}velum-v2${theme.reset}:${theme.yellow}${this.currentPath}${theme.reset}${riskBadge}$ `;
+    const promptStr = `${theme.cyan}velum${theme.reset}:${theme.yellow}${this.currentPath}${theme.reset}$ `;
     
     if (this.rl) {
       this.rl.setPrompt(promptStr);
