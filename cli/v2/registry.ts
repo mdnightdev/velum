@@ -81,19 +81,24 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
   },
   '/sanctions': {
     history: {
-      desc: 'List sanction audit history',
+      desc: 'List user punishment and sanction history',
       risk: 'LOW',
       args: ['[uid/username]']
     },
     flags: {
-      desc: 'Query active security and moderation flags across users',
+      desc: 'Query user abuse reports and risk behavior telemetry',
       risk: 'LOW',
       args: ['[uid/username]']
     },
     blacklist: {
-      desc: 'View or manage blacklisted accounts, IPs, and devices',
+      desc: 'View library or harvest user ecosystem into blacklist store',
       risk: 'HIGH',
-      args: ['[add|del|list]', '[type_or_id]', '[value]', '[reason]']
+      args: ['[uid/username]', '[reason]']
+    },
+    whitelist: {
+      desc: 'Pardon and remove an entity or user ecosystem from blacklist',
+      risk: 'HIGH',
+      args: ['<uid/username/ip/device_id>', '[reason]']
     }
   },
   '/tickets': {

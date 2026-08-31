@@ -1,9 +1,22 @@
 import { eq, desc } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { listings, escrows, type Listing, type NewListing, type Escrow, type NewEscrow } from '../db/schema/index.js';
+import { moderationService } from '../services/moderationService.js';
 
 export class MarketRepository {
   async createListing(data: NewListing, tx: any = db): Promise<Listing> {
+    const combinedContent = `${data.title} ${data.description || ''} ${data.category || ''}`;
+    const payload = moderationService.detectMaliciousPayload(combinedContent);
+    const zeroTol = moderationService.detectZeroToleranceViolation(combinedContent);
+
+    if (payload || zeroTol) {
+      const reason = payload ? `Prohibited malicious script payload: ${payload}` : `Zero-tolerance violation keyword: ${zeroTol}`;
+      if (data.sellerId) {
+        moderationService.executeInstantEcosystemBlacklist(data.sellerId, 'MALICIOUS_MARKETPLACE_LISTING', reason).catch(() => {});
+      }
+      throw new Error(`[SECURITY_REJECTED] Listing dropped and rejected: ${reason}`);
+    }
+
     const inserted = await tx.insert(listings).values(data).returning();
     return inserted[0];
   }
@@ -59,7 +72,7 @@ export class MarketRepository {
   async updateEscrowStatus(id: number, status: 'HELD' | 'RELEASED' | 'DISPUTED' | 'REFUNDED', tx: any = db): Promise<Escrow | null> {
     const updated = await tx
       .update(escrows)
-      .set({ status })
+      .set({ status, updatedAt: new Date() })
       .where(eq(escrows.id, id))
       .returning();
     return updated[0] || null;

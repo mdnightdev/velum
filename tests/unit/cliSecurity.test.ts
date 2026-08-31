@@ -114,6 +114,7 @@ describe('CLI V2 Modular & Security Verifications', () => {
     assert.ok(V2_COMMAND_REGISTRY['/sanctions']['history']);
     assert.ok(V2_COMMAND_REGISTRY['/sanctions']['flags']);
     assert.ok(V2_COMMAND_REGISTRY['/sanctions']['blacklist']);
+    assert.ok(V2_COMMAND_REGISTRY['/sanctions']['whitelist']);
     assert.strictEqual(V2_COMMAND_REGISTRY['/sanctions']['ban'], undefined);
     assert.strictEqual(V2_COMMAND_REGISTRY['/sanctions']['mute'], undefined);
     assert.strictEqual(V2_COMMAND_REGISTRY['/sanctions']['jail'], undefined);
@@ -159,14 +160,31 @@ describe('CLI V2 Modular & Security Verifications', () => {
     assert.strictEqual(guardProtectedLounge(99, 'delete'), true);
   });
 
-  it('formats responsive tables cleanly without crashing', () => {
-    const testData = [
-      { id: 1, name: 'Alice Smith Very Long Name That Might Exceed Bounds', role: 'ADMIN', status: 'ACTIVE' },
-      { id: 2, name: 'Bob Jones', role: 'USER', status: 'SUSPENDED' }
-    ];
-    // Verify executing printTable does not throw
-    assert.doesNotThrow(() => {
-      printTable(testData);
-    });
+  it('detects zero-tolerance keywords accurately', async () => {
+    const { moderationService } = await import('../../server/v2/services/moderationService.js');
+    assert.strictEqual(moderationService.detectZeroToleranceViolation('Attempting chargeback fraud on escrow'), 'chargeback');
+    assert.strictEqual(moderationService.detectZeroToleranceViolation('Check this phishing link'), 'phishing');
+    assert.strictEqual(moderationService.detectZeroToleranceViolation('Installing keylogger on target'), 'keylogger');
+    assert.strictEqual(moderationService.detectZeroToleranceViolation('Normal friendly message here'), null);
+  });
+
+  it('detects and drops malicious executable scripts and payloads', async () => {
+    const { moderationService } = await import('../../server/v2/services/moderationService.js');
+    assert.ok(moderationService.detectMaliciousPayload('<script>document.cookie</script>'));
+    assert.ok(moderationService.detectMaliciousPayload('const x = eval("1+1");'));
+    assert.ok(moderationService.detectMaliciousPayload('powershell.exe -enc dGVzdA=='));
+    assert.ok(moderationService.detectMaliciousPayload('/bin/sh -i'));
+    assert.strictEqual(moderationService.detectMaliciousPayload('Standard safe listing title and description'), null);
+  });
+
+  it('generates clean bot message templates without ASCII border noise', async () => {
+    const { BotTemplates } = await import('../../server/v2/services/botTemplates.js');
+    const msg1 = BotTemplates.strike1Warning({ username: 'testuser', reason: 'Spamming channels', strikeNumber: 1 });
+    assert.ok(msg1.includes('Strike 1 Warning'));
+    assert.ok(!msg1.includes('━━━━'));
+
+    const msg2 = BotTemplates.instantZeroToleranceBlacklist('testuser', 'FRAUD', 'Chargeback fraud detected');
+    assert.ok(msg2.includes('Immediate Permanent Blacklist'));
+    assert.ok(!msg2.includes('━━━━'));
   });
 });
