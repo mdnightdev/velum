@@ -676,8 +676,8 @@ export default function SettingsDrawer({
         className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-200"
         onClick={onClose}
       />
-      <div className="w-full max-w-md ml-auto h-full bg-velum-900 border-l border-white-10 flex flex-col relative overflow-hidden z-10 shadow-2xl animate-in slide-in-from-right duration-200">
-        
+            <div className="w-full h-full bg-velum-950 flex flex-col relative overflow-hidden z-10 animate-in fade-in duration-150">
+  
         <div className="p-4 md:p-4 border-b border-white-10 flex items-center justify-between flex-shrink-0 bg-velum-900">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-widest text-accent font-mono">Settings</h2>
@@ -692,112 +692,111 @@ export default function SettingsDrawer({
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          
-          {activeView === 'menu' ? (
-            <div className="flex-shrink-0 w-full bg-velum-850 overflow-y-auto">
-              <div className="flex flex-col p-4 gap-6">
-                
-                <div className="space-y-1">
-                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">{t('settings.account', 'Account')}</div>
-                  {[
-                    { id: 'account', label: t('settings.account', 'Account'), icon: User },
-                    { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
-                    { id: 'notifications', label: t('settings.notifications', 'Notifications'), icon: Bell }
-                  ].map((cat) => {
-                    const Icon = cat.icon;
-                    const active = activeView === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setActiveView(cat.id as SettingCategory)}
-                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                          active 
-                            ? 'bg-accent/10 text-accent' 
-                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span>{cat.label}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-text-disabled" />
-                      </button>
-                    );
-                  })}
-                </div>
+        <div className="flex-1 flex flex-col overflow-y-auto">
+              {activeView === 'menu' ? (
+                <div className="w-full max-w-2xl mx-auto p-4 md:p-6 space-y-6">
+                  
+                  {/* Account Section Card */}
+                  <div className="space-y-2">
+                    <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
+                      {t('settings.account', 'Account')}
+                    </div>
+                    <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+                      {[
+                        { id: 'account', label: t('settings.account', 'Account'), icon: User },
+                        { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
+                        { id: 'notifications', label: t('settings.notifications', 'Notifications'), icon: Bell }
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setActiveView(cat.id as SettingCategory)}
+                            className="w-full px-4 py-3.5 text-left text-sm font-medium flex items-center justify-between text-text-primary hover:bg-white-5 transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className="w-4 h-4 text-accent shrink-0" />
+                              <span>{cat.label}</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-text-disabled" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                <div className="space-y-1">
-                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">App</div>
-                  {[
-                    { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
-                    { id: 'media', label: t('settings.media', 'Media & Storage'), icon: Mic },
-                    { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
-                  ].map((cat) => {
-                    const Icon = cat.icon;
-                    const active = activeView === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setActiveView(cat.id as SettingCategory)}
-                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                          active 
-                            ? 'bg-accent/10 text-accent' 
-                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span>{cat.label}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-text-disabled" />
-                      </button>
-                    );
-                  })}
-                </div>
+                  {/* App Section Card */}
+                  <div className="space-y-2">
+                    <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
+                      App
+                    </div>
+                    <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+                      {[
+                        { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
+                        { id: 'media', label: t('settings.media', 'Media & Storage'), icon: Mic },
+                        { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setActiveView(cat.id as SettingCategory)}
+                            className="w-full px-4 py-3.5 text-left text-sm font-medium flex items-center justify-between text-text-primary hover:bg-white-5 transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className="w-4 h-4 text-accent shrink-0" />
+                              <span>{cat.label}</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-text-disabled" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                <div className="space-y-1">
-                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">More</div>
-                  {[
-                    { id: 'diagnostics', label: t('settings.diagnostics', 'Diagnostics'), icon: Activity },
-                    { id: 'about', label: t('settings.about', 'About Velum'), icon: Info }
-                  ].map((cat) => {
-                    const Icon = cat.icon;
-                    const active = activeView === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setActiveView(cat.id as SettingCategory)}
-                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                          active 
-                            ? 'bg-accent/10 text-accent' 
-                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span>{cat.label}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-text-disabled" />
-                      </button>
-                    );
-                  })}
+                  {/* More Section Card */}
+                  <div className="space-y-2">
+                    <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
+                      More
+                    </div>
+                    <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+                      {[
+                        { id: 'diagnostics', label: 'Diagnostics', icon: Activity },
+                        { id: 'about', label: 'About Velum', icon: Info }
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setActiveView(cat.id as SettingCategory)}
+                            className="w-full px-4 py-3.5 text-left text-sm font-medium flex items-center justify-between text-text-primary hover:bg-white-5 transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className="w-4 h-4 text-accent shrink-0" />
+                              <span>{cat.label}</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-text-disabled" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                 </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 bg-velum-900 p-4 overflow-y-auto">
-              <div className="mb-4 flex items-center">
+              ) : (
+              <div className="flex-1 overflow-y-auto">
+            <div className="w-full max-w-2xl mx-auto p-4 md:p-6">
+              <div className="mb-6 flex items-center">
                 <button
                   type="button"
                   onClick={() => setActiveView('menu')}
-                  className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white-5 hover:bg-white-10 text-text-secondary hover:text-text-primary transition text-xs font-mono font-semibold uppercase tracking-wider cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4 rotate-180" />
-                  <span className="text-[10px] uppercase font-bold font-mono tracking-widest">Back</span>
+                  <span>Back</span>
                 </button>
               </div>
 
@@ -885,6 +884,7 @@ export default function SettingsDrawer({
 
             {activeView === 'about' && <SettingsAboutTab />}
 
+            </div>
           </div>
           )}
         </div>

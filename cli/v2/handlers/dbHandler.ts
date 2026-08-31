@@ -1,8 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db, pool } from '../../../server/v2/db/client.js';
 import { getRedisClient } from '../../../server/v2/db/redis.js';
-import { logAudit } from '../helpers.js';
-import { printDetail } from '../table.js';
+import { logAudit, printDetail } from '../helpers.js';
 import { theme } from '../theme.js';
 
 export async function handleDbCommand(sub: string, rawArgs: string[]): Promise<void> {
@@ -39,7 +38,6 @@ export async function handleDbCommand(sub: string, rawArgs: string[]): Promise<v
       return;
     }
 
-    // CLI-001 Security Hardening: Only allow read-only SELECT / WITH / EXPLAIN queries
     const isReadOnly = /^(SELECT|WITH|EXPLAIN|SHOW)\s+/i.test(query);
     const hasForbiddenKeywords = /\b(DROP|DELETE|TRUNCATE|ALTER|GRANT|REVOKE|INSERT|UPDATE)\b/i.test(query);
 
@@ -70,7 +68,6 @@ export async function handleDbCommand(sub: string, rawArgs: string[]): Promise<v
       return;
     }
 
-    // CLI-002 Security Hardening: Whitelist safe diagnostic Redis commands only
     const allowedRedisCommands = ['PING', 'INFO', 'DBSIZE', 'CLIENT LIST', 'TIME'];
     if (!allowedRedisCommands.includes(redisCmd)) {
       console.log(`${theme.red}[SECURITY] Arbitrary Redis commands blocked. Allowed: ${allowedRedisCommands.join(', ')}${theme.reset}`);

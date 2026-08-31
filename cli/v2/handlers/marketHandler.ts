@@ -2,14 +2,12 @@ import { db } from '../../../server/v2/db/client.js';
 import { listings, escrows } from '../../../server/v2/db/schema/marketplace.js';
 import { marketRepository } from '../../../server/v2/repositories/marketRepository.js';
 import { logAudit, requireArg } from '../helpers.js';
-import { formatTable, printDetail } from '../table.js';
-import { theme } from '../theme.js';
+import { formatTable } from '../table.js';
 import { desc, eq } from 'drizzle-orm';
 
 export async function handleMarketCommand(sub: string, rawArgs: string[]): Promise<void> {
   if (sub === 'listings' || sub === 'list') {
     const list = await db.select().from(listings).orderBy(desc(listings.createdAt)).limit(50);
-    console.log(`\n=== Marketplace Listings (${list.length}) ===`);
     formatTable(
       list.map(l => ({
         id: l.id,
@@ -21,11 +19,11 @@ export async function handleMarketCommand(sub: string, rawArgs: string[]): Promi
       })),
       [
         { key: 'id', label: 'ID', width: 6 },
-        { key: 'title', label: 'Title', width: 22 },
-        { key: 'price', label: 'Price', width: 10 },
-        { key: 'seller', label: 'Seller ID', width: 10 },
-        { key: 'stock', label: 'Stock', width: 8 },
-        { key: 'category', label: 'Category', width: 14 }
+        { key: 'title', label: 'TITLE', width: 22 },
+        { key: 'price', label: 'PRICE', width: 10 },
+        { key: 'seller', label: 'SELLER ID', width: 10 },
+        { key: 'stock', label: 'STOCK', width: 8 },
+        { key: 'category', label: 'CATEGORY', width: 14 }
       ]
     );
     return;
@@ -33,7 +31,6 @@ export async function handleMarketCommand(sub: string, rawArgs: string[]): Promi
 
   if (sub === 'escrows') {
     const list = await db.select().from(escrows).orderBy(desc(escrows.createdAt)).limit(50);
-    console.log(`\n=== Active Escrow Transactions (${list.length}) ===`);
     formatTable(
       list.map(e => ({
         id: e.id,
@@ -45,11 +42,11 @@ export async function handleMarketCommand(sub: string, rawArgs: string[]): Promi
       })),
       [
         { key: 'id', label: 'ID', width: 6 },
-        { key: 'listing', label: 'Listing ID', width: 12 },
-        { key: 'amount', label: 'Amount', width: 12 },
-        { key: 'buyer', label: 'Buyer', width: 8 },
-        { key: 'seller', label: 'Seller', width: 8 },
-        { key: 'status', label: 'Status', width: 12 }
+        { key: 'listing', label: 'LISTING ID', width: 12 },
+        { key: 'amount', label: 'AMOUNT', width: 12 },
+        { key: 'buyer', label: 'BUYER', width: 8 },
+        { key: 'seller', label: 'SELLER', width: 8 },
+        { key: 'status', label: 'STATUS', width: 12 }
       ]
     );
     return;
@@ -60,12 +57,12 @@ export async function handleMarketCommand(sub: string, rawArgs: string[]): Promi
     if (!listingId) return;
     const numId = parseInt(listingId, 10);
     if (isNaN(numId)) {
-      console.log('Invalid listing ID.');
+      console.log('Listing ID must be a number.');
       return;
     }
-    await db.delete(listings).where(eq(listings.id, numId));
-    console.log(`[OK] Delisted and removed marketplace item #${numId}.`);
-    await logAudit('/market/delist', String(numId), 'Delisted marketplace item via CLI');
+    await marketRepository.deleteListing(numId);
+    console.log(`[OK] Listing #${numId} deleted.`);
+    await logAudit('/market/delist', String(numId), 'Listing removed');
     return;
   }
 

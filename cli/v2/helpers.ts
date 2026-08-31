@@ -22,49 +22,13 @@ export async function resolveUser(idOrUsername: string) {
 export function requireArg(
   rawArgs: string[],
   index: number,
-  usage: string,
-  options?: {
-    type?: 'string' | 'number' | 'username' | 'id';
-    maxLength?: number;
-    minLength?: number;
-    pattern?: RegExp;
-  }
+  usage: string
 ): string | null {
   const val = rawArgs[index];
   if (!val) {
     console.log(`Usage: ${usage}`);
     return null;
   }
-
-  if (options?.type === 'number') {
-    if (isNaN(parseInt(val, 10))) {
-      console.log(`${theme.red}[ERROR] Expected numeric argument: "${val}"${theme.reset}`);
-      return null;
-    }
-  }
-
-  if (options?.maxLength && val.length > options.maxLength) {
-    console.log(`${theme.red}[ERROR] Argument too long (max ${options.maxLength} characters)${theme.reset}`);
-    return null;
-  }
-
-  if (options?.minLength && val.length < options.minLength) {
-    console.log(`${theme.red}[ERROR] Argument too short (min ${options.minLength} characters)${theme.reset}`);
-    return null;
-  }
-
-  if (options?.pattern && !options.pattern.test(val)) {
-    console.log(`${theme.red}[ERROR] Argument format invalid${theme.reset}`);
-    return null;
-  }
-
-  if (options?.type === 'username') {
-    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(val)) {
-      console.log(`${theme.red}[ERROR] Invalid username format${theme.reset}`);
-      return null;
-    }
-  }
-
   return val;
 }
 
@@ -79,17 +43,33 @@ export async function requireUser(rawArgs: string[], usage: string) {
   return user;
 }
 
-export async function logAudit(action: string, targetId: string, reason: string) {
+export async function logAudit(action: string, targetId: string, reason: string = 'CLI V2 Action') {
   try {
     await db.insert(auditLogs).values({
-      logId: `AUDIT-CLI-${crypto.randomUUID()}`,
+      logId: `al_${crypto.randomUUID().substring(0, 8)}_audit`,
       adminId: 1,
-      adminName: 'CLI_ADMIN',
+      adminName: 'cli_admin',
       action,
       targetId: String(targetId),
       reason
     });
   } catch (err) {
     console.log(`${theme.dim}[Audit Log Warning: Failed to record trace: ${(err as Error).message}]${theme.reset}`);
+  }
+}
+
+export function printDetail(title: string, fields: Record<string, any>): void {
+  console.log(`\n=== ${title} ===`);
+  const keys = Object.keys(fields);
+  const maxKeyLen = Math.max(...keys.map((k) => k.length), 0);
+  for (const k of keys) {
+    const val = fields[k];
+    const displayVal =
+      val === null || val === undefined || val === ''
+        ? '-'
+        : val instanceof Date
+        ? val.toISOString()
+        : String(val);
+    console.log(`  ${k.padEnd(maxKeyLen)} : ${displayVal}`);
   }
 }

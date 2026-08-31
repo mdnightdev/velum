@@ -15,7 +15,6 @@ export function formatTable(
 
   const termWidth = process.stdout.columns || 80;
 
-  // Calculate maximum content widths per column, respecting terminal limits
   const calculatedWidths = columns.map((c) => {
     const maxContentLen = Math.max(
       c.label.length,
@@ -27,7 +26,6 @@ export function formatTable(
 
   const totalWidth = calculatedWidths.reduce((sum, w) => sum + w, 0) + (columns.length - 1) * 3 + 4;
   
-  // If table exceeds terminal width, scale down largest columns
   if (totalWidth > termWidth && termWidth > 40) {
     const overflow = totalWidth - termWidth;
     let reducibleCols = calculatedWidths.filter(w => w > 10).length || 1;
@@ -61,20 +59,4 @@ export function formatTable(
   }
 
   console.log(`└─${calculatedWidths.map((w) => '─'.repeat(w)).join('─┴─')}─┘`);
-}
-
-export function printDetail(title: string, fields: Record<string, any>): void {
-  console.log(`\n=== ${title} ===`);
-  const keys = Object.keys(fields);
-  const maxKeyLen = Math.max(...keys.map((k) => k.length), 0);
-  for (const k of keys) {
-    const val = fields[k];
-    const displayVal =
-      val === null || val === undefined || val === ''
-        ? '-'
-        : val instanceof Date
-        ? val.toISOString()
-        : String(val);
-    console.log(`  ${k.padEnd(maxKeyLen)} : ${displayVal}`);
-  }
 }

@@ -2,16 +2,13 @@ import { db } from '../../../server/v2/db/client.js';
 import { wallets, transactions } from '../../../server/v2/db/schema/wallets.js';
 import { reserves } from '../../../server/v2/db/schema/reserves.js';
 import { bankRepository } from '../../../server/v2/repositories/bankRepository.js';
-import { reserveRepository } from '../../../server/v2/repositories/reserveRepository.js';
-import { requireUser, requireArg, logAudit } from '../helpers.js';
-import { formatTable, printDetail } from '../table.js';
-import { theme } from '../theme.js';
+import { requireUser, logAudit, printDetail } from '../helpers.js';
+import { formatTable } from '../table.js';
 import { desc, eq, sql } from 'drizzle-orm';
 
 export async function handleBankCommand(sub: string, rawArgs: string[]): Promise<void> {
   if (sub === 'wallets' || sub === 'list') {
     const list = await db.select().from(wallets).orderBy(desc(wallets.balance)).limit(50);
-    console.log(`\n=== Active Wallets (${list.length}) ===`);
     formatTable(
       list.map(w => ({
         id: w.id,
@@ -21,10 +18,10 @@ export async function handleBankCommand(sub: string, rawArgs: string[]): Promise
         updated: w.updatedAt ? new Date(w.updatedAt).toISOString().split('T')[0] : '-'
       })),
       [
-        { key: 'id', label: 'Wallet ID', width: 12 },
-        { key: 'userId', label: 'User ID', width: 10 },
-        { key: 'balance', label: 'Balance', width: 18 },
-        { key: 'updated', label: 'Last Active', width: 14 }
+        { key: 'id', label: 'WALLET ID', width: 12 },
+        { key: 'userId', label: 'USER ID', width: 10 },
+        { key: 'balance', label: 'BALANCE', width: 18 },
+        { key: 'updated', label: 'LAST ACTIVE', width: 14 }
       ]
     );
     return;
@@ -56,10 +53,10 @@ export async function handleBankCommand(sub: string, rawArgs: string[]): Promise
           date: t.createdAt ? new Date(t.createdAt).toISOString() : '-'
         })),
         [
-          { key: 'type', label: 'Type', width: 14 },
-          { key: 'amount', label: 'Amount', width: 16 },
-          { key: 'reference', label: 'Reference', width: 20 },
-          { key: 'date', label: 'Timestamp', width: 22 }
+          { key: 'type', label: 'TYPE', width: 14 },
+          { key: 'amount', label: 'AMOUNT', width: 16 },
+          { key: 'reference', label: 'REFERENCE', width: 20 },
+          { key: 'date', label: 'TIMESTAMP', width: 22 }
         ]
       );
     }
@@ -68,7 +65,6 @@ export async function handleBankCommand(sub: string, rawArgs: string[]): Promise
 
   if (sub === 'reserves') {
     const list = await db.select().from(reserves);
-    console.log(`\n=== Platform Reserves Ledger (${list.length}) ===`);
     formatTable(
       list.map(r => ({
         id: r.id,
@@ -78,9 +74,9 @@ export async function handleBankCommand(sub: string, rawArgs: string[]): Promise
       })),
       [
         { key: 'id', label: 'ID', width: 6 },
-        { key: 'type', label: 'Reserve Pool', width: 22 },
-        { key: 'balance', label: 'Current Balance', width: 20 },
-        { key: 'updated', label: 'Last Updated', width: 22 }
+        { key: 'type', label: 'RESERVE POOL', width: 22 },
+        { key: 'balance', label: 'CURRENT BALANCE', width: 20 },
+        { key: 'updated', label: 'LAST UPDATED', width: 22 }
       ]
     );
     return;
@@ -261,5 +257,5 @@ export async function handleBankCommand(sub: string, rawArgs: string[]): Promise
     return;
   }
 
-  console.log(`Unknown command: "${sub}"`);
+  console.log(`Unknown /bank subcommand: "${sub}". Type "help" or "ls" to view commands.`);
 }

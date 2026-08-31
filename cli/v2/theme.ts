@@ -22,11 +22,12 @@ export function riskColor(risk: string): string {
 }
 
 export function namespaceMaxRisk(nsPath: string): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
+  const order = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
   const cmds = V2_COMMAND_REGISTRY[nsPath];
   if (!cmds) return 'LOW';
-  const risks = Object.values(cmds).map((c) => c.risk);
-  if (risks.includes('CRITICAL')) return 'CRITICAL';
-  if (risks.includes('HIGH')) return 'HIGH';
-  if (risks.includes('MEDIUM')) return 'MEDIUM';
-  return 'LOW';
+  let max = 0;
+  for (const meta of Object.values(cmds)) {
+    max = Math.max(max, order.indexOf(meta.risk));
+  }
+  return order[max] as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 }

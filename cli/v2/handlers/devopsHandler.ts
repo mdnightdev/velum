@@ -1,11 +1,7 @@
 import { db } from '../../../server/v2/db/client.js';
 import { systemConfig } from '../../../server/v2/db/schema/system_config.js';
-import { exchangeRates } from '../../../server/v2/db/schema/exchange_rates.js';
 import { currencyConverter } from '../../../server/v2/services/currencyConverter.js';
-import { logAudit } from '../helpers.js';
-import { printDetail } from '../table.js';
-import { theme } from '../theme.js';
-import { eq } from 'drizzle-orm';
+import { logAudit, printDetail } from '../helpers.js';
 
 export async function handleDevopsCommand(sub: string, rawArgs: string[]): Promise<void> {
   if (sub === 'status' || sub === 'config') {
@@ -31,7 +27,7 @@ export async function handleDevopsCommand(sub: string, rawArgs: string[]): Promi
   if (sub === 'maintenance' || sub === 'maint') {
     const stateArg = rawArgs[0]?.toLowerCase();
     if (!stateArg || (stateArg !== 'on' && stateArg !== 'off')) {
-      console.log('Usage: maintenance <on|off>');
+      console.log('Usage: maint <on|off>');
       return;
     }
     const isEnabled = stateArg === 'on';
@@ -129,5 +125,5 @@ export async function handleDevopsCommand(sub: string, rawArgs: string[]): Promi
     return;
   }
 
-  console.log(`Unknown command: "${sub}"`);
+  console.log(`Unknown /devops subcommand: "${sub}". Type "help" or "ls" to view commands.`);
 }

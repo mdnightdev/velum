@@ -273,41 +273,55 @@ export function SettingsPrivacyTab({
           </div>
         )}
 
-        <form onSubmit={handlePasswordReset} className="space-y-3 max-w-md">
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-text-secondary">Current Password</label>
-            <PasswordInput
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full bg-velum-750 border border-white-10 rounded-xl px-3.5 py-2.5 text-xs text-text-primary outline-none focus:border-accent"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-text-secondary">New Password</label>
-            <PasswordInput
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full bg-velum-750 border border-white-10 rounded-xl px-3.5 py-2.5 text-xs text-text-primary outline-none focus:border-accent"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-text-secondary">Confirm New Password</label>
-            <PasswordInput
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full bg-velum-750 border border-white-10 rounded-xl px-3.5 py-2.5 text-xs text-text-primary outline-none focus:border-accent"
-            />
+        <form onSubmit={handlePasswordReset} className="space-y-4">
+          <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+            <div className="p-3.5 flex flex-col gap-1 focus-within:bg-white-5/30 transition">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-text-secondary">
+                Current Password
+              </label>
+              <PasswordInput
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full bg-transparent border-none text-xs text-text-primary outline-none p-0 focus:ring-0"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <div className="p-3.5 flex flex-col gap-1 focus-within:bg-white-5/30 transition">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-text-secondary">
+                New Password
+              </label>
+              <PasswordInput
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full bg-transparent border-none text-xs text-text-primary outline-none p-0 focus:ring-0"
+                
+              />
+            </div>
+
+            <div className="p-3.5 flex flex-col gap-1 focus-within:bg-white-5/30 transition">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-text-secondary">
+                Confirm New Password
+              </label>
+              <PasswordInput
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full bg-transparent border-none text-xs text-text-primary outline-none p-0 focus:ring-0"
+               
+              />
+            </div>
           </div>
 
-          <div className="pt-2">
+          <div>
             <button
               type="submit"
-              className="px-4 py-2 bg-white-10 hover:bg-white-15 border border-white-10 text-text-primary rounded-xl text-xs font-semibold transition cursor-pointer"
+              className="px-4 py-2.5 bg-accent text-velum-950 font-semibold rounded-xl text-xs hover:opacity-90 transition cursor-pointer"
             >
               Update Password
             </button>
           </div>
         </form>
+
       </section>
 
       {/* Danger Zone */}
