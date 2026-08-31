@@ -84,9 +84,25 @@ if [ -n "$REDIS_URL" ] && ([[ "$REDIS_URL" =~ localhost ]] || [[ "$REDIS_URL" =~
   if redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
     echo -e "${GREEN}[DEV-START] Local Redis already active on port ${REDIS_PORT}.${NC}"
   else
-    mkdir -p "$REDIS_DATA_DIR"
-    redis-server --port "$REDIS_PORT" --daemonize yes --dir "$REDIS_DATA_DIR" --logfile "$REDIS_DATA_DIR/redis.log"
-    echo -e "${GREEN}[DEV-START] Local Redis started on port ${REDIS_PORT}.${NC}"
+    # Resolve absolute directory path and touch logfile
+    SCRIPT_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    ABS_REDIS_DATA_DIR="${SCRIPT_ROOT_DIR}/redis-data"
+    mkdir -p "$ABS_REDIS_DATA_DIR"
+    touch "${ABS_REDIS_DATA_DIR}/redis.log"
+
+    redis-server --port "$REDIS_PORT" --daemonize yes --dir "$ABS_REDIS_DATA_DIR" --logfile "${ABS_REDIS_DATA_DIR}/redis.log" || {
+      # Fallback without custom logfile if daemonize succeeds
+      redis-server --port "$REDIS_PORT" --daemonize yes || true
+    }
+    
+    # Verify Redis started
+    for r in {1..5}; do
+      if redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
+        echo -e "${GREEN}[DEV-START] Local Redis started on port ${REDIS_PORT}.${NC}"
+        break
+      fi
+      sleep 1
+    done
   fi
 elif [ -n "$REDIS_URL" ]; then
   echo -e "${CYAN}[DEV-START] Using remote Redis stream bus.${NC}"
