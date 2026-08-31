@@ -85,8 +85,9 @@ async function bootstrap() {
         process.exit(1);
       }
 
-      shell.setReadline(rl);
-      await shell.start();
+      console.log('Operator session authenticated successfully.\n');
+
+      shell.start(rl);
     });
   });
 }
