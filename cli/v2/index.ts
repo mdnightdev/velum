@@ -2,7 +2,7 @@ import readline from 'readline';
 import { Writable } from 'stream';
 import dotenv from 'dotenv';
 import { userRepository } from '../../server/v2/repositories/userRepository.js';
-import { verifyArgon2id } from '../../server/v2/utils/crypto.js';
+import { hashArgon2id, safeCompare } from '../../server/v2/utils/crypto.js';
 import { VelumV2Shell } from './shell.js';
 import { ensureAdminSeeded } from '../../server/v2/services/adminSeeder.js';
 
@@ -32,16 +32,21 @@ const rl = readline.createInterface({
 function printMotd(): void {
   console.log(`
 ==================================================
-  Velum Administrative Console
+ Welcome to Velum V2 Secure Administrative CLI
+ Engine: PostgreSQL + Drizzle ORM + Local Redis
 ==================================================
 `);
 }
 
+import crypto from 'node:crypto';
+
 async function bootstrap() {
+  // Seed admin users from environment variables
   await ensureAdminSeeded();
+  
   printMotd();
 
-  rl.question('velum login: ', (username) => {
+  rl.question('velum-v2 login: ', (username) => {
     mutableStdout.muted = false;
     process.stdout.write('Password: ');
     mutableStdout.muted = true;
@@ -58,9 +63,18 @@ async function bootstrap() {
         await ensureAdminSeeded();
         user = await userRepository.findByUsername(inputUsername);
       }
-
       if (user && (user.role === 'CLI_ADMIN' || user.role === 'ADMIN')) {
-        const isMatch = await verifyArgon2id(passwd, user.salt, user.passwordHash);
+        const clientHash = crypto.createHash('sha256').update(user.salt + passwd).digest('hex');
+        const computedPasswordHash = await hashArgon2id(passwd, Buffer.from(user.salt, 'hex'));
+        const computedFromClientHash = await hashArgon2id(clientHash, Buffer.from(user.salt, 'hex'));
+
+        const isMatch =
+          safeCompare(computedPasswordHash, user.passwordHash) ||
+          safeCompare('argon2id:' + computedPasswordHash, user.passwordHash) ||
+          safeCompare(computedFromClientHash, user.passwordHash) ||
+          safeCompare('argon2id:' + computedFromClientHash, user.passwordHash) ||
+          safeCompare(passwd, user.passwordHash);
+
         if (isMatch) {
           authenticated = true;
         }
@@ -73,21 +87,9 @@ async function bootstrap() {
 
       console.log('Operator session authenticated successfully.\n');
 
-      // Close login readline interface and initialize full terminal interactive session
-      rl.close();
-
-      const shellInterface = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        terminal: true,
-        completer: (line: string) => shell.getCompletions(line)
-      });
-
-      shell.setReadline(shellInterface);
-      await shell.start();
+      shell.start(rl);
     });
   });
 }
 
 bootstrap();
-

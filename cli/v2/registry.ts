@@ -293,6 +293,14 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'HIGH',
       args: ['<on|off>']
     },
+    'maint-on': {
+      desc: 'Enable platform maintenance mode',
+      risk: 'HIGH'
+    },
+    'maint-off': {
+      desc: 'Disable platform maintenance mode',
+      risk: 'MEDIUM'
+    },
     fee: {
       desc: 'Set platform transaction fee percentage',
       risk: 'HIGH',
@@ -317,6 +325,13 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       desc: 'Set credit limit configuration parameters per user tier',
       risk: 'HIGH',
       args: ['<tier_name>', '<limit_cents>']
+    },
+    'main-on': {
+      desc: 'Enable global maintenance mode (blocks non-admin actions)',
+      risk: 'HIGH',
+      flags: {
+        '--reason <reason>': 'Reason for maintenance mode'
+      }
     }
   },
   '/sys': {
