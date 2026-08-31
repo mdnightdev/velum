@@ -86,5 +86,180 @@ export async function handleBankCommand(sub: string, rawArgs: string[]): Promise
     return;
   }
 
-  console.log(`Unknown /bank subcommand: "${sub}". Type "help" or "ls" to view commands.`);
+  if (sub === 'fundc') {
+    const centsStr = rawArgs[0];
+    const desc = rawArgs.slice(1).join(' ') || 'Central bank asset funding';
+    if (!centsStr || isNaN(parseInt(centsStr, 10))) {
+      console.log('Usage: fundc <cents> [description]');
+      return;
+    }
+    const cents = parseInt(centsStr, 10);
+    await db.insert(reserves).values({
+      reserveType: 'CENTRAL_VAULT',
+      balanceCents: cents,
+      updatedAt: new Date()
+    }).onConflictDoUpdate({
+      target: reserves.reserveType,
+      set: {
+        balanceCents: sql`${reserves.balanceCents} + ${cents}`,
+        updatedAt: new Date()
+      }
+    });
+
+    const res = await db.select().from(reserves).where(eq(reserves.reserveType, 'CENTRAL_VAULT')).limit(1);
+    console.log(`[OK] Central bank funded with $${(cents / 100).toFixed(2)}. Total: $${(Number(res[0]?.balanceCents || 0) / 100).toFixed(2)} USD.`);
+    await logAudit('/bank/fundc', 'CENTRAL_VAULT', `${desc} ($${(cents / 100).toFixed(2)})`);
+    return;
+  }
+
+  if (sub === 'fundt') {
+    const centsStr = rawArgs[0];
+    const desc = rawArgs.slice(1).join(' ') || 'Member trust pool funding';
+    if (!centsStr || isNaN(parseInt(centsStr, 10))) {
+      console.log('Usage: fundt <cents> [description]');
+      return;
+    }
+    const cents = parseInt(centsStr, 10);
+    await db.insert(reserves).values({
+      reserveType: 'TRUST_POOL',
+      balanceCents: cents,
+      updatedAt: new Date()
+    }).onConflictDoUpdate({
+      target: reserves.reserveType,
+      set: {
+        balanceCents: sql`${reserves.balanceCents} + ${cents}`,
+        updatedAt: new Date()
+      }
+    });
+
+    const res = await db.select().from(reserves).where(eq(reserves.reserveType, 'TRUST_POOL')).limit(1);
+    console.log(`[OK] Member trust pool funded with $${(cents / 100).toFixed(2)}. Total: $${(Number(res[0]?.balanceCents || 0) / 100).toFixed(2)} USD.`);
+    await logAudit('/bank/fundt', 'TRUST_POOL', `${desc} ($${(cents / 100).toFixed(2)})`);
+    return;
+  }
+
+  if (sub === 'funde') {
+    const centsStr = rawArgs[0];
+    const desc = rawArgs.slice(1).join(' ') || 'Escrow liquidity reserve funding';
+    if (!centsStr || isNaN(parseInt(centsStr, 10))) {
+      console.log('Usage: funde <cents> [description]');
+      return;
+    }
+    const cents = parseInt(centsStr, 10);
+    await db.insert(reserves).values({
+      reserveType: 'ESCROW_RESERVE',
+      balanceCents: cents,
+      updatedAt: new Date()
+    }).onConflictDoUpdate({
+      target: reserves.reserveType,
+      set: {
+        balanceCents: sql`${reserves.balanceCents} + ${cents}`,
+        updatedAt: new Date()
+      }
+    });
+
+    const res = await db.select().from(reserves).where(eq(reserves.reserveType, 'ESCROW_RESERVE')).limit(1);
+    console.log(`[OK] Escrow reserve funded with $${(cents / 100).toFixed(2)}. Total: $${(Number(res[0]?.balanceCents || 0) / 100).toFixed(2)} USD.`);
+    await logAudit('/bank/funde', 'ESCROW_RESERVE', `${desc} ($${(cents / 100).toFixed(2)})`);
+    return;
+  }
+
+  if (sub === 'wire') {
+    const [fromUserArg, toUserArg, amountStr] = rawArgs;
+    if (!fromUserArg || !toUserArg || !amountStr || isNaN(parseFloat(amountStr))) {
+      console.log('Usage: wire <from_user> <to_user> <amount>');
+      return;
+    }
+    const amount = parseFloat(amountStr).toFixed(2);
+    const fromUser = await requireUser([fromUserArg], 'wire <from_user> <to_user> <amount>');
+    const toUser = await requireUser([toUserArg], 'wire <from_user> <to_user> <amount>');
+    if (!fromUser || !toUser) return;
+
+    const fromWallet = await bankRepository.findWalletByUserId(fromUser.id);
+    const toWallet = await bankRepository.findWalletByUserId(toUser.id);
+    if (!fromWallet || !toWallet) {
+      console.log('[ERROR] Wallets could not be located.');
+      return;
+    }
+
+    if (parseFloat(fromWallet.balance) < parseFloat(amount)) {
+      console.log(`[ERROR] Insufficient funds in @${fromUser.username} wallet (Balance: ${fromWallet.balance}).`);
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.update(wallets).set({
+        balance: sql`${wallets.balance} - ${amount}`,
+        updatedAt: new Date()
+      }).where(eq(wallets.id, fromWallet.id));
+
+      await tx.update(wallets).set({
+        balance: sql`${wallets.balance} + ${amount}`,
+        updatedAt: new Date()
+      }).where(eq(wallets.id, toWallet.id));
+
+      await tx.insert(transactions).values([
+        {
+          reference: `WIRE-OUT-${Date.now()}-${fromWallet.id}`,
+          walletId: fromWallet.id,
+          type: 'WIRE_OUT',
+          amount: `-${amount}`,
+          status: 'COMPLETED',
+          description: `Wire transfer to @${toUser.username}`
+        },
+        {
+          reference: `WIRE-IN-${Date.now()}-${toWallet.id}`,
+          walletId: toWallet.id,
+          type: 'WIRE_IN',
+          amount,
+          status: 'COMPLETED',
+          description: `Wire transfer from @${fromUser.username}`
+        }
+      ]);
+    });
+
+    console.log(`[OK] Wired $${amount} from @${fromUser.username} to @${toUser.username}.`);
+    await logAudit('/bank/wire', `${fromUser.id}->${toUser.id}`, `Transfer of $${amount}`);
+    return;
+  }
+
+  if (sub === 'bankad') {
+    const [targetUser, amountStr, ...reasonParts] = rawArgs;
+    if (!targetUser || !amountStr || isNaN(parseFloat(amountStr))) {
+      console.log('Usage: bankad <username/uid> <amount> [reason]');
+      return;
+    }
+    const user = await requireUser([targetUser], 'bankad <username/uid> <amount> [reason]');
+    if (!user) return;
+    const wallet = await bankRepository.findWalletByUserId(user.id);
+    if (!wallet) {
+      console.log(`[ERROR] Wallet not found for user @${user.username}.`);
+      return;
+    }
+    const amount = parseFloat(amountStr).toFixed(2);
+    const reason = reasonParts.join(' ') || 'Administrative ledger adjustment';
+
+    await db.transaction(async (tx) => {
+      await tx.update(wallets).set({
+        balance: sql`${wallets.balance} + ${amount}`,
+        updatedAt: new Date()
+      }).where(eq(wallets.id, wallet.id));
+
+      await tx.insert(transactions).values({
+        reference: `ADJ-${Date.now()}-${wallet.id}`,
+        walletId: wallet.id,
+        type: 'ADMIN_ADJUST',
+        amount,
+        status: 'COMPLETED',
+        description: reason
+      });
+    });
+
+    const updated = await bankRepository.findWalletByUserId(user.id);
+    console.log(`[OK] Adjusted wallet @${user.username} by $${amount}. New balance: $${updated?.balance} USD.`);
+    await logAudit('/bank/bankad', String(user.id), `${reason} ($${amount})`);
+    return;
+  }
+
+  console.log(`Unknown command: "${sub}"`);
 }

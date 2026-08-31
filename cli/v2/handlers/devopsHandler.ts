@@ -9,14 +9,19 @@ import { eq } from 'drizzle-orm';
 
 export async function handleDevopsCommand(sub: string, rawArgs: string[]): Promise<void> {
   if (sub === 'status' || sub === 'config') {
-    const maintRow = await db.select().from(systemConfig).where(eq(systemConfig.key, 'maintenance_mode')).limit(1);
-    const isMaint = maintRow[0]?.value === 'true' || maintRow[0]?.value === '1';
+    const configs = await db.select().from(systemConfig);
+    const configMap: Record<string, string> = {};
+    for (const c of configs) {
+      configMap[c.key] = c.value;
+    }
+
+    const isMaint = configMap['maintenance_mode'] === 'true' || configMap['maintenance_mode'] === '1';
 
     printDetail('DevOps Configuration', {
-      'Maintenance Mode': isMaint ? `${theme.red}ACTIVE${theme.reset}` : `${theme.green}DISABLED${theme.reset}`,
-      'Platform Transaction Fee': '1.5%',
-      'Transaction Tax Rate': '0.5%',
-      'Escrow Service Fee': '1.0%',
+      'Maintenance Mode': isMaint ? 'ACTIVE' : 'DISABLED',
+      'Platform Transaction Fee': `${configMap['tx_fee_percent'] || '1.5'}%`,
+      'Transaction Tax Rate': `${configMap['tax_percent'] || '0.5'}%`,
+      'Escrow Service Fee': `${configMap['escrow_fee_percent'] || '1.0'}%`,
       'Active Node Version': process.version,
       'Memory Usage (RSS)': `${(process.memoryUsage().rss / 1024 / 1024).toFixed(1)} MB`
     });
@@ -46,6 +51,66 @@ export async function handleDevopsCommand(sub: string, rawArgs: string[]): Promi
     return;
   }
 
+  if (sub === 'fee' || sub === 'set-fee') {
+    const percentStr = rawArgs[0];
+    if (!percentStr || isNaN(parseFloat(percentStr))) {
+      console.log('Usage: fee <percent>');
+      return;
+    }
+    const val = parseFloat(percentStr).toFixed(2);
+    await db.insert(systemConfig).values({
+      key: 'tx_fee_percent',
+      value: val,
+      updatedAt: new Date()
+    }).onConflictDoUpdate({
+      target: systemConfig.key,
+      set: { value: val, updatedAt: new Date() }
+    });
+    console.log(`[OK] Platform transaction fee updated to ${val}%.`);
+    await logAudit('/devops/fee', 'SYSTEM', `Transaction fee updated to ${val}%`);
+    return;
+  }
+
+  if (sub === 'tax' || sub === 'set-tax') {
+    const percentStr = rawArgs[0];
+    if (!percentStr || isNaN(parseFloat(percentStr))) {
+      console.log('Usage: tax <percent>');
+      return;
+    }
+    const val = parseFloat(percentStr).toFixed(2);
+    await db.insert(systemConfig).values({
+      key: 'tax_percent',
+      value: val,
+      updatedAt: new Date()
+    }).onConflictDoUpdate({
+      target: systemConfig.key,
+      set: { value: val, updatedAt: new Date() }
+    });
+    console.log(`[OK] Platform tax rate updated to ${val}%.`);
+    await logAudit('/devops/tax', 'SYSTEM', `Tax rate updated to ${val}%`);
+    return;
+  }
+
+  if (sub === 'escrow-fee' || sub === 'set-escrow-fee') {
+    const percentStr = rawArgs[0];
+    if (!percentStr || isNaN(parseFloat(percentStr))) {
+      console.log('Usage: escrow-fee <percent>');
+      return;
+    }
+    const val = parseFloat(percentStr).toFixed(2);
+    await db.insert(systemConfig).values({
+      key: 'escrow_fee_percent',
+      value: val,
+      updatedAt: new Date()
+    }).onConflictDoUpdate({
+      target: systemConfig.key,
+      set: { value: val, updatedAt: new Date() }
+    });
+    console.log(`[OK] Escrow service fee updated to ${val}%.`);
+    await logAudit('/devops/escrow-fee', 'SYSTEM', `Escrow fee updated to ${val}%`);
+    return;
+  }
+
   if (sub === 'rate' || sub === 'set-rate') {
     const [base, quote, valStr] = rawArgs;
     if (!base || !quote || !valStr) {
@@ -54,7 +119,7 @@ export async function handleDevopsCommand(sub: string, rawArgs: string[]): Promi
     }
     const rateVal = parseFloat(valStr);
     if (isNaN(rateVal) || rateVal <= 0) {
-      console.log(`${theme.red}[ERROR] Invalid rate value: "${valStr}"${theme.reset}`);
+      console.log(`[ERROR] Invalid rate value: "${valStr}"`);
       return;
     }
 
@@ -64,5 +129,5 @@ export async function handleDevopsCommand(sub: string, rawArgs: string[]): Promi
     return;
   }
 
-  console.log(`Unknown /devops subcommand: "${sub}". Type "help" or "ls" to view commands.`);
+  console.log(`Unknown command: "${sub}"`);
 }
