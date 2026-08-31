@@ -3,6 +3,7 @@ import { eq, desc, sql, and, or, isNotNull } from 'drizzle-orm';
 import { db } from '../../../server/v2/db/client.js';
 import { users, supportAdminNominations } from '../../../server/v2/db/schema/users.js';
 import { wallets } from '../../../server/v2/db/schema/wallets.js';
+import { devices, userDevices, ipAddresses } from '../../../server/v2/db/schema/devices.js';
 import { auditLogs } from '../../../server/v2/db/schema/audit_logs.js';
 import { userRepository } from '../../../server/v2/repositories/userRepository.js';
 import { bankRepository } from '../../../server/v2/repositories/bankRepository.js';
@@ -75,7 +76,22 @@ export async function handleUsersCommand(sub: string, rawArgs: string[], flags: 
     const user = await requireUser(rawArgs, 'view <id_or_username>');
     if (!user) return;
     const wallet = await bankRepository.findWalletByUserId(user.id);
-    printDetail('User Profile & Security State', {
+
+    const userIps = await db.select().from(ipAddresses).where(eq(ipAddresses.userId, user.id)).orderBy(desc(ipAddresses.lastSeen)).limit(5);
+    const userDevs = await db.select({
+      deviceId: userDevices.deviceId,
+      platform: devices.platform,
+      userAgent: devices.userAgent,
+      lastSeen: userDevices.lastSeen,
+      isCurrent: userDevices.isCurrent
+    })
+    .from(userDevices)
+    .leftJoin(devices, eq(userDevices.deviceId, devices.deviceId))
+    .where(eq(userDevices.userId, user.id))
+    .orderBy(desc(userDevices.lastSeen))
+    .limit(5);
+
+    printDetail(`User Profile & Security State: @${user.username}`, {
       ID: user.id,
       Username: user.username,
       'Display Name': user.displayName || '-',
@@ -84,6 +100,8 @@ export async function handleUsersCommand(sub: string, rawArgs: string[], flags: 
       'Wallet Balance': wallet ? `${wallet.balance} ${wallet.currency}` : '0.00 USD',
       Compromised: user.isCompromised ? 'YES' : 'NO',
       'Duress Active': user.duressActive ? 'YES' : 'NO',
+      'Recent IPs': userIps.length > 0 ? userIps.map(i => i.ipAddress).join(', ') : 'None recorded',
+      'Associated Devices': userDevs.length > 0 ? userDevs.map(d => `${d.platform || 'Unknown'} (${d.deviceId.substring(0, 8)}...)`).join(', ') : 'None recorded',
       'Scheduled Deletion': user.scheduledDeletionAt ? new Date(user.scheduledDeletionAt).toISOString() : 'None',
       'Created At': user.createdAt ? new Date(user.createdAt).toISOString() : '-'
     });
