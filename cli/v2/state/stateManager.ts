@@ -116,6 +116,11 @@ export class StateManager {
   }
 
   public async setMaintenanceMode(enabled: boolean): Promise<void> {
+    // Idempotent: If enabling when already active with ongoing countdown, preserve existing timestamp
+    if (enabled && this.maintenanceMode && this.maintenanceGraceEndsAt > Date.now()) {
+      return;
+    }
+
     this.maintenanceMode = enabled;
     if (this.maintenanceTimer) {
       clearTimeout(this.maintenanceTimer);
