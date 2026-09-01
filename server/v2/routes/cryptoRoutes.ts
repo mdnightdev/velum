@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { auth } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import {
   publishPrekeyBundle,
@@ -9,21 +9,6 @@ import {
 import { db } from '../db/client.js';
 import { userPrekeys } from '../db/schema/keys.js';
 import { eq } from 'drizzle-orm';
-
-const auth = createAuthMiddleware(async (hashedToken) => {
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
 
 export const cryptoRouter = Router();
 

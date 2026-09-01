@@ -1,31 +1,14 @@
 import { Router } from 'express';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { tickets, Ticket, reports } from '../db/schema/tickets.js';
 import { eq, desc } from 'drizzle-orm';
 import { getRedisClient } from '../db/redis.js';
 import type { Request, Response } from 'express';
-
-export const ticketRouter = Router();
-
 import { generateRandomToken } from '../utils/crypto.js';
 
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
+export const ticketRouter = Router();
 
 ticketRouter.use(authMiddleware);
 

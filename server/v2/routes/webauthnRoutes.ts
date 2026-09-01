@@ -1,25 +1,8 @@
 import { Router } from 'express';
 import { webauthnController } from '../controllers/webauthnController.js';
-import { createAuthMiddleware } from '../middleware/auth.js';
-import { userRepository } from '../repositories/userRepository.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 export const webauthnRouter = Router();
-
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
 
 // Registration endpoints (require auth)
 webauthnRouter.post('/register/options', authMiddleware, (req, res, next) => {

@@ -1,69 +1,79 @@
-# Bank & Audits Implementation Plan
+# Codebase Duplication Resolution Plan
 
-## Overview
-Refactor `/bank` and `/audits` to eliminate manual balance tampering and synthetic metrics, replacing them with atomic multi-user grant disbursements, standard banking transaction statements, and automated ledger reconciliation.
-
----
-
-## Architecture & Design Specifications
-
-### 1. `/bank` Namespace Modifications
-* **Delete `wire` command**: Platform operators cannot transfer funds between users.
-* **Delete `adjust` (and `bankad`) command**: Manual balance overwrites removed in favor of automated ledger repair.
-* **Delete synthetic telemetry in `/bank audit`**: Remove liquidity/delta pseudo-metrics.
-* **Add `/bank grant` (Atomic Batch Funding)**:
-  * **Syntax**: `/bank grant <user1:amount> <user2:amount> ... [reason]`
-  * **Atomicity**: Wrapped in a PostgreSQL `db.transaction()` block. All recipient wallets are locked and updated, with corresponding `DEPOSIT` transaction records generated. If any single user resolution or deposit fails, the entire transaction rolls back cleanly.
-
-### 2. Standard Transaction Statement (`/bank tx`)
-* Renders a real banking statement table for user wallets:
-  * Columns: `Date/Time` · `Transaction ID / Ref` · `Type` · `Amount` · `User / Wallet` · `Description`
-
-### 3. Automated Ledger Verification & Auto-Repair (`/audits`)
-* **`/audits ledger`**:
-  * Scans user wallets and computes `sum(transactions.amount)` vs `wallets.balance`.
-  * Flags discrepancies in red with the calculated variance.
-* **`/audits cat <wallet_id | txn_ref | username>`**:
-  * Dumps the complete chronological transaction statement for the target account with running balance calculations.
-* **`/audits repair [wallet_id | username | all]`**:
-  * Recomputes exact atomic balance from immutable ledger rows.
-  * Updates wallet records to match ledger truth.
-  * Records audit log entry with the repaired delta.
-
-### 4. Reversals & Dispute Refunds (`/bank reverse`)
-* **Dedicated Database Table (`reversals`)**:
-  * Records all administrative fund reversals, transaction rollbacks, and scam/defective product refunds.
-  * Fields: `id`, `reference` (`REV-...`), `originalTxnRef`, `type` (`REFUND`/`REVERSAL`/`ROLLBACK`), `walletId`, `userId`, `fromUserId`, `amount`, `currency`, `reason`, `status`, `createdAt`.
-* **Atomic Execution Modes**:
-  * `/bank reverse txn <original_txn_ref> [reason]`: Rolls back an errant transaction between sender and recipient wallets.
-  * `/bank reverse refund <username> <amount> [reason]`: Issues an administrative refund for defective purchases or platform disputes.
-  * `/bank reverse rollback <from_user> <to_user> <amount> [reason]`: Direct clawback from fraudulent/misdirected account back to victim.
-  * `/bank reverse list` (or `reversals`): Dumps the permanent reversals and refunds audit ledger.
+**Source:** [`review/DUPLICATED_CODE_AUDIT.md`](file:///root/velum/review/DUPLICATED_CODE_AUDIT.md)  
+**Target:** Eliminate boilerplate, enforce DRY principles, and consolidate shared logic.
 
 ---
 
-## Implementation Phases
+## Phase 1: Authentication Middleware Consolidation (DUP-001)
+**Priority:** High  
+**Goal:** Consolidate 16 duplicate `createAuthMiddleware` implementations into a centralized middleware module.
 
-### Phase 1: `/bank` Cleanup & Multi-User Atomic Grant (Completed)
-1. Remove `wire`, `adjust`, `bankad`, and pseudo-telemetry from `cli/v2/handlers/bank.ts`.
-2. Implement `/bank grant <user1:amount> <user2:amount> ... [reason]` with atomic PostgreSQL transaction support.
-3. Update `/bank tx` to display clean bank statement formatting.
-4. Update `cli/v2/registry.ts` to reflect the updated `/bank` command schema.
+### Tasks:
+1. **Centralize Auth Middleware (`server/v2/middleware/auth.ts`):**
+   * Export pre-configured `authMiddleware` verifying session token hash via `userRepository.findSessionByTokenHash`.
+   * Export `adminAuthMiddleware` enforcing admin roles (`CLI_ADMIN`, `LOGIN_ADMIN`, `SUPPORT_ADMIN`).
+   * Export `requireRole(...roles)` helper for granular permission gating.
+2. **Refactor 16 Route Files:**
+   * Import centralized `authMiddleware` / `adminAuthMiddleware` in:
+     * `server/v2/routes/authRoutes.ts`
+     * `server/v2/routes/userRoutes.ts`
+     * `server/v2/routes/adminRoutes.ts`
+     * `server/v2/routes/bankRoutes.ts`
+     * `server/v2/routes/marketRoutes.ts`
+     * `server/v2/routes/friendRoutes.ts`
+     * `server/v2/routes/messageRoutes.ts`
+     * `server/v2/routes/communityRoutes.ts`
+     * `server/v2/routes/channelRoutes.ts`
+     * `server/v2/routes/mediaRoutes.ts`
+     * `server/v2/routes/settingsRoutes.ts`
+     * `server/v2/routes/notificationRoutes.ts`
+     * `server/v2/routes/supportRoutes.ts`
+     * `server/v2/routes/escrowRoutes.ts`
+     * `server/v2/routes/ticketRoutes.ts`
+     * `server/v2/routes/reportRoutes.ts`
+   * Strip redundant local `createAuthMiddleware(...)` boilerplates (~420 lines removed).
 
-### Phase 1B: Reversals & Refund Table & `/bank reverse`
-1. Add `reversals` table in `server/v2/db/schema/wallets.ts` and initialize in database migrations.
-2. Implement `/bank reverse <txn|refund|rollback|list>` in `cli/v2/handlers/bank.ts` wrapped in atomic PostgreSQL transactions.
-3. Update `cli/v2/registry.ts` with `reverse`.
+---
 
-### Phase 2: `/audits` Ledger Inspection & Auto-Repair
-1. Implement `/audits ledger` in `cli/v2/handlers/audits.ts` (mismatch detection with colored diffs).
-2. Implement `/audits cat <id>` for full transaction chronology and statement audit.
-3. Implement `/audits repair [target|all]` for atomic ledger balance reconciliation.
-4. Update `cli/v2/registry.ts` to include ledger, cat, and repair under `/audits`.
+## Phase 2: Database Cleanup & Self-Healing Consolidation (DUP-003)
+**Priority:** Medium  
+**Goal:** Unify orphan database record cleanup logic between CLI and server self-healing.
 
-### Phase 3: Verification & Test Suite Execution
-1. Run multi-recipient batch grant tests with concurrency and rollback verifications.
-2. Run transaction reversal and scam rollback tests with database persistence verification.
-3. Simulate deliberate wallet balance corruption and verify `/audits repair` restores exact ledger balance.
-4. Run test suite (`tests/unit/cliSecurity.test.ts`) to ensure 100% pass rate.
-5. Remove `PLANNING.md` upon final reconciliation.
+### Tasks:
+1. **Create `server/v2/utils/databaseCleanup.ts`:**
+   * Encapsulate SQL queries for orphaned messages, channels, memberships, and marketplace escrows.
+   * Provide structured cleanup report return types (`{ cleanedMessages: number, cleanedMemberships: number }`).
+2. **Refactor Callers:**
+   * Connect CLI `/db` maintenance and server self-healing daemon to `databaseCleanup`.
+
+---
+
+## Phase 3: Lounge Data Access Consolidation (DUP-002)
+**Priority:** Medium  
+**Goal:** Abstract raw `await db.select().from(lounges)` into a dedicated repository.
+
+### Tasks:
+1. **Create/Extend `server/v2/repositories/loungeRepository.ts`:**
+   * Implement `findAll()`, `findById()`, `findActive()`, `findByCommunityId()`, `findByCreatorId()`.
+2. **Refactor `server/v2/services/loungeService.ts`:**
+   * Replace 38+ repetitive Drizzle query blocks with repository calls.
+
+---
+
+## Phase 4: Shared Types & Validation Alignment (DUP-004 & DUP-005)
+**Priority:** Low  
+**Goal:** Ensure single source of truth for user models and password validation rules.
+
+### Tasks:
+1. **Unify User Types:**
+   * Centralize `User` interface in `src/types/user.ts` and `server/v2/types/user.ts`.
+2. **Unify Password Rules:**
+   * Ensure frontend validation matching backend Zod auth schema constraints.
+
+---
+
+## Verification & Testing
+* Run `npx tsx tests/unit/cliSecurity.test.ts`
+* Run backend route smoke tests across authenticated endpoints.
+* Verify TypeScript compilation passes without errors.

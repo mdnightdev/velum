@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { auth } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { processReadReceipt } from '../services/messaging/readReceiptService.js';
 import { processDeliveryReceipt } from '../services/messaging/deliveryReceiptService.js';
@@ -7,20 +7,6 @@ import { typingDebouncer } from '../services/messaging/typingDebouncer.js';
 import { db } from '../db/client.js';
 import { lounges } from '../db/schema/lounges.js';
 
-const auth = createAuthMiddleware(async (hashedToken) => {
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
 export const messagingRouter = Router();
 
 // POST /v2/lounges/:id/read - Read cursor synchronization endpoint

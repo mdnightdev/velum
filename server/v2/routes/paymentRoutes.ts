@@ -1,25 +1,8 @@
 import { Router } from 'express';
 import { paymentController } from '../controllers/paymentController.js';
-import { createAuthMiddleware } from '../middleware/auth.js';
-import { userRepository } from '../repositories/userRepository.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 export const paymentRouter = Router();
-
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
 
 paymentRouter.get('/methods', authMiddleware, (req, res, next) => {
   paymentController.getPaymentMethods(req, res).catch(next);

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authController } from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
 import { registerSchema, loginSchema, updateProfileSchema } from '../schemas/auth.js';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
@@ -13,22 +13,6 @@ import { systemBot } from '../services/systemBot.js';
 import { executePanicCascade } from '../services/duress/panicService.js';
 
 export const authRouter = Router();
-
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
 
 authRouter.get('/user-salt', (req, res, next) => {
   authController.getUserSalt(req, res).catch(next);

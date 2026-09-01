@@ -1,24 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { createAuthMiddleware, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
+import { auth, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { getVapidPublicKey, savePushSubscription, removePushSubscription } from '../services/notifications/pushGateway.js';
 
 export const notificationRouter = Router();
-
-const auth = createAuthMiddleware(async (hashedToken) => {
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
 
 // GET /v2/notifications/vapid-key - Get public VAPID key for client registration
 notificationRouter.get('/vapid-key', (_req: Request, res: Response) => {

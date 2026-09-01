@@ -98,7 +98,7 @@ export function createAuthMiddleware(
 /**
  * Middleware enforcing administrative role requirement.
  */
-export function requireAdminRole(allowedRoles = ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN']) {
+export function requireAdminRole(allowedRoles = ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'ADMIN']) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       return next(new UnauthorizedError('Unauthorized: Authentication required.'));
@@ -109,3 +109,27 @@ export function requireAdminRole(allowedRoles = ['CLI_ADMIN', 'LOGIN_ADMIN', 'SU
     next();
   };
 }
+
+/**
+ * Standard pre-configured authentication middleware using userRepository session lookup.
+ */
+export const authMiddleware = createAuthMiddleware(async (tokenHash) => {
+  const { userRepository } = await import('../repositories/userRepository.js');
+  const result = await userRepository.findSessionByTokenHash(tokenHash);
+  if (!result) return null;
+  return {
+    user: {
+      userId: result.user.id,
+      username: result.user.username,
+      role: result.user.role,
+      duress_active: result.user.duressActive,
+      displayName: result.user.displayName || result.user.username,
+      avatarUrl: result.user.avatarUrl || ''
+    },
+    expiresAt: result.session.expiresAt
+  };
+});
+
+export const auth = authMiddleware;
+
+

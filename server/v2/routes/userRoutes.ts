@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
@@ -15,22 +15,6 @@ import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { SystemBot } from '../services/systemBot.js';
 
 export const userRouter = Router();
-
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
 
 import { publishPrekeyBundle, fetchPrekeyBundle } from '../services/crypto/prekeyVaultService.js';
 

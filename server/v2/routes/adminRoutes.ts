@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requireAdminRole } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users, supportAdminNominations } from '../db/schema/users.js';
@@ -16,21 +16,8 @@ import crypto from 'node:crypto';
 
 export const adminRouter = Router();
 
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
-
 adminRouter.use(authMiddleware);
+adminRouter.use(requireAdminRole());
 
 // GET /v2/admin/reports - Fetch all reports from database
 adminRouter.get('/reports', async (req: Request, res: Response) => {

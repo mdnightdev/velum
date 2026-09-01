@@ -2,26 +2,9 @@ import { Router } from 'express';
 import { marketController } from '../controllers/marketController.js';
 import { validate } from '../middleware/validate.js';
 import { createListingSchema, updateListingSchema, escrowActionSchema } from '../schemas/marketplace.js';
-import { createAuthMiddleware } from '../middleware/auth.js';
-import { userRepository } from '../repositories/userRepository.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 export const marketRouter = Router();
-
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
 
 marketRouter.get('/listings', (req, res, next) => {
   marketController.getListings(req, res).catch(next);

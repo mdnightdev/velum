@@ -3,7 +3,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { createAuthMiddleware, hashSessionToken } from '../middleware/auth.js';
+import { auth, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import {
   validateUploadParameters,
@@ -13,31 +13,6 @@ import {
 } from '../services/media/presignedUploadService.js';
 import { logger } from '../utils/logger.js';
 
-const auth = createAuthMiddleware(async (hashedToken) => {
-  if (process.env.NODE_ENV === 'test' && hashedToken === hashSessionToken('mock-token')) {
-    return {
-      user: {
-        userId: 1,
-        username: 'testuser',
-        role: 'USER',
-        duress_active: false
-      },
-      expiresAt: new Date(Date.now() + 3600 * 1000)
-    };
-  }
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
 export const mediaRouter = Router();
 
 // ---------------------------------------------------------------------------

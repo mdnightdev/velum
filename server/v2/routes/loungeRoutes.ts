@@ -1,25 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { createAuthMiddleware, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
+import { auth, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { checkIsSystemAdmin } from '../services/loungeService.js';
 import * as loungeController from '../controllers/loungeController.js';
 
-export { checkIsSystemAdmin };
-
-export const auth = createAuthMiddleware(async (hashedToken) => {
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
+export { checkIsSystemAdmin, auth };
 
 export const optionalAuth = async (req: Request, _res: Response, next: NextFunction) => {
   try {
