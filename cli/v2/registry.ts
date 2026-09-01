@@ -133,11 +133,12 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'HIGH'
     },
     backup: {
-      desc: 'Export system configuration backup to JSON',
-      risk: 'HIGH'
+      desc: 'Export full database snapshot backup to JSON',
+      risk: 'HIGH',
+      args: ['[filename]']
     },
     restore: {
-      desc: 'Restore system configuration from backup JSON',
+      desc: 'Restore database from snapshot JSON file',
       risk: 'CRITICAL',
       args: ['<backup_file>']
     },
