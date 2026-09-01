@@ -37,11 +37,76 @@ export async function getConversationsSummary(currentUserId?: number) {
   }
 
   const allLounges = await loungeRepository.findAll();
+  if (allLounges.length === 0) {
+    return { summary: {}, unreadCounts: {} };
+  }
+
+  const loungeIds = allLounges.map(l => l.id);
   const summary: Record<string, any> = {};
   const unreadCounts: Record<string, number> = {};
 
+  // 1. Batch fetch latest messages for lounges lacking cached lastMessageText
+  const loungesNeedingMsg = allLounges.filter(l => l.lastMessageText === null);
+  const latestMsgMap = new Map<number, any>();
+
+  if (loungesNeedingMsg.length > 0) {
+    const needingIds = loungesNeedingMsg.map(l => l.id);
+    const latestMessages = await db
+      .select({
+        message_id: messages.id,
+        lounge_id: messages.loungeId,
+        user_id: messages.senderId,
+        content: messages.content,
+        is_encrypted: messages.encrypted,
+        deliveredTo: messages.deliveredTo,
+        readBy: messages.readBy,
+        createdAt: messages.createdAt,
+        username: users.username,
+        avatar: users.avatarUrl
+      })
+      .from(messages)
+      .leftJoin(users, eq(messages.senderId, users.id))
+      .where(inArray(messages.loungeId, needingIds))
+      .orderBy(desc(messages.createdAt));
+
+    for (const msg of latestMessages) {
+      if (!latestMsgMap.has(msg.lounge_id)) {
+        latestMsgMap.set(msg.lounge_id, msg);
+      }
+    }
+  }
+
+  // 2. Batch fetch unread messages across all lounges in ONE single query
+  const unreadCandidateMsgs = await db
+    .select({
+      id: messages.id,
+      loungeId: messages.loungeId,
+      readBy: messages.readBy,
+      senderId: messages.senderId
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.loungeId, loungeIds),
+        sql`${messages.senderId} != ${currentUserId}`
+      )
+    );
+
+  const unreadPerLounge = new Map<number, number>();
+  for (const m of unreadCandidateMsgs) {
+    const readByArr = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
+    if (!readByArr.includes(currentUserId)) {
+      unreadPerLounge.set(m.loungeId, (unreadPerLounge.get(m.loungeId) || 0) + 1);
+    }
+  }
+
+  // 3. Assemble response in memory
   for (const lounge of allLounges) {
     const roomId = lounge.slug || `lounge_${lounge.id}`;
+    const unread = unreadPerLounge.get(lounge.id) || 0;
+    if (unread > 0) {
+      unreadCounts[roomId] = unread;
+    }
 
     let lastMsg: any = null;
     if (lounge.lastMessageText !== null) {
@@ -53,48 +118,7 @@ export async function getConversationsSummary(currentUserId?: number) {
         readBy: '',
       };
     } else {
-      const [foundMsg] = await db
-        .select({
-          message_id: messages.id,
-          lounge_id: messages.loungeId,
-          user_id: messages.senderId,
-          content: messages.content,
-          is_encrypted: messages.encrypted,
-          deliveredTo: messages.deliveredTo,
-          readBy: messages.readBy,
-          createdAt: messages.createdAt,
-          username: users.username,
-          avatar: users.avatarUrl
-        })
-        .from(messages)
-        .leftJoin(users, eq(messages.senderId, users.id))
-        .where(eq(messages.loungeId, lounge.id))
-        .orderBy(desc(messages.createdAt))
-        .limit(1);
-      lastMsg = foundMsg;
-    }
-
-    const unreadMsgs = await db
-      .select({
-        id: messages.id,
-        readBy: messages.readBy,
-        senderId: messages.senderId
-      })
-      .from(messages)
-      .where(eq(messages.loungeId, lounge.id));
-
-    let unreadCount = 0;
-    for (const m of unreadMsgs) {
-      if (m.senderId !== currentUserId) {
-        const readByArr = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
-        if (!readByArr.includes(currentUserId)) {
-          unreadCount++;
-        }
-      }
-    }
-
-    if (unreadCount > 0) {
-      unreadCounts[roomId] = unreadCount;
+      lastMsg = latestMsgMap.get(lounge.id) || null;
     }
 
     if (lastMsg) {
