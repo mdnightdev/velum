@@ -95,9 +95,9 @@ export const logger = winston.createLogger({
   ],
 });
 
-// Add file transport for production if needed
-// File transports disabled for development to avoid import issues
-// Re-enable for production with proper dependency setup
+/**
+ * Initializes production file transports dynamically when running under production environment.
+ */
 async function addFileTransports() {
   if (process.env.NODE_ENV === 'production') {
     try {
