@@ -197,7 +197,7 @@ export class VelumV2Shell {
     }
 
     if (fullCmd === 'clear') {
-      console.clear();
+      process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
       return;
     }
 
