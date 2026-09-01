@@ -83,16 +83,14 @@ export async function hashArgon2id(plainText: string, saltBuffer: Buffer): Promi
 
 /**
  * Constant-time comparison of two strings to prevent timing side-channel leaks.
+ * Always hashes both inputs to fixed 32-byte buffers before timingSafeEqual to avoid length leakage.
  */
 export function safeCompare(a: string, b: string): boolean {
   if (!a || !b) return false;
-  const aBuf = Buffer.from(a, 'utf8');
-  const bBuf = Buffer.from(b, 'utf8');
-  if (aBuf.length !== bBuf.length) {
-    crypto.timingSafeEqual(aBuf, aBuf);
-    return false;
-  }
-  return crypto.timingSafeEqual(aBuf, bBuf);
+  const comparisonKey = Buffer.from('velum_constant_time_compare_key_32b');
+  const aDigest = crypto.createHmac('sha256', comparisonKey).update(a).digest();
+  const bDigest = crypto.createHmac('sha256', comparisonKey).update(b).digest();
+  return crypto.timingSafeEqual(aDigest, bDigest);
 }
 
 /**
@@ -138,6 +136,31 @@ export function generateRandomToken(bytes = 32): string {
 }
 
 /**
+ * Cryptographically secure recovery key generator.
+ */
+export function generateRecoveryKey(prefix = 'VEL-REC'): string {
+  const num = crypto.randomInt(10000, 99999);
+  return `${prefix}-${num}`;
+}
+
+/**
+ * Cryptographically secure panic phrase generator.
+ */
+export function generatePanicPhrase(prefix = 'P'): string {
+  const num = crypto.randomInt(100000, 999990);
+  return `${prefix}-${num}`;
+}
+
+/**
+ * Cryptographically secure invite code generator.
+ */
+export function generateSecureInviteCode(prefix = 'INV'): string {
+  const code = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `${prefix}-${code}`;
+}
+
+
+/**
  * Resolves the true client IP address behind proxies, Cloudflare, or local connections.
  */
 export function getClientIp(req: any): string {
@@ -160,10 +183,11 @@ export function getClientIp(req: any): string {
 }
 
 /**
- * Hash a session token using SHA-256 for persistent database matching.
+ * Hash a session token using keyed HMAC-SHA256 for persistent database matching.
  */
 export function hashSessionToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
+  const secret = config.HMAC_SECRET || config.JWT_SECRET || 'velum_server_hmac_master_key';
+  return crypto.createHmac('sha256', secret).update(token.trim()).digest('hex');
 }
 
 /**
@@ -171,7 +195,8 @@ export function hashSessionToken(token: string): string {
  * Uses persistent server-side secret without per-record salt for fast indexed lookup.
  */
 export function hashKeyedHMAC(value: string, secret?: string): string {
-  const pepper = secret || config.JWT_SECRET || 'velum_server_hmac_master_key';
+  const pepper = secret || config.HMAC_SECRET || config.JWT_SECRET || 'velum_server_hmac_master_key';
   return crypto.createHmac('sha256', pepper).update(value.trim()).digest('hex');
 }
+
 

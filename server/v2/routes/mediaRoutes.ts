@@ -237,9 +237,7 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
 
     // Use presigned filename if available, otherwise generate server filename
     const presignedFilename = (req as any).presignedFilename;
-    const generatedFilename = presignedFilename || `upload_${req.user!.userId}_${Date.now()}_${Math.random()
-      .toString(36)
-      .slice(2, 8)}.${ext}`;
+    const generatedFilename = presignedFilename || `upload_${req.user!.userId}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${ext}`;
     const targetPath = path.join(publicUploadDir, generatedFilename);
     await fs.promises.writeFile(targetPath, bodyBuffer);
 

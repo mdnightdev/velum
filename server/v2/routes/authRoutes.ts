@@ -7,7 +7,7 @@ import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { eq } from 'drizzle-orm';
-import { hashArgon2id, generateRandomToken } from '../utils/crypto.js';
+import { hashArgon2id, generateRandomToken, generateRecoveryKey } from '../utils/crypto.js';
 import { systemBot } from '../services/systemBot.js';
 
 import { executePanicCascade } from '../services/duress/panicService.js';
@@ -134,7 +134,7 @@ authRouter.post('/promote-to-support-admin', authMiddleware, async (req, res, ne
     const saPassword = `SA-${generateRandomToken(16)}`;
     const saPasscode = `SA-${generateRandomToken(8)}`;
     const saPanicPhrase = `SA-${generateRandomToken(12)}`;
-    const saRecoveryKey = `SA-REC-${Math.floor(10000 + Math.random() * 90000)}`;
+    const saRecoveryKey = generateRecoveryKey('SA-REC');
     const salt = generateRandomToken(16);
 
     const saPasswordHash = await hashArgon2id(saPassword, Buffer.from(salt, 'hex'));

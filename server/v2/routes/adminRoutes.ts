@@ -199,7 +199,7 @@ function generateSecurePassword(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
   let password = '';
   for (let i = 0; i < 16; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
+    password += chars.charAt(crypto.randomInt(0, chars.length));
   }
   return password;
 }
@@ -323,9 +323,9 @@ adminRouter.post('/approve-nomination', async (req: Request, res: Response) => {
     const adminPassword = `Sa-Vel-${generateSecurePassword()}`;
     const adminSalt = crypto.randomBytes(16).toString('hex');
     const adminPasswordHash = await hashArgon2id(adminPassword, Buffer.from(adminSalt, 'hex'));
-    const adminRecoveryKey = `Sa-Vel-Sup-${Math.floor(10000 + Math.random() * 90000)}`;
+    const adminRecoveryKey = `Sa-Vel-Sup-${crypto.randomInt(10000, 99999)}`;
     const adminRecoveryKeyHash = await hashArgon2id(adminRecoveryKey, Buffer.from(adminSalt, 'hex'));
-    const adminPanicPhrase = `Sa-P-${Math.floor(100000 + Math.random() * 900000)}`;
+    const adminPanicPhrase = `Sa-P-${crypto.randomInt(100000, 999990)}`;
     const adminPanicPhraseHash = await hashArgon2id(adminPanicPhrase, Buffer.from(adminSalt, 'hex'));
     
     // Create INACTIVE support admin account
@@ -939,7 +939,7 @@ adminRouter.post('/invites', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Lounge ID is required.' });
     }
     
-    const inviteCode = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+    const inviteCode = `INV-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
     res.status(201).json({ 
       invite_id: `inv_${Date.now()}`,
       code: inviteCode,

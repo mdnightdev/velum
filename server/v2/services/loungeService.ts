@@ -5,6 +5,7 @@ import { userReadCursors } from '../db/schema/read_cursors.js';
 import { users } from '../db/schema/users.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { loungeRepository } from '../repositories/loungeRepository.js';
+import { generateSecureInviteCode } from '../utils/crypto.js';
 import { eq, gt, and, desc, like, inArray, sql } from 'drizzle-orm';
 
 export const SYSTEM_ADMIN_ROLES = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
@@ -472,7 +473,7 @@ export async function createLounge(currentUserId: number, name: string, descript
   }
 
   const privateFlag = Boolean(isPrivate);
-  const inviteCode = privateFlag ? `VL/M-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
+  const inviteCode = privateFlag ? generateSecureInviteCode('VL/M') : null;
   const slug = `lounge_${Date.now()}`;
   const [created] = await db.insert(lounges).values({
     slug,
@@ -536,7 +537,7 @@ export async function createSublounge(user: any, rawId: string, name: string, de
   }
 
   const privateFlag = Boolean(isPrivate);
-  const inviteCode = privateFlag ? `VL/S-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
+  const inviteCode = privateFlag ? generateSecureInviteCode('VL/S') : null;
   const slug = `sublounge_${Date.now()}`;
 
   const [created] = await db.insert(lounges).values({
@@ -891,7 +892,7 @@ export async function createLoungeInvite(rawId: string, user: any) {
   let code = lounge.inviteCode;
   if (!code) {
     const prefix = lounge.parentLoungeId ? 'VL/S' : 'VL/M';
-    code = `${prefix}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    code = generateSecureInviteCode(prefix);
     await db.update(lounges).set({ inviteCode: code }).where(eq(lounges.id, lounge.id));
   }
   return {

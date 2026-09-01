@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { userRepository } from '../repositories/userRepository.js';
-import { hashArgon2id, deriveKeyAsync, generateRandomToken, safeCompare, verifyArgon2id, getClientIp } from '../utils/crypto.js';
+import { hashArgon2id, deriveKeyAsync, generateRandomToken, generateRecoveryKey, safeCompare, verifyArgon2id, getClientIp } from '../utils/crypto.js';
 import { hashSessionToken } from '../middleware/auth.js';
 import { db } from '../db/client.js';
 import { tickets } from '../db/schema/tickets.js';
@@ -246,7 +246,7 @@ export class AuthController {
       panicPhraseHash = await hashArgon2id(panicPhrase, Buffer.from(salt, 'hex'));
     }
 
-    const recoveryKey = `VEL-REC-${Math.floor(10000 + Math.random() * 90000)}`;
+    const recoveryKey = generateRecoveryKey('VEL-REC');
     const recoveryKeyHash = await hashArgon2id(recoveryKey, Buffer.from(salt, 'hex'));
 
     const newUser = await userRepository.create({

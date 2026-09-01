@@ -34,11 +34,15 @@ export function extractSessionToken(req: Request): string | null {
   return null;
 }
 
+import { config } from '../config.js';
+
 /**
- * Hash session token using SHA-256 for secure database index lookup.
+ * Hash session token using keyed HMAC-SHA256 for secure database index lookup.
+ * Keyed with server-side HMAC_SECRET / JWT_SECRET to prevent rainbow table attacks.
  */
 export function hashSessionToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
+  const secret = config.HMAC_SECRET || config.JWT_SECRET || 'velum_master_server_hmac_secret_key_32b!';
+  return crypto.createHmac('sha256', secret).update(token.trim()).digest('hex');
 }
 
 /**

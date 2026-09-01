@@ -57,7 +57,9 @@ const envSchema = z.object({
     return val ? parseInt(val, 10) : 100;
   }).default(() => 100),
   WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_ORIGIN: z.string().optional().default('http://localhost:3000')
+  WEBAUTHN_ORIGIN: z.string().optional().default('http://localhost:3000'),
+  HMAC_SECRET: z.string().optional().transform(cleanEnvStr).default(''),
+  JWT_SECRET: z.string().optional().transform(cleanEnvStr).default('')
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
