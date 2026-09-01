@@ -91,20 +91,19 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
       const rows = [];
       for (const ud of uDevs) {
         const [dev] = await db.select().from(devices).where(eq(devices.deviceId, ud.deviceId)).limit(1);
-        const parsed = parseDeviceModel(dev?.userAgent, dev?.platform, dev?.webglRenderer);
         rows.push({
           DeviceID: ud.deviceId.substring(0, 16) + '...',
-          Model: parsed.device,
-          OS: parsed.os,
-          GPU: (dev?.webglRenderer || '-').substring(0, 20),
-          Fingerprint: (dev?.deviceFingerprint || '-').substring(0, 16) + '...',
+          Platform: dev?.platform || '-',
+          GPU: dev?.webglRenderer || '-',
+          Screen: dev?.screenResolution || '-',
+          Fingerprint: dev?.deviceFingerprint ? dev.deviceFingerprint.substring(0, 16) + '...' : '-',
           FirstSeen: ud.firstSeen ? new Date(ud.firstSeen).toISOString().split('T')[0] : '-',
           LastSeen: ud.lastSeen ? new Date(ud.lastSeen).toISOString().split('T')[0] : '-',
           Current: ud.isCurrent ? 'Y' : 'N'
         });
       }
 
-      console.log(`Registered Devices for ${user.username} (ID: ${user.id}):`);
+      console.log(`Registered Hardware Telemetry for ${user.username} (ID: ${user.id}):`);
       printTable(rows);
       await logAudit('/audits/devices', user.username, `Audited ${rows.length} devices`);
     } catch (err) {
@@ -322,16 +321,15 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
       for (const s of activeSess) {
         const [userDev] = await db.select().from(userDevices).where(eq(userDevices.userId, s.userId)).limit(1);
         const [dev] = userDev ? await db.select().from(devices).where(eq(devices.deviceId, userDev.deviceId)).limit(1) : [null];
-        const info = parseDeviceModel(s.userAgent, dev?.platform, dev?.webglRenderer);
         const loc = parseLocation(s.ipAddress);
 
         rows.push({
           IP: s.ipAddress || '127.0.0.1',
           Location: loc,
           User: `${userMap.get(s.userId) || `ID:${s.userId}`}`,
-          Device: info.device,
-          OS: info.os,
-          Client: info.browser,
+          Platform: dev?.platform || '-',
+          GPU: dev?.webglRenderer || '-',
+          Screen: dev?.screenResolution || '-',
           DeviceID: (dev?.deviceId || s.id).substring(0, 16)
         });
       }

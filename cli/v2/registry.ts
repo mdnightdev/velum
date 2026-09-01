@@ -337,8 +337,18 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       args: ['<session_id_or_user_id>']
     },
     ledger: {
-      desc: 'Verify ledger transactions',
+      desc: 'Verify ledger transactions vs wallet balances and flag discrepancies',
       risk: 'LOW'
+    },
+    repair: {
+      desc: 'Auto-reconcile and repair wallet balances to match ledger truth',
+      risk: 'CRITICAL',
+      args: ['[wallet_id_or_username_or_all]']
+    },
+    cat: {
+      desc: 'Inspect chronological ledger history and balance trail for an account',
+      risk: 'LOW',
+      args: ['<wallet_id_or_username>']
     },
     hijacks: {
       desc: 'Scan for multi-IP concurrent sessions',

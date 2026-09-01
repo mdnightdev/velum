@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { argon2id } from 'hash-wasm';
+import { config } from '../config.js';
 
 const scryptPromise = promisify(crypto.scrypt);
 
@@ -163,5 +164,14 @@ export function getClientIp(req: any): string {
  */
 export function hashSessionToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Deterministic Keyed HMAC-SHA256 for sensitive financial and KYC records.
+ * Uses persistent server-side secret without per-record salt for fast indexed lookup.
+ */
+export function hashKeyedHMAC(value: string, secret?: string): string {
+  const pepper = secret || config.JWT_SECRET || 'velum_server_hmac_master_key';
+  return crypto.createHmac('sha256', pepper).update(value.trim()).digest('hex');
 }
 
