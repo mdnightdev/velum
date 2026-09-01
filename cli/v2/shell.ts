@@ -150,41 +150,6 @@ export class VelumV2Shell {
     });
   }
 
-  private printManPage(nsPath: string, cmdName: string): void {
-    let meta = V2_COMMAND_REGISTRY[nsPath]?.[cmdName];
-    let fullPath = `${nsPath}/${cmdName}`;
-
-    if (!meta) {
-      for (const [parentNs, cmds] of Object.entries(V2_COMMAND_REGISTRY)) {
-        if (cmds[cmdName]) {
-          meta = cmds[cmdName];
-          fullPath = `${parentNs}/${cmdName}`;
-          break;
-        }
-      }
-    }
-
-    if (!meta) {
-      console.log(`No manual entry for "${cmdName}".`);
-      return;
-    }
-
-    console.log(`\n${theme.boldWhite}${cmdName.toUpperCase()}${theme.reset}`);
-    console.log(`  Description : ${meta.desc}`);
-    console.log(`  Path        : ${fullPath}`);
-    const syntax = meta.args && meta.args.length > 0 ? `${cmdName} ${meta.args.join(' ')}` : cmdName;
-    console.log(`  Usage       : ${theme.yellow}${syntax}${theme.reset}`);
-    console.log(`  Risk        : ${riskColor(meta.risk)}${meta.risk}${theme.reset}`);
-
-    if (meta.flags && Object.keys(meta.flags).length > 0) {
-      console.log(`  Options     :`);
-      for (const [flag, desc] of Object.entries(meta.flags)) {
-        console.log(`    ${theme.white}${flag.padEnd(25)}${theme.reset} ${desc}`);
-      }
-    }
-    console.log();
-  }
-
   private async handleInput(line: string): Promise<void> {
     const parsed = parseCommandLine(line);
     if (!parsed) return;
@@ -215,7 +180,6 @@ export class VelumV2Shell {
     clear             - Clear screen
     exit, quit        - Exit CLI
     help, ?           - Show this help
-    man <command>     - Show command details
 
   Namespaces:
     /users            - User Accounts
@@ -232,25 +196,6 @@ export class VelumV2Shell {
     /fraud            - Fraud Controls
     /lounges          - Channels & Lounges
 `);
-      return;
-    }
-
-    if (fullCmd === 'man') {
-      const target = rawArgs[0];
-      if (!target) {
-        console.log('Usage: man <command>');
-        return;
-      }
-
-      let cmdName = target;
-      let nsPath = this.currentPath;
-      if (target.startsWith('/')) {
-        const parts = target.split('/');
-        cmdName = parts.pop() || '';
-        nsPath = parts.join('/') || '/';
-      }
-
-      this.printManPage(nsPath, cmdName);
       return;
     }
 
