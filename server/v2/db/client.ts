@@ -21,6 +21,21 @@ const dbCircuitBreaker = createCircuitBreaker(
   }
 );
 
+import os from 'os';
+
+/**
+ * Calculates optimal PostgreSQL pool sizing based on hardware concurrency and configuration bounds.
+ */
+export function calculateOptimalPoolSize(): number {
+  if (process.env.PG_MAX_POOL) {
+    const custom = parseInt(process.env.PG_MAX_POOL, 10);
+    if (!isNaN(custom) && custom > 0) return Math.min(Math.max(custom, 5), 150);
+  }
+  const cpus = os.cpus()?.length || 2;
+  const optimal = cpus * 4 + 10;
+  return Math.min(Math.max(optimal, 20), 100);
+}
+
 export function getPgPool(): pg.Pool {
   if (!pgPool) {
     const databaseUrl = (config.DATABASE_URL || '').trim().replace(/\s+/g, '').replace('-pooler', '');
@@ -50,9 +65,9 @@ export function getPgPool(): pg.Pool {
         rejectUnauthorized: config.NODE_ENV === 'production',
         ca: process.env.DATABASE_CA_CERT ? fs.readFileSync(process.env.DATABASE_CA_CERT) : undefined
       } : false,
-      max: Number(process.env.PG_MAX_POOL) || 100, // Increased from 20 to handle higher concurrency
+      max: calculateOptimalPoolSize(),
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000, // Reduced from 15000ms for faster connection attempts
+      connectionTimeoutMillis: 10000,
       maxUses: 7500,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000
