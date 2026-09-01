@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { bankController } from '../controllers/bankController.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requireAdminRole } from '../middleware/auth.js';
 
 export const bankRouter = Router();
 
@@ -16,26 +16,28 @@ bankRouter.post('/transfer', authMiddleware, (req, res, next) => {
   bankController.transfer(req, res).catch(next);
 });
 
-bankRouter.get('/accounts', authMiddleware, (req, res, next) => {
-  bankController.getAllAccounts(req, res).catch(next);
-});
-
-bankRouter.get('/transactions', authMiddleware, (req, res, next) => {
-  bankController.getAllTransactions(req, res).catch(next);
-});
-
-bankRouter.get('/withdrawals', authMiddleware, (req, res, next) => {
-  bankController.getWithdrawalQueue(req, res).catch(next);
-});
-
 bankRouter.get('/limits', authMiddleware, (req, res, next) => {
   bankController.getLimits(req, res).catch(next);
 });
 
-bankRouter.get('/issued-cards', authMiddleware, (req, res, next) => {
+// Elevated Banking Administration Endpoints
+bankRouter.get('/accounts', authMiddleware, requireAdminRole(), (req, res, next) => {
+  bankController.getAllAccounts(req, res).catch(next);
+});
+
+bankRouter.get('/transactions', authMiddleware, requireAdminRole(), (req, res, next) => {
+  bankController.getAllTransactions(req, res).catch(next);
+});
+
+bankRouter.get('/withdrawals', authMiddleware, requireAdminRole(), (req, res, next) => {
+  bankController.getWithdrawalQueue(req, res).catch(next);
+});
+
+bankRouter.get('/issued-cards', authMiddleware, requireAdminRole(), (req, res, next) => {
   bankController.getIssuedCards(req, res).catch(next);
 });
 
-bankRouter.post('/accounts/:accountId/freeze', authMiddleware, (req, res, next) => {
+bankRouter.post('/accounts/:accountId/freeze', authMiddleware, requireAdminRole(), (req, res, next) => {
   bankController.freezeAccount(req, res).catch(next);
 });
+
