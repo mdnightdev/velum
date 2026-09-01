@@ -32,7 +32,7 @@ export function isProtectedUser(idOrUsername: number | string | null | undefined
 
 export function guardProtectedUser(idOrUsername: number | string | null | undefined, action: string = 'modify'): boolean {
   if (isProtectedUser(idOrUsername)) {
-    console.log(`${theme.red}[SECURITY REJECTED] Cannot ${action} protected system service account (${idOrUsername}). Firewall rule active.${theme.reset}`);
+    console.log(`${theme.red}Operation not permitted.${theme.reset}`);
     return false;
   }
   return true;
@@ -52,7 +52,7 @@ export function isProtectedLounge(idOrSlug: number | string | null | undefined):
 
 export function guardProtectedLounge(idOrSlug: number | string | null | undefined, action: string = 'modify'): boolean {
   if (isProtectedLounge(idOrSlug)) {
-    console.log(`${theme.red}[SECURITY REJECTED] Cannot ${action} official Velum system channel (${idOrSlug}). Protected infrastructure locked.${theme.reset}`);
+    console.log(`${theme.red}Operation not permitted.${theme.reset}`);
     return false;
   }
   return true;

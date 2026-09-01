@@ -3,18 +3,20 @@ import { db, executeWithRetry } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { exchangeRates } from '../db/schema/exchange_rates.js';
 import { reserves } from '../db/schema/reserves.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { hashArgon2id } from '../utils/crypto.js';
 import { reserveRepository } from '../repositories/reserveRepository.js';
 
 const ADMIN_USERS = [
   {
+    id: 1,
     username: 'midnight',
     passwordEnv: 'MIDNIGHT_PASSWORD',
     role: 'CLI_ADMIN',
     displayName: 'Midnight Operator'
   },
   {
+    id: 2,
     username: 'lexie',
     passwordEnv: 'LEXIE_PASSWORD',
     role: 'LOGIN_ADMIN',
@@ -178,8 +180,9 @@ export async function ensureAdminSeeded() {
           continue;
         }
 
-        const existingUsers = await db.select().from(users).where(eq(users.username, adminUser.username)).limit(1);
-        const existing = existingUsers[0];
+        const existingById = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
+        const existingByName = await db.select().from(users).where(eq(users.username, adminUser.username)).limit(1).then(r => r[0]);
+        const existing = existingById || existingByName;
         
         if (!existing) {
           const salt = crypto.randomBytes(16);
@@ -187,38 +190,46 @@ export async function ensureAdminSeeded() {
           const passwordHash = await hashArgon2id(password, Buffer.from(saltHex, 'hex'));
           
           await db.insert(users).values({
+            id: adminUser.id,
             username: adminUser.username,
             passwordHash,
             salt: saltHex,
             role: adminUser.role,
             displayName: adminUser.displayName
-          });
+          }).onConflictDoNothing();
           
-          console.log(`[AdminSeeder] Created admin user: ${adminUser.username}`);
+          console.log(`[AdminSeeder] Created admin user: ${adminUser.username} (ID: ${adminUser.id})`);
         } else {
           // Check if password needs update by re-hashing with existing salt
           const passwordHash = await hashArgon2id(password, Buffer.from(existing.salt, 'hex'));
           
           if (passwordHash !== existing.passwordHash) {
             await db.update(users).set({ passwordHash }).where(eq(users.id, existing.id));
-            console.log(`[AdminSeeder] Updated password for admin user: ${adminUser.username}`);
+            console.log(`[AdminSeeder] Updated password for admin user: ${existing.username} (ID: ${existing.id})`);
           } else {
-            console.log(`[AdminSeeder] Admin user already exists and password is current: ${adminUser.username}`);
+            console.log(`[AdminSeeder] Admin user already exists and password is current: ${existing.username} (ID: ${existing.id})`);
           }
         }
-        const botUser = await db.select().from(users).where(eq(users.id, 999)).limit(1);
-        if (botUser.length === 0) {
-          await db.insert(users).values({
-            id: 999,
-            username: 'velum',
-            passwordHash: 'system_bot_no_login',
-            salt: 'system_bot_salt',
-            role: 'ADMIN',
-            displayName: 'Velum Bot'
-          });
-          console.log('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
-        }
       }
+
+      // Ensure Velum bot (ID 999) exists
+      const botUser = await db.select().from(users).where(eq(users.id, 999)).limit(1).then(r => r[0]);
+      if (!botUser) {
+        await db.insert(users).values({
+          id: 999,
+          username: 'velum',
+          passwordHash: 'system_bot_no_login',
+          salt: 'system_bot_salt',
+          role: 'ADMIN',
+          displayName: 'Velum Bot'
+        }).onConflictDoNothing();
+        console.log('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
+      }
+
+      // Advance sequence past reserved system IDs (1, 2, 999) so regular registrations start at 1000+
+      await db.execute(sql`
+        SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM users), 1000), true);
+      `);
     });
     
     // Seed exchange rates table
