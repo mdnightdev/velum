@@ -301,11 +301,6 @@ export default function DirectMainDashboard({
         if (last) {
           const raw = last.content || last.message || last.body || last.text || '';
           const isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-          // Own outgoing e2ee:v1 messages can never be decrypted here - they
-          // were sealed with the PEER's identity key, not ours. Only the
-          // recipient can reverse that. Use the plaintext we already know
-          // locally (set at send time) instead of attempting a decrypt that
-          // is structurally guaranteed to fail.
           if (isMe && isStatelessDmEnvelope(raw)) {
             let known = last.plaintext || last.client_plaintext || '';
             if (!known) {
@@ -336,6 +331,15 @@ export default function DirectMainDashboard({
                 setDecryptedPreviews(prev => ({ ...prev, [friendId]: decrypted }));
               }
             } catch (e) {}
+          }
+        } else {
+          if (isMounted) {
+            setDecryptedPreviews(prev => {
+              if (!prev[friendId]) return prev;
+              const copy = { ...prev };
+              delete copy[friendId];
+              return copy;
+            });
           }
         }
       }

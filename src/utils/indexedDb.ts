@@ -11,7 +11,7 @@ import {
 const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours TTL
 
 /**
- * Saves or updates messages in user-isolated IndexedDB and prunes stale records.
+ * Saves or updates messages in user-isolated IndexedDB with schema normalization and zero-duplicate guarantees.
  */
 export async function saveLocalMessages(messages: any[], userId?: number): Promise<void> {
   if (!messages || messages.length === 0) return;
@@ -22,10 +22,13 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
 
     for (const msg of messages) {
       if (!msg) continue;
-      const rawId = msg.id ?? msg.message_id ?? msg.client_msg_id ?? msg.messageId ?? msg.nonce ?? `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const id = String(rawId);
-      const loungeId = msg.loungeId ?? msg.room_id ?? msg.roomId ?? '';
-      const rawTime = msg.timestamp ?? msg.createdAt ?? new Date().toISOString();
+      
+      const dbId = msg.db_message_id ?? (typeof msg.id === 'number' || (typeof msg.id === 'string' && /^\d+$/.test(msg.id)) ? Number(msg.id) : undefined);
+      const clientNonce = msg.client_msg_id || msg.nonce;
+      const canonicalId = dbId ? String(dbId) : String(clientNonce || msg.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+      const rawLounge = msg.loungeId ?? msg.room_id ?? msg.roomId ?? msg.lounge_id ?? '';
+      const loungeId = String(rawLounge);
+      const rawTime = msg.timestamp ?? msg.createdAt ?? msg.created_at ?? new Date().toISOString();
       const msgTime = new Date(rawTime).getTime();
 
       // Skip messages older than TTL
@@ -33,16 +36,15 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
         continue;
       }
 
-      // If message is confirmed by DB ID, purge temporary optimistic draft record
-      const clientNonce = msg.client_msg_id || msg.nonce;
-      if (clientNonce && String(clientNonce) !== id) {
+      // Purge temporary optimistic nonce draft if message is now confirmed with DB ID
+      if (clientNonce && String(clientNonce) !== canonicalId) {
         await tx.store.delete(String(clientNonce));
       }
 
       // Preserve existing plaintext if new record does not supply it
       let existingPlaintext = msg.plaintext;
       if (!existingPlaintext) {
-        const existing = await tx.store.get(id);
+        const existing = await tx.store.get(canonicalId);
         if (existing?.plaintext) {
           existingPlaintext = existing.plaintext;
         } else if (clientNonce) {
@@ -53,13 +55,23 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
         }
       }
 
+      // Store compact normalized payload (strip duplicate/bloated metadata)
       const record = {
-        ...msg,
-        id,
+        id: canonicalId,
+        db_message_id: dbId,
         loungeId,
+        senderId: msg.senderId ?? msg.user_id,
+        username: msg.username || '',
+        avatar: msg.avatar || '',
+        content: msg.content || '',
         plaintext: existingPlaintext || msg.plaintext,
+        is_encrypted: Boolean(msg.is_encrypted || msg.encrypted || msg.isEncrypted),
+        sequenceId: msg.sequenceId ?? msg.sequence_id ?? 0,
+        client_msg_id: clientNonce,
+        createdAt: rawTime,
         timestamp: rawTime
       };
+
       await tx.store.put(record);
     }
 
@@ -76,12 +88,13 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
   try {
     const db = await openCryptoDatabase(userId || 0);
     const now = Date.now();
-    const all: any[] = await db.getAllFromIndex(STORE_MESSAGES, 'loungeId', loungeId);
+    const all: any[] = await db.getAll(STORE_MESSAGES);
+    const targetRoom = String(loungeId);
     
     const valid = all
       .filter((m) => {
-        const matchesRoom = m.loungeId === loungeId || m.room_id === loungeId || m.roomId === loungeId;
-        if (!matchesRoom) return false;
+        const roomMatches = String(m.loungeId) === targetRoom || String(m.room_id) === targetRoom || String(m.roomId) === targetRoom;
+        if (!roomMatches) return false;
         const msgTime = new Date(m.timestamp || m.createdAt || 0).getTime();
         return isNaN(msgTime) || (now - msgTime) <= MAX_MESSAGE_AGE_MS;
       })
@@ -91,12 +104,12 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
         return tA - tB;
       });
 
-    // Deduplicate across client_msg_id, nonce, db_message_id, and id
+    // Deduplicate across canonical keys
     const seen = new Set<string>();
     const deduplicated: any[] = [];
     for (let i = valid.length - 1; i >= 0; i--) {
       const m = valid[i];
-      const keys = [m.db_message_id, m.id, m.message_id, m.client_msg_id, m.nonce]
+      const keys = [m.db_message_id, m.id, m.client_msg_id]
         .filter(Boolean)
         .map(String);
       const isDuplicate = keys.some(k => seen.has(k));
@@ -115,10 +128,6 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
 
 /**
  * Removes a single message from the local cache by any of its known ids.
- * Needed so server-side deletions actually clear the cached copy - without
- * this, a deleted message stays in IndexedDB until its 24h TTL expires and
- * briefly reappears (then vanishes on the next server sync) every time the
- * room is reopened in the meantime.
  */
 export async function deleteLocalMessage(messageId: string | number, userId?: number): Promise<void> {
   if (!messageId) return;
@@ -127,15 +136,11 @@ export async function deleteLocalMessage(messageId: string | number, userId?: nu
     const tx = db.transaction(STORE_MESSAGES, 'readwrite');
     const target = String(messageId);
 
-    // Try direct key delete first (covers the common case where id === messageId)
     await tx.store.delete(target);
 
-    // Also sweep for records where message_id/db_message_id/client_msg_id/nonce
-    // match but the primary key (id) differs, e.g. an optimistic record whose
-    // key was the client nonce, later confirmed under a different db id.
     const all = await tx.store.getAll();
     for (const rec of all) {
-      const candidateIds = [rec.id, rec.message_id, rec.db_message_id, rec.client_msg_id, rec.nonce]
+      const candidateIds = [rec.id, rec.db_message_id, rec.client_msg_id]
         .filter(Boolean)
         .map(String);
       if (candidateIds.includes(target)) {
@@ -150,15 +155,30 @@ export async function deleteLocalMessage(messageId: string | number, userId?: nu
 }
 
 /**
- * Flushes cache for a specific room.
+ * Flushes cache for a specific room across all alias identifiers.
  */
 export async function flushLoungeCache(loungeId: string, userId?: number): Promise<void> {
+  if (!loungeId) return;
   try {
     const db = await openCryptoDatabase(userId || 0);
     const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-    const all: any[] = await tx.store.index('loungeId').getAll(loungeId);
+    const all = await tx.store.getAll();
+    const target = String(loungeId);
+
+    // Compute potential reciprocal DM room slug
+    let reciprocalTarget = '';
+    if (target.startsWith('dm_')) {
+      const parts = target.replace('dm_', '').split('_');
+      if (parts.length === 2) {
+        reciprocalTarget = `dm_${parts[1]}_${parts[0]}`;
+      }
+    }
+
     for (const m of all) {
-      await tx.store.delete(m.id);
+      const mRoom = String(m.loungeId || m.room_id || m.roomId || '');
+      if (mRoom === target || (reciprocalTarget && mRoom === reciprocalTarget)) {
+        await tx.store.delete(m.id);
+      }
     }
     await tx.done;
   } catch (err) {

@@ -12,6 +12,7 @@ import {
 import { db, executeWithRetry } from '../../v2/db/client.js';
 import { users, messageReactions } from '../../v2/db/schema/index.js';
 import { lounges, messages as dbMessages, loungeMembers } from '../../v2/db/schema/lounges.js';
+import { userReadCursors } from '../../v2/db/schema/read_cursors.js';
 import { eq, and, gt, sql } from 'drizzle-orm';
 import { getRedisClient } from '../../v2/db/redis.js';
 import { processReadReceipt } from '../../v2/services/messaging/readReceiptService.js';

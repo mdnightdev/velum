@@ -2,6 +2,7 @@ import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
 import { loungeMuteSettings } from '../db/schema/lounge_mutes.js';
 import { userReadCursors } from '../db/schema/read_cursors.js';
+import { userChatClears } from '../db/schema/chat_clears.js';
 import { users } from '../db/schema/users.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { loungeRepository } from '../repositories/loungeRepository.js';
@@ -77,10 +78,11 @@ export async function getConversationsSummary(currentUserId?: number) {
   }
 
   // 2. Batch fetch unread messages across all lounges in ONE single query
-  // Fetch user read/cleared cursors
-  const cursors = await db.select()
-    .from(userReadCursors)
-    .where(eq(userReadCursors.userId, currentUserId));
+  // Fetch user read/cleared cursors and dedicated chat clears
+  const [cursors, clearRecords] = await Promise.all([
+    db.select().from(userReadCursors).where(eq(userReadCursors.userId, currentUserId)),
+    db.select().from(userChatClears).where(eq(userChatClears.userId, currentUserId))
+  ]);
 
   const clearedSeqMap = new Map<number, number>();
   const clearedAtMap = new Map<number, number>();
@@ -88,12 +90,18 @@ export async function getConversationsSummary(currentUserId?: number) {
     if (c.clearedSeq > 0) clearedSeqMap.set(c.loungeId, c.clearedSeq);
     if (c.clearedAt) clearedAtMap.set(c.loungeId, new Date(c.clearedAt).getTime());
   }
+  for (const cr of clearRecords) {
+    const clearTime = new Date(cr.clearedAt).getTime();
+    const existing = clearedAtMap.get(cr.loungeId) || 0;
+    if (clearTime > existing) clearedAtMap.set(cr.loungeId, clearTime);
+  }
 
   const unreadCandidateMsgs = await db
     .select({
       id: messages.id,
       loungeId: messages.loungeId,
       sequenceId: messages.sequenceId,
+      createdAt: messages.createdAt,
       readBy: messages.readBy,
       senderId: messages.senderId
     })
@@ -108,7 +116,10 @@ export async function getConversationsSummary(currentUserId?: number) {
   const unreadPerLounge = new Map<number, number>();
   for (const m of unreadCandidateMsgs) {
     const clearedSeq = clearedSeqMap.get(m.loungeId) || 0;
-    if (m.sequenceId && m.sequenceId <= clearedSeq) {
+    const clearedAt = clearedAtMap.get(m.loungeId) || 0;
+    const msgTime = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+
+    if ((m.sequenceId && m.sequenceId <= clearedSeq) || (clearedAt > 0 && msgTime <= clearedAt)) {
       continue;
     }
     const readByArr = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
@@ -131,7 +142,8 @@ export async function getConversationsSummary(currentUserId?: number) {
     let lastMsg: any = null;
     if (lounge.lastMessageText !== null) {
       const msgTime = lounge.lastMessageAt ? new Date(lounge.lastMessageAt).getTime() : 0;
-      if (lounge.currentSequenceId > clearedSeq && (!clearedAt || msgTime > clearedAt)) {
+      const isCleared = (clearedSeq > 0 && lounge.currentSequenceId <= clearedSeq) || (clearedAt > 0 && msgTime <= clearedAt);
+      if (!isCleared) {
         lastMsg = {
           content: lounge.lastMessageText,
           user_id: lounge.lastMessageSenderId,
@@ -142,8 +154,12 @@ export async function getConversationsSummary(currentUserId?: number) {
       }
     } else {
       const candidate = latestMsgMap.get(lounge.id) || null;
-      if (candidate && candidate.sequenceId > clearedSeq) {
-        lastMsg = candidate;
+      if (candidate) {
+        const candidateTime = candidate.createdAt ? new Date(candidate.createdAt).getTime() : 0;
+        const isCleared = (clearedSeq > 0 && candidate.sequenceId <= clearedSeq) || (clearedAt > 0 && candidateTime <= clearedAt);
+        if (!isCleared) {
+          lastMsg = candidate;
+        }
       }
     }
 
@@ -688,6 +704,28 @@ export async function clearUserChatHistory(userId: number, loungeId: number) {
   if (!target) return { success: false, error: 'Lounge not found' };
 
   const currentSeq = target.currentSequenceId || 0;
+  const now = new Date();
+
+  // Upsert userChatClears record
+  const [existingClear] = await db.select()
+    .from(userChatClears)
+    .where(and(eq(userChatClears.userId, userId), eq(userChatClears.loungeId, loungeId)))
+    .limit(1);
+
+  if (existingClear) {
+    await db.update(userChatClears)
+      .set({ clearedAt: now, updatedAt: now })
+      .where(eq(userChatClears.id, existingClear.id));
+  } else {
+    await db.insert(userChatClears).values({
+      userId,
+      loungeId,
+      clearedAt: now,
+      updatedAt: now
+    });
+  }
+
+  // Also update read cursor
   const [existingCursor] = await db.select()
     .from(userReadCursors)
     .where(and(eq(userReadCursors.userId, userId), eq(userReadCursors.loungeId, loungeId)))
@@ -697,9 +735,9 @@ export async function clearUserChatHistory(userId: number, loungeId: number) {
     await db.update(userReadCursors)
       .set({
         clearedSeq: currentSeq,
-        clearedAt: new Date(),
+        clearedAt: now,
         lastReadSeq: currentSeq,
-        updatedAt: new Date()
+        updatedAt: now
       })
       .where(and(eq(userReadCursors.userId, userId), eq(userReadCursors.loungeId, loungeId)));
   } else {
@@ -708,12 +746,12 @@ export async function clearUserChatHistory(userId: number, loungeId: number) {
       loungeId,
       lastReadSeq: currentSeq,
       clearedSeq: currentSeq,
-      clearedAt: new Date(),
-      updatedAt: new Date()
+      clearedAt: now,
+      updatedAt: now
     });
   }
 
-  return { success: true, clearedSeq: currentSeq };
+  return { success: true, clearedSeq: currentSeq, clearedAt: now };
 }
 
 export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit: number, currentUserId?: number) {
@@ -725,14 +763,35 @@ export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit:
   }
 
   let effectiveSince = isNaN(sinceSeq) ? 0 : sinceSeq;
+  let clearedAtTime: number = 0;
+
   if (currentUserId) {
-    const [cursor] = await db.select({ clearedSeq: userReadCursors.clearedSeq })
-      .from(userReadCursors)
-      .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
-      .limit(1);
-    if (cursor?.clearedSeq && cursor.clearedSeq > effectiveSince) {
-      effectiveSince = cursor.clearedSeq;
+    const [cursor, clearRec] = await Promise.all([
+      db.select({ clearedSeq: userReadCursors.clearedSeq, clearedAt: userReadCursors.clearedAt })
+        .from(userReadCursors)
+        .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
+        .limit(1),
+      db.select({ clearedAt: userChatClears.clearedAt })
+        .from(userChatClears)
+        .where(and(eq(userChatClears.userId, currentUserId), eq(userChatClears.loungeId, target.id)))
+        .limit(1)
+    ]);
+
+    if (cursor[0]?.clearedSeq && cursor[0].clearedSeq > effectiveSince) {
+      effectiveSince = cursor[0].clearedSeq;
     }
+    const cTime = clearRec[0]?.clearedAt ? new Date(clearRec[0].clearedAt).getTime() : (cursor[0]?.clearedAt ? new Date(cursor[0].clearedAt).getTime() : 0);
+    if (cTime > 0) {
+      clearedAtTime = cTime;
+    }
+  }
+
+  const syncConditions = [eq(messages.loungeId, target.id)];
+  if (effectiveSince > 0) {
+    syncConditions.push(gt(messages.sequenceId, effectiveSince));
+  }
+  if (clearedAtTime > 0) {
+    syncConditions.push(gt(messages.createdAt, new Date(clearedAtTime)));
   }
 
   const syncMsgs = await db.select({
@@ -750,7 +809,7 @@ export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit:
   })
   .from(messages)
   .leftJoin(users, eq(messages.senderId, users.id))
-  .where(and(eq(messages.loungeId, target.id), gt(messages.sequenceId, effectiveSince)))
+  .where(and(...syncConditions))
   .orderBy(messages.sequenceId)
   .limit(limit);
 
@@ -786,19 +845,34 @@ export async function getLoungeMessages(rawId: string, currentUserId: number | n
   }
 
   let clearedSeq = 0;
+  let clearedAtTime = 0;
+
   if (currentUserId) {
-    const [cursor] = await db.select({ clearedSeq: userReadCursors.clearedSeq })
-      .from(userReadCursors)
-      .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
-      .limit(1);
-    if (cursor?.clearedSeq) {
-      clearedSeq = cursor.clearedSeq;
+    const [cursor, clearRec] = await Promise.all([
+      db.select({ clearedSeq: userReadCursors.clearedSeq, clearedAt: userReadCursors.clearedAt })
+        .from(userReadCursors)
+        .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
+        .limit(1),
+      db.select({ clearedAt: userChatClears.clearedAt })
+        .from(userChatClears)
+        .where(and(eq(userChatClears.userId, currentUserId), eq(userChatClears.loungeId, target.id)))
+        .limit(1)
+    ]);
+
+    if (cursor[0]?.clearedSeq) {
+      clearedSeq = cursor[0].clearedSeq;
+    }
+    const cTime = clearRec[0]?.clearedAt ? new Date(clearRec[0].clearedAt).getTime() : (cursor[0]?.clearedAt ? new Date(cursor[0].clearedAt).getTime() : 0);
+    if (cTime > 0) {
+      clearedAtTime = cTime;
     }
   }
 
   const isDM = target.type === 'dm';
   const conditions = [eq(messages.loungeId, target.id)];
-  if (since && !isNaN(since.getTime())) {
+  if (clearedAtTime > 0) {
+    conditions.push(gt(messages.createdAt, new Date(clearedAtTime)));
+  } else if (since && !isNaN(since.getTime())) {
     conditions.push(gt(messages.createdAt, since));
   }
   if (clearedSeq > 0) {
