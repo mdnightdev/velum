@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
-import { getLocalMessages, saveLocalMessages, rotateAndReEncryptLocalMessages, deleteLocalMessage } from '../utils/indexedDb';
+import { getLocalMessages, saveLocalMessages, flushLoungeCache, rotateAndReEncryptLocalMessages, deleteLocalMessage } from '../utils/indexedDb';
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 import { storage } from '../services/storageService';
@@ -55,39 +55,34 @@ export function useWebSocket({
     setMessages([]);
 
     const syncRoom = async () => {
-      // a. Load cached messages for active room
-      const cached = await getLocalMessages(activeRoomId, 100, userId || undefined);
-      let lastTimestamp = '';
-
-      if (cached && cached.length > 0) {
-        setMessages(cached);
-        const lastMsg = cached[cached.length - 1];
-        if (lastMsg?.createdAt) {
-          lastTimestamp = new Date(lastMsg.createdAt).toISOString();
-        }
-      }
-
-      // b. Fetch missing (delta) messages from backend
+      const sessionToken = storage.getItem('velum-sessionId') || '';
+      
       try {
-        const sessionToken = storage.getItem('velum-sessionId') || '';
-        const url = lastTimestamp
-          ? `/v2/lounges/${activeRoomId}/messages?since=${encodeURIComponent(lastTimestamp)}`
-          : `/v2/lounges/${activeRoomId}/messages`;
-
+        const url = `/v2/lounges/${activeRoomId}/messages`;
         const res = await fetch(url, {
-          headers: { 'x-session-token': sessionToken }
+          headers: {
+            'Authorization': `Bearer ${sessionToken}`,
+            'x-session-id': sessionToken,
+            'x-session-token': sessionToken
+          }
         });
         const data = await res.json();
 
-        if (data.messages && data.messages.length > 0) {
-          setMessages((prev) => {
-            const existingIds = new Set(prev.map((m: any) => m.id || m.message_id));
-            const fresh = data.messages.filter((m: any) => !existingIds.has(m.id || m.message_id));
-            return [...prev, ...fresh];
-          });
+        if (data.messages && Array.isArray(data.messages)) {
+          if (data.messages.length === 0) {
+            await flushLoungeCache(activeRoomId, userId || undefined);
+            setMessages([]);
+          } else {
+            setMessages(data.messages);
+            await saveLocalMessages(data.messages, userId || undefined);
+          }
         }
       } catch (err) {
-        console.warn('[Sync] Failed to fetch delta messages:', err);
+        console.warn('[Sync] Failed to sync messages:', err);
+        const cached = await getLocalMessages(activeRoomId, 100, userId || undefined);
+        if (cached && cached.length > 0) {
+          setMessages(cached);
+        }
       }
     };
 

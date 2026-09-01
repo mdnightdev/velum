@@ -20,16 +20,19 @@ declare global {
 }
 
 /**
- * Extract session token from Authorization header or x-session-id header.
+ * Extract session token from Authorization header, x-session-id, or x-session-token header.
  */
 export function extractSessionToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7).trim();
   }
-  const xSessionId = req.headers['x-session-id'];
+  const xSessionId = req.headers['x-session-id'] || req.headers['x-session-token'];
   if (typeof xSessionId === 'string' && xSessionId.trim().length > 0) {
     return xSessionId.trim();
+  }
+  if (req.query?.sessionToken && typeof req.query.sessionToken === 'string') {
+    return req.query.sessionToken.trim();
   }
   return null;
 }

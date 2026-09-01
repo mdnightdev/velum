@@ -77,10 +77,23 @@ export async function getConversationsSummary(currentUserId?: number) {
   }
 
   // 2. Batch fetch unread messages across all lounges in ONE single query
+  // Fetch user read/cleared cursors
+  const cursors = await db.select()
+    .from(userReadCursors)
+    .where(eq(userReadCursors.userId, currentUserId));
+
+  const clearedSeqMap = new Map<number, number>();
+  const clearedAtMap = new Map<number, number>();
+  for (const c of cursors) {
+    if (c.clearedSeq > 0) clearedSeqMap.set(c.loungeId, c.clearedSeq);
+    if (c.clearedAt) clearedAtMap.set(c.loungeId, new Date(c.clearedAt).getTime());
+  }
+
   const unreadCandidateMsgs = await db
     .select({
       id: messages.id,
       loungeId: messages.loungeId,
+      sequenceId: messages.sequenceId,
       readBy: messages.readBy,
       senderId: messages.senderId
     })
@@ -94,6 +107,10 @@ export async function getConversationsSummary(currentUserId?: number) {
 
   const unreadPerLounge = new Map<number, number>();
   for (const m of unreadCandidateMsgs) {
+    const clearedSeq = clearedSeqMap.get(m.loungeId) || 0;
+    if (m.sequenceId && m.sequenceId <= clearedSeq) {
+      continue;
+    }
     const readByArr = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
     if (!readByArr.includes(currentUserId)) {
       unreadPerLounge.set(m.loungeId, (unreadPerLounge.get(m.loungeId) || 0) + 1);
@@ -103,6 +120,9 @@ export async function getConversationsSummary(currentUserId?: number) {
   // 3. Assemble response in memory
   for (const lounge of allLounges) {
     const roomId = lounge.slug || `lounge_${lounge.id}`;
+    const clearedSeq = clearedSeqMap.get(lounge.id) || 0;
+    const clearedAt = clearedAtMap.get(lounge.id) || 0;
+
     const unread = unreadPerLounge.get(lounge.id) || 0;
     if (unread > 0) {
       unreadCounts[roomId] = unread;
@@ -110,15 +130,21 @@ export async function getConversationsSummary(currentUserId?: number) {
 
     let lastMsg: any = null;
     if (lounge.lastMessageText !== null) {
-      lastMsg = {
-        content: lounge.lastMessageText,
-        user_id: lounge.lastMessageSenderId,
-        createdAt: lounge.lastMessageAt || new Date(),
-        deliveredTo: '',
-        readBy: '',
-      };
+      const msgTime = lounge.lastMessageAt ? new Date(lounge.lastMessageAt).getTime() : 0;
+      if (lounge.currentSequenceId > clearedSeq && (!clearedAt || msgTime > clearedAt)) {
+        lastMsg = {
+          content: lounge.lastMessageText,
+          user_id: lounge.lastMessageSenderId,
+          createdAt: lounge.lastMessageAt || new Date(),
+          deliveredTo: '',
+          readBy: '',
+        };
+      }
     } else {
-      lastMsg = latestMsgMap.get(lounge.id) || null;
+      const candidate = latestMsgMap.get(lounge.id) || null;
+      if (candidate && candidate.sequenceId > clearedSeq) {
+        lastMsg = candidate;
+      }
     }
 
     if (lastMsg) {
