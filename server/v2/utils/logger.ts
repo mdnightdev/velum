@@ -4,14 +4,15 @@ import type { Request, Response, NextFunction } from 'express';
 
 // Sensitive fields to redact from logs
 const SENSITIVE_FIELDS = [
-  'password', 'pass', 'pwd', 'secret', 'token', 'apiKey', 'api_key', 
+  'password', 'pass', 'pwd', 'secret', 'token', 'apikey', 'api_key', 
   'authorization', 'auth', 'credit_card', 'ssn', 'social_security',
   'session', 'cookie', 'csrf', 'nonce', 'private_key', 'access_token',
-  'refresh_token', 'client_secret', 'client_id'
+  'refresh_token', 'client_secret', 'client_id', 'recoverykey', 'recovery_key',
+  'panicphrase', 'panic_phrase', 'passcode', 'pin', 'salt', 'hash'
 ];
 
 // Redact sensitive data from objects
-function redactSensitiveData(obj: any): any {
+export function redactSensitiveData(obj: any): any {
   if (!obj || typeof obj !== 'object') return obj;
   
   if (Array.isArray(obj)) {
@@ -31,6 +32,8 @@ function redactSensitiveData(obj: any): any {
   }
   return redacted;
 }
+
+export const sanitizeForLogging = redactSensitiveData;
 
 // Custom log levels following syslog severity
 const levels = {

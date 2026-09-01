@@ -134,14 +134,32 @@ app.use(helmet({
       connectSrc: ["'self'", "ws:", "wss:", "http:", "https:"],
       objectSrc: ["'none'"],
       imgSrc: ["'self'", "data:", "http:", "https:"],
+      frameSrc: ["'none'"]
     }
   },
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
     preload: true
+  },
+  referrerPolicy: {
+    policy: 'strict-origin-when-cross-origin'
+  },
+  xssFilter: true,
+  noSniff: true,
+  frameguard: {
+    action: 'deny'
   }
 }));
+
+// Additional defense-in-depth security headers
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
 
 // Configure CORS for Web, PWA, and Android Capacitor APK
 const allowedOrigins = [
