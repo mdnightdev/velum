@@ -86,9 +86,9 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       args: ['<uid/username>']
     },
     flags: {
-      desc: 'Query user abuse reports and risk behavior telemetry',
+      desc: 'Query and investigate escalated user reports (14-day resolution lifecycle)',
       risk: 'LOW',
-      args: ['[uid/username]']
+      args: ['[report_id/username/resolve]', '[args]']
     },
     blacklist: {
       desc: 'View automated ecosystem blacklist table',

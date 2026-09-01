@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
-import { tickets, Ticket } from '../db/schema/tickets.js';
+import { tickets, Ticket, reports } from '../db/schema/tickets.js';
 import { eq, desc } from 'drizzle-orm';
 import { getRedisClient } from '../db/redis.js';
 import type { Request, Response } from 'express';
@@ -204,6 +204,29 @@ ticketRouter.post('/support/diagnostics', authMiddleware, async (req: Request, r
   } catch (err) {
     res.status(500).json({ error: 'Failed to save diagnostic logs.' });
   }
+});
+
+ticketRouter.post('/reports/:id/escalate', authMiddleware, async (req: Request, res: Response) => {
+  if (!req.user || !['LOGIN_ADMIN', 'ADMIN', 'CLI_ADMIN', 'SUPPORT_ADMIN'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Only administrators can escalate reports to CLI.' });
+  }
+
+  const reportId = parseInt(req.params.id, 10);
+  if (isNaN(reportId)) {
+    return res.status(400).json({ error: 'Invalid report ID.' });
+  }
+
+  const [existing] = await db.select().from(reports).where(eq(reports.id, reportId)).limit(1);
+  if (!existing) {
+    return res.status(404).json({ error: 'Report not found.' });
+  }
+
+  await db.update(reports).set({
+    status: 'escalated',
+    updatedAt: new Date()
+  }).where(eq(reports.id, reportId));
+
+  res.json({ success: true, message: `Report #${reportId} escalated to CLI investigation.` });
 });
 
 export const ticketRoutes = ticketRouter;

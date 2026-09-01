@@ -82,20 +82,86 @@ export async function handleSanctions(ctx: CommandContext): Promise<void> {
   }
 
   if (sub === 'flags') {
-    const target = rawArgs[0];
-    try {
-      if (target) {
-        const user = await resolveUser(target);
+    const actionOrTarget = rawArgs[0];
+
+    // Subcommand: flags resolve <report_id> [notes]
+    if (actionOrTarget === 'resolve') {
+      const reportId = parseInt(rawArgs[1], 10);
+      if (isNaN(reportId)) {
+        console.log('Usage: flags resolve <report_id> [resolution_notes]');
+        return;
+      }
+      const notes = rawArgs.slice(2).join(' ') || 'Resolved via CLI investigation';
+
+      try {
+        const [existing] = await db.select().from(reports).where(eq(reports.id, reportId)).limit(1);
+        if (!existing) {
+          console.log(`Report #${reportId} not found.`);
+          return;
+        }
+
+        await db.update(reports).set({
+          status: 'resolved',
+          updatedAt: new Date()
+        }).where(eq(reports.id, reportId));
+
+        console.log(`[OK] Escalated Report #${reportId} marked as RESOLVED. Record will automatically age out after 14 days.`);
+        await logAudit('/sanctions/flags/resolve', String(reportId), notes);
+      } catch (err) {
+        console.log(`[ERROR] Failed to resolve report: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    // Specific report ID or user inspection
+    if (actionOrTarget) {
+      const numId = parseInt(actionOrTarget, 10);
+      try {
+        let singleReport = !isNaN(numId) ? (await db.select().from(reports).where(eq(reports.id, numId)).limit(1))[0] : null;
+
+        if (singleReport) {
+          const targetUser = await userRepository.findById(singleReport.targetUserId);
+          const reporterUser = await userRepository.findById(singleReport.reporterId);
+
+          console.log(`=== Escalated Report Investigation #${singleReport.id} ===`);
+          console.log(`Target User:    ${targetUser ? targetUser.username : 'Unknown'} (ID: ${singleReport.targetUserId})`);
+          console.log(`Reporter:       ${reporterUser ? reporterUser.username : 'Anonymous'} (ID: ${singleReport.reporterId})`);
+          console.log(`Category:       ${singleReport.type}`);
+          console.log(`Priority:       ${singleReport.priority.toUpperCase()}`);
+          console.log(`Status:         ${singleReport.status.toUpperCase()}`);
+          console.log(`Reason:         ${singleReport.reason}`);
+          console.log(`Reported Date:  ${singleReport.createdAt ? new Date(singleReport.createdAt).toISOString() : '-'}`);
+          console.log(`Last Updated:   ${singleReport.updatedAt ? new Date(singleReport.updatedAt).toISOString() : '-'}`);
+
+          if (targetUser) {
+            // Pull digital ecosystem telemetry for deep investigation
+            const sessList = await db.select().from(sessions).where(eq(sessions.userId, targetUser.id));
+            const devList = await db.select().from(userDevices).where(eq(userDevices.userId, targetUser.id));
+            const ips = sessList.map(s => s.ipAddress).filter(Boolean);
+            const devIds = devList.map(d => d.deviceId).filter(Boolean);
+
+            console.log(`\n--- Target Ecosystem Telemetry ---`);
+            console.log(`Active IPs:     ${ips.length > 0 ? Array.from(new Set(ips)).join(', ') : 'None'}`);
+            console.log(`Device IDs:     ${devIds.length > 0 ? Array.from(new Set(devIds)).join(', ') : 'None'}`);
+          }
+          return;
+        }
+
+        // If not a report ID, check if it's a target username
+        const user = await resolveUser(actionOrTarget);
         if (!user) {
-          console.log(`User "${target}" not found.`);
+          console.log(`No report or user found matching "${actionOrTarget}".`);
           return;
         }
 
         const userReports = await db.select().from(reports).where(
-          eq(reports.targetUserId, user.id)
+          sql`${reports.targetUserId} = ${user.id} AND (
+              ${reports.status} IN ('escalated', 'flagged_for_cli', 'in_review', 'pending') OR 
+              (${reports.status} = 'resolved' AND ${reports.updatedAt} >= NOW() - INTERVAL '14 days')
+          )`
         ).orderBy(desc(reports.createdAt));
 
-        console.log(`Risk Flags for ${user.username} (ID: ${user.id}) | Total Reports: ${userReports.length}\n`);
+        console.log(`Escalated Flags for ${user.username} (ID: ${user.id}) | Active: ${userReports.length}\n`);
 
         if (userReports.length > 0) {
           printTable(userReports.map(r => ({
@@ -103,48 +169,45 @@ export async function handleSanctions(ctx: CommandContext): Promise<void> {
             Type: r.type,
             Priority: r.priority.toUpperCase(),
             Reason: r.reason,
-            Status: r.status,
+            Status: r.status.toUpperCase(),
             Date: r.createdAt ? new Date(r.createdAt).toISOString().split('T')[0] : '-'
           })));
         } else {
-          console.log(`No misconduct or fraud reports on record for ${user.username}.`);
+          console.log(`No active escalated reports for ${user.username}.`);
         }
+      } catch (err) {
+        console.log(`[ERROR] Failed to fetch report details: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    // Default: List all escalated reports needing CLI investigation (with 14-day resolved lifecycle)
+    try {
+      const activeEscalated = await db.select().from(reports).where(
+        sql`${reports.status} IN ('escalated', 'flagged_for_cli', 'in_review', 'pending') OR 
+            (${reports.status} = 'resolved' AND ${reports.updatedAt} >= NOW() - INTERVAL '14 days')`
+      ).orderBy(desc(reports.createdAt)).limit(50);
+
+      if (activeEscalated.length > 0) {
+        const userIds = Array.from(new Set(activeEscalated.map(r => r.targetUserId)));
+        const targetUsers = await db.select().from(users).where(sql`${users.id} IN (${sql.join(userIds, sql`, `)})`);
+        const userMap = new Map<number, string>();
+        targetUsers.forEach(u => userMap.set(u.id, u.username));
+
+        printTable(activeEscalated.map(r => ({
+          ReportID: r.id,
+          Target: userMap.get(r.targetUserId) || String(r.targetUserId),
+          Category: r.type,
+          Priority: r.priority.toUpperCase(),
+          Reason: r.reason,
+          Status: r.status.toUpperCase(),
+          EscalatedDate: r.createdAt ? new Date(r.createdAt).toISOString().split('T')[0] : '-'
+        })));
       } else {
-        // Aggregate incoming reports by target user
-        const allReports = await db.select().from(reports).orderBy(desc(reports.createdAt)).limit(100);
-        if (allReports.length > 0) {
-          const userReportMap = new Map<number, { count: number; latest: any }>();
-          for (const r of allReports) {
-            if (!userReportMap.has(r.targetUserId)) {
-              userReportMap.set(r.targetUserId, { count: 1, latest: r });
-            } else {
-              userReportMap.get(r.targetUserId)!.count++;
-            }
-          }
-
-          const userIds = Array.from(userReportMap.keys());
-          const targetUsers = await db.select().from(users).where(sql`${users.id} IN (${sql.join(userIds, sql`, `)})`);
-          const userObjMap = new Map<number, string>();
-          targetUsers.forEach(u => userObjMap.set(u.id, u.username));
-
-          const aggregatedRows = Array.from(userReportMap.entries()).map(([uid, data]) => ({
-            TargetID: uid,
-            Username: userObjMap.get(uid) || String(uid),
-            Reports: data.count,
-            Category: data.latest.type,
-            Priority: data.latest.priority.toUpperCase(),
-            LatestReason: data.latest.reason,
-            Status: data.latest.status,
-            LastReported: data.latest.createdAt ? new Date(data.latest.createdAt).toISOString().split('T')[0] : '-'
-          }));
-
-          printTable(aggregatedRows);
-        } else {
-          console.log('No user misconduct or fraud reports on record.');
-        }
+        console.log('No escalated reports pending CLI investigation.');
       }
     } catch (err) {
-      console.log(`[ERROR] Failed to fetch risk flags: ${(err as Error).message}`);
+      console.log(`[ERROR] Failed to fetch escalated flags: ${(err as Error).message}`);
     }
     return;
   }
