@@ -245,7 +245,7 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
   },
   '/bank': {
     audit: {
-      desc: 'Audit liquidity, deposits, and withdrawals',
+      desc: 'Reconcile user deposits and bank balances',
       risk: 'LOW'
     },
     wallets: {
@@ -253,7 +253,7 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'LOW'
     },
     tx: {
-      desc: 'List recent ledger transactions',
+      desc: 'List recent ledger transaction statements',
       risk: 'LOW',
       args: ['[wallet_id]']
     },
@@ -261,20 +261,15 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       desc: 'List users with admin or staff roles',
       risk: 'LOW'
     },
-    wire: {
-      desc: 'Transfer funds between two users',
-      risk: 'HIGH',
-      args: ['<from_username>', '<to_username>', '<amount>']
-    },
     fund: {
       desc: 'Fund bank account (c: Central Bank, t: Sentry Bank, e: Trading Account)',
       risk: 'CRITICAL',
       args: ['<c|t|e>', '<cents>', '[description]']
     },
-    adjust: {
-      desc: 'Adjust user wallet balance',
+    grant: {
+      desc: 'Award funds to one or multiple users atomically',
       risk: 'CRITICAL',
-      args: ['<uid/username>', '<new_balance>', '[reason]']
+      args: ['<user1:amount>', '[user2:amount...]', '[reason]']
     }
   },
   '/cards': {

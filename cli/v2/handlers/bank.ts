@@ -1,45 +1,47 @@
+import crypto from 'node:crypto';
 import { db } from '../../../server/v2/db/client.js';
 import { users } from '../../../server/v2/db/schema/users.js';
-import { wallets } from '../../../server/v2/db/schema/wallets.js';
+import { wallets, transactions } from '../../../server/v2/db/schema/wallets.js';
 import { bankRepository } from '../../../server/v2/repositories/bankRepository.js';
 import { reserveRepository } from '../../../server/v2/repositories/reserveRepository.js';
 import { getRedisClient } from '../../../server/v2/db/redis.js';
 import { stateManager } from '../state/stateManager.js';
-import { theme } from '../theme.js';
 import { printTable } from '../table.js';
-import { guardProtectedUser } from '../protection.js';
 import type { CommandContext } from '../types.js';
-
-const reserveMap = {
-  'fundc': 'CARD_SETTLEMENT',
-  'fundt': 'TREASURY',
-  'funde': 'ESCROW_BUFFER'
-} as const;
+import { eq, sql } from 'drizzle-orm';
 
 export async function handleBank(ctx: CommandContext): Promise<void> {
   const { sub, rawArgs, resolveUser, logAudit } = ctx;
 
-  if (sub === 'bankau') {
-    const allWallets = await db.select().from(wallets).limit(500);
-    const totalBal = allWallets.reduce((acc, w) => acc + parseFloat(w.balance || '0'), 0);
-    let allTxs: any[] = [];
-    try {
-      allTxs = await (bankRepository as any).findAllTransactions(500);
-    } catch {}
-    const totalIn = allTxs.filter(t => t.type === 'DEPOSIT' || t.type === 'TRANSFER_IN').reduce((acc, t) => acc + Math.abs(parseFloat(t.amount || '0')), 0);
-    const totalOut = allTxs.filter(t => t.type === 'WITHDRAWAL' || t.type === 'TRANSFER_OUT').reduce((acc, t) => acc + Math.abs(parseFloat(t.amount || '0')), 0);
-    console.log(`Total Wallets: ${allWallets.length} | Deposits: ${totalBal.toFixed(2)} USDT | Inflow: ${totalIn.toFixed(2)} USDT | Outflow: ${totalOut.toFixed(2)} USDT | Delta: ${(totalIn - totalOut - totalBal).toFixed(2)} USDT`);
-    await logAudit('/bank/bankau', 'SYSTEM', 'Executed liquidity audit');
+  // 1. Bank Audit Summary
+  if (sub === 'audit' || sub === 'bankau') {
+    const allWallets = await db.select().from(wallets).limit(1000);
+    const totalWalletBal = allWallets.reduce((acc, w) => acc + parseFloat(w.balance || '0'), 0);
+    const allReserves = await reserveRepository.getAllReserves();
+    const txCountRes = await db.select({ count: sql<number>`count(*)` }).from(transactions);
+    const txCount = Number(txCountRes[0]?.count ?? 0);
+
+    console.log(`[Bank Reconciliation]`);
+    console.log(`Active Wallets: ${allWallets.length} | User Deposits: $${totalWalletBal.toFixed(2)} USDT | Recorded Transactions: ${txCount}`);
+    if (allReserves.length > 0) {
+      console.log(`\n[Bank Reserves]`);
+      printTable(allReserves.map(r => ({
+        Bank: r.reserveType,
+        Balance: `$${(r.balanceCents / 100).toFixed(2)}`,
+        Updated: r.updatedAt ? new Date(r.updatedAt).toISOString().replace('T', ' ').substring(0, 19) : '-'
+      })));
+    }
+    await logAudit('/bank/audit', 'SYSTEM', 'Reconciled banking summary');
     return;
   }
 
+  // 2. List Wallets & Bank Balances
   if (sub === 'wallets' || sub === 'list' || sub === 'banks' || sub === 'ls') {
     const allWallets = await db.select().from(wallets).limit(100);
     printTable(allWallets.map(w => ({
       ID: w.id,
       UserID: w.userId,
-      Balance: w.balance,
-      Currency: w.currency,
+      Balance: `${w.balance} ${w.currency}`,
       Frozen: stateManager.isWalletFrozen(w.id.toString()) ? 'Y' : 'N'
     })));
     
@@ -47,7 +49,7 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     if (allReserves.length > 0) {
       console.log();
       printTable(allReserves.map(r => ({
-        Type: r.reserveType,
+        Bank: r.reserveType,
         Balance: `$${(r.balanceCents / 100).toFixed(2)}`,
         Updated: r.updatedAt ? new Date(r.updatedAt).toISOString().split('T')[0] : '-'
       })));
@@ -55,7 +57,8 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     return;
   }
 
-  if (sub === 'tx' || sub === 'cat' || sub === 'txlog') {
+  // 3. Transaction Statements
+  if (sub === 'tx' || sub === 'txlog' || sub === 'statement') {
     const walletId = rawArgs[0] ? parseInt(rawArgs[0], 10) : undefined;
     let txs;
     if (walletId && !isNaN(walletId)) {
@@ -63,8 +66,14 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     } else {
       txs = await (bankRepository as any).findAllTransactions(50);
     }
-    printTable(txs.map(t => ({
-      ID: t.id,
+
+    if (!txs || txs.length === 0) {
+      console.log('No transactions recorded.');
+      return;
+    }
+
+    printTable(txs.map((t: any) => ({
+      Time: t.createdAt ? new Date(t.createdAt).toISOString().replace('T', ' ').substring(0, 19) : '-',
       Reference: t.reference,
       WalletID: t.walletId,
       Type: t.type,
@@ -75,83 +84,15 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     return;
   }
 
+  // 4. Staff List
   if (sub === 'staff') {
     const allUsers = await db.select().from(users).limit(200);
-    const staffUsers = allUsers.filter(u => ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(u.role));
+    const staffUsers = allUsers.filter(u => ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN'].includes(u.role));
     printTable(staffUsers.map(u => ({ ID: u.id, Username: u.username, Role: u.role })));
     return;
   }
 
-  if (sub === 'wire') {
-    const [fromUsername, toUsername, amountStr] = rawArgs;
-    if (!fromUsername || !toUsername || !amountStr) {
-      console.log('Usage: wire <from_username> <to_username> <amount>');
-      return;
-    }
-
-    const fromUser = await resolveUser(fromUsername);
-    const toUser = await resolveUser(toUsername);
-    if (!fromUser || !toUser) {
-      console.log('Invalid sender or recipient.');
-      return;
-    }
-
-    const amt = parseFloat(amountStr);
-    if (isNaN(amt) || amt <= 0) {
-      console.log('Invalid transfer amount.');
-      return;
-    }
-
-    const fromWallet = await bankRepository.findWalletByUserId(fromUser.id);
-    const toWallet = await bankRepository.findWalletByUserId(toUser.id);
-    if (!fromWallet || !toWallet) {
-      console.log('Sender or recipient has no initialized wallet.');
-      return;
-    }
-
-    if (parseFloat(fromWallet.balance) < amt) {
-      console.log(`[FAILED] Insufficient funds in ${fromUser.username}'s wallet.`);
-      return;
-    }
-
-    await bankRepository.updateBalance(fromWallet.id, (parseFloat(fromWallet.balance) - amt).toFixed(2));
-    await bankRepository.updateBalance(toWallet.id, (parseFloat(toWallet.balance) + amt).toFixed(2));
-
-    const ref = `WIRE-${Date.now()}`;
-    await bankRepository.createTransaction({
-      reference: ref,
-      walletId: fromWallet.id,
-      type: 'TRANSFER_OUT',
-      amount: `-${amt.toFixed(2)}`,
-      status: 'COMPLETED',
-      description: `Wire to user ID ${toUser.id}`
-    });
-
-    await bankRepository.createTransaction({
-      reference: `${ref}-IN`,
-      walletId: toWallet.id,
-      type: 'TRANSFER_IN',
-      amount: `${amt.toFixed(2)}`,
-      status: 'COMPLETED',
-      description: `Wire from user ID ${fromUser.id}`
-    });
-
-    try {
-      const redis = await getRedisClient();
-      if (redis) {
-        await redis.del('bank:all_accounts');
-        await redis.del('bank:all_transactions');
-      }
-    } catch (err) {
-      console.log(`${theme.yellow}[WARN] Failed to invalidate Redis cache: ${(err as Error).message}${theme.reset}`);
-    }
-
-    console.log(`[OK] Wired ${amt} USDT from ${fromUser.username} to ${toUser.username}. Ref: ${ref}`);
-    await logAudit('/bank/wire', `${fromUser.username}->${toUser.username}`, `Wired ${amt} USDT (Ref: ${ref})`);
-    return;
-  }
-
-  // Unified Bank Funding: fund <c|t|e> <cents> [description] (supports aliases fundc, fundt, funde)
+  // 5. Unified Bank Funding: fund <c|t|e> <cents> [description]
   if (sub === 'fund' || sub === 'fundc' || sub === 'fundt' || sub === 'funde') {
     let target = '';
     let centsStr = '';
@@ -170,7 +111,6 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       centsStr = rawArgs[0];
       descParts = rawArgs.slice(1);
     } else {
-      // sub === 'fund'
       target = (rawArgs[0] || '').toLowerCase();
       centsStr = rawArgs[1];
       descParts = rawArgs.slice(2);
@@ -241,52 +181,119 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     }
   }
 
-  // Adjust balance: adjust <username> <new_balance> [reason]
-  if (sub === 'adjust' || sub === 'bankad') {
-    const [target, newBalance, ...reasonParts] = rawArgs;
-    if (!target || !newBalance) { console.log('Usage: adjust <id_or_username> <new_balance> [reason]'); return; }
-    const user = await resolveUser(target);
-    if (!user) { console.log(`User "${target}" not found.`); return; }
-    
-    let wallet = await bankRepository.findWalletByUserId(user.id);
-    if (!wallet) {
-      wallet = await bankRepository.createWallet({
-        userId: user.id,
-        balance: '0.00',
-        currency: 'USDT'
-      });
-      console.log(`[Info] Wallet created for ${user.username}.`);
-    }
-    
-    const oldBal = parseFloat(wallet.balance);
-    const newBalAmt = parseFloat(newBalance);
-    const diff = newBalAmt - oldBal;
-    
-    const updated = await bankRepository.updateBalance(wallet.id, newBalance);
-    
-    if (diff !== 0) {
-      await bankRepository.createTransaction({
-        reference: `ADJ-${Date.now()}`,
-        walletId: wallet.id,
-        type: diff > 0 ? 'DEPOSIT' : 'WITHDRAWAL',
-        amount: diff.toFixed(2),
-        status: 'COMPLETED',
-        description: reasonParts.join(' ') || 'Balance adjustment'
-      });
-    }
-    
-    try {
-      const redis = await getRedisClient();
-      if (redis) {
-        await redis.del('bank:all_accounts');
-        await redis.del('bank:all_transactions');
-      }
-    } catch (err) {
-      console.log(`${theme.yellow}[WARN] Failed to invalidate Redis cache: ${(err as Error).message}${theme.reset}`);
+  // 6. Multi-User Grant / Reward Disbursement (Atomic PostgreSQL Transaction)
+  // Syntax: grant <user1:amount> <user2:amount> ... [reason]
+  if (sub === 'grant' || sub === 'award') {
+    if (rawArgs.length === 0) {
+      console.log('Usage: grant <user1:amount> [user2:amount...] [reason]');
+      console.log('Example: grant alice:50 bob:100 charlie:25 Tournament Prizes');
+      return;
     }
 
-    console.log(`[OK] Updated wallet balance for ${user.username} to: ${updated?.balance} USDT.`);
-    await logAudit('/bank/adjust', user.username, `Adjusted wallet balance to ${newBalance}`);
+    const grantPairs: { usernameOrId: string; amount: number }[] = [];
+    const reasonParts: string[] = [];
+
+    for (const arg of rawArgs) {
+      if (arg.includes(':')) {
+        const [target, amtStr] = arg.split(':');
+        const amt = parseFloat(amtStr);
+        if (target && !isNaN(amt) && amt > 0) {
+          grantPairs.push({ usernameOrId: target, amount: amt });
+          continue;
+        }
+      }
+      reasonParts.push(arg);
+    }
+
+    if (grantPairs.length === 0) {
+      console.log('Usage: grant <user1:amount> [user2:amount...] [reason]');
+      return;
+    }
+
+    const reason = reasonParts.join(' ') || 'CLI Grant Award';
+
+    // Step 1: Pre-resolve all users before entering database transaction
+    const resolvedGrants: { user: any; amount: number }[] = [];
+    for (const pair of grantPairs) {
+      const user = await resolveUser(pair.usernameOrId);
+      if (!user) {
+        console.log(`[FAILED] Target user "${pair.usernameOrId}" not found. Entire grant transaction aborted.`);
+        return;
+      }
+      resolvedGrants.push({ user, amount: pair.amount });
+    }
+
+    // Step 2: Execute all wallet updates and transaction ledger records inside an isolated SQL transaction
+    const results: { username: string; amount: number; reference: string; newBalance: string }[] = [];
+    try {
+      await db.transaction(async (tx) => {
+        for (const item of resolvedGrants) {
+          // Find or create wallet for user
+          let userWallets = await tx.select().from(wallets).where(eq(wallets.userId, item.user.id)).limit(1);
+          let wallet = userWallets[0];
+
+          if (!wallet) {
+            const created = await tx.insert(wallets).values({
+              userId: item.user.id,
+              balance: '0.00',
+              currency: 'USDT'
+            }).returning();
+            wallet = created[0];
+          }
+
+          const currentBal = parseFloat(wallet.balance || '0');
+          const newBal = (currentBal + item.amount).toFixed(2);
+
+          // Update wallet balance
+          await tx.update(wallets).set({
+            balance: newBal,
+            updatedAt: new Date()
+          }).where(eq(wallets.id, wallet.id));
+
+          // Generate a strictly unique transaction reference code for each grant recipient
+          const uniqueSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
+          const txnRef = `GRNT-${Date.now()}-${uniqueSuffix}`;
+
+          // Insert immutable transaction ledger entry
+          await tx.insert(transactions).values({
+            reference: txnRef,
+            walletId: wallet.id,
+            type: 'DEPOSIT',
+            amount: item.amount.toFixed(2),
+            status: 'COMPLETED',
+            description: reason
+          });
+
+          results.push({
+            username: item.user.username,
+            amount: item.amount,
+            reference: txnRef,
+            newBalance: `${newBal} USDT`
+          });
+        }
+      });
+
+      // Clear cache
+      try {
+        const redis = await getRedisClient();
+        if (redis) {
+          await redis.del('bank:all_accounts');
+          await redis.del('bank:all_transactions');
+        }
+      } catch {}
+
+      console.log(`[OK] Successfully executed atomic grant for ${results.length} recipient(s):`);
+      printTable(results.map(r => ({
+        Recipient: r.username,
+        Granted: `+${r.amount.toFixed(2)} USDT`,
+        Reference: r.reference,
+        Balance: r.newBalance
+      })));
+
+      await logAudit('/bank/grant', `${results.length} recipients`, `Granted funds (${reason})`);
+    } catch (err) {
+      console.log(`[ERROR] Batch grant transaction failed: ${(err as Error).message}`);
+    }
     return;
   }
 }
