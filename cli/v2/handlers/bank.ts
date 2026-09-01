@@ -296,4 +296,169 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     }
     return;
   }
+
+  // 7. Reversals, Refunds & Dispute Rollbacks
+  if (sub === 'reverse' || sub === 'refund' || sub === 'rollback' || sub === 'reversals') {
+    const action = (rawArgs[0] || '').toLowerCase();
+
+    if (action === 'list' || sub === 'reversals') {
+      const { reversals } = await import('../../../server/v2/db/schema/reversals.js');
+      const { desc } = await import('drizzle-orm');
+      const allReversals = await db.select().from(reversals).orderBy(desc(reversals.createdAt)).limit(50);
+      if (allReversals.length === 0) {
+        console.log('No reversals or refunds recorded.');
+        return;
+      }
+      printTable(allReversals.map(r => ({
+        Time: r.createdAt ? new Date(r.createdAt).toISOString().replace('T', ' ').substring(0, 19) : '-',
+        Reference: r.reference,
+        Type: r.type,
+        UserID: r.userId,
+        FromUserID: r.fromUserId ?? '-',
+        Amount: `${r.amount} ${r.currency}`,
+        Reason: r.reason,
+        Status: r.status
+      })));
+      return;
+    }
+
+    if (action === 'refund') {
+      const [_, targetUser, amtStr, ...reasonParts] = rawArgs;
+      if (!targetUser || !amtStr) {
+        console.log('Usage: reverse refund <username> <amount> [reason]');
+        return;
+      }
+      const user = await resolveUser(targetUser);
+      if (!user) { console.log(`User "${targetUser}" not found.`); return; }
+      const amt = parseFloat(amtStr);
+      if (isNaN(amt) || amt <= 0) { console.log('Invalid refund amount.'); return; }
+      const reason = reasonParts.join(' ') || 'Platform Refund';
+
+      const { reversals } = await import('../../../server/v2/db/schema/reversals.js');
+      const refCode = `REF-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+      await db.transaction(async (tx) => {
+        let [wallet] = await tx.select().from(wallets).where(eq(wallets.userId, user.id)).limit(1);
+        if (!wallet) {
+          const created = await tx.insert(wallets).values({ userId: user.id, balance: '0.00', currency: 'USDT' }).returning();
+          wallet = created[0];
+        }
+
+        const newBal = (parseFloat(wallet.balance) + amt).toFixed(2);
+        await tx.update(wallets).set({ balance: newBal, updatedAt: new Date() }).where(eq(wallets.id, wallet.id));
+
+        await tx.insert(transactions).values({
+          reference: refCode,
+          walletId: wallet.id,
+          type: 'REFUND',
+          amount: amt.toFixed(2),
+          status: 'COMPLETED',
+          description: reason
+        });
+
+        await tx.insert(reversals).values({
+          reference: refCode,
+          type: 'REFUND',
+          walletId: wallet.id,
+          userId: user.id,
+          amount: amt.toFixed(2),
+          currency: 'USDT',
+          reason: reason,
+          status: 'COMPLETED'
+        });
+      });
+
+      try {
+        const redis = await getRedisClient();
+        if (redis) {
+          await redis.del('bank:all_accounts');
+          await redis.del('bank:all_transactions');
+        }
+      } catch {}
+
+      console.log(`[OK] Refund of ${amt.toFixed(2)} USDT issued to ${user.username} (Ref: ${refCode}).`);
+      await logAudit('/bank/reverse', user.username, `Issued refund of ${amt} USDT (${reason})`);
+      return;
+    }
+
+    if (action === 'rollback') {
+      const [_, fromUsername, toUsername, amtStr, ...reasonParts] = rawArgs;
+      if (!fromUsername || !toUsername || !amtStr) {
+        console.log('Usage: reverse rollback <from_user> <to_user> <amount> [reason]');
+        return;
+      }
+      const fromUser = await resolveUser(fromUsername);
+      const toUser = await resolveUser(toUsername);
+      if (!fromUser || !toUser) { console.log('Invalid sender or recipient user.'); return; }
+      const amt = parseFloat(amtStr);
+      if (isNaN(amt) || amt <= 0) { console.log('Invalid rollback amount.'); return; }
+      const reason = reasonParts.join(' ') || 'Dispute Rollback';
+
+      const { reversals } = await import('../../../server/v2/db/schema/reversals.js');
+      const refCode = `ROL-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+      await db.transaction(async (tx) => {
+        let [fromWallet] = await tx.select().from(wallets).where(eq(wallets.userId, fromUser.id)).limit(1);
+        let [toWallet] = await tx.select().from(wallets).where(eq(wallets.userId, toUser.id)).limit(1);
+
+        if (!fromWallet || !toWallet) {
+          throw new Error('Wallet missing for one of the accounts.');
+        }
+
+        const fromBal = parseFloat(fromWallet.balance);
+        const toBal = parseFloat(toWallet.balance);
+
+        await tx.update(wallets).set({ balance: (fromBal - amt).toFixed(2), updatedAt: new Date() }).where(eq(wallets.id, fromWallet.id));
+        await tx.update(wallets).set({ balance: (toBal + amt).toFixed(2), updatedAt: new Date() }).where(eq(wallets.id, toWallet.id));
+
+        await tx.insert(transactions).values({
+          reference: `${refCode}-OUT`,
+          walletId: fromWallet.id,
+          type: 'TRANSFER_OUT',
+          amount: `-${amt.toFixed(2)}`,
+          status: 'COMPLETED',
+          description: `Rollback clawback: ${reason}`
+        });
+
+        await tx.insert(transactions).values({
+          reference: `${refCode}-IN`,
+          walletId: toWallet.id,
+          type: 'REFUND',
+          amount: amt.toFixed(2),
+          status: 'COMPLETED',
+          description: `Rollback refund: ${reason}`
+        });
+
+        await tx.insert(reversals).values({
+          reference: refCode,
+          type: 'SCAM_ROLLBACK',
+          walletId: toWallet.id,
+          userId: toUser.id,
+          fromUserId: fromUser.id,
+          amount: amt.toFixed(2),
+          currency: 'USDT',
+          reason: reason,
+          status: 'COMPLETED'
+        });
+      });
+
+      try {
+        const redis = await getRedisClient();
+        if (redis) {
+          await redis.del('bank:all_accounts');
+          await redis.del('bank:all_transactions');
+        }
+      } catch {}
+
+      console.log(`[OK] Rolled back ${amt.toFixed(2)} USDT from ${fromUser.username} to ${toUser.username} (Ref: ${refCode}).`);
+      await logAudit('/bank/reverse', `${fromUser.username}->${toUser.username}`, `Rolled back ${amt} USDT (${reason})`);
+      return;
+    }
+
+    console.log('Usage: reverse <refund|rollback|list>');
+    console.log('  reverse refund <user> <amount> [reason]                  - Issue refund');
+    console.log('  reverse rollback <from_user> <to_user> <amount> [reason] - Rollback funds from wrong account/scam');
+    console.log('  reverse list                                             - View recorded reversals');
+    return;
+  }
 }

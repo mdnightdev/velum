@@ -18,4 +18,5 @@ export * from './lounge_mutes.js';
 export * from './system_config.js';
 export * from './webauthn.js';
 export * from './blacklist.js';
+export * from './reversals.js';
 

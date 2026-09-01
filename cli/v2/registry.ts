@@ -270,6 +270,11 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       desc: 'Award funds to one or multiple users atomically',
       risk: 'CRITICAL',
       args: ['<user1:amount>', '[user2:amount...]', '[reason]']
+    },
+    reverse: {
+      desc: 'Process dispute refund, wrong account rollback, or list reversals',
+      risk: 'CRITICAL',
+      args: ['<refund|rollback|list>', '[args...]']
     }
   },
   '/cards': {
