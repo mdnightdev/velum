@@ -30,15 +30,30 @@ Refactor `/bank` and `/audits` to eliminate manual balance tampering and synthet
   * Updates wallet records to match ledger truth.
   * Records audit log entry with the repaired delta.
 
+### 4. Reversals & Dispute Refunds (`/bank reverse`)
+* **Dedicated Database Table (`reversals`)**:
+  * Records all administrative fund reversals, transaction rollbacks, and scam/defective product refunds.
+  * Fields: `id`, `reference` (`REV-...`), `originalTxnRef`, `type` (`REFUND`/`REVERSAL`/`ROLLBACK`), `walletId`, `userId`, `fromUserId`, `amount`, `currency`, `reason`, `status`, `createdAt`.
+* **Atomic Execution Modes**:
+  * `/bank reverse txn <original_txn_ref> [reason]`: Rolls back an errant transaction between sender and recipient wallets.
+  * `/bank reverse refund <username> <amount> [reason]`: Issues an administrative refund for defective purchases or platform disputes.
+  * `/bank reverse rollback <from_user> <to_user> <amount> [reason]`: Direct clawback from fraudulent/misdirected account back to victim.
+  * `/bank reverse list` (or `reversals`): Dumps the permanent reversals and refunds audit ledger.
+
 ---
 
 ## Implementation Phases
 
-### Phase 1: `/bank` Cleanup & Multi-User Atomic Grant
+### Phase 1: `/bank` Cleanup & Multi-User Atomic Grant (Completed)
 1. Remove `wire`, `adjust`, `bankad`, and pseudo-telemetry from `cli/v2/handlers/bank.ts`.
 2. Implement `/bank grant <user1:amount> <user2:amount> ... [reason]` with atomic PostgreSQL transaction support.
 3. Update `/bank tx` to display clean bank statement formatting.
 4. Update `cli/v2/registry.ts` to reflect the updated `/bank` command schema.
+
+### Phase 1B: Reversals & Refund Table & `/bank reverse`
+1. Add `reversals` table in `server/v2/db/schema/wallets.ts` and initialize in database migrations.
+2. Implement `/bank reverse <txn|refund|rollback|list>` in `cli/v2/handlers/bank.ts` wrapped in atomic PostgreSQL transactions.
+3. Update `cli/v2/registry.ts` with `reverse`.
 
 ### Phase 2: `/audits` Ledger Inspection & Auto-Repair
 1. Implement `/audits ledger` in `cli/v2/handlers/audits.ts` (mismatch detection with colored diffs).
@@ -48,6 +63,7 @@ Refactor `/bank` and `/audits` to eliminate manual balance tampering and synthet
 
 ### Phase 3: Verification & Test Suite Execution
 1. Run multi-recipient batch grant tests with concurrency and rollback verifications.
-2. Simulate deliberate wallet balance corruption and verify `/audits repair` restores exact ledger balance.
-3. Run test suite (`tests/unit/cliSecurity.test.ts`) to ensure 100% pass rate.
-4. Remove `PLANNING.md` upon final reconciliation.
+2. Run transaction reversal and scam rollback tests with database persistence verification.
+3. Simulate deliberate wallet balance corruption and verify `/audits repair` restores exact ledger balance.
+4. Run test suite (`tests/unit/cliSecurity.test.ts`) to ensure 100% pass rate.
+5. Remove `PLANNING.md` upon final reconciliation.

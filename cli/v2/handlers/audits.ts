@@ -6,11 +6,13 @@ import { auditLogs } from '../../../server/v2/db/schema/audit_logs.js';
 import { sessions } from '../../../server/v2/db/schema/sessions.js';
 import { lounges } from '../../../server/v2/db/schema/lounges.js';
 import { users } from '../../../server/v2/db/schema/users.js';
-import { wallets } from '../../../server/v2/db/schema/wallets.js';
+import { wallets, transactions } from '../../../server/v2/db/schema/wallets.js';
 import { devices, userDevices, ipAddresses } from '../../../server/v2/db/schema/devices.js';
 import { bankRepository } from '../../../server/v2/repositories/bankRepository.js';
+import { getRedisClient } from '../../../server/v2/db/redis.js';
 import { parseDeviceModel, parseLocation } from '../utils/deviceParser.js';
 import { printTable, printDetail } from '../table.js';
+import { theme } from '../theme.js';
 import type { CommandContext } from '../types.js';
 
 export async function handleAudits(ctx: CommandContext): Promise<void> {
@@ -134,13 +136,155 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
     return;
   }
 
-  if (sub === 'ledger') {
+  // Ledger Audit & Discrepancy Highlighting
+  if (sub === 'ledger' || sub === 'bank' || sub === 'balances') {
     try {
-      const allTxs = await (bankRepository as any).findAllTransactions(500);
-      console.log(`[OK] Verified ${allTxs.length} ledger transactions.`);
-      await logAudit('/audits/ledger', 'SYSTEM', `Verified ${allTxs.length} transactions`);
+      const allWallets = await db.select().from(wallets).limit(500);
+      const allUsers = await db.select({ id: users.id, username: users.username }).from(users);
+      const userMap = new Map(allUsers.map(u => [u.id, u.username]));
+
+      const allTxs = await db.select().from(transactions);
+      const txsByWallet = new Map<number, typeof allTxs>();
+      for (const t of allTxs) {
+        if (!txsByWallet.has(t.walletId)) txsByWallet.set(t.walletId, []);
+        txsByWallet.get(t.walletId)!.push(t);
+      }
+
+      let discrepanciesCount = 0;
+      const rows = allWallets.map(w => {
+        const userTxs = txsByWallet.get(w.id) || [];
+        const computedBal = userTxs.reduce((acc, t) => {
+          const amt = parseFloat(t.amount || '0');
+          return acc + (t.type === 'WITHDRAWAL' || t.type === 'TRANSFER_OUT' ? -Math.abs(amt) : Math.abs(amt));
+        }, 0);
+
+        const storedBal = parseFloat(w.balance || '0');
+        const variance = storedBal - computedBal;
+        const hasMismatch = Math.abs(variance) >= 0.01;
+
+        if (hasMismatch) discrepanciesCount++;
+
+        return {
+          WalletID: w.id,
+          User: userMap.get(w.userId) || `ID:${w.userId}`,
+          StoredBalance: `${storedBal.toFixed(2)} ${w.currency}`,
+          LedgerSum: `${computedBal.toFixed(2)} ${w.currency}`,
+          Variance: hasMismatch ? `${theme.red}${variance > 0 ? '+' : ''}${variance.toFixed(2)}${theme.reset}` : '0.00',
+          Status: hasMismatch ? `${theme.red}[DISCREPANCY]${theme.reset}` : `${theme.green}[OK]${theme.reset}`
+        };
+      });
+
+      console.log(`[Ledger Integrity Verification]`);
+      printTable(rows);
+
+      if (discrepanciesCount > 0) {
+        console.log(`\n${theme.red}[ALERT] ${discrepanciesCount} wallet discrepancy detected!${theme.reset}`);
+        console.log(`Use "audits cat <wallet_id|username>" to inspect transaction history.`);
+        console.log(`Use "audits repair [wallet_id|username|all]" to automatically reconcile balances to match ledger truth.`);
+      } else {
+        console.log(`\n${theme.green}[OK] All ${allWallets.length} wallet balances match ledger transactions with 100% atomicity.${theme.reset}`);
+      }
+
+      await logAudit('/audits/ledger', 'SYSTEM', `Audited ${allWallets.length} wallets, found ${discrepanciesCount} discrepancies`);
     } catch (err) {
       console.log(`[ERROR] Ledger audit failed: ${(err as Error).message}`);
+    }
+    return;
+  }
+
+  // Inspect Chronological Transaction History and Balance Trail
+  if (sub === 'cat' || sub === 'history' || sub === 'inspect') {
+    const target = rawArgs[0];
+    if (!target) {
+      console.log('Usage: audits cat <wallet_id_or_username>');
+      return;
+    }
+
+    try {
+      let targetWallet: any = null;
+      let targetUsername = target;
+
+      const numericId = parseInt(target, 10);
+      if (!isNaN(numericId)) {
+        const [w] = await db.select().from(wallets).where(eq(wallets.id, numericId)).limit(1);
+        if (w) {
+          targetWallet = w;
+          const [u] = await db.select().from(users).where(eq(users.id, w.userId)).limit(1);
+          if (u) targetUsername = u.username;
+        }
+      }
+
+      if (!targetWallet) {
+        const user = await resolveUser(target);
+        if (!user) {
+          console.log(`Wallet or user "${target}" not found.`);
+          return;
+        }
+        targetUsername = user.username;
+        const [w] = await db.select().from(wallets).where(eq(wallets.userId, user.id)).limit(1);
+        targetWallet = w;
+      }
+
+      if (!targetWallet) {
+        console.log(`No wallet found for user "${targetUsername}".`);
+        return;
+      }
+
+      const txList = await db.select().from(transactions).where(eq(transactions.walletId, targetWallet.id)).orderBy(transactions.createdAt);
+
+      if (txList.length === 0) {
+        console.log(`[Ledger History: ${targetUsername} (Wallet #${targetWallet.id})]`);
+        console.log('No transactions recorded for this wallet.');
+        console.log(`Current Stored Balance: ${targetWallet.balance} ${targetWallet.currency}`);
+        return;
+      }
+
+      let runningBal = 0;
+      let totalIn = 0;
+      let totalOut = 0;
+
+      const rows = txList.map(t => {
+        const amt = parseFloat(t.amount || '0');
+        const isOutflow = t.type === 'WITHDRAWAL' || t.type === 'TRANSFER_OUT';
+        if (isOutflow) {
+          totalOut += Math.abs(amt);
+          runningBal -= Math.abs(amt);
+        } else {
+          totalIn += Math.abs(amt);
+          runningBal += Math.abs(amt);
+        }
+
+        return {
+          Time: t.createdAt ? new Date(t.createdAt).toISOString().replace('T', ' ').substring(0, 19) : '-',
+          Reference: t.reference,
+          Type: t.type,
+          Amount: `${isOutflow ? '-' : '+'}${Math.abs(amt).toFixed(2)}`,
+          RunningBalance: `${runningBal.toFixed(2)} USDT`,
+          Status: t.status,
+          Description: t.description || '-'
+        };
+      });
+
+      console.log(`[Ledger History: ${targetUsername} (Wallet #${targetWallet.id})]`);
+      printTable(rows);
+
+      const storedBal = parseFloat(targetWallet.balance || '0');
+      const variance = storedBal - runningBal;
+      const isConsistent = Math.abs(variance) < 0.01;
+
+      console.log(`\n[Account Integrity Summary]`);
+      console.log(`Total Inflow: +$${totalIn.toFixed(2)} | Total Outflow: -$${totalOut.toFixed(2)}`);
+      console.log(`Calculated Final Ledger Balance: $${runningBal.toFixed(2)} USDT`);
+      console.log(`Stored Current Wallet Balance:   $${storedBal.toFixed(2)} USDT`);
+      if (!isConsistent) {
+        console.log(`${theme.red}[DISCREPANCY] Variance of ${variance > 0 ? '+' : ''}${variance.toFixed(2)} USDT detected! Run "audits repair ${targetWallet.id}" to reconcile.${theme.reset}`);
+      } else {
+        console.log(`${theme.green}[OK] Wallet balance matches transaction ledger with 100% mathematical integrity.${theme.reset}`);
+      }
+
+      await logAudit('/audits/cat', targetUsername, `Inspected ledger history for wallet #${targetWallet.id}`);
+    } catch (err) {
+      console.log(`[ERROR] Ledger inspection failed: ${(err as Error).message}`);
     }
     return;
   }
@@ -273,20 +417,106 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
     return;
   }
 
+  // Automated Ledger Balance Auto-Repair (Reconciles wallet balance to true sum of transactions)
+  // Syntax: repair [wallet_id | username | all]
   if (sub === 'repair') {
-    const [target, deltaCentsStr] = rawArgs;
-    if (!target || !deltaCentsStr) { console.log('Usage: repair <id_or_username> <amount_cents>'); return; }
-    const deltaCents = parseInt(deltaCentsStr, 10);
-    if (isNaN(deltaCents)) { console.log('Invalid cents amount.'); return; }
-    const user = await resolveUser(target);
-    if (!user) { console.log(`User "${target}" not found.`); return; }
-    const wallet = await bankRepository.findWalletByUserId(user.id);
-    if (!wallet) { console.log(`No wallet found for user ${user.username}.`); return; }
-    const currentBal = parseFloat(wallet.balance || '0');
-    const newBal = (currentBal + (deltaCents / 100)).toFixed(2);
-    await bankRepository.updateBalance(wallet.id, newBal);
-    console.log(`[OK] Applied balance delta ($${(deltaCents / 100).toFixed(2)}) to ${user.username}. New balance: ${newBal}.`);
-    await logAudit('/audits/repair', user.username, `Applied ledger repair delta ${deltaCents} cents`);
+    const target = rawArgs[0] || 'all';
+
+    try {
+      const allWallets = await db.select().from(wallets);
+      const allUsers = await db.select({ id: users.id, username: users.username }).from(users);
+      const userMap = new Map(allUsers.map(u => [u.id, u.username]));
+      const allTxs = await db.select().from(transactions);
+
+      const txsByWallet = new Map<number, typeof allTxs>();
+      for (const t of allTxs) {
+        if (!txsByWallet.has(t.walletId)) txsByWallet.set(t.walletId, []);
+        txsByWallet.get(t.walletId)!.push(t);
+      }
+
+      let walletsToRepair: typeof allWallets = [];
+
+      if (target === 'all') {
+        // Find all wallets with discrepancies
+        walletsToRepair = allWallets.filter(w => {
+          const userTxs = txsByWallet.get(w.id) || [];
+          const computedBal = userTxs.reduce((acc, t) => {
+            const amt = parseFloat(t.amount || '0');
+            return acc + (t.type === 'WITHDRAWAL' || t.type === 'TRANSFER_OUT' ? -Math.abs(amt) : Math.abs(amt));
+          }, 0);
+          const storedBal = parseFloat(w.balance || '0');
+          return Math.abs(storedBal - computedBal) >= 0.01;
+        });
+
+        if (walletsToRepair.length === 0) {
+          console.log(`[OK] All ${allWallets.length} wallet balances are already 100% synchronized with ledger transactions. No repairs needed.`);
+          return;
+        }
+      } else {
+        // Specific target wallet or user
+        let matchedWallet: any = null;
+        const numericId = parseInt(target, 10);
+        if (!isNaN(numericId)) {
+          matchedWallet = allWallets.find(w => w.id === numericId);
+        }
+        if (!matchedWallet) {
+          const user = await resolveUser(target);
+          if (user) {
+            matchedWallet = allWallets.find(w => w.userId === user.id);
+          }
+        }
+        if (!matchedWallet) {
+          console.log(`Target wallet or user "${target}" not found.`);
+          return;
+        }
+        walletsToRepair = [matchedWallet];
+      }
+
+      const repairResults: { WalletID: number; User: string; PreviousBalance: string; RepairedBalance: string; Variance: string }[] = [];
+
+      await db.transaction(async (tx) => {
+        for (const w of walletsToRepair) {
+          const userTxs = txsByWallet.get(w.id) || [];
+          const computedBal = userTxs.reduce((acc, t) => {
+            const amt = parseFloat(t.amount || '0');
+            return acc + (t.type === 'WITHDRAWAL' || t.type === 'TRANSFER_OUT' ? -Math.abs(amt) : Math.abs(amt));
+          }, 0);
+
+          const storedBal = parseFloat(w.balance || '0');
+          const variance = storedBal - computedBal;
+          const trueBalStr = computedBal.toFixed(2);
+
+          await tx.update(wallets).set({
+            balance: trueBalStr,
+            updatedAt: new Date()
+          }).where(eq(wallets.id, w.id));
+
+          repairResults.push({
+            WalletID: w.id,
+            User: userMap.get(w.userId) || `ID:${w.userId}`,
+            PreviousBalance: `${storedBal.toFixed(2)} ${w.currency}`,
+            RepairedBalance: `${trueBalStr} ${w.currency}`,
+            Variance: `${variance > 0 ? '+' : ''}${variance.toFixed(2)}`
+          });
+        }
+      });
+
+      // Clear cache
+      try {
+        const redis = await getRedisClient();
+        if (redis) {
+          await redis.del('bank:all_accounts');
+          await redis.del('bank:all_transactions');
+        }
+      } catch {}
+
+      console.log(`[OK] Successfully auto-reconciled and repaired ${repairResults.length} wallet(s) to match exact ledger truth:`);
+      printTable(repairResults);
+
+      await logAudit('/audits/repair', target, `Auto-repaired ${repairResults.length} wallets to match ledger truth`);
+    } catch (err) {
+      console.log(`[ERROR] Wallet repair failed: ${(err as Error).message}`);
+    }
     return;
   }
 }
