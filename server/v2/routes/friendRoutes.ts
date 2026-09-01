@@ -106,10 +106,12 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
             if (typeof cached === 'string') {
               lastMessage = JSON.parse(cached);
             }
-          } catch (e) {}
+          } catch (e) {
+            logger.debug('Redis DM cache read failed', { error: (e as Error).message, loungeId });
+          }
         }
 
-               // Cache miss: Fallback to PostgreSQL
+        // Cache miss: Fallback to PostgreSQL
         if (!lastMessage) {
           const lastMsgRes = await db.select().from(messages)
             .where(eq(messages.loungeId, loungeId))
@@ -132,12 +134,16 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
             if (redis) {
               try {
                 await redis.set(`dm:last_msg:${loungeId}`, JSON.stringify(lastMessage));
-              } catch (e) {}
+              } catch (e) {
+                logger.debug('Redis DM cache write failed', { error: (e as Error).message, loungeId });
+              }
             }
           } else if (redis) {
             try {
               await redis.del(`dm:last_msg:${loungeId}`);
-            } catch (e) {}
+            } catch (e) {
+              logger.debug('Redis DM cache delete failed', { error: (e as Error).message, loungeId });
+            }
           }
         }
 

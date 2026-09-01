@@ -140,7 +140,9 @@ utilityRouter.get('/ota/manifest', (req, res) => {
     try {
       const data = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
       return res.json(data);
-    } catch (e) {}
+    } catch (e) {
+      logger.warn('Failed to parse OTA manifest JSON', { error: (e as Error).message });
+    }
   }
   res.json({
     version: '2.2.0',

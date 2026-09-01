@@ -67,7 +67,9 @@ function resolveWebauthnContext(req: Request) {
     try {
       const parsed = new URL(reqReferer);
       allowedOrigins.add(parsed.origin);
-    } catch {}
+    } catch {
+      logger.debug('Ignoring invalid HTTP referer header', { referer: reqReferer });
+    }
   }
 
   // Constructed origins matching current host

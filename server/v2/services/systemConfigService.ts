@@ -39,7 +39,9 @@ export class SystemConfigService {
         const cached = await redis.get(`sysconfig:${key}`);
         if (cached !== null && cached !== undefined) return String(cached);
       }
-    } catch {}
+    } catch (err) {
+      logger.debug('Redis system config cache read failed', { key, error: (err as Error).message });
+    }
 
     return executeWithRetry(async () => {
       try {
@@ -48,7 +50,7 @@ export class SystemConfigService {
           return rows[0].value;
         }
       } catch (err) {
-        // Table may not exist yet
+        logger.debug('Database system config lookup failed', { key, error: (err as Error).message });
       }
       return defaultValue;
     });
@@ -62,7 +64,9 @@ export class SystemConfigService {
       if (redis) {
         await redis.set(`sysconfig:${key}`, value);
       }
-    } catch {}
+    } catch (err) {
+      logger.debug('Redis system config cache write failed', { key, error: (err as Error).message });
+    }
 
     await executeWithRetry(async () => {
       await db.delete(systemConfig).where(eq(systemConfig.key, key));
