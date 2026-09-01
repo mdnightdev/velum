@@ -657,12 +657,56 @@ export async function searchLoungeMessages(rawId: string, query: string) {
   return { messages: msgList };
 }
 
-export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit: number) {
+export async function clearUserChatHistory(userId: number, loungeId: number) {
+  const [target] = await db.select().from(lounges).where(eq(lounges.id, loungeId)).limit(1);
+  if (!target) return { success: false, error: 'Lounge not found' };
+
+  const currentSeq = target.currentSequenceId || 0;
+  const [existingCursor] = await db.select()
+    .from(userReadCursors)
+    .where(and(eq(userReadCursors.userId, userId), eq(userReadCursors.loungeId, loungeId)))
+    .limit(1);
+
+  if (existingCursor) {
+    await db.update(userReadCursors)
+      .set({
+        clearedSeq: currentSeq,
+        clearedAt: new Date(),
+        lastReadSeq: currentSeq,
+        updatedAt: new Date()
+      })
+      .where(and(eq(userReadCursors.userId, userId), eq(userReadCursors.loungeId, loungeId)));
+  } else {
+    await db.insert(userReadCursors).values({
+      userId,
+      loungeId,
+      lastReadSeq: currentSeq,
+      clearedSeq: currentSeq,
+      clearedAt: new Date(),
+      updatedAt: new Date()
+    });
+  }
+
+  return { success: true, clearedSeq: currentSeq };
+}
+
+export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit: number, currentUserId?: number) {
   const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
     return { room_id: rawId, lounge_id: null, messages: [], max_seq: 0 };
+  }
+
+  let effectiveSince = isNaN(sinceSeq) ? 0 : sinceSeq;
+  if (currentUserId) {
+    const [cursor] = await db.select({ clearedSeq: userReadCursors.clearedSeq })
+      .from(userReadCursors)
+      .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
+      .limit(1);
+    if (cursor?.clearedSeq && cursor.clearedSeq > effectiveSince) {
+      effectiveSince = cursor.clearedSeq;
+    }
   }
 
   const syncMsgs = await db.select({
@@ -680,7 +724,7 @@ export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit:
   })
   .from(messages)
   .leftJoin(users, eq(messages.senderId, users.id))
-  .where(and(eq(messages.loungeId, target.id), gt(messages.sequenceId, isNaN(sinceSeq) ? 0 : sinceSeq)))
+  .where(and(eq(messages.loungeId, target.id), gt(messages.sequenceId, effectiveSince)))
   .orderBy(messages.sequenceId)
   .limit(limit);
 
@@ -715,10 +759,27 @@ export async function getLoungeMessages(rawId: string, currentUserId: number | n
     return { messages: [] };
   }
 
+  let clearedSeq = 0;
+  if (currentUserId) {
+    const [cursor] = await db.select({ clearedSeq: userReadCursors.clearedSeq })
+      .from(userReadCursors)
+      .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
+      .limit(1);
+    if (cursor?.clearedSeq) {
+      clearedSeq = cursor.clearedSeq;
+    }
+  }
+
   const isDM = target.type === 'dm';
-  const whereClause = since && !isNaN(since.getTime())
-    ? and(eq(messages.loungeId, target.id), gt(messages.createdAt, since))
-    : eq(messages.loungeId, target.id);
+  const conditions = [eq(messages.loungeId, target.id)];
+  if (since && !isNaN(since.getTime())) {
+    conditions.push(gt(messages.createdAt, since));
+  }
+  if (clearedSeq > 0) {
+    conditions.push(gt(messages.sequenceId, clearedSeq));
+  }
+
+  const whereClause = and(...conditions);
 
   const msgList = await db.select({
     id: messages.id,

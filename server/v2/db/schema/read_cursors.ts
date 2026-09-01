@@ -12,6 +12,8 @@ export const userReadCursors = pgTable('user_read_cursors', {
   lastReadMsgId: integer('last_read_msg_id')
     .references(() => messages.id, { onDelete: 'cascade' }),
   lastReadSeq: integer('last_read_seq').default(0).notNull(),
+  clearedSeq: integer('cleared_seq').default(0).notNull(),
+  clearedAt: timestamp('cleared_at'),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => [
   primaryKey({ columns: [table.userId, table.loungeId] }),

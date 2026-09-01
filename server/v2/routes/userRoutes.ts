@@ -13,6 +13,7 @@ import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema
 import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { SystemBot } from '../services/systemBot.js';
+import { clearUserChatHistory } from '../services/loungeService.js';
 
 export const userRouter = Router();
 
@@ -247,16 +248,13 @@ userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Respons
     }
 
     const allLoungeIds = Array.from(targetLoungeIds);
-    if (allLoungeIds.length > 0) {
-      await db.delete(messages).where(inArray(messages.loungeId, allLoungeIds));
-      await db.update(lounges)
-        .set({ lastMessageText: null, lastMessageAt: null, lastMessageSenderId: null })
-        .where(inArray(lounges.id, allLoungeIds));
+    for (const lId of allLoungeIds) {
+      await clearUserChatHistory(currentUserId, lId);
     }
 
-    res.json({ success: true, message: 'Chat history cleared.' });
+    res.json({ success: true, message: 'Chat history cleared for your account.' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to delete chat history.' });
+    res.status(500).json({ error: 'Failed to clear chat history.' });
   }
 });
 
