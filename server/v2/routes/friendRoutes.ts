@@ -187,13 +187,20 @@ const handleSendFriendRequest = async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
     const { targetUserId } = req.body;
-    const receiverUsername = req.body.receiverUsername || req.body.username;
+    const rawUsername = req.body.receiverUsername || req.body.username;
+    let receiverUsername: string | undefined = undefined;
+    if (rawUsername) {
+      const { validateStringLength, VALIDATION_LIMITS } = await import('../utils/validation.js');
+      receiverUsername = validateStringLength(rawUsername, VALIDATION_LIMITS.USERNAME_MIN, VALIDATION_LIMITS.USERNAME_MAX, 'Username');
+    }
     
     let targetUser;
     if (receiverUsername) {
       targetUser = await db.select().from(users).where(eq(users.username, receiverUsername)).limit(1);
     } else if (targetUserId) {
-      targetUser = await db.select().from(users).where(eq(users.id, Number(targetUserId))).limit(1);
+      const { parsePositiveInt } = await import('../utils/validation.js');
+      const validId = parsePositiveInt(targetUserId, 'Target User ID');
+      targetUser = await db.select().from(users).where(eq(users.id, validId)).limit(1);
     }
     
     if (!targetUser || !targetUser.length) {
