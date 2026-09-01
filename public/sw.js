@@ -1,4 +1,6 @@
-const CACHE_NAME = 'velum-cache-v5';
+const CACHE_NAME = 'velum-cache-v6';
+const MAX_CACHE_ENTRIES = 25;
+
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -7,8 +9,8 @@ const ASSETS_TO_CACHE = [
   '/manifest.json'
 ];
 
-// Backend routes that MUST NEVER be intercepted by the Service Worker
-const SERVER_ONLY_PREFIXES = [
+// Backend routes and dynamic media that MUST NEVER be cached
+const UNCACHED_PREFIXES = [
   '/metrics',
   '/health',
   '/status',
@@ -17,10 +19,29 @@ const SERVER_ONLY_PREFIXES = [
   '/socket.io',
   '/ws',
   '/system',
-  '/debug'
+  '/debug',
+  '/photos',
+  '/uploads'
 ];
 
-// Install Event - Pre-cache static shell
+// LRU Cache Eviction: Keeps Cache Storage bounded
+async function limitCacheSize(cacheName, maxItems) {
+  try {
+    const cache = await caches.open(cacheName);
+    const keys = await cache.keys();
+    if (keys.length > maxItems) {
+      // Delete oldest cached items
+      const deleteCount = keys.length - maxItems;
+      for (let i = 0; i < deleteCount; i++) {
+        await cache.delete(keys[i]);
+      }
+    }
+  } catch (err) {
+    // Ignore cache trim errors
+  }
+}
+
+// Install Event - Pre-cache minimal static shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -29,7 +50,7 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate Event - Clean up old caches
+// Activate Event - Purge all older caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -44,21 +65,21 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event - Serve from cache, fallback to network
+// Fetch Event - Network-first for dynamic, bounded stale-while-revalidate for core static files only
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. Completely bypass non-GET requests or WebSocket connections
+  // 1. Bypass non-GET, WebSockets, or media uploads
   if (event.request.method !== 'GET' || url.protocol.startsWith('ws')) {
     return;
   }
 
-  // 2. Completely bypass all backend API and telemetry endpoints (/metrics, /health, /api, /v2, etc.)
-  if (SERVER_ONLY_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
+  // 2. Bypass all backend API, websocket, telemetry, and uploaded photos
+  if (UNCACHED_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
     return;
   }
 
-  // 3. Network-first strategy for main navigation/index.html to ensure fresh app code
+  // 3. Network-first strategy for navigation/index.html to ensure fresh app code
   if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
     event.respondWith(
       fetch(event.request)
@@ -66,6 +87,7 @@ self.addEventListener('fetch', (event) => {
           if (networkResponse && networkResponse.status === 200) {
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, networkResponse.clone());
+              limitCacheSize(CACHE_NAME, MAX_CACHE_ENTRIES);
             });
           }
           return networkResponse;
@@ -77,7 +99,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Stale-while-revalidate for static assets
+  // 4. Stale-while-revalidate strictly for static JS/CSS/Fonts (with LRU eviction cap)
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -85,6 +107,7 @@ self.addEventListener('fetch', (event) => {
           if (networkResponse && networkResponse.status === 200) {
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, networkResponse);
+              limitCacheSize(CACHE_NAME, MAX_CACHE_ENTRIES);
             });
           }
         }).catch(() => {});
@@ -93,15 +116,17 @@ self.addEventListener('fetch', (event) => {
       }
 
       return fetch(event.request).then((networkResponse) => {
+        // Cache only same-origin static assets
         if (
           networkResponse &&
           networkResponse.status === 200 &&
-          (networkResponse.type === 'basic' || networkResponse.type === 'cors') &&
-          !SERVER_ONLY_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+          (networkResponse.type === 'basic') &&
+          (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.svg') || url.pathname.endsWith('.woff2'))
         ) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
+            limitCacheSize(CACHE_NAME, MAX_CACHE_ENTRIES);
           });
         }
         return networkResponse;
@@ -114,7 +139,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Push Event - Display incoming WebPush notifications
+// Push Notifications
 self.addEventListener('push', (event) => {
   let data = { title: 'Velum', body: 'New message received', icon: '/icon.svg', data: { url: '/' } };
   if (event.data) {
@@ -141,10 +166,9 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Notification Click Event - Focus or open window
+// Notification Click Event
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
   const targetUrl = event.notification.data && event.notification.data.url ? event.notification.data.url : '/';
 
   event.waitUntil(

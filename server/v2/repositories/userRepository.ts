@@ -48,6 +48,12 @@ export class UserRepository {
 
   async createSession(data: NewSession): Promise<Session> {
     return executeWithRetry(async () => {
+      // Invalidate existing older sessions for this user on new login & clean expired sessions
+      if (data.userId) {
+        await db.delete(sessions).where(eq(sessions.userId, data.userId));
+      }
+      await db.delete(sessions).where(sql`${sessions.expiresAt} < NOW()`);
+
       const inserted = await db.insert(sessions).values(data).returning();
       return inserted[0];
     });
