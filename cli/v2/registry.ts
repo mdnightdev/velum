@@ -202,42 +202,23 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
     }
   },
   '/devops': {
-    config: {
-      desc: 'View active limits, fees, tax, and rates',
-      risk: 'LOW'
+    set: {
+      desc: 'Set system config (fee, tax, escrow-fee, rate, maint)',
+      risk: 'HIGH',
+      args: ['<fee|tax|escrow-fee|rate|maint>', '<value...>']
     },
-    flags: {
-      desc: 'View active configuration flags',
+    get: {
+      desc: 'View active limits, fees, tax, rates, and maintenance state',
+      risk: 'LOW',
+      args: ['[param]']
+    },
+    config: {
+      desc: 'Detailed runtime environment, database, and rate overview',
       risk: 'LOW'
     },
     token: {
       desc: 'Generate temporary support admin access code',
       risk: 'HIGH'
-    },
-    maint: {
-      desc: 'Toggle maintenance mode',
-      risk: 'HIGH',
-      args: ['<on|off>']
-    },
-    fee: {
-      desc: 'Set transaction fee percentage',
-      risk: 'HIGH',
-      args: ['<percent>']
-    },
-    tax: {
-      desc: 'Set transaction tax percentage',
-      risk: 'HIGH',
-      args: ['<percent>']
-    },
-    rate: {
-      desc: 'Set currency exchange rate',
-      risk: 'HIGH',
-      args: ['<base_currency>', '<quote_currency>', '<rate_value>']
-    },
-    'escrow-fee': {
-      desc: 'Set escrow fee percentage',
-      risk: 'HIGH',
-      args: ['<percent>']
     }
   },
   '/sys': {
