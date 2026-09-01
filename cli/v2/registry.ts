@@ -369,8 +369,13 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'LOW'
     },
     ip: {
-      desc: 'Group active sessions by IP address',
+      desc: 'Group active sessions by IP with hardware model and location',
       risk: 'LOW'
+    },
+    devices: {
+      desc: 'List registered hardware devices and fingerprints for a user',
+      risk: 'LOW',
+      args: ['<user_id_or_username>']
     },
     export: {
       desc: 'Export recent audit trail to JSON',

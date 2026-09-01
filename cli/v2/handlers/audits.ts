@@ -1,12 +1,16 @@
-import { desc, sql } from 'drizzle-orm';
+import fs from 'node:fs';
+import path from 'node:path';
+import { desc, sql, eq } from 'drizzle-orm';
 import { db } from '../../../server/v2/db/client.js';
 import { auditLogs } from '../../../server/v2/db/schema/audit_logs.js';
 import { sessions } from '../../../server/v2/db/schema/sessions.js';
 import { lounges } from '../../../server/v2/db/schema/lounges.js';
 import { users } from '../../../server/v2/db/schema/users.js';
 import { wallets } from '../../../server/v2/db/schema/wallets.js';
+import { devices, userDevices, ipAddresses } from '../../../server/v2/db/schema/devices.js';
 import { bankRepository } from '../../../server/v2/repositories/bankRepository.js';
-import { printTable } from '../table.js';
+import { parseDeviceModel, parseLocation } from '../utils/deviceParser.js';
+import { printTable, printDetail } from '../table.js';
 import type { CommandContext } from '../types.js';
 
 export async function handleAudits(ctx: CommandContext): Promise<void> {
@@ -38,18 +42,94 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
     try {
       const sessList = await db.select().from(sessions).where(sql`${sessions.id} = ${sid} OR ${sessions.userId} = ${parseInt(sid, 10) || -1}`);
       if (sessList.length > 0) {
-        printTable(sessList.map(s => ({
-          SessionID: s.id,
-          UserID: s.userId,
-          IP: s.ipAddress || '127.0.0.1',
-          UserAgent: (s.userAgent || 'Velum-Cli').substring(0, 30),
-          ExpiresAt: s.expiresAt
-        })));
+        for (const s of sessList) {
+          const [u] = await db.select().from(users).where(eq(users.id, s.userId)).limit(1);
+          const [userDev] = await db.select().from(userDevices).where(eq(userDevices.userId, s.userId)).limit(1);
+          const [dev] = userDev ? await db.select().from(devices).where(eq(devices.deviceId, userDev.deviceId)).limit(1) : [null];
+
+          const info = parseDeviceModel(s.userAgent, dev?.platform, dev?.webglRenderer);
+          const loc = parseLocation(s.ipAddress);
+
+          printDetail(`Session Audit: ${s.id}`, {
+            SessionID: s.id,
+            User: `${u?.username || 'Unknown'} (ID: ${s.userId}, Role: ${u?.role || 'USER'})`,
+            IP: s.ipAddress || '127.0.0.1',
+            Location: loc,
+            DeviceModel: info.device,
+            OperatingSystem: info.os,
+            BrowserEngine: info.browser,
+            DeviceFingerprint: dev?.deviceFingerprint || 'N/A',
+            WebGLGPU: dev?.webglRenderer || 'N/A',
+            Screen: dev?.screenResolution || 'N/A',
+            ExpiresAt: s.expiresAt ? new Date(s.expiresAt).toISOString() : 'N/A'
+          });
+        }
       } else {
         console.log(`Session or user ID "${sid}" not found.`);
       }
     } catch (err) {
       console.log(`[ERROR] Session query failed: ${(err as Error).message}`);
+    }
+    return;
+  }
+
+  if (sub === 'devices') {
+    const target = rawArgs[0];
+    if (!target) { console.log('Usage: devices <user_id_or_username>'); return; }
+    try {
+      const user = await resolveUser(target);
+      if (!user) { console.log(`User "${target}" not found.`); return; }
+
+      const uDevs = await db.select().from(userDevices).where(eq(userDevices.userId, user.id));
+      if (uDevs.length === 0) {
+        console.log(`No registered devices found for user ${user.username}.`);
+        return;
+      }
+
+      const rows = [];
+      for (const ud of uDevs) {
+        const [dev] = await db.select().from(devices).where(eq(devices.deviceId, ud.deviceId)).limit(1);
+        const parsed = parseDeviceModel(dev?.userAgent, dev?.platform, dev?.webglRenderer);
+        rows.push({
+          DeviceID: ud.deviceId.substring(0, 16) + '...',
+          Model: parsed.device,
+          OS: parsed.os,
+          GPU: (dev?.webglRenderer || '-').substring(0, 20),
+          Fingerprint: (dev?.deviceFingerprint || '-').substring(0, 16) + '...',
+          FirstSeen: ud.firstSeen ? new Date(ud.firstSeen).toISOString().split('T')[0] : '-',
+          LastSeen: ud.lastSeen ? new Date(ud.lastSeen).toISOString().split('T')[0] : '-',
+          Current: ud.isCurrent ? 'Y' : 'N'
+        });
+      }
+
+      console.log(`Registered Devices for ${user.username} (ID: ${user.id}):`);
+      printTable(rows);
+      await logAudit('/audits/devices', user.username, `Audited ${rows.length} devices`);
+    } catch (err) {
+      console.log(`[ERROR] Devices query failed: ${(err as Error).message}`);
+    }
+    return;
+  }
+
+  if (sub === 'export') {
+    try {
+      const logs = await db.select().from(auditLogs).orderBy(desc(auditLogs.timestamp)).limit(500);
+      const backupDir = path.resolve(process.cwd(), 'backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      const filename = `velum_audit_${Date.now()}.json`;
+      const filepath = path.join(backupDir, filename);
+      fs.writeFileSync(filepath, JSON.stringify({
+        exportedAt: new Date().toISOString(),
+        totalRecords: logs.length,
+        logs
+      }, null, 2), 'utf-8');
+
+      console.log(`[OK] Exported ${logs.length} audit records to: ${filepath}`);
+      await logAudit('/audits/export', filename, `Exported ${logs.length} records`);
+    } catch (err) {
+      console.log(`[ERROR] Audit export failed: ${(err as Error).message}`);
     }
     return;
   }
@@ -91,19 +171,29 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
   if (sub === 'ip') {
     try {
       const activeSess = await db.select().from(sessions);
-      const ipUsersMap = new Map<string, Set<number>>();
-      activeSess.forEach(s => {
-        const ip = s.ipAddress || '127.0.0.1';
-        if (!ipUsersMap.has(ip)) ipUsersMap.set(ip, new Set());
-        ipUsersMap.get(ip)!.add(s.userId);
-      });
-      const clusters = Array.from(ipUsersMap.entries()).map(([ip, usersSet]) => ({
-        IP: ip,
-        UserCount: usersSet.size,
-        UserIDs: Array.from(usersSet).join(', ')
-      }));
-      printTable(clusters);
-      await logAudit('/audits/ip', 'SYSTEM', 'Scanned session IP distribution');
+      const userList = await db.select({ id: users.id, username: users.username }).from(users);
+      const userMap = new Map(userList.map(u => [u.id, u.username]));
+
+      const rows = [];
+      for (const s of activeSess) {
+        const [userDev] = await db.select().from(userDevices).where(eq(userDevices.userId, s.userId)).limit(1);
+        const [dev] = userDev ? await db.select().from(devices).where(eq(devices.deviceId, userDev.deviceId)).limit(1) : [null];
+        const info = parseDeviceModel(s.userAgent, dev?.platform, dev?.webglRenderer);
+        const loc = parseLocation(s.ipAddress);
+
+        rows.push({
+          IP: s.ipAddress || '127.0.0.1',
+          Location: loc,
+          User: `${userMap.get(s.userId) || `ID:${s.userId}`}`,
+          Device: info.device,
+          OS: info.os,
+          Client: info.browser,
+          DeviceID: (dev?.deviceId || s.id).substring(0, 16)
+        });
+      }
+
+      printTable(rows);
+      await logAudit('/audits/ip', 'SYSTEM', `Scanned ${rows.length} session IP entries`);
     } catch (err) {
       console.log(`[ERROR] IP scan failed: ${(err as Error).message}`);
     }
