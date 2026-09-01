@@ -13,9 +13,19 @@ export function checkPasswordStrength(password: string): string | null {
   if (password.length > 128) {
     return 'Password must not exceed 128 characters.';
   }
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter.';
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter.';
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Password must contain at least one number.';
+  }
   const weakPasswords = ['password', '12345678', '123456789', 'qwertyuiop', 'password123', 'admin123'];
   if (weakPasswords.includes(password.toLowerCase())) {
     return 'The password chosen is too common or weak.';
   }
   return null;
 }
+
