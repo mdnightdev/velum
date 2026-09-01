@@ -391,6 +391,14 @@ export class VelumV2Shell {
         this.currentPath = ns;
         return;
       }
+    } else if (this.currentPath === '/') {
+      for (const [namespacePath, cmds] of Object.entries(V2_COMMAND_REGISTRY)) {
+        if (cmds[fullCmd]) {
+          ns = namespacePath;
+          sub = fullCmd;
+          break;
+        }
+      }
     }
 
     if (flags['h'] || flags['help']) {
