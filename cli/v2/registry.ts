@@ -244,7 +244,7 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
     }
   },
   '/bank': {
-    bankau: {
+    audit: {
       desc: 'Audit liquidity, deposits, and withdrawals',
       risk: 'LOW'
     },
@@ -266,32 +266,12 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'HIGH',
       args: ['<from_username>', '<to_username>', '<amount>']
     },
-    fundc: {
-      desc: 'Fund card settlement reserve',
+    fund: {
+      desc: 'Fund reserve (card, treasury, escrow) or user wallet',
       risk: 'CRITICAL',
-      args: ['<cents>', '[description]']
+      args: ['<card|treasury|escrow|username>', '<amount_or_cents>', '[description]']
     },
-    fundt: {
-      desc: 'Fund treasury reserve',
-      risk: 'CRITICAL',
-      args: ['<cents>', '[description]']
-    },
-    funde: {
-      desc: 'Fund escrow buffer reserve',
-      risk: 'CRITICAL',
-      args: ['<cents>', '[description]']
-    },
-    bankf: {
-      desc: 'Freeze user wallet',
-      risk: 'CRITICAL',
-      args: ['<uid/username>']
-    },
-    unfreeze: {
-      desc: 'Unfreeze user wallet',
-      risk: 'CRITICAL',
-      args: ['<uid/username>']
-    },
-    bankad: {
+    adjust: {
       desc: 'Adjust user wallet balance',
       risk: 'CRITICAL',
       args: ['<uid/username>', '<new_balance>', '[reason]']

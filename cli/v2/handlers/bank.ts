@@ -151,60 +151,92 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     return;
   }
 
-  if (sub === 'fundc' || sub === 'fundt' || sub === 'funde') {
-    const [centsStr, ...descParts] = rawArgs;
+  // Unified Funding Command: fund <card|treasury|escrow|user> <amount_or_cents> [description]
+  if (sub === 'fund' || sub === 'fundc' || sub === 'fundt' || sub === 'funde') {
+    const [target, amountStr, ...descParts] = rawArgs;
     const description = descParts.join(' ') || 'Reserve funding';
-    if (!centsStr) { console.log(`Usage: ${sub} <cents> [description]`); return; }
-    const cents = parseInt(centsStr, 10);
-    if (isNaN(cents)) { console.log('Invalid cents amount.'); return; }
-    const reserveType = reserveMap[sub as keyof typeof reserveMap];
-    
+
+    if (!target) {
+      console.log('Usage: fund <card|treasury|escrow|username> <cents_or_amount> [description]');
+      return;
+    }
+
+    const t = target.toLowerCase();
+    let reserveType: string | null = null;
+    if (t === 'card' || t === 'fundc' || t === 'settlement' || sub === 'fundc') reserveType = 'CARD_SETTLEMENT';
+    else if (t === 'treasury' || t === 'fundt' || t === 'vault' || sub === 'fundt') reserveType = 'TREASURY';
+    else if (t === 'escrow' || t === 'funde' || t === 'buffer' || sub === 'funde') reserveType = 'ESCROW_BUFFER';
+
+    if (reserveType) {
+      const centsStr = (sub === 'fundc' || sub === 'fundt' || sub === 'funde') ? target : amountStr;
+      const cents = parseInt(centsStr || '', 10);
+      if (isNaN(cents) || cents <= 0) {
+        console.log(`Usage: fund ${target} <cents> [description]`);
+        return;
+      }
+      try {
+        const updated = await reserveRepository.updateBalance(reserveType as any, cents);
+        console.log(`[OK] Added ${cents} cents to ${reserveType} (${description}). Balance: $${(updated.balanceCents / 100).toFixed(2)}.`);
+        await logAudit('/bank/fund', reserveType, `Funded ${cents} cents (${description})`);
+      } catch (err) {
+        console.log(`[ERROR] Reserve funding failed: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    // Funding a specific user wallet: fund <username> <amount> [reason]
+    const user = await resolveUser(target);
+    if (!user) {
+      console.log(`Target account or reserve "${target}" not found.`);
+      return;
+    }
+
+    const amt = parseFloat(amountStr);
+    if (isNaN(amt) || amt <= 0) {
+      console.log('Usage: fund <username> <amount> [reason]');
+      return;
+    }
+
+    let wallet = await bankRepository.findWalletByUserId(user.id);
+    if (!wallet) {
+      wallet = await bankRepository.createWallet({
+        userId: user.id,
+        balance: '0.00',
+        currency: 'USDT'
+      });
+      console.log(`[Info] Initialized wallet for ${user.username}.`);
+    }
+
+    const currentBal = parseFloat(wallet.balance || '0');
+    const newBal = (currentBal + amt).toFixed(2);
+    const updated = await bankRepository.updateBalance(wallet.id, newBal);
+
+    await bankRepository.createTransaction({
+      reference: `FND-${Date.now()}`,
+      walletId: wallet.id,
+      type: 'DEPOSIT',
+      amount: amt.toFixed(2),
+      status: 'COMPLETED',
+      description: description
+    });
+
     try {
-      const updated = await reserveRepository.updateBalance(reserveType, cents);
-      console.log(`[OK] Added ${cents} cents to ${reserveType} (${description}). Balance: ${updated.balanceCents} cents.`);
-      await logAudit(`/bank/${sub}`, reserveType, `Funded ${cents} cents (${description})`);
-    } catch (err) {
-      console.log(`[ERROR] Reserve update failed: ${(err as Error).message}`);
-    }
+      const redis = await getRedisClient();
+      if (redis) {
+        await redis.del('bank:all_accounts');
+        await redis.del('bank:all_transactions');
+      }
+    } catch {}
+
+    console.log(`[OK] Funded ${amt} USDT to ${user.username}. New balance: ${updated?.balance} USDT.`);
+    await logAudit('/bank/fund', user.username, `Funded ${amt} USDT (${description})`);
     return;
   }
 
-  if (sub === 'bankf' || sub === 'freeze') {
-    const target = rawArgs[0];
-    if (!target) { console.log('Usage: freeze <id_or_username>'); return; }
-    const user = await resolveUser(target);
-    if (!user) { console.log(`User "${target}" not found.`); return; }
-    if (!guardProtectedUser(user.id, 'freeze wallet of')) return;
-    const wallet = await bankRepository.findWalletByUserId(user.id);
-    if (wallet) {
-      await stateManager.addFrozenWallet(wallet.id.toString());
-      console.log(`[OK] Frozen wallet ID ${wallet.id} for user ${user.username}.`);
-      await logAudit('/bank/freeze', user.username, `Frozen wallet ID ${wallet.id}`);
-    } else {
-      console.log(`No wallet found for user ${user.username}.`);
-    }
-    return;
-  }
-
-  if (sub === 'unfreeze') {
-    const target = rawArgs[0];
-    if (!target) { console.log('Usage: unfreeze <id_or_username>'); return; }
-    const user = await resolveUser(target);
-    if (!user) { console.log(`User "${target}" not found.`); return; }
-    const wallet = await bankRepository.findWalletByUserId(user.id);
-    if (wallet) {
-      await stateManager.removeFrozenWallet(wallet.id.toString());
-      console.log(`[OK] Unfrozen wallet ID ${wallet.id} for user ${user.username}.`);
-      await logAudit('/bank/unfreeze', user.username, `Unfrozen wallet ID ${wallet.id}`);
-    } else {
-      console.log(`No wallet found for user ${user.username}.`);
-    }
-    return;
-  }
-
-  if (sub === 'bankad' || sub === 'adjust' || sub === 'fund') {
+  // Adjust balance: adjust <username> <new_balance> [reason]
+  if (sub === 'adjust' || sub === 'bankad') {
     const [target, newBalance, ...reasonParts] = rawArgs;
-    if (!target || !newBalance) { console.log('Usage: bankad <id_or_username> <new_balance> [reason]'); return; }
+    if (!target || !newBalance) { console.log('Usage: adjust <id_or_username> <new_balance> [reason]'); return; }
     const user = await resolveUser(target);
     if (!user) { console.log(`User "${target}" not found.`); return; }
     
@@ -245,8 +277,8 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       console.log(`${theme.yellow}[WARN] Failed to invalidate Redis cache: ${(err as Error).message}${theme.reset}`);
     }
 
-    console.log(`[OK] Updated wallet balance for ${user.username} to: ${updated?.balance}`);
-    await logAudit('/bank/bankad', user.username, `Adjusted wallet balance to ${newBalance}`);
+    console.log(`[OK] Updated wallet balance for ${user.username} to: ${updated?.balance} USDT.`);
+    await logAudit('/bank/adjust', user.username, `Adjusted wallet balance to ${newBalance}`);
     return;
   }
 }

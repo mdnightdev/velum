@@ -54,18 +54,11 @@ describe('CLI V2 Modular & Security Verifications', () => {
   });
 
   it('persists and enforces CLI state configuration flags', async () => {
-    const origMaint = stateManager.isMaintenanceMode();
     const origTx = stateManager.getTxFeePercent();
     const origTax = stateManager.getTaxPercent();
     const origEscrow = stateManager.getEscrowFeePercent();
 
     try {
-      await stateManager.setMaintenanceMode(true);
-      assert.strictEqual(stateManager.isMaintenanceMode(), true);
-
-      await stateManager.setMaintenanceMode(false);
-      assert.strictEqual(stateManager.isMaintenanceMode(), false);
-
       await stateManager.setTxFeePercent('3.5');
       assert.strictEqual(stateManager.getTxFeePercent(), '3.5');
 
@@ -85,7 +78,6 @@ describe('CLI V2 Modular & Security Verifications', () => {
       await stateManager.removeJailed('troll_user_42');
       assert.strictEqual(stateManager.isJailed('troll_user_42'), false);
     } finally {
-      await stateManager.setMaintenanceMode(origMaint);
       await stateManager.setTxFeePercent(origTx);
       await stateManager.setTaxPercent(origTax);
       await stateManager.setEscrowFeePercent(origEscrow);

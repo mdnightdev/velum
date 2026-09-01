@@ -361,10 +361,10 @@ export class AuthController {
       return;
     }
 
-    // Maintenance Mode Check: Whitelists System IDs (1, 2, 999) & Support/Admin Staff, blocks standard users
-    const { StateManager } = await import('../../../cli/v2/state/stateManager.js');
-    const stateManager = StateManager.getInstance();
-    if (stateManager.isMaintenanceMode()) {
+    // Maintenance Mode Check: Directly query SystemConfigService for canonical DB/Redis state
+    const { SystemConfigService } = await import('../services/systemConfigService.js');
+    const sysConfig = await SystemConfigService.getAll();
+    if (sysConfig.maintenanceMode) {
       const isStaffOrImmune = user.id === 1 || user.id === 2 || user.id === 999 || 
         ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'BANK_ADMIN'].includes(user.role);
       

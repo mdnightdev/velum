@@ -69,6 +69,23 @@ export function createAuthMiddleware(
         }
       }
 
+      // Maintenance Mode Enforcement: Invalidate non-staff sessions if grace window elapsed
+      const { SystemConfigService } = await import('../services/systemConfigService.js');
+      const sysConfig = await SystemConfigService.getAll();
+      if (sysConfig.maintenanceMode) {
+        const u = sessionResult.user;
+        const isStaff = [1, 2, 999].includes(u.userId) ||
+          ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'BANK_ADMIN'].includes(u.role);
+
+        if (!isStaff) {
+          const graceEndsAtStr = await SystemConfigService.get('maintenance_grace_ends_at', '0');
+          const graceEndsAt = parseInt(graceEndsAtStr, 10) || 0;
+          if (Date.now() > graceEndsAt) {
+            throw new UnauthorizedError('Platform maintenance mode active. Session terminated.');
+          }
+        }
+      }
+
       req.user = sessionResult.user;
       req.sessionId = token;
       next();
