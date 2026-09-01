@@ -249,9 +249,10 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
             updatedAt: new Date()
           }).where(eq(wallets.id, wallet.id));
 
-          // Generate a strictly unique transaction reference code for each grant recipient
-          const uniqueSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
-          const txnRef = `GRNT-${Date.now()}-${uniqueSuffix}`;
+          // Structured trackable reference: GRNT-W<wallet_id>-<seq>
+          const [cntRes] = await tx.select({ c: sql<number>`count(*)` }).from(transactions).where(eq(transactions.walletId, wallet.id));
+          const seq = Number(cntRes?.c ?? 0) + 1;
+          const txnRef = `GRNT-W${wallet.id}-${seq.toString().padStart(4, '0')}`;
 
           // Insert immutable transaction ledger entry
           await tx.insert(transactions).values({
@@ -334,14 +335,18 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       const reason = reasonParts.join(' ') || 'Platform Refund';
 
       const { reversals } = await import('../../../server/v2/db/schema/reversals.js');
-      const refCode = `REF-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
+      let refCode = '';
       await db.transaction(async (tx) => {
         let [wallet] = await tx.select().from(wallets).where(eq(wallets.userId, user.id)).limit(1);
         if (!wallet) {
           const created = await tx.insert(wallets).values({ userId: user.id, balance: '0.00', currency: 'USDT' }).returning();
           wallet = created[0];
         }
+
+        const [cntRes] = await tx.select({ c: sql<number>`count(*)` }).from(transactions).where(eq(transactions.walletId, wallet.id));
+        const seq = Number(cntRes?.c ?? 0) + 1;
+        refCode = `REF-W${wallet.id}-${seq.toString().padStart(4, '0')}`;
 
         const newBal = (parseFloat(wallet.balance) + amt).toFixed(2);
         await tx.update(wallets).set({ balance: newBal, updatedAt: new Date() }).where(eq(wallets.id, wallet.id));
@@ -394,7 +399,7 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       const reason = reasonParts.join(' ') || 'Dispute Rollback';
 
       const { reversals } = await import('../../../server/v2/db/schema/reversals.js');
-      const refCode = `ROL-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+      let refCode = '';
 
       await db.transaction(async (tx) => {
         let [fromWallet] = await tx.select().from(wallets).where(eq(wallets.userId, fromUser.id)).limit(1);
@@ -403,6 +408,10 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
         if (!fromWallet || !toWallet) {
           throw new Error('Wallet missing for one of the accounts.');
         }
+
+        const [cntRes] = await tx.select({ c: sql<number>`count(*)` }).from(reversals);
+        const seq = Number(cntRes?.c ?? 0) + 1;
+        refCode = `ROL-W${fromWallet.id}-W${toWallet.id}-${seq.toString().padStart(4, '0')}`;
 
         const fromBal = parseFloat(fromWallet.balance);
         const toBal = parseFloat(toWallet.balance);
