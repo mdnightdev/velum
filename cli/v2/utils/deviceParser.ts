@@ -88,18 +88,33 @@ export function parseDeviceModel(userAgent?: string | null, platform?: string | 
   return { device, os, browser };
 }
 
+import geoip from 'geoip-lite';
+
 /**
- * IP Location Heuristic Resolver
+ * IP Location Resolver with GeoIP Country & City Intelligence
  */
 export function parseLocation(ip?: string | null): string {
   if (!ip || ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') {
     return 'Localhost (Dev)';
   }
   if (ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.16.') || ip.startsWith('172.31.')) {
-    return 'LAN / Private Subnet';
+    return 'LAN (Private Subnet)';
   }
   if (ip.startsWith('100.64.') || ip.startsWith('100.')) {
     return 'Carrier CGNAT';
   }
+
+  try {
+    const geo = geoip.lookup(ip);
+    if (geo) {
+      const parts = [];
+      if (geo.city) parts.push(geo.city);
+      if (geo.country) parts.push(geo.country);
+      return parts.length > 0 ? parts.join(', ') : 'Public WAN';
+    }
+  } catch {
+    // Fallback if lookup fails
+  }
+
   return 'Public WAN';
 }
