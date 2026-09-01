@@ -4,7 +4,7 @@ import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users, supportAdminNominations } from '../db/schema/users.js';
 import { sessions } from '../db/schema/sessions.js';
-import { tickets } from '../db/schema/tickets.js';
+import { tickets, reports } from '../db/schema/tickets.js';
 import { eq, desc, and, inArray, or } from 'drizzle-orm';
 import { getRedisClient } from '../db/redis.js';
 import type { Request, Response } from 'express';
@@ -31,6 +31,90 @@ const authMiddleware = createAuthMiddleware(async (tokenHash) => {
 });
 
 adminRouter.use(authMiddleware);
+
+// GET /v2/admin/reports - Fetch all reports from database
+adminRouter.get('/reports', async (req: Request, res: Response) => {
+  try {
+    const allReports = await db
+      .select({
+        id: reports.id,
+        report_id: reports.id,
+        type: reports.type,
+        reporter_id: reports.reporterId,
+        target_user_id: reports.targetUserId,
+        reason: reports.reason,
+        priority: reports.priority,
+        status: reports.status,
+        attachments: reports.attachments,
+        created_at: reports.createdAt,
+        updated_at: reports.updatedAt
+      })
+      .from(reports)
+      .orderBy(desc(reports.createdAt));
+
+    const userList = await db.select({ id: users.id, username: users.username }).from(users);
+    const userMap = new Map(userList.map(u => [u.id, u.username]));
+
+    const formatted = allReports.map(r => ({
+      ...r,
+      reporter_name: userMap.get(r.reporter_id) || `User #${r.reporter_id}`,
+      target_username: userMap.get(r.target_user_id) || `User #${r.target_user_id}`
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch reports.' });
+  }
+});
+
+// POST /v2/admin/reports/:id/status - Update report status
+adminRouter.post('/reports/:id/status', async (req: Request, res: Response) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    const { status } = req.body;
+    if (isNaN(reportId)) return res.status(400).json({ error: 'Invalid report ID' });
+
+    await db.update(reports).set({
+      status: status || 'closed',
+      updatedAt: new Date()
+    }).where(eq(reports.id, reportId));
+
+    res.json({ success: true, message: `Report #${reportId} status updated to ${status || 'closed'}.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update report status.' });
+  }
+});
+
+// POST /v2/admin/reports/:id/delete - Delete report
+adminRouter.post('/reports/:id/delete', async (req: Request, res: Response) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId)) return res.status(400).json({ error: 'Invalid report ID' });
+
+    await db.delete(reports).where(eq(reports.id, reportId));
+    res.json({ success: true, message: `Report #${reportId} deleted.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete report.' });
+  }
+});
+
+// POST /v2/admin/reports/:id/escalate - Escalate report to CLI desk
+adminRouter.post('/reports/:id/escalate', async (req: Request, res: Response) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId)) return res.status(400).json({ error: 'Invalid report ID' });
+
+    await db.update(reports).set({
+      status: 'escalated',
+      priority: 'critical',
+      updatedAt: new Date()
+    }).where(eq(reports.id, reportId));
+
+    res.json({ success: true, message: `Report #${reportId} escalated to CLI investigation.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to escalate report.' });
+  }
+});
 
 // GET /v2/admin/diagnostics/logs - Get diagnostics logs
 adminRouter.get('/diagnostics/logs', async (req: Request, res: Response) => {

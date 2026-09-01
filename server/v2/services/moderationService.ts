@@ -140,6 +140,16 @@ export class ModerationService {
     reason: string,
     priority: string = 'medium'
   ): Promise<ModerationResult> {
+    return this.processReportAndEscalate(reporterId, targetUserId, type, reason, priority);
+  }
+
+  public async processReportAndEscalate(
+    reporterId: number,
+    targetUserId: number,
+    type: string,
+    reason: string,
+    priority: string = 'medium'
+  ): Promise<ModerationResult> {
     const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
     if (!targetUser) {
       return { action: 'CLEARED', strikeCount: 0, reason: 'Target user not found' };

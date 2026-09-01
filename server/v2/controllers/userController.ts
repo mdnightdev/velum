@@ -259,8 +259,8 @@ export class UserController {
       req.user.userId,
       targetUser.id,
       'user_misconduct',
-      'medium',
-      String(reason).trim()
+      String(reason).trim(),
+      'medium'
     );
 
     // Broadcast report event to admin channels via Redis
