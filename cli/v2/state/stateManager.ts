@@ -68,18 +68,86 @@ export class StateManager {
     }
   }
 
+  private maintenanceGraceEndsAt = 0;
+  private maintenanceTimer: NodeJS.Timeout | null = null;
+
   // Maintenance Mode
   public isMaintenanceMode(): boolean {
     return this.maintenanceMode;
   }
 
+  public getMaintenanceGraceRemainingMs(): number {
+    if (!this.maintenanceMode || !this.maintenanceGraceEndsAt) return 0;
+    return Math.max(0, this.maintenanceGraceEndsAt - Date.now());
+  }
+
+  public getMaintenanceGraceEndsAt(): number {
+    return this.maintenanceGraceEndsAt;
+  }
+
+  public async terminateStandardUserSessions(): Promise<number> {
+    try {
+      const { db } = await import('../../../server/v2/db/client.js');
+      const { sessions } = await import('../../../server/v2/db/schema/sessions.js');
+      const { users } = await import('../../../server/v2/db/schema/users.js');
+      const { sql, notInArray } = await import('drizzle-orm');
+
+      // System staff and immune IDs (1, 2, 999) are never logged out
+      const staffUsers = await db.select({ id: users.id }).from(users).where(
+        sql`${users.id} IN (1, 2, 999) OR ${users.role} IN ('ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'BANK_ADMIN')`
+      );
+      const staffUserIds = staffUsers.map(u => u.id);
+
+      let deletedCount = 0;
+      if (staffUserIds.length > 0) {
+        const deleted = await db.delete(sessions).where(notInArray(sessions.userId, staffUserIds)).returning();
+        deletedCount = deleted.length;
+      } else {
+        const deleted = await db.delete(sessions).returning();
+        deletedCount = deleted.length;
+      }
+
+      console.log(`[Maintenance] Terminated ${deletedCount} non-staff user sessions (5-minute grace window elapsed).`);
+      return deletedCount;
+    } catch (err) {
+      console.error('[Maintenance] Failed to terminate standard user sessions:', err);
+      return 0;
+    }
+  }
+
   public async setMaintenanceMode(enabled: boolean): Promise<void> {
     this.maintenanceMode = enabled;
+    if (this.maintenanceTimer) {
+      clearTimeout(this.maintenanceTimer);
+      this.maintenanceTimer = null;
+    }
+
+    if (enabled) {
+      // 5-minute countdown grace period (300,000 ms)
+      this.maintenanceGraceEndsAt = Date.now() + 5 * 60 * 1000;
+      this.maintenanceTimer = setTimeout(() => {
+        this.terminateStandardUserSessions().catch(() => {});
+      }, 5 * 60 * 1000);
+    } else {
+      this.maintenanceGraceEndsAt = 0;
+    }
+
     try {
       const redis = await getRedisClient();
       if (redis) {
         await redis.set('cli:maintenance_mode', String(enabled));
+        await redis.set('cli:maintenance_grace_ends_at', String(this.maintenanceGraceEndsAt));
+        await redis.publish('admin:events', JSON.stringify({
+          type: 'maintenance_update',
+          maintenanceMode: enabled,
+          gracePeriodEndsAt: this.maintenanceGraceEndsAt,
+          graceRemainingMs: enabled ? 300000 : 0
+        }));
       }
+
+      const { SystemConfigService } = await import('../../../server/v2/services/systemConfigService.js');
+      await SystemConfigService.setMaintenanceMode(enabled);
+      await SystemConfigService.set('maintenance_grace_ends_at', String(this.maintenanceGraceEndsAt));
     } catch {}
   }
 

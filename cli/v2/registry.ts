@@ -207,11 +207,6 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'HIGH',
       args: ['<fee|tax|escrow-fee|rate|maint>', '<value...>']
     },
-    get: {
-      desc: 'View active limits, fees, tax, rates, and maintenance state',
-      risk: 'LOW',
-      args: ['[param]']
-    },
     config: {
       desc: 'Detailed runtime environment, database, and rate overview',
       risk: 'LOW'

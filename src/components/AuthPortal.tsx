@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ShieldAlert, ShieldCheck, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldAlert, ShieldCheck, ArrowLeft, Clock } from 'lucide-react';
 import { LegalDocModal } from './LegalDocModal';
 import { useAuthForm } from './Auth/hooks/useAuthForm';
 import WelcomeScreen from './Auth/WelcomeScreen';
@@ -19,7 +19,21 @@ interface AuthPortalProps {
 
 export default function AuthPortal({ onLoginSuccess, onMigrationRequired }: AuthPortalProps) {
   const [authView, setAuthView] = useState<'welcome' | 'auth'>('welcome');
+  const [isMaintenance, setIsMaintenance] = useState(false);
   const auth = useAuthForm({ onLoginSuccess, onMigrationRequired });
+
+  useEffect(() => {
+    fetch('/v2/public/system-status')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.maintenanceMode) {
+          setIsMaintenance(true);
+        } else {
+          setIsMaintenance(false);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   if (authView === 'welcome') {
     return (
@@ -69,6 +83,13 @@ export default function AuthPortal({ onLoginSuccess, onMigrationRequired }: Auth
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto my-auto">
         <AuthHeader />
+
+        {isMaintenance && (
+          <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs font-medium flex items-center gap-2 animate-fadeIn">
+            <Clock className="w-4 h-4 flex-shrink-0 animate-pulse text-amber-400" />
+            <span>System under maintenance! Sorry for the inconvenience.</span>
+          </div>
+        )}
 
         {auth.authError && (
           <div className="mb-6 p-4 rounded-xl bg-status-dnd-bg text-status-dnd text-xs font-mono flex items-start gap-2 animate-fadeIn">

@@ -63,13 +63,15 @@ export default function MaintenanceBanner() {
   const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
   return (
-    <div className="fixed top-4 right-4 z-50 animate-fadeIn pointer-events-auto select-none">
-      <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 backdrop-blur-md shadow-lg text-amber-400 text-xs font-medium">
+    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 animate-fadeIn pointer-events-auto select-none max-w-md w-auto">
+      <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 backdrop-blur-md shadow-xl text-amber-400 text-xs font-medium">
         <Clock className="w-3.5 h-3.5 flex-shrink-0 animate-pulse text-amber-400" />
-        {secondsRemaining > 0 ? (
-          <span>System maintenance starting in <strong className="font-mono">{formattedTime}</strong></span>
+        {isWhitelisted ? (
+          <span>Maintenance Mode Active <strong className="font-mono">(Admin Whitelisted)</strong></span>
+        ) : secondsRemaining > 0 ? (
+          <span>System maintenance starting in <strong className="font-mono">{formattedTime}</strong> (Auto logout)</span>
         ) : (
-          <span>System maintenance in progress</span>
+          <span>System under maintenance! Standard sessions paused</span>
         )}
       </div>
     </div>

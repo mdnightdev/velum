@@ -361,6 +361,22 @@ export class AuthController {
       return;
     }
 
+    // Maintenance Mode Check: Whitelists System IDs (1, 2, 999) & Support/Admin Staff, blocks standard users
+    const { StateManager } = await import('../../../cli/v2/state/stateManager.js');
+    const stateManager = StateManager.getInstance();
+    if (stateManager.isMaintenanceMode()) {
+      const isStaffOrImmune = user.id === 1 || user.id === 2 || user.id === 999 || 
+        ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'BANK_ADMIN'].includes(user.role);
+      
+      if (!isStaffOrImmune) {
+        res.status(503).json({
+          error: 'System under maintenance! Sorry for the inconvenience.',
+          maintenance: true
+        });
+        return;
+      }
+    }
+
     // Check if account is deactivated or restricted
     if (user.role === 'DEACTIVATED') {
       res.status(403).json({

@@ -74,8 +74,8 @@ export async function handleDevops(ctx: CommandContext): Promise<void> {
     return;
   }
 
-  // Unified GET / CONFIG / LIST command
-  if (sub === 'get' || sub === 'config' || sub === 'ls' || sub === 'flags' || sub === 'status') {
+  // CONFIG / LIST / STATUS command
+  if (sub === 'config' || sub === 'ls' || sub === 'flags' || sub === 'status') {
     const target = (rawArgs[0] || '').toLowerCase();
 
     if (target === 'fee' || target === 'tx-fee') {
