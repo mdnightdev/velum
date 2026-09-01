@@ -1,11 +1,20 @@
 import readline from 'readline';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { eq, desc, sql } from 'drizzle-orm';
 import { db } from '../../server/v2/db/client.js';
 import { auditLogs } from '../../server/v2/db/schema/audit_logs.js';
+import { users } from '../../server/v2/db/schema/users.js';
+import { wallets, transactions } from '../../server/v2/db/schema/wallets.js';
+import { tickets } from '../../server/v2/db/schema/tickets.js';
+import { cards } from '../../server/v2/db/schema/cards.js';
+import { listings } from '../../server/v2/db/schema/marketplace.js';
+import { lounges } from '../../server/v2/db/schema/lounges.js';
 import { userRepository } from '../../server/v2/repositories/userRepository.js';
 import { V2_COMMAND_REGISTRY } from './registry.js';
 import { theme, riskColor } from './theme.js';
-import { printGrid } from './table.js';
+import { printTable, printDetail, printGrid } from './table.js';
 import { parseCommandLine, requireArg, requireIntArg } from './parser.js';
 import { stateManager } from './state/stateManager.js';
 import { HANDLERS } from './handlers/index.js';
@@ -23,6 +32,32 @@ function namespaceMaxRisk(nsPath: string): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL
   }
   return order[max] as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 }
+
+const REDACTED_FIELDS = new Set([
+  'passwordHash',
+  'pinHash',
+  'passcodeHash',
+  'salt',
+  'panicPhraseHash',
+  'recoveryKeyHash',
+  'loginRecoveryKeyHash',
+  'recoveryKey',
+  'tempRestoreCode',
+  'refreshToken',
+  'twoFactorSecret',
+  'backupCodes',
+  'sessionSecret'
+]);
+
+const SCHEMA_MAP: Record<string, { table: any; name: string; usernameCol?: any }> = {
+  '/users': { table: users, name: 'User', usernameCol: users.username },
+  '/bank': { table: wallets, name: 'Wallet' },
+  '/tickets': { table: tickets, name: 'Ticket' },
+  '/cards': { table: cards, name: 'Card' },
+  '/market': { table: listings, name: 'Listing' },
+  '/lounges': { table: lounges, name: 'Lounge' },
+  '/audits': { table: auditLogs, name: 'AuditLog' }
+};
 
 export class VelumV2Shell {
   private currentPath: string = '/';
@@ -121,32 +156,28 @@ export class VelumV2Shell {
   }
 
   public confirmAction(ns: string, sub: string, risk: 'HIGH' | 'CRITICAL'): Promise<{ confirmed: boolean; reason?: string }> {
-    if (!this.rl) return Promise.resolve({ confirmed: false });
-    const color = riskColor(risk);
     return new Promise((resolve) => {
-      this.rl!.question(
-        `${color}${theme.bold}[${risk}]${theme.reset} Run ${theme.white}${ns}/${sub}${theme.reset}? Type "yes" to confirm: `,
-        (answer) => {
-          if (answer.trim().toLowerCase() === 'yes') {
-            if (risk === 'CRITICAL') {
-              this.rl!.question(`Enter audit reason: `, (reasonAns) => {
-                const reason = reasonAns.trim();
-                if (!reason || reason.length < 5) {
-                  console.log(`\x1b[31mAudit reason must be at least 5 characters.\x1b[0m`);
-                  resolve({ confirmed: false });
-                } else {
-                  resolve({ confirmed: true, reason });
-                }
-              });
-            } else {
-              resolve({ confirmed: true, reason: 'CLI Override' });
-            }
+      if (!this.rl) {
+        resolve({ confirmed: false });
+        return;
+      }
+
+      const promptMsg = `${riskColor(risk)}[${risk} RISK ACTION]${theme.reset} Are you sure you want to execute "${ns}/${sub}"? (y/N): `;
+      this.rl.question(promptMsg, (answer) => {
+        const confirmed = answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes';
+        if (confirmed) {
+          if (risk === 'CRITICAL') {
+            this.rl!.question(`${theme.boldAmber}Enter audit reason for CRITICAL override: ${theme.reset}`, (reason) => {
+              resolve({ confirmed: true, reason: reason.trim() || 'Manual CLI action' });
+            });
           } else {
-            console.log(`Aborted.`);
-            resolve({ confirmed: false });
+            resolve({ confirmed: true, reason: 'CLI Override' });
           }
+        } else {
+          console.log(`Aborted.`);
+          resolve({ confirmed: false });
         }
-      );
+      });
     });
   }
 
@@ -202,11 +233,7 @@ export class VelumV2Shell {
     if (fullCmd === 'cat') {
       const target = rawArgs[0];
       if (!target) {
-        if (this.currentPath !== '/') {
-          console.log(`Usage: cat <id_or_name>`);
-        } else {
-          console.log(`Usage: cat <namespace/id> (e.g. cat /users/1, cat /tickets/5)`);
-        }
+        console.log(`Usage: cat <id_or_username> [--export <json|txt>]`);
         return;
       }
 
@@ -219,26 +246,7 @@ export class VelumV2Shell {
         targetNs = parts.join('/') || '/';
       }
 
-      if (targetNs === '/' || !HANDLERS[targetNs]) {
-        console.log(`Usage: cat <namespace/id> (e.g. cat /users/1, cat /tickets/5)`);
-        return;
-      }
-
-      const handler = HANDLERS[targetNs];
-      const ctx: CommandContext = {
-        ns: targetNs,
-        sub: 'cat',
-        rawArgs: [targetId, ...rawArgs.slice(1)],
-        flags,
-        requireArg,
-        requireIntArg,
-        requireUser: (args, usage) => this.requireUser(args, usage),
-        resolveUser: (id) => this.resolveUser(id),
-        logAudit: (act, tgt, rsn) => this.logAudit(act, tgt, rsn),
-        confirmAction: (n, s, r) => this.confirmAction(n, s, r)
-      };
-
-      await handler(ctx);
+      await this.handleUniversalCat(targetNs, targetId, flags);
       return;
     }
 
@@ -307,9 +315,10 @@ export class VelumV2Shell {
 
         if (isLong) {
           console.log();
-          for (const [name, meta] of Object.entries(cmds)) {
-            const formattedRisk = `${riskColor(meta.risk)}[${meta.risk}]${theme.reset}`.padEnd(14);
-            console.log(`  ${theme.boldWhite}%-20s${theme.reset}  %s  %s`.replace(/%/g, '%-'), name, formattedRisk, meta.desc);
+          for (const [cmd, meta] of Object.entries(cmds)) {
+            const syntax = meta.args && meta.args.length > 0 ? `${cmd} ${meta.args.join(' ')}` : cmd;
+            const rColor = riskColor(meta.risk);
+            console.log(`  ${theme.boldWhite}%-30s${theme.reset}  %s  %s`.replace(/%/g, '%-'), syntax, `${rColor}${meta.risk.padEnd(8)}${theme.reset}`, meta.desc);
           }
           console.log();
         } else {
@@ -372,5 +381,47 @@ export class VelumV2Shell {
     }
 
     console.log(`Command "${line}" not recognized in context "${this.currentPath}". Type "ls" or "help".`);
+  }
+
+  private async handleUniversalCat(targetNs: string, targetId: string, flags: Record<string, string | boolean>): Promise<void> {
+    const ns = targetNs === '/' ? '/users' : targetNs;
+    const schema = SCHEMA_MAP[ns];
+    if (!schema) {
+      console.log(`Namespace "${targetNs}" does not support entity inspection.`);
+      return;
+    }
+
+    const numId = parseInt(targetId, 10);
+    let row: any = null;
+
+    if (!isNaN(numId)) {
+      const [r] = await db.select().from(schema.table).where(eq(schema.table.id, numId)).limit(1);
+      row = r;
+    } else if (schema.usernameCol) {
+      const [r] = await db.select().from(schema.table).where(eq(schema.usernameCol, targetId)).limit(1);
+      row = r;
+    }
+
+    if (!row) {
+      console.log(`Record "${targetId}" not found in ${ns}.`);
+      return;
+    }
+
+    const auditRow: Record<string, any> = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (REDACTED_FIELDS.has(k)) continue;
+      auditRow[k] = v instanceof Date ? v.toISOString().replace('T', ' ').substring(0, 19) : v ?? '-';
+    }
+
+    printDetail(`${schema.name} #${row.id ?? targetId}`, auditRow);
+
+    if (flags['export']) {
+      const ext = flags['export'] === 'txt' ? 'txt' : 'json';
+      const catDir = path.resolve(process.cwd(), 'Cat');
+      if (!fs.existsSync(catDir)) fs.mkdirSync(catDir, { recursive: true });
+      const file = path.join(catDir, `${schema.name.toLowerCase()}_${row.id ?? targetId}_${Date.now()}.${ext}`);
+      fs.writeFileSync(file, ext === 'json' ? JSON.stringify(auditRow, null, 2) : Object.entries(auditRow).map(([k, v]) => `${k}: ${v}`).join('\n'), 'utf-8');
+      console.log(`[OK] Saved to Cat/${path.basename(file)}`);
+    }
   }
 }
