@@ -91,9 +91,8 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       args: ['[uid/username]']
     },
     blacklist: {
-      desc: 'View library or harvest user ecosystem into blacklist store',
-      risk: 'HIGH',
-      args: ['[uid/username]', '[reason]']
+      desc: 'View automated ecosystem blacklist table',
+      risk: 'LOW'
     },
     whitelist: {
       desc: 'Pardon and remove an entity or user ecosystem from blacklist',
