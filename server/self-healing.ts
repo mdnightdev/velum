@@ -41,38 +41,16 @@ async function runSelfHealing() {
     // 3. Fix Orphaned References & Clean up redundant/corrupt records
     console.log('\n[3/4] Scanning for orphaned room, member, and message references...');
     
-    let repairedMembersCount = 0;
-    let repairedMessagesCount = 0;
-    let repairedSubloungesCount = 0;
-
-    // A. Clean up orphaned lounge members (where lounge or user does not exist)
-    const orphanedLoungeMembers = await db.execute(sql`
-      DELETE FROM lounge_members 
-      WHERE lounge_id NOT IN (SELECT id FROM lounges)
-         OR user_id NOT IN (SELECT id FROM users)
-    `);
-    repairedMembersCount += orphanedLoungeMembers.rowCount || 0;
-
-    // B. Clean up orphaned messages (where lounge or sender does not exist)
-    const orphanedMessages = await db.execute(sql`
-      DELETE FROM messages 
-      WHERE lounge_id NOT IN (SELECT id FROM lounges)
-         OR sender_id NOT IN (SELECT id FROM users)
-    `);
-    repairedMessagesCount += orphanedMessages.rowCount || 0;
-
-    // C. Clean up orphaned sublounges (where parent lounge doesn't exist)
-    const orphanedSublounges = await db.execute(sql`
-      DELETE FROM lounges 
-      WHERE parent_lounge_id IS NOT NULL 
-        AND parent_lounge_id NOT IN (SELECT id FROM lounges)
-    `);
-    repairedSubloungesCount += orphanedSublounges.rowCount || 0;
+    const { databaseCleanup } = await import('./v2/utils/databaseCleanup.js');
+    const report = await databaseCleanup.cleanOrphans();
 
     console.log(`[Success] Orphaned references cleaned:`);
-    console.log(`  - Cleaned ${repairedMembersCount} orphaned membership entries.`);
-    console.log(`  - Cleaned ${repairedMessagesCount} orphaned chat messages.`);
-    console.log(`  - Cleaned ${repairedSubloungesCount} orphaned sub-lounge references.`);
+    console.log(`  - Cleaned ${report.members} orphaned membership entries.`);
+    console.log(`  - Cleaned ${report.messages} orphaned chat messages.`);
+    console.log(`  - Cleaned ${report.sublounges} orphaned sub-lounge references.`);
+    console.log(`  - Cleaned ${report.relationships} orphaned relationship entries.`);
+    console.log(`  - Cleaned ${report.expiredSessions} expired session tokens.`);
+
 
     // 4. Verify Admin Role & Credentials Integrity
     console.log('\n[4/4] Verifying administrator roles and system account integrity...');

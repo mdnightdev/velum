@@ -78,38 +78,15 @@ export async function handleDb(ctx: CommandContext): Promise<void> {
 
   if (sub === 'orphans') {
     try {
-      const res = await pool.query(`
-        SELECT 'lounges (orphaned owners)' as name, count(*)::int as count FROM lounges WHERE (owner_id NOT IN (SELECT id FROM users) OR owner_id IS NULL) AND is_official = false AND is_system = false
-        UNION ALL
-        SELECT 'relationships (invalid users)', count(*)::int FROM relationships WHERE user_id NOT IN (SELECT id FROM users) OR friend_id NOT IN (SELECT id FROM users)
-        UNION ALL
-        SELECT 'lounge_members (invalid references)', count(*)::int FROM lounge_members WHERE lounge_id NOT IN (SELECT id FROM lounges) OR user_id NOT IN (SELECT id FROM users)
-        UNION ALL
-        SELECT 'messages (invalid references)', count(*)::int FROM messages WHERE lounge_id NOT IN (SELECT id FROM lounges) OR sender_id NOT IN (SELECT id FROM users)
-        UNION ALL
-        SELECT 'sublounges (invalid parent)', count(*)::int FROM lounges WHERE parent_lounge_id IS NOT NULL AND parent_lounge_id NOT IN (SELECT id FROM lounges)
-        UNION ALL
-        SELECT 'tickets (invalid user)', count(*)::int FROM tickets WHERE user_id NOT IN (SELECT id FROM users)
-        UNION ALL
-        SELECT 'reports (invalid target)', count(*)::int FROM reports WHERE target_user_id NOT IN (SELECT id FROM users) OR reporter_id NOT IN (SELECT id FROM users)
-        UNION ALL
-        SELECT 'transactions (invalid wallet)', count(*)::int FROM transactions WHERE wallet_id NOT IN (SELECT id FROM wallets)
-        UNION ALL
-        SELECT 'expired_sessions (stale tokens)', count(*)::int FROM sessions WHERE expires_at < NOW()
-      `);
+      const { databaseCleanup } = await import('../../server/v2/utils/databaseCleanup.js');
+      const { totalOrphans, rows } = await databaseCleanup.scanOrphans();
 
-      let totalOrphans = 0;
-      const rows = res.rows.map(r => {
-        const c = Number(r.count || 0);
-        totalOrphans += c;
-        return {
-          Entity: r.name,
-          Orphans: c,
-          Status: c === 0 ? 'CLEAN' : 'NEEDS_CLEANUP'
-        };
-      });
+      printTable(rows.map(r => ({
+        Entity: r.entity,
+        Orphans: r.count,
+        Status: r.status
+      })));
 
-      printTable(rows);
       console.log(`\nScan complete. Total orphaned/stale records: ${totalOrphans}`);
       await logAudit('/db/orphans', 'SYSTEM', `Scanned relational tables, found ${totalOrphans} orphaned records`);
     } catch (err) {
@@ -120,61 +97,21 @@ export async function handleDb(ctx: CommandContext): Promise<void> {
 
   if (sub === 'clean') {
     try {
-      const cleanMembers = await db.execute(sql`
-        DELETE FROM lounge_members 
-        WHERE lounge_id NOT IN (SELECT id FROM lounges)
-           OR user_id NOT IN (SELECT id FROM users)
-      `);
-      const membersCount = cleanMembers.rowCount || 0;
-
-      const cleanMessages = await db.execute(sql`
-        DELETE FROM messages 
-        WHERE lounge_id NOT IN (SELECT id FROM lounges)
-           OR sender_id NOT IN (SELECT id FROM users)
-      `);
-      const messagesCount = cleanMessages.rowCount || 0;
-
-      const cleanSublounges = await db.execute(sql`
-        DELETE FROM lounges 
-        WHERE parent_lounge_id IS NOT NULL 
-          AND parent_lounge_id NOT IN (SELECT id FROM lounges)
-          AND is_official = false
-      `);
-      const subloungesCount = cleanSublounges.rowCount || 0;
-
-      const cleanRelationships = await db.execute(sql`
-        DELETE FROM relationships
-        WHERE user_id NOT IN (SELECT id FROM users)
-           OR friend_id NOT IN (SELECT id FROM users)
-      `);
-      const relationshipsCount = cleanRelationships.rowCount || 0;
-
-      const cleanOwnerlessLounges = await db.execute(sql`
-        DELETE FROM lounges
-        WHERE (owner_id NOT IN (SELECT id FROM users) OR owner_id IS NULL)
-          AND is_official = false
-          AND is_system = false
-      `);
-      const ownerlessCount = cleanOwnerlessLounges.rowCount || 0;
-
-      const cleanSessions = await db.execute(sql`
-        DELETE FROM sessions
-        WHERE expires_at < NOW()
-      `);
-      const sessionsCount = cleanSessions.rowCount || 0;
+      const { databaseCleanup } = await import('../../server/v2/utils/databaseCleanup.js');
+      const report = await databaseCleanup.cleanOrphans();
 
       const results = [
-        { Entity: 'Orphaned Memberships', Purged: membersCount },
-        { Entity: 'Orphaned Messages', Purged: messagesCount },
-        { Entity: 'Orphaned Sub-Lounges', Purged: subloungesCount },
-        { Entity: 'Orphaned Relationships', Purged: relationshipsCount },
-        { Entity: 'Orphaned User Lounges', Purged: ownerlessCount },
-        { Entity: 'Expired Sessions', Purged: sessionsCount }
+        { Entity: 'Orphaned Memberships', Purged: report.members },
+        { Entity: 'Orphaned Messages', Purged: report.messages },
+        { Entity: 'Orphaned Sub-Lounges', Purged: report.sublounges },
+        { Entity: 'Orphaned Relationships', Purged: report.relationships },
+        { Entity: 'Orphaned User Lounges', Purged: report.ownerlessLounges },
+        { Entity: 'Expired Sessions', Purged: report.expiredSessions }
       ];
 
       printTable(results);
       console.log(`\n[OK] Database clean complete. Purged all orphaned records and stale sessions.`);
-      await logAudit('/db/clean', 'SYSTEM', `Purged orphaned records (total: ${membersCount + messagesCount + subloungesCount + relationshipsCount + ownerlessCount + sessionsCount})`);
+      await logAudit('/db/clean', 'SYSTEM', `Purged orphaned records (total: ${report.totalCleaned})`);
     } catch (err) {
       console.log(`[ERROR] Cleanup failed: ${(err as Error).message}`);
     }
