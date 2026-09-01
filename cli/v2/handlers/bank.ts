@@ -186,7 +186,6 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
   if (sub === 'grant' || sub === 'award') {
     if (rawArgs.length === 0) {
       console.log('Usage: grant <user1:amount> [user2:amount...] [reason]');
-      console.log('Example: grant alice:50 bob:100 charlie:25 Tournament Prizes');
       return;
     }
 
