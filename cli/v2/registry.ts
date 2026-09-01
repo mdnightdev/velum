@@ -249,7 +249,7 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'LOW'
     },
     wallets: {
-      desc: 'List user wallets and reserve balances',
+      desc: 'List user wallets and bank balances',
       risk: 'LOW'
     },
     tx: {
@@ -267,9 +267,9 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       args: ['<from_username>', '<to_username>', '<amount>']
     },
     fund: {
-      desc: 'Fund reserve (card, treasury, escrow) or user wallet',
+      desc: 'Fund bank account (c: Central Bank, t: Sentry Bank, e: Trading Account)',
       risk: 'CRITICAL',
-      args: ['<card|treasury|escrow|username>', '<amount_or_cents>', '[description]']
+      args: ['<c|t|e>', '<cents>', '[description]']
     },
     adjust: {
       desc: 'Adjust user wallet balance',

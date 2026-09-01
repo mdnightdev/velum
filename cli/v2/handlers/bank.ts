@@ -151,86 +151,94 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     return;
   }
 
-  // Unified Funding Command: fund <card|treasury|escrow|user> <amount_or_cents> [description]
+  // Unified Bank Funding: fund <c|t|e> <cents> [description] (supports aliases fundc, fundt, funde)
   if (sub === 'fund' || sub === 'fundc' || sub === 'fundt' || sub === 'funde') {
-    const [target, amountStr, ...descParts] = rawArgs;
-    const description = descParts.join(' ') || 'Reserve funding';
+    let target = '';
+    let centsStr = '';
+    let descParts: string[] = [];
 
-    if (!target) {
-      console.log('Usage: fund <card|treasury|escrow|username> <cents_or_amount> [description]');
+    if (sub === 'fundc') {
+      target = 'c';
+      centsStr = rawArgs[0];
+      descParts = rawArgs.slice(1);
+    } else if (sub === 'fundt') {
+      target = 't';
+      centsStr = rawArgs[0];
+      descParts = rawArgs.slice(1);
+    } else if (sub === 'funde') {
+      target = 'e';
+      centsStr = rawArgs[0];
+      descParts = rawArgs.slice(1);
+    } else {
+      // sub === 'fund'
+      target = (rawArgs[0] || '').toLowerCase();
+      centsStr = rawArgs[1];
+      descParts = rawArgs.slice(2);
+    }
+
+    const description = descParts.join(' ') || 'Direct funding';
+
+    if (!target || (target !== 'c' && target !== 't' && target !== 'e')) {
+      console.log('Usage: fund <c|t|e> <cents> [description]');
+      console.log('  fund c <cents> [desc] - Funds VELUM CENTRAL BANK directly');
+      console.log('  fund t <cents> [desc] - Funds SENTRY BANK (deducted from Central Bank)');
+      console.log('  fund e <cents> [desc] - Funds VELUM TRADING ACCOUNT (deducted from Central Bank)');
       return;
     }
 
-    const t = target.toLowerCase();
-    let reserveType: string | null = null;
-    if (t === 'card' || t === 'fundc' || t === 'settlement' || sub === 'fundc') reserveType = 'CARD_SETTLEMENT';
-    else if (t === 'treasury' || t === 'fundt' || t === 'vault' || sub === 'fundt') reserveType = 'TREASURY';
-    else if (t === 'escrow' || t === 'funde' || t === 'buffer' || sub === 'funde') reserveType = 'ESCROW_BUFFER';
+    const cents = parseInt(centsStr || '', 10);
+    if (isNaN(cents) || cents <= 0) {
+      console.log('Invalid cents amount.');
+      return;
+    }
 
-    if (reserveType) {
-      const centsStr = (sub === 'fundc' || sub === 'fundt' || sub === 'funde') ? target : amountStr;
-      const cents = parseInt(centsStr || '', 10);
-      if (isNaN(cents) || cents <= 0) {
-        console.log(`Usage: fund ${target} <cents> [description]`);
-        return;
-      }
+    // 1. fund c: Directly funds VELUM CENTRAL BANK
+    if (target === 'c') {
       try {
-        const updated = await reserveRepository.updateBalance(reserveType as any, cents);
-        console.log(`[OK] Added ${cents} cents to ${reserveType} (${description}). Balance: $${(updated.balanceCents / 100).toFixed(2)}.`);
-        await logAudit('/bank/fund', reserveType, `Funded ${cents} cents (${description})`);
+        const updated = await reserveRepository.updateBalance('VELUM CENTRAL BANK', cents);
+        console.log(`[OK] Funded $${(cents / 100).toFixed(2)} (${cents} cents) to VELUM CENTRAL BANK (${description}). New Balance: $${(((updated?.balanceCents || 0)) / 100).toFixed(2)}.`);
+        await logAudit('/bank/fund', 'VELUM CENTRAL BANK', `Directly funded ${cents} cents (${description})`);
       } catch (err) {
-        console.log(`[ERROR] Reserve funding failed: ${(err as Error).message}`);
+        console.log(`[ERROR] Central Bank funding failed: ${(err as Error).message}`);
       }
       return;
     }
 
-    // Funding a specific user wallet: fund <username> <amount> [reason]
-    const user = await resolveUser(target);
-    if (!user) {
-      console.log(`Target account or reserve "${target}" not found.`);
+    // Check Central Bank liquidity for transfers to SENTRY BANK (t) or VELUM TRADING ACCOUNT (e)
+    const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+    const availableCents = vcb?.balanceCents || 0;
+    if (availableCents < cents) {
+      console.log(`[FAILED] Insufficient funds in VELUM CENTRAL BANK. Available: $${(availableCents / 100).toFixed(2)} (${availableCents} cents), Required: $${(cents / 100).toFixed(2)}.`);
       return;
     }
 
-    const amt = parseFloat(amountStr);
-    if (isNaN(amt) || amt <= 0) {
-      console.log('Usage: fund <username> <amount> [reason]');
-      return;
-    }
-
-    let wallet = await bankRepository.findWalletByUserId(user.id);
-    if (!wallet) {
-      wallet = await bankRepository.createWallet({
-        userId: user.id,
-        balance: '0.00',
-        currency: 'USDT'
-      });
-      console.log(`[Info] Initialized wallet for ${user.username}.`);
-    }
-
-    const currentBal = parseFloat(wallet.balance || '0');
-    const newBal = (currentBal + amt).toFixed(2);
-    const updated = await bankRepository.updateBalance(wallet.id, newBal);
-
-    await bankRepository.createTransaction({
-      reference: `FND-${Date.now()}`,
-      walletId: wallet.id,
-      type: 'DEPOSIT',
-      amount: amt.toFixed(2),
-      status: 'COMPLETED',
-      description: description
-    });
-
-    try {
-      const redis = await getRedisClient();
-      if (redis) {
-        await redis.del('bank:all_accounts');
-        await redis.del('bank:all_transactions');
+    // 2. fund t: Funds SENTRY BANK from VELUM CENTRAL BANK
+    if (target === 't') {
+      try {
+        const updatedVcb = await reserveRepository.updateBalance('VELUM CENTRAL BANK', -cents);
+        const updatedSb = await reserveRepository.updateBalance('SENTRY BANK', cents);
+        console.log(`[OK] Transferred $${(cents / 100).toFixed(2)} from VELUM CENTRAL BANK to SENTRY BANK (${description}).`);
+        console.log(`     SENTRY BANK Balance: $${(((updatedSb?.balanceCents || 0)) / 100).toFixed(2)} | VELUM CENTRAL BANK Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
+        await logAudit('/bank/fund', 'SENTRY BANK', `Transferred ${cents} cents from VELUM CENTRAL BANK (${description})`);
+      } catch (err) {
+        console.log(`[ERROR] Sentry Bank funding failed: ${(err as Error).message}`);
       }
-    } catch {}
+      return;
+    }
 
-    console.log(`[OK] Funded ${amt} USDT to ${user.username}. New balance: ${updated?.balance} USDT.`);
-    await logAudit('/bank/fund', user.username, `Funded ${amt} USDT (${description})`);
-    return;
+    // 3. fund e: Funds VELUM TRADING ACCOUNT from VELUM CENTRAL BANK
+    if (target === 'e') {
+      try {
+        const updatedVcb = await reserveRepository.updateBalance('VELUM CENTRAL BANK', -cents);
+        const updatedTrading = await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', cents);
+        console.log(`[OK] Transferred $${(cents / 100).toFixed(2)} from VELUM CENTRAL BANK to VELUM TRADING ACCOUNT (${description}).`);
+        console.log(`     VELUM TRADING ACCOUNT Balance: $${(((updatedTrading?.balanceCents || 0)) / 100).toFixed(2)} | VELUM CENTRAL BANK Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
+        await logAudit('/bank/fund', 'VELUM TRADING ACCOUNT', `Transferred ${cents} cents from VELUM CENTRAL BANK (${description})`);
+      } catch (err) {
+        console.log(`[ERROR] Trading Account funding failed: ${(err as Error).message}`);
+      }
+      return;
+    }
   }
 
   // Adjust balance: adjust <username> <new_balance> [reason]
