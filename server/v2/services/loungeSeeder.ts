@@ -94,24 +94,24 @@ export async function ensureVelumLoungeSeeded() {
       );
     `);
 
-    let [master] = await db.select().from(lounges).where(eq(lounges.slug, 'velum_master_lounge'));
+    let [master] = await db.select().from(lounges).where(eq(lounges.id, 1));
     if (!master) {
       const [inserted] = await db.insert(lounges).values({
         id: 1,
-        slug: 'velum_master_lounge',
+        slug: 'velum_lounge',
         name: 'Velum Lounge',
-        description: 'Official Velum Master Network Lounge',
+        description: 'Velum Lounge',
         isOfficial: true,
         isSystem: true,
         isPrivate: false,
         type: 'official',
         accessLevel: 'ALL'
       }).onConflictDoNothing().returning();
-      master = inserted || (await db.select().from(lounges).where(eq(lounges.slug, 'velum_master_lounge')))[0];
+      master = inserted || (await db.select().from(lounges).where(eq(lounges.id, 1)))[0];
     }
 
     for (const sub of OFFICIAL_SUBLOUNGES) {
-      const [existing] = await db.select().from(lounges).where(eq(lounges.slug, sub.slug));
+      const [existing] = await db.select().from(lounges).where(eq(lounges.id, sub.id));
       if (!existing && master) {
         await db.insert(lounges).values({
           id: sub.id,
@@ -129,9 +129,9 @@ export async function ensureVelumLoungeSeeded() {
       }
     }
 
-    // Advance sequence past reserved IDs
+    // Advance sequence past reserved official lounge IDs (1-11) so user-created lounges start at 1000+
     await db.execute(sql`
-      SELECT setval(pg_get_serial_sequence('lounges', 'id'), COALESCE((SELECT MAX(id) FROM lounges), 1), true);
+      SELECT setval(pg_get_serial_sequence('lounges', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM lounges), 1000), true);
     `);
 
     await deduplicateSublounges();

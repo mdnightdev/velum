@@ -5,7 +5,7 @@ export const PROTECTED_SYSTEM_USERNAMES = new Set<string>(['midnight', 'lexie', 
 
 export const PROTECTED_SYSTEM_LOUNGE_IDS = new Set<number>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 export const PROTECTED_SYSTEM_LOUNGE_SLUGS = new Set<string>([
-  'velum_master_lounge',
+  'velum_lounge',
   'velum_general',
   'velum_market',
   'velum_escrow',

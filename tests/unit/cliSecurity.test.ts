@@ -151,7 +151,7 @@ describe('CLI V2 Modular & Security Verifications', () => {
       assert.strictEqual(isProtectedLounge(id), true);
       assert.strictEqual(guardProtectedLounge(id, 'delete'), false);
     }
-    assert.strictEqual(isProtectedLounge('velum_master_lounge'), true);
+    assert.strictEqual(isProtectedLounge('velum_lounge'), true);
     assert.strictEqual(isProtectedLounge('velum_general'), true);
     assert.strictEqual(isProtectedLounge('velum_executives'), true);
 
