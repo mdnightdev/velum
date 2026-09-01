@@ -149,17 +149,17 @@ export async function ensureReservesSeeded() {
       const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
       if (!vcb) {
         await reserveRepository.updateBalance('VELUM CENTRAL BANK', 0); 
-        console.log('[AdminSeeder] Seeded default central bank reserve: VELUM CENTRAL BANK ($10M)');
+        console.log('[AdminSeeder] Seeded default central bank reserve: VELUM CENTRAL BANK ($0.00)');
       }
       const sb = await reserveRepository.getReserve('SENTRY BANK');
       if (!sb) {
         await reserveRepository.updateBalance('SENTRY BANK', 0); 
-        console.log('[AdminSeeder] Seeded default sentry bank reserve: SENTRY BANK ($5M)');
+        console.log('[AdminSeeder] Seeded default sentry bank reserve: SENTRY BANK ($0.00)');
       }
       const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
       if (!escrow) {
         await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', 0);
-        console.log('[AdminSeeder] Seeded default escrow reserve: VELUM TRADING ACCOUNT ($0)');
+        console.log('[AdminSeeder] Seeded default escrow reserve: VELUM TRADING ACCOUNT ($0.00)');
       }
     });
   } catch (err) {
