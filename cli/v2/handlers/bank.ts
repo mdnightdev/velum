@@ -169,9 +169,9 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     return;
   }
 
-  if (sub === 'bankf') {
+  if (sub === 'bankf' || sub === 'freeze') {
     const target = rawArgs[0];
-    if (!target) { console.log('Usage: bankf <id_or_username>'); return; }
+    if (!target) { console.log('Usage: freeze <id_or_username>'); return; }
     const user = await resolveUser(target);
     if (!user) { console.log(`User "${target}" not found.`); return; }
     if (!guardProtectedUser(user.id, 'freeze wallet of')) return;
@@ -179,7 +179,23 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     if (wallet) {
       await stateManager.addFrozenWallet(wallet.id.toString());
       console.log(`[OK] Frozen wallet ID ${wallet.id} for user ${user.username}.`);
-      await logAudit('/bank/bankf', user.username, `Frozen wallet ID ${wallet.id}`);
+      await logAudit('/bank/freeze', user.username, `Frozen wallet ID ${wallet.id}`);
+    } else {
+      console.log(`No wallet found for user ${user.username}.`);
+    }
+    return;
+  }
+
+  if (sub === 'unfreeze') {
+    const target = rawArgs[0];
+    if (!target) { console.log('Usage: unfreeze <id_or_username>'); return; }
+    const user = await resolveUser(target);
+    if (!user) { console.log(`User "${target}" not found.`); return; }
+    const wallet = await bankRepository.findWalletByUserId(user.id);
+    if (wallet) {
+      await stateManager.removeFrozenWallet(wallet.id.toString());
+      console.log(`[OK] Unfrozen wallet ID ${wallet.id} for user ${user.username}.`);
+      await logAudit('/bank/unfreeze', user.username, `Unfrozen wallet ID ${wallet.id}`);
     } else {
       console.log(`No wallet found for user ${user.username}.`);
     }

@@ -286,6 +286,11 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       risk: 'CRITICAL',
       args: ['<uid/username>']
     },
+    unfreeze: {
+      desc: 'Unfreeze user wallet',
+      risk: 'CRITICAL',
+      args: ['<uid/username>']
+    },
     bankad: {
       desc: 'Adjust user wallet balance',
       risk: 'CRITICAL',
@@ -305,6 +310,11 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       desc: 'List debit cards',
       risk: 'LOW'
     },
+    cat: {
+      desc: 'Inspect detailed card and balance record',
+      risk: 'LOW',
+      args: ['<card_token_or_username>']
+    },
     cardad: {
       desc: 'Set card limit',
       risk: 'HIGH',
@@ -313,6 +323,16 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
     cardl: {
       desc: 'List cardholders and available balances',
       risk: 'LOW'
+    },
+    freeze: {
+      desc: 'Freeze/deactivate card',
+      risk: 'HIGH',
+      args: ['<card_token_or_username>']
+    },
+    unfreeze: {
+      desc: 'Unfreeze/activate card',
+      risk: 'HIGH',
+      args: ['<card_token_or_username>']
     },
     create: {
       desc: 'Create card for user',
