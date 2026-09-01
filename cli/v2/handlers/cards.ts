@@ -194,30 +194,4 @@ export async function handleCards(ctx: CommandContext): Promise<void> {
     await logAudit('/cards/unfreeze', card.cardToken, `Activated/unfrozen card ${card.cardToken}`);
     return;
   }
-
-  if (sub === 'cat' || sub === 'inspect') {
-    const [target] = rawArgs;
-    if (!target) { console.log('Usage: cat <card_token_or_username>'); return; }
-    const user = await resolveUser(target.replace(/^CRD-/, ''));
-    const card = user ? await cardRepository.findCardByUserId(user.id) : await cardRepository.findCardByToken(target);
-    if (!card) { console.log(`Card not found for "${target}".`); return; }
-
-    const holder = user || await userRepository.findById(card.userId);
-    const w = await bankRepository.findWalletByUserId(card.userId);
-    const balCents = w ? Math.round(parseFloat(w.balance || '0') * 100) : 0;
-
-    const { printDetail } = await import('../table.js');
-    printDetail(`Card Details: ${card.cardToken}`, {
-      CardToken: card.cardToken,
-      CardHolder: holder?.username || `User #${card.userId}`,
-      UserId: card.userId,
-      CardType: card.cardType,
-      Limit: `$${(card.limitCents / 100).toFixed(2)} (${card.limitCents} cents)`,
-      WalletBalance: `$${((w ? parseFloat(w.balance || '0') : 0)).toFixed(2)}`,
-      AvailableCredit: `$${(Math.max(0, card.limitCents - balCents) / 100).toFixed(2)}`,
-      Status: card.isActive ? 'ACTIVE' : 'FROZEN / INACTIVE',
-      CreatedAt: card.createdAt ? new Date(card.createdAt).toISOString() : '-'
-    });
-    return;
-  }
 }

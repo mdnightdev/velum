@@ -290,11 +290,6 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       desc: 'List debit cards',
       risk: 'LOW'
     },
-    cat: {
-      desc: 'Inspect detailed card and balance record',
-      risk: 'LOW',
-      args: ['<card_token_or_username>']
-    },
     cardad: {
       desc: 'Set card limit',
       risk: 'HIGH',
@@ -344,11 +339,6 @@ export const V2_COMMAND_REGISTRY: Record<string, Record<string, CommandMeta>> = 
       desc: 'Auto-reconcile and repair wallet balances to match ledger truth',
       risk: 'CRITICAL',
       args: ['[wallet_id_or_username_or_all]']
-    },
-    cat: {
-      desc: 'Inspect chronological ledger history and balance trail for an account',
-      risk: 'LOW',
-      args: ['<wallet_id_or_username>']
     },
     hijacks: {
       desc: 'Scan for multi-IP concurrent sessions',
