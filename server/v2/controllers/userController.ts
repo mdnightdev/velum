@@ -251,22 +251,17 @@ export class UserController {
       throw new NotFoundError('Target user not found.');
     }
 
-    const { reports } = await import('../db/schema/tickets.js');
+    const { moderationService } = await import('../services/moderationService.js');
     const { getRedisClient } = await import('../db/redis.js');
 
-    const result = await db.insert(reports).values({
-      reporterId: req.user.userId,
-      targetUserId: targetUser.id,
-      reason: String(reason).trim(),
-      attachments: Array.isArray(attachments) ? attachments : [],
-      status: 'pending',
-      type: 'user_misconduct',
-      priority: 'medium',
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }).returning();
-
-    const newReport = (result as any[])[0] || { id: 0, createdAt: new Date() };
+    // Automatically analyze report and execute progressive strike / ecosystem harvest
+    const modResult = await moderationService.processReportAndEscalate(
+      req.user.userId,
+      targetUser.id,
+      'user_misconduct',
+      'medium',
+      String(reason).trim()
+    );
 
     // Broadcast report event to admin channels via Redis
     try {
@@ -275,14 +270,14 @@ export class UserController {
         await redis.publish('admin:reports', JSON.stringify({
           type: 'new_report',
           report: {
-            id: newReport.id,
             reporterId: req.user.userId,
             reporterUsername: req.user.username,
             targetUserId: targetUser.id,
             targetUsername: targetUser.username,
-            reason,
+            reason: String(reason).trim(),
             attachments: Array.isArray(attachments) ? attachments : [],
-            createdAt: newReport.createdAt
+            moderationAction: modResult.action,
+            strikeCount: modResult.strikeCount
           }
         }));
       }
@@ -290,7 +285,14 @@ export class UserController {
       // Non-fatal if Redis broadcast fails
     }
 
-    res.status(200).json({ success: true, reportId: newReport.id, message: 'Report submitted successfully.' });
+    res.status(200).json({ 
+      success: true, 
+      message: 'Report submitted successfully.',
+      moderation: {
+        action: modResult.action,
+        strikeCount: modResult.strikeCount
+      }
+    });
   }
 }
 
