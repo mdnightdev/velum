@@ -85,9 +85,9 @@ export default function AuthPortal({ onLoginSuccess, onMigrationRequired }: Auth
         <AuthHeader />
 
         {isMaintenance && (
-          <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs font-medium flex items-center gap-2 animate-fadeIn">
-            <Clock className="w-4 h-4 flex-shrink-0 animate-pulse text-amber-400" />
-            <span>System under maintenance! Sorry for the inconvenience.</span>
+          <div className="mb-4 p-3 rounded-xl bg-velum-800/80 border border-white-10 text-xs font-medium flex items-center gap-2 animate-fadeIn shadow-lg">
+            <Clock className="w-4 h-4 flex-shrink-0 text-text-secondary animate-pulse" />
+            <span className="text-text-secondary">System under maintenance. <span className="text-text-primary">Standard logins temporarily paused.</span></span>
           </div>
         )}
 

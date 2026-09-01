@@ -8,10 +8,10 @@ export default function MaintenanceBanner() {
   const [gracePeriodEndsAt, setGracePeriodEndsAt] = useState<number>(0);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
 
-  const isWhitelisted = user && (
-    [1, 2, 999].includes(user.userId) ||
-    ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'ADMIN', 'BANK_ADMIN'].includes(user.role)
-  );
+  const userId = user ? Number((user as any).userId ?? (user as any).id ?? 0) : 0;
+  const userRole = user?.role || '';
+  const isWhitelisted = [1, 2, 999].includes(userId) ||
+    ['CLI_ADMIN', 'LOGIN_ADMIN', 'SUPPORT_ADMIN', 'ADMIN', 'BANK_ADMIN'].includes(userRole);
 
   useEffect(() => {
     const checkStatus = () => {
@@ -30,7 +30,7 @@ export default function MaintenanceBanner() {
     };
 
     checkStatus();
-    const interval = setInterval(checkStatus, 10000);
+    const interval = setInterval(checkStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -45,8 +45,7 @@ export default function MaintenanceBanner() {
       const secs = Math.max(0, Math.ceil(remainingMs / 1000));
       setSecondsRemaining(secs);
 
-      if (secs === 0 && isAuthenticated && !isWhitelisted) {
-        // Grace period expired for non-admin user
+      if (secs <= 0 && isAuthenticated && !isWhitelisted) {
         handleLogout();
       }
     };
@@ -56,7 +55,8 @@ export default function MaintenanceBanner() {
     return () => clearInterval(timer);
   }, [isMaintenance, gracePeriodEndsAt, isAuthenticated, isWhitelisted, handleLogout]);
 
-  if (!isMaintenance) return null;
+  // If maintenance is off, or if user is on the login page (not logged in), hide the sticky top banner
+  if (!isMaintenance || !isAuthenticated) return null;
 
   const minutes = Math.floor(secondsRemaining / 60);
   const seconds = secondsRemaining % 60;
@@ -64,14 +64,14 @@ export default function MaintenanceBanner() {
 
   return (
     <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 animate-fadeIn pointer-events-auto select-none max-w-md w-auto">
-      <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 backdrop-blur-md shadow-xl text-amber-400 text-xs font-medium">
-        <Clock className="w-3.5 h-3.5 flex-shrink-0 animate-pulse text-amber-400" />
+      <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-velum-800/95 border border-white-10 backdrop-blur-md shadow-2xl text-text-primary text-xs font-medium tracking-tight">
+        <Clock className="w-3.5 h-3.5 flex-shrink-0 text-text-secondary animate-pulse" />
         {isWhitelisted ? (
-          <span>Maintenance Mode Active <strong className="font-mono">(Admin Whitelisted)</strong></span>
+          <span className="text-text-secondary">Maintenance Active · <span className="text-text-primary font-mono">Whitelisted</span></span>
         ) : secondsRemaining > 0 ? (
-          <span>System maintenance starting in <strong className="font-mono">{formattedTime}</strong> (Auto logout)</span>
+          <span className="text-text-secondary">Maintenance in <span className="text-text-primary font-mono font-semibold">{formattedTime}</span> · Wrap up session</span>
         ) : (
-          <span>System under maintenance! Standard sessions paused</span>
+          <span className="text-text-secondary">Maintenance active · <span className="text-text-primary">Session ending</span></span>
         )}
       </div>
     </div>

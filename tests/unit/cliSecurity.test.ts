@@ -54,30 +54,42 @@ describe('CLI V2 Modular & Security Verifications', () => {
   });
 
   it('persists and enforces CLI state configuration flags', async () => {
-    await stateManager.setMaintenanceMode(true);
-    assert.strictEqual(stateManager.isMaintenanceMode(), true);
+    const origMaint = stateManager.isMaintenanceMode();
+    const origTx = stateManager.getTxFeePercent();
+    const origTax = stateManager.getTaxPercent();
+    const origEscrow = stateManager.getEscrowFeePercent();
 
-    await stateManager.setMaintenanceMode(false);
-    assert.strictEqual(stateManager.isMaintenanceMode(), false);
+    try {
+      await stateManager.setMaintenanceMode(true);
+      assert.strictEqual(stateManager.isMaintenanceMode(), true);
 
-    await stateManager.setTxFeePercent('3.5');
-    assert.strictEqual(stateManager.getTxFeePercent(), '3.5');
+      await stateManager.setMaintenanceMode(false);
+      assert.strictEqual(stateManager.isMaintenanceMode(), false);
 
-    await stateManager.setTaxPercent('1.25');
-    assert.strictEqual(stateManager.getTaxPercent(), '1.25');
+      await stateManager.setTxFeePercent('3.5');
+      assert.strictEqual(stateManager.getTxFeePercent(), '3.5');
 
-    await stateManager.setEscrowFeePercent('2.0');
-    assert.strictEqual(stateManager.getEscrowFeePercent(), '2.0');
+      await stateManager.setTaxPercent('1.25');
+      assert.strictEqual(stateManager.getTaxPercent(), '1.25');
 
-    await stateManager.addMuted('bad_actor_99');
-    assert.strictEqual(stateManager.isMuted('bad_actor_99'), true);
-    await stateManager.removeMuted('bad_actor_99');
-    assert.strictEqual(stateManager.isMuted('bad_actor_99'), false);
+      await stateManager.setEscrowFeePercent('2.0');
+      assert.strictEqual(stateManager.getEscrowFeePercent(), '2.0');
 
-    await stateManager.addJailed('troll_user_42');
-    assert.strictEqual(stateManager.isJailed('troll_user_42'), true);
-    await stateManager.removeJailed('troll_user_42');
-    assert.strictEqual(stateManager.isJailed('troll_user_42'), false);
+      await stateManager.addMuted('bad_actor_99');
+      assert.strictEqual(stateManager.isMuted('bad_actor_99'), true);
+      await stateManager.removeMuted('bad_actor_99');
+      assert.strictEqual(stateManager.isMuted('bad_actor_99'), false);
+
+      await stateManager.addJailed('troll_user_42');
+      assert.strictEqual(stateManager.isJailed('troll_user_42'), true);
+      await stateManager.removeJailed('troll_user_42');
+      assert.strictEqual(stateManager.isJailed('troll_user_42'), false);
+    } finally {
+      await stateManager.setMaintenanceMode(origMaint);
+      await stateManager.setTxFeePercent(origTx);
+      await stateManager.setTaxPercent(origTax);
+      await stateManager.setEscrowFeePercent(origEscrow);
+    }
 
     await stateManager.addFrozenWallet('wallet_9999');
     assert.strictEqual(stateManager.isWalletFrozen('wallet_9999'), true);
