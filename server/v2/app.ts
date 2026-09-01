@@ -174,15 +174,23 @@ const allowedOrigins = [
 
 const corsOptions: cors.CorsOptions = {
   origin: (requestOrigin, callback) => {
-    if (!requestOrigin || 
-        allowedOrigins.includes(requestOrigin) || 
-        requestOrigin.startsWith('http://localhost') || 
-        requestOrigin.startsWith('http://127.0.0.1') || 
-        requestOrigin.startsWith('capacitor://') || 
-        requestOrigin.startsWith('ionic://')) {
+    if (!requestOrigin) {
+      return callback(null, true);
+    }
+    const isAllowed = 
+      allowedOrigins.includes(requestOrigin) || 
+      requestOrigin.startsWith('http://localhost') || 
+      requestOrigin.startsWith('http://127.0.0.1') || 
+      requestOrigin.startsWith('https://localhost') || 
+      requestOrigin.startsWith('https://127.0.0.1') || 
+      requestOrigin.startsWith('capacitor://') || 
+      requestOrigin.startsWith('ionic://');
+
+    if (isAllowed) {
       callback(null, true);
     } else {
-      callback(null, true);
+      logger.warn('[CORS] Blocked unauthorized origin', { origin: requestOrigin });
+      callback(new Error('Not allowed by CORS'), false);
     }
   },
   credentials: true,
