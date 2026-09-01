@@ -59,13 +59,12 @@ export async function handleDevops(ctx: CommandContext): Promise<void> {
       if (toggle === 'on' || toggle === 'enable') {
         if (stateManager.isMaintenanceMode()) {
           const remainingMs = stateManager.getMaintenanceGraceRemainingMs();
-          const mins = Math.floor(remainingMs / 60000);
-          const secs = Math.ceil((remainingMs % 60000) / 1000);
-          console.log(`[Info] Maintenance mode is already active (${mins}m ${secs}s remaining). Active countdown preserved.`);
+          const secs = Math.ceil(remainingMs / 1000);
+          console.log(`[Info] Maintenance mode is already active (${secs}s remaining). Active countdown preserved.`);
           return;
         }
         await stateManager.setMaintenanceMode(true);
-        console.log('[OK] Maintenance mode enabled (5-minute countdown started).');
+        console.log('[OK] Maintenance mode enabled (30-second countdown started).');
         await logAudit('/devops/set', 'maintenance:on', 'Enabled maintenance mode');
       } else if (toggle === 'off' || toggle === 'disable') {
         if (!stateManager.isMaintenanceMode()) {
@@ -152,13 +151,12 @@ export async function handleDevops(ctx: CommandContext): Promise<void> {
     if (toggle === 'on') {
       if (stateManager.isMaintenanceMode()) {
         const remainingMs = stateManager.getMaintenanceGraceRemainingMs();
-        const mins = Math.floor(remainingMs / 60000);
-        const secs = Math.ceil((remainingMs % 60000) / 1000);
-        console.log(`[Info] Maintenance mode is already active (${mins}m ${secs}s remaining). Active countdown preserved.`);
+        const secs = Math.ceil(remainingMs / 1000);
+        console.log(`[Info] Maintenance mode is already active (${secs}s remaining). Active countdown preserved.`);
         return;
       }
       await stateManager.setMaintenanceMode(true);
-      console.log('[OK] Maintenance mode enabled (5-minute countdown started).');
+      console.log('[OK] Maintenance mode enabled (30-second countdown started).');
       await logAudit('/devops/maint', 'SYSTEM', 'Enabled maintenance mode');
     } else if (toggle === 'off') {
       if (!stateManager.isMaintenanceMode()) {

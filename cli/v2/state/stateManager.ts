@@ -128,11 +128,11 @@ export class StateManager {
     }
 
     if (enabled) {
-      // 5-minute countdown grace period (300,000 ms)
-      this.maintenanceGraceEndsAt = Date.now() + 5 * 60 * 1000;
+      // 30-second countdown grace period (30,000 ms)
+      this.maintenanceGraceEndsAt = Date.now() + 30 * 1000;
       this.maintenanceTimer = setTimeout(() => {
         this.terminateStandardUserSessions().catch(() => {});
-      }, 5 * 60 * 1000);
+      }, 30 * 1000);
     } else {
       this.maintenanceGraceEndsAt = 0;
     }
