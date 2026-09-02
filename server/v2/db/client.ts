@@ -14,10 +14,10 @@ const dbCircuitBreaker = createCircuitBreaker(
     return await fn();
   },
   {
-    timeout: 3000, // Reduced from 5000ms for faster failure detection
-    errorThresholdPercentage: 40, // More sensitive (lower threshold)
-    resetTimeout: 15000, // Faster recovery (reduced from 30000ms)
-    rollingWindow: 20 // More samples for better detection
+    timeout: 15000, // 15s timeout to accommodate pooled connection acquisition and latency
+    errorThresholdPercentage: 80, // Trip only on severe systemic failure
+    resetTimeout: 10000, // Fast recovery window
+    rollingWindow: 50 // Wider sample window for accurate failure rates
   }
 );
 
