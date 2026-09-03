@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
+import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getLocalMessages, saveLocalMessages, flushLoungeCache, deleteLocalMessage } from '../utils/indexedDb';
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
@@ -687,24 +688,41 @@ export function useWebSocket({
 
   const sendMessage = async (text: string, burnSeconds: number | null, isEncrypted: boolean, targetRoomId?: string, replyTo?: string | number, clientPlaintext?: string) => {
     const destRoomId = targetRoomId || activeRoomId;
-    const isOfficialChannel = [
-      'general',
-      'off-topic',
-      'announcements',
-      'resources',
-      'introduce-yourself',
-      'events',
-      'media',
-      'voice-room',
-      'support',
-      'feedback'
-    ].includes(destRoomId);
+    const isDm = destRoomId.startsWith('dm_') && !destRoomId.startsWith('dm_velum_');
     const isAlreadyEncrypted = text.startsWith('e2ee:') || text.startsWith('ratchet:v2:') || text.startsWith('ratchet:v1:') || text.startsWith('VEL_E2EE[');
-    const shouldEncrypt = isAlreadyEncrypted || isEncrypted || !isOfficialChannel;
     let finalContent = text;
-    if (!isAlreadyEncrypted && shouldEncrypt) {
-      const context: EncryptionContext = { type: 'lounge', roomId: destRoomId, isEncrypted: shouldEncrypt };
-      finalContent = await encryptMessage(text, context);
+    let shouldEncrypt = isEncrypted;
+
+    if (isDm) {
+      const peerId = parseInt(destRoomId.replace('dm_', ''), 10);
+      if (!isAlreadyEncrypted && !isNaN(peerId)) {
+        try {
+          finalContent = await statelessE2eeService.encryptDirectMessage(text, peerId);
+          shouldEncrypt = true;
+        } catch (err) {
+          console.error('[WS Send DM] Encryption failed, sending plaintext fallback:', err);
+          finalContent = text;
+          shouldEncrypt = false;
+        }
+      }
+    } else {
+      const isOfficialChannel = [
+        'general',
+        'off-topic',
+        'announcements',
+        'resources',
+        'introduce-yourself',
+        'events',
+        'media',
+        'voice-room',
+        'support',
+        'feedback'
+      ].includes(destRoomId);
+      shouldEncrypt = isAlreadyEncrypted || isEncrypted || !isOfficialChannel;
+      if (!isAlreadyEncrypted && shouldEncrypt) {
+        const context: EncryptionContext = { type: 'lounge', roomId: destRoomId, isEncrypted: shouldEncrypt };
+        finalContent = await encryptMessage(text, context);
+      }
     }
     
     const nonce = crypto.randomUUID();
@@ -727,11 +745,6 @@ export function useWebSocket({
       setMessages(prev => [...prev, optMessage]);
     }
 
-    // The server never sees plaintext, so any lastMessages update sourced
-    // from server data (summary fetch, history load, WS broadcast echo)
-    // can never carry our own sent text. Update lastMessages here, from the
-    // optimistic message we just built locally, so the sidebar preview has
-    // the real text immediately instead of falling back to a placeholder.
     setLastMessages(prev => ({ ...prev, [destRoomId]: optMessage }));
 
     const outboxPayload = {
@@ -750,16 +763,28 @@ export function useWebSocket({
 
     // If socket is open, send frame immediately
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'send_message',
-        room_id: destRoomId,
-        content: finalContent,
-        is_encrypted: shouldEncrypt,
-        expires_in: burnSeconds,
-        reply_to: replyTo || null,
-        client_msg_id: nonce,
-        nonce: nonce
-      }));
+      if (isDm) {
+        const peerId = parseInt(destRoomId.replace('dm_', ''), 10);
+        wsRef.current.send(JSON.stringify({
+          type: 'dm',
+          to: peerId,
+          body: finalContent,
+          enc: shouldEncrypt,
+          reply_to: replyTo || null,
+          client_msg_id: nonce
+        }));
+      } else {
+        wsRef.current.send(JSON.stringify({
+          type: 'send_message',
+          room_id: destRoomId,
+          content: finalContent,
+          is_encrypted: shouldEncrypt,
+          expires_in: burnSeconds,
+          reply_to: replyTo || null,
+          client_msg_id: nonce,
+          nonce: nonce
+        }));
+      }
     }
     
     // Add a timeout to transition 'sending' to 'failed' if no ACK after 10s

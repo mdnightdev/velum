@@ -71,11 +71,13 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   }, [selectedMember]);
 
   const handleProfileMessage = (member: any) => {
-    const currentUserId = props.currentUserId;
     const targetUserId = member.userId || member.user_id;
-    if (currentUserId && targetUserId) {
-      const dmRoomId = `dm_${Math.min(currentUserId, targetUserId)}_${Math.max(currentUserId, targetUserId)}`;
-      props.onRoomSelect(dmRoomId);
+    const targetUsername = member.username || `User #${targetUserId}`;
+    if (targetUserId) {
+      if (props.onSelectPeer) {
+        props.onSelectPeer({ userId: targetUserId, username: targetUsername, avatar: member.avatarUrl || member.avatar });
+      }
+      props.onRoomSelect(`dm_${targetUserId}`);
       setSelectedMember(null);
     }
   };

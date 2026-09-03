@@ -659,17 +659,10 @@ export async function searchLoungeMessages(rawId: string, query: string) {
   }
 
   let targetLoungeId: number | null = null;
-  if (rawId.startsWith('dm_')) {
-    const dmLounge = await loungeRepository.findBySlug(rawId);
-    if (dmLounge) {
-      targetLoungeId = dmLounge.id;
-    }
-  } else {
-    const all = await loungeRepository.findAll();
-    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
-    if (target) {
-      targetLoungeId = target.id;
-    }
+  const all = await loungeRepository.findAll();
+  const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  if (target) {
+    targetLoungeId = target.id;
   }
 
   if (!targetLoungeId) {
@@ -868,7 +861,6 @@ export async function getLoungeMessages(rawId: string, currentUserId: number | n
     }
   }
 
-  const isDM = target.type === 'dm';
   const conditions = [eq(messages.loungeId, target.id)];
   if (clearedAtTime > 0) {
     conditions.push(gt(messages.createdAt, new Date(clearedAtTime)));
@@ -900,27 +892,7 @@ export async function getLoungeMessages(rawId: string, currentUserId: number | n
   .orderBy(desc(messages.createdAt))
   .limit(100);
 
-  const messagesWithStatus = msgList.reverse().map(m => {
-    let status = 'sent';
-    if (isDM && currentUserId) {
-      const deliveredTo = m.deliveredTo ? m.deliveredTo.split(',').map(Number).filter(id => !isNaN(id)) : [];
-      const readBy = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
-
-      if (m.senderId === currentUserId) {
-        if (readBy.length > 0) {
-          status = 'read';
-        } else if (deliveredTo.length > 0) {
-          status = 'delivered';
-        }
-      } else {
-        if (readBy.includes(currentUserId)) {
-          status = 'read';
-        } else if (deliveredTo.includes(currentUserId)) {
-          status = 'delivered';
-        }
-      }
-    }
-
+  const normalized = msgList.reverse().map(m => {
     const isoCreatedAt = m.createdAt instanceof Date ? m.createdAt.toISOString() : (m.createdAt ? new Date(m.createdAt).toISOString() : new Date().toISOString());
     return {
       ...m,
@@ -929,12 +901,11 @@ export async function getLoungeMessages(rawId: string, currentUserId: number | n
       sequence_id: m.sequenceId,
       client_msg_id: m.clientMsgId,
       createdAt: isoCreatedAt,
-      timestamp: isoCreatedAt,
-      status: isDM ? status : undefined
+      timestamp: isoCreatedAt
     };
   });
 
-  return { messages: messagesWithStatus };
+  return { messages: normalized };
 }
 
 export async function postLoungeMessage(user: any, rawId: string, content: string, clientMsgId?: string | null) {

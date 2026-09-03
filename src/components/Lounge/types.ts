@@ -24,6 +24,7 @@ export interface LoungeWorkspaceProps {
   onMarkAsRead?: (messageId: string, roomId: string) => void;
   onMarkAllAsRead?: (roomId: string) => void;
   onToggleSidebar?: () => void;
+  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
 }
 
 export interface LoungeRoom {

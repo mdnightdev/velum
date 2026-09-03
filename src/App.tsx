@@ -207,7 +207,14 @@ function AppContent() {
         setActiveRoomId(roomId);
       }}
       activeChatPeer={activeChatPeer}
-      onSelectPeer={setActiveChatPeer}
+      onSelectPeer={(peer) => {
+        setActiveChatPeer(peer);
+        if (peer) {
+          setActiveRoomId(`dm_${peer.userId}`);
+        } else {
+          setActiveRoomId('');
+        }
+      }}
       onClearChatPeer={() => {
         setActiveChatPeer(null);
         setActiveRoomId('');
