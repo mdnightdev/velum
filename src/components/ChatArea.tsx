@@ -385,17 +385,9 @@ export default function ChatArea({
         ? (replyingToMessage.db_message_id || parseInt(replyingToMessage.message_id || '0', 10) || undefined)
         : undefined;
 
-      if (activeChatPeer && activeChatPeer.userId !== 999) {
-        try {
-          const context: EncryptionContext = { type: 'direct', peerUserId: activeChatPeer.userId };
-          const encryptedEnvelope = await encryptOutgoingMessage(textToSend, context);
-          onSendMessage(encryptedEnvelope, null, true, undefined, replyMsgId, textToSend);
-        } catch (err) {
-          onSendMessage(textToSend, null, false, undefined, replyMsgId, textToSend);
-        }
-      } else {
-        onSendMessage(textToSend, null, false, undefined, replyMsgId, textToSend);
-      }
+      const targetRoom = roomId || (activeChatPeer ? `dm_${activeChatPeer.userId}` : undefined);
+      const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
+      onSendMessage(textToSend, null, isEnc, targetRoom, replyMsgId, textToSend);
       setReplyingToMessage(null);
       setInputText('');
       setSelectedAttachment(null);
