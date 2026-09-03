@@ -424,4 +424,14 @@ export class VelumV2Shell {
       console.log(`[OK] Saved to Cat/${path.basename(file)}`);
     }
   }
+
+  private printManPage(ns: string, sub: string): void {
+    const meta = V2_COMMAND_REGISTRY[ns]?.[sub];
+    if (!meta) {
+      console.log(`No manual entry for ${ns}/${sub}`);
+      return;
+    }
+    const syntax = meta.args && meta.args.length > 0 ? `${sub} ${meta.args.join(' ')}` : sub;
+    console.log(`\nNAME\n  ${ns}/${sub} - ${meta.desc}\n\nSYNOPSIS\n  ${syntax}\n\nRISK\n  ${meta.risk}\n`);
+  }
 }

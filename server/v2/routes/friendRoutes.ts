@@ -9,6 +9,7 @@ import { eq, and, or, inArray, desc } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { connectedClients } from '../../websocket.js';
 import { getRedisClient } from '../db/redis.js';
+import { logger } from '../utils/logger.js';
 
 export const friendRouter = Router();
 

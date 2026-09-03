@@ -31,13 +31,13 @@ export class StateManager {
         if (maint !== null) this.maintenanceMode = maint === 'true';
 
         const txFee = await redis.get('cli:tx_fee_percent');
-        if (txFee !== null) this.txFeePercent = txFee;
+        if (txFee !== null) this.txFeePercent = String(txFee);
 
         const tax = await redis.get('cli:tax_percent');
-        if (tax !== null) this.taxPercent = tax;
+        if (tax !== null) this.taxPercent = String(tax);
 
         const escrow = await redis.get('cli:escrow_fee_percent');
-        if (escrow !== null) this.escrowFeePercent = escrow;
+        if (escrow !== null) this.escrowFeePercent = String(escrow);
 
         const muted = await redis.sMembers('cli:muted_users');
         for (const u of muted) this.mutedUsers.add(u);

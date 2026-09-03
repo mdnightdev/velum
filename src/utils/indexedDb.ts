@@ -25,7 +25,7 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
       
       const dbId = msg.db_message_id ?? (typeof msg.id === 'number' || (typeof msg.id === 'string' && /^\d+$/.test(msg.id)) ? Number(msg.id) : undefined);
       const clientNonce = msg.client_msg_id || msg.nonce;
-      const canonicalId = dbId ? String(dbId) : String(clientNonce || msg.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+      const canonicalId = dbId ? String(dbId) : String(clientNonce || msg.id || crypto.randomUUID());
       const rawLounge = msg.loungeId ?? msg.room_id ?? msg.roomId ?? msg.lounge_id ?? '';
       const loungeId = String(rawLounge);
       const rawTime = msg.timestamp ?? msg.createdAt ?? msg.created_at ?? new Date().toISOString();
@@ -251,13 +251,6 @@ export async function deleteLocalMedia(id: string, userId?: number): Promise<voi
   } catch (err) {
     console.warn('[IndexedDB] deleteLocalMedia error:', err);
   }
-}
-
-/**
- * Rotates the local vault encryption key and re-encrypts stored records.
- */
-export async function rotateAndReEncryptLocalMessages(userId: number = 0): Promise<void> {
-  // Non-blocking vault rotation stub
 }
 
 /**

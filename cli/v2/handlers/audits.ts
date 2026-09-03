@@ -330,7 +330,7 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
           Platform: dev?.platform || '-',
           GPU: dev?.webglRenderer || '-',
           Screen: dev?.screenResolution || '-',
-          DeviceID: (dev?.deviceId || s.id).substring(0, 16)
+          DeviceID: String(dev?.deviceId || s.id).substring(0, 16)
         });
       }
 

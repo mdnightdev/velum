@@ -85,18 +85,15 @@ export class CircuitBreaker {
   }
 
   async execute(...args: any[]): Promise<any> {
-    // Check if circuit is open and should be reset
     if (this.state === 'open' && this.shouldAttemptReset()) {
       this.state = 'half-open';
     }
 
-    // Reject if circuit is open
     if (this.state === 'open') {
       throw new Error('Circuit breaker is OPEN - service unavailable');
     }
 
     try {
-      // Execute operation with timeout
       const result = await Promise.race([
         this.operation(...args),
         new Promise((_, reject) => 
@@ -104,7 +101,6 @@ export class CircuitBreaker {
         )
       ]);
 
-      // Success handling
       if (this.state === 'half-open') {
         this.resetCircuit();
       }
@@ -112,10 +108,8 @@ export class CircuitBreaker {
       
       return result;
     } catch (error) {
-      // Failure handling
       this.recordFailure();
       
-      // Check if error rate threshold is exceeded
       if (this.getErrorRate() >= this.options.errorThresholdPercentage) {
         this.openCircuit();
       }

@@ -78,7 +78,7 @@ export async function handleDb(ctx: CommandContext): Promise<void> {
 
   if (sub === 'orphans') {
     try {
-      const { databaseCleanup } = await import('../../server/v2/utils/databaseCleanup.js');
+      const { databaseCleanup } = await import('../../../server/v2/utils/databaseCleanup.js');
       const { totalOrphans, rows } = await databaseCleanup.scanOrphans();
 
       printTable(rows.map(r => ({
@@ -97,7 +97,7 @@ export async function handleDb(ctx: CommandContext): Promise<void> {
 
   if (sub === 'clean') {
     try {
-      const { databaseCleanup } = await import('../../server/v2/utils/databaseCleanup.js');
+      const { databaseCleanup } = await import('../../../server/v2/utils/databaseCleanup.js');
       const report = await databaseCleanup.cleanOrphans();
 
       const results = [

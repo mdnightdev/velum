@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db, pool } from '../../../server/v2/db/client.js';
 import { sessions } from '../../../server/v2/db/schema/sessions.js';
+import { stateManager } from '../state/stateManager.js';
 import type { CommandContext } from '../types.js';
 
 export async function handleSys(ctx: CommandContext): Promise<void> {

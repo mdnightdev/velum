@@ -4,6 +4,7 @@ import { webauthnService } from '../services/webauthnService.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { hashSessionToken } from '../middleware/auth.js';
+import { logger } from '../utils/logger.js';
 
 const authMiddleware = createAuthMiddleware(async (tokenHash) => {
   const result = await userRepository.findSessionByTokenHash(tokenHash);

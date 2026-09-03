@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
-import { getLocalMessages, saveLocalMessages, flushLoungeCache, rotateAndReEncryptLocalMessages, deleteLocalMessage } from '../utils/indexedDb';
+import { getLocalMessages, saveLocalMessages, flushLoungeCache, deleteLocalMessage } from '../utils/indexedDb';
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 import { storage } from '../services/storageService';
@@ -37,7 +37,7 @@ export function useWebSocket({
         const needsRotation = await LocalVaultEncryption.checkAndRotatePeriodically();
         if (needsRotation && isMounted) {
           console.log('[useWebSocket] Triggering periodic message history key rotation...');
-          await rotateAndReEncryptLocalMessages();
+          await LocalVaultEncryption.rotateVaultKey();
         }
       } catch (err) {
         console.error('[useWebSocket] Rotation check failed:', err);
@@ -637,7 +637,7 @@ export function useWebSocket({
       finalContent = await encryptMessage(text, context);
     }
     
-    const nonce = `nonce_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    const nonce = crypto.randomUUID();
     const optMessage: Message = {
       message_id: nonce,
       nonce: nonce,

@@ -10,6 +10,7 @@ import { devices } from '../db/schema/devices.js';
 import { tickets } from '../db/schema/tickets.js';
 import { eq, desc } from 'drizzle-orm';
 import { clientDiagnosticsList } from './ticketRoutes.js';
+import { logger } from '../utils/logger.js';
 
 export const utilityRouter = Router();
 

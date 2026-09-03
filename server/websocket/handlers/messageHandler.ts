@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import { randomUUID } from 'crypto';
 import type { ClientConnection } from '../types.js';
 import { connectedClients, roomMembers, broadcastToRoom, broadcastToUserDevices } from '../connectionManager.js';
 import { checkRateLimit } from '../rateLimiter.js';
@@ -465,7 +466,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
     }
   }
 
-  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const messageId = randomUUID();
   const enrichedMessage = {
     ...message,
     message_id: messageId,
@@ -613,25 +614,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
           const loungeList = await executeWithRetry(() => db.select().from(lounges));
           const currentLounge = loungeList.find(l => l.id === targetLoungeId);
           if (currentLounge && (currentLounge.accessLevel === 'ANNOUNCE' || currentLounge.name.toLowerCase().includes('announce'))) {
-            let broadcastContent = message.content || '';
-            if (message.is_encrypted) {
-              const roomIdKey = 'VELUM_E2EE_' + roomId;
-              try {
-                let decoded = '';
-                const cleanCipher = broadcastContent.startsWith('VEL_E2EE[') 
-                  ? broadcastContent.substring(9, broadcastContent.length - 1) 
-                  : broadcastContent;
-                const cipherBase64 = decodeURIComponent(escape(atob(cleanCipher)));
-                for (let i = 0; i < cipherBase64.length; i++) {
-                  const charCode = cipherBase64.charCodeAt(i) ^ roomIdKey.charCodeAt(i % roomIdKey.length);
-                  decoded += String.fromCharCode(charCode);
-                }
-                broadcastContent = decoded;
-              } catch (err) {
-                console.error('[WS Broadcast] Failed to decrypt message for broadcast:', err);
-                broadcastContent = message.content || '';
-              }
-            }
+            const broadcastContent = message.content || '';
 
             const allUsers = await executeWithRetry(() => db.select().from(users));
             for (const user of allUsers) {

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db, pool, executeWithRetry } from '../db/client.js';
 import { systemConfig } from '../db/schema/system_config.js';
 import { getRedisClient } from '../db/redis.js';
+import { logger } from '../utils/logger.js';
 
 export interface SystemConfigValues {
   maintenanceMode: boolean;
