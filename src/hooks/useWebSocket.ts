@@ -699,7 +699,7 @@ export function useWebSocket({
       'support',
       'feedback'
     ].includes(destRoomId);
-    const isAlreadyEncrypted = text.startsWith('e2ee:v1:') || text.startsWith('ratchet:v2:') || text.startsWith('ratchet:v1:') || text.startsWith('VEL_E2EE[');
+    const isAlreadyEncrypted = text.startsWith('e2ee:') || text.startsWith('ratchet:v2:') || text.startsWith('ratchet:v1:') || text.startsWith('VEL_E2EE[');
     const shouldEncrypt = isAlreadyEncrypted || isEncrypted || !isOfficialChannel;
     let finalContent = text;
     if (!isAlreadyEncrypted && shouldEncrypt) {

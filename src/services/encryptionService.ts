@@ -83,8 +83,8 @@ export async function encryptMessage(content: string, context: EncryptionContext
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
-  // 1. Stateless Direct Message
-  if (content.startsWith('e2ee:v1:')) {
+  // 1. Stateless Direct Message (v2 Dual-Recipient & v1 Legacy)
+  if (content.startsWith('e2ee:v2:') || content.startsWith('e2ee:v1:') || content.startsWith('e2ee:')) {
     try {
       return await statelessE2eeService.decryptDirectMessage(content);
     } catch (err) {
@@ -112,7 +112,7 @@ export async function decryptMessage(content: string, context: EncryptionContext
         // the XOR layer will "successfully" unwrap to another cipher-prefixed
         // string rather than real plaintext. Never surface that as the final
         // result - recurse so the inner layer gets properly decrypted too.
-        if (unwrapped.startsWith('e2ee:v1:') || unwrapped.startsWith('ratchet:v2:') || unwrapped.startsWith('ratchet:v1:') || unwrapped.startsWith('VEL_E2EE[')) {
+        if (unwrapped.startsWith('e2ee:') || unwrapped.startsWith('ratchet:v2:') || unwrapped.startsWith('ratchet:v1:') || unwrapped.startsWith('VEL_E2EE[')) {
           return await decryptMessage(unwrapped, context);
         }
         return unwrapped;

@@ -97,7 +97,7 @@ export function MessageItem({
 }: MessageItemProps) {
   const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
-  const isCipher = msg.content?.startsWith('e2ee:v1:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
+  const isCipher = msg.content?.startsWith('e2ee:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
   const msgKey = String(msg.message_id || msg.id || msg.client_msg_id || msg.nonce || '');
     const decryptedFallback = (getDecryptedText ? getDecryptedText(msg) : '') || (msgKey ? decryptedMap[msgKey] : '');
   const activeContent = msg.plaintext || (msg as any).client_plaintext || decryptedFallback || (isCipher ? '...' : (msg.content || ''));

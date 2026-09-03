@@ -89,10 +89,6 @@ class StorageService {
     
     try {
       storage.setItem(key, JSON.stringify(item));
-      // For session-isolated auth keys, mirror to localStorage for 7-day persistence across browser restarts
-      if (policy.storageType === 'session') {
-        try { localStorage.setItem(key, JSON.stringify(item)); } catch {}
-      }
     } catch (error) {
       console.error(`Storage set failed for key: ${key}`, error);
       // Handle quota exceeded
@@ -113,14 +109,7 @@ class StorageService {
     const storage = this.getStorage(policy);
     
     try {
-      let item = storage.getItem(key);
-      if ((item === null || item === undefined) && policy.storageType === 'session') {
-        const localItem = localStorage.getItem(key);
-        if (localItem !== null && localItem !== undefined) {
-          try { sessionStorage.setItem(key, localItem); } catch {}
-          item = localItem;
-        }
-      }
+      const item = storage.getItem(key);
       if (item === null || item === undefined) return null;
       
       let parsed: any;

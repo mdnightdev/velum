@@ -206,7 +206,7 @@ export function handleInboundMessageNotification(msg: {
     const isDifferentRoom = msg.roomId !== msg.activeRoomId;
 
     let previewText = msg.content || 'Sent a message';
-    if (previewText.startsWith('e2ee:v1:') || previewText.startsWith('VEL_E2EE[')) {
+    if (previewText.startsWith('e2ee:') || previewText.startsWith('VEL_E2EE[')) {
       previewText = 'New message';
     }
 

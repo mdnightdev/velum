@@ -96,7 +96,7 @@ function renderPreviewWithIcons(content: string) {
 // understands the VEL_E2EE[...] lounge XOR format, so it must never be used
 // as the terminal decryptor for DM content - only as a legacy/lounge fallback.
 function isStatelessDmEnvelope(raw: string): boolean {
-  return raw.startsWith('e2ee:v1:');
+  return raw.startsWith('e2ee:v2:') || raw.startsWith('e2ee:v1:') || raw.startsWith('e2ee:');
 }
 
 interface DirectMainDashboardProps {
