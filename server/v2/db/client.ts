@@ -38,7 +38,10 @@ export function calculateOptimalPoolSize(): number {
 
 export function getPgPool(): pg.Pool {
   if (!pgPool) {
-    const databaseUrl = (config.DATABASE_URL || '').trim().replace(/\s+/g, '').replace('-pooler', '');
+    let databaseUrl = (config.DATABASE_URL || '').trim().replace(/\s+/g, '').replace('-pooler', '');
+    if (databaseUrl.includes('sslmode=') && !databaseUrl.includes('uselibpqcompat=')) {
+      databaseUrl += (databaseUrl.includes('?') ? '&' : '?') + 'uselibpqcompat=true';
+    }
     
     // Explicit disable check for local postgres setups (e.g., localhost, 127.0.0.1, or sslmode=disable)
     const isExplicitDisable =

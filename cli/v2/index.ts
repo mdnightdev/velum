@@ -8,6 +8,14 @@ import { ensureAdminSeeded } from '../../server/v2/services/adminSeeder.js';
 
 dotenv.config();
 
+// Suppress extraneous driver deprecation warnings from polluting the terminal UI
+process.on('warning', (warning) => {
+  if (warning.name === 'Warning' && warning.message?.includes('SECURITY WARNING: The SSL modes')) {
+    return;
+  }
+  console.warn(warning);
+});
+
 const mutableStdout = new Writable({
   write(chunk, encoding, callback) {
     if (!(this as any).muted) {
