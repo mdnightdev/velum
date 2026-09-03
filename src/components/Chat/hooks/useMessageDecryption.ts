@@ -99,12 +99,6 @@ export function useMessageDecryption({
         }
 
         const isDmRoom = (m.room_id || roomId || '').startsWith('dm_');
-
-        // 3. Outgoing ratchet messages cannot be decrypted with receiver ratchet
-        if (isOutgoing && (activeChatPeer || isDmRoom)) {
-          continue;
-        }
-
         const peerId = activeChatPeer?.userId || (isOutgoing ? undefined : m.user_id);
         const context: EncryptionContext = {
           type: (activeChatPeer || isDmRoom) ? 'direct' : 'lounge',

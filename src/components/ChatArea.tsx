@@ -229,13 +229,13 @@ export default function ChatArea({
   const conversationMessages = useMemo(() => {
     const raw = messages.filter(m => {
       if (activePeerId) {
-        const otherId = activePeerId;
-        if (otherId === 999) {
-          return m.room_id === `dm_velum_${currentUserId}`;
+        if (activePeerId === 999) {
+          return m.room_id === `dm_velum_${currentUserId}` || m.room_id === 'dm_999';
         }
-        const isPeerFromMe = String(m.user_id) === String(currentUserId) && (m.room_id === `dm_${otherId}` || m.room_id === `dm_${currentUserId}_${otherId}` || (m as any)._dm_target === otherId);
-        const isPeerToMe = String(m.user_id) === String(otherId) && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
-        return isPeerFromMe || isPeerToMe || m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`);
+        const dmRoomId = `dm_${activePeerId}`;
+        const isMatchRoom = m.room_id === dmRoomId || m.lounge_id === dmRoomId;
+        const isParticipant = (Number(m.user_id) === Number(currentUserId) || Number(m.user_id) === Number(activePeerId));
+        return isMatchRoom || isParticipant;
       } else {
         return m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);
       }

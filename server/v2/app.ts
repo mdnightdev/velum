@@ -108,12 +108,12 @@ app.get('/metrics', async (_req, res) => {
 app.use(express.json({ limit: '1mb' })); // Limit request body size to prevent large payload attacks
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Rate limiting middleware (now enabled in development for testing with higher limits)
-const isDevelopment = config.NODE_ENV === 'development' || config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test';
+const isDevelopment = config.NODE_ENV === 'development' || config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test' || process.env.NODE_ENV !== 'production';
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 50 : 5, // Higher limit in development for testing
+  max: isDevelopment ? 10000 : 30,
+  skip: () => isDevelopment,
   message: 'Too many authentication attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false
@@ -121,7 +121,9 @@ const authLimiter = rateLimit({
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 500 : 100, // Higher limit in development for testing
+  max: isDevelopment ? 50000 : 2000,
+  skip: () => isDevelopment,
+  keyGenerator: (req) => (req as any).user?.userId ? `user_${(req as any).user.userId}` : (req.ip || '127.0.0.1'),
   standardHeaders: true,
   legacyHeaders: false
 });
