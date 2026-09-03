@@ -74,6 +74,7 @@ import { cardRouter as v2CardRouter } from './routes/cardRoutes.js';
 import { paymentRouter as v2PaymentRouter } from './routes/paymentRoutes.js';
 import { ticketRouter } from './routes/ticketRoutes.js';
 import { friendRouter } from './routes/friendRoutes.js';
+import { dmRouter } from './routes/dmRoutes.js';
 import { adminRouter } from './routes/adminRoutes.js';
 import { userPublicRouter } from './routes/userPublicRoutes.js';
 import { utilityRouter } from './routes/utilityRoutes.js';
@@ -295,6 +296,9 @@ app.use('/api/v2', apiLimiter, ticketRouter);
 
 app.use('/v2/friends', apiLimiter, friendRouter);
 app.use('/api/v2/friends', apiLimiter, friendRouter);
+
+app.use('/v2/dm', apiLimiter, dmRouter);
+app.use('/api/v2/dm', apiLimiter, dmRouter);
 
 app.use('/v2/admin', apiLimiter, adminRouter);
 app.use('/api/v2/admin', apiLimiter, adminRouter);

@@ -20,4 +20,4 @@ export * from './webauthn.js';
 export * from './blacklist.js';
 export * from './reversals.js';
 export * from './chat_clears.js';
-
+export * from './dms.js';
