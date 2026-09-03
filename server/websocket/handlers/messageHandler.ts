@@ -21,6 +21,7 @@ import { processReadReceipt } from '../../v2/services/messaging/readReceiptServi
 import { processDeliveryReceipt } from '../../v2/services/messaging/deliveryReceiptService.js';
 import { dispatchPushNotification } from '../../v2/services/notifications/pushGateway.js';
 import { typingDebouncer } from '../../v2/services/messaging/typingDebouncer.js';
+import { dmService } from '../../v2/services/dmService.js';
 import { handleJoinRoom, handleLeaveRoom } from './roomHandler.js';
 
 export async function handleAddReaction(client: ClientConnection, message: any) {
@@ -705,6 +706,63 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
   })();
 }
 
+export async function handleDirectMessage(client: ClientConnection, message: any) {
+  const to = parseInt(message.to, 10);
+  const body = typeof message.body === 'string' ? message.body.trim() : '';
+  const encrypted = !!message.enc || !!message.encrypted;
+  const replyTo = message.reply_to ? parseInt(message.reply_to, 10) : undefined;
+  const clientMsgId = message.client_msg_id || message.nonce;
+
+  if (isNaN(to) || to <= 0 || !body) {
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Invalid direct message payload'
+    }));
+    return;
+  }
+
+  try {
+    const created = await dmService.sendMessage(client.userId, to, body, encrypted, replyTo);
+
+    // 1. ACK to sender with canonical server ID
+    client.ws.send(JSON.stringify({
+      type: 'dm_ack',
+      client_msg_id: clientMsgId,
+      id: created.id,
+      created: created.created
+    }));
+
+    // 2. Dispatch to recipient active connections
+    const outFrame = {
+      type: 'dm',
+      id: created.id,
+      from: client.userId,
+      to,
+      body: created.body,
+      enc: created.encrypted,
+      reply_to: created.replyTo,
+      created: created.created,
+      sender_username: client.username
+    };
+
+    broadcastToUserDevices(to, outFrame);
+
+    // 3. Push notification fallback
+    dispatchPushNotification(to, 0, {
+      title: `@${client.username || 'Direct Message'}`,
+      body: encrypted ? 'Sent you an encrypted message' : (body.length > 80 ? body.substring(0, 80) + '...' : body),
+      roomId: `dm_${client.userId}`,
+      senderId: client.userId
+    }, body).catch(err => console.error('[Push Gateway Error]:', err));
+  } catch (err) {
+    console.error('[WS Direct Message Error]:', err);
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Failed to deliver direct message'
+    }));
+  }
+}
+
 export async function handleClientMessage(client: ClientConnection, message: any) {
   getRedisClient().then(redis => {
     if (redis) {
@@ -713,6 +771,9 @@ export async function handleClientMessage(client: ClientConnection, message: any
   });
 
   switch (message.type) {
+    case 'dm':
+      await handleDirectMessage(client, message);
+      break;
     case 'sync_request':
       await handleSyncRequest(client, message);
       break;
