@@ -313,7 +313,7 @@ export function useWebSocket({
           } else {
             alert(`Error: ${data.message}`);
           }
-        } else if (data.type === 'message_ack') {
+        } else if (data.type === 'message_ack' || data.type === 'dm_ack') {
           const ackNonce = data.client_msg_id || data.nonce;
           if (ackNonce) {
             removeOutboxMessage(ackNonce, userId || undefined);
@@ -322,8 +322,8 @@ export function useWebSocket({
             if (m.nonce === ackNonce || m.client_msg_id === ackNonce || m.message_id === ackNonce) {
               return {
                 ...m,
-                message_id: data.message_id ? String(data.message_id) : m.message_id,
-                db_message_id: data.db_message_id,
+                message_id: data.id ? String(data.id) : (data.message_id ? String(data.message_id) : m.message_id),
+                db_message_id: data.id || data.db_message_id,
                 sequence_id: data.sequence_id,
                 client_msg_id: ackNonce,
                 status: 'sent'
@@ -331,6 +331,45 @@ export function useWebSocket({
             }
             return m;
           }));
+        } else if (data.type === 'dm') {
+          const isFromMe = uid && String(data.from) === String(uid);
+          const peerId = isFromMe ? data.to : data.from;
+          const dmRoomId = `dm_${peerId}`;
+          const dmMsg: Message = {
+            message_id: String(data.id),
+            db_message_id: data.id,
+            id: data.id,
+            room_id: dmRoomId,
+            lounge_id: dmRoomId,
+            user_id: data.from,
+            username: data.sender_username || (isFromMe ? 'You' : `User #${data.from}`),
+            content: data.body,
+            is_encrypted: !!data.enc,
+            reply_to: data.reply_to || null,
+            timestamp: data.created,
+            status: 'sent'
+          };
+
+          if (!isFromMe) {
+            handleInboundMessageNotification({
+              senderName: dmMsg.username,
+              content: dmMsg.content,
+              isFromMe: false,
+              roomId: dmRoomId,
+              activeRoomId: activeRoomIdRef.current
+            });
+          }
+
+          setLastMessages(prev => ({ ...prev, [dmRoomId]: dmMsg }));
+          window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
+
+          if (activeRoomIdRef.current === dmRoomId) {
+            setMessages(prev => {
+              const existingIds = new Set(prev.map(m => String(m.id || m.message_id || m.db_message_id)));
+              if (existingIds.has(String(dmMsg.id))) return prev;
+              return [...prev, dmMsg];
+            });
+          }
         } else if (data.type === 'sync_response') {
           if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
             setMessages(prev => {

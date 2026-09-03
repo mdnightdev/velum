@@ -263,10 +263,10 @@ export default function DirectMainDashboard({
       // 1. Wipe local cache for this DM room
       await flushLoungeCache(dmRoomId, currentUserId);
 
-      // 2. Call server to purge messages from DB
+      // 2. Call server to record monotonic clear cutoff
       try {
         const sId = getSessionId();
-        await fetch(`/v2/user/${peerId}/chat`, {
+        await fetch(`/v2/dm/${peerId}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${sId}` }
         });
