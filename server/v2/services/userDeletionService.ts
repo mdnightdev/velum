@@ -20,6 +20,7 @@ export class UserDeletionService {
 
     await db.update(users).set({
       role: 'DEACTIVATED',
+      status: 'Pending',
       scheduledDeletionAt,
       deletionReason: reason,
       deletionInitiatedBy: 'USER',
@@ -40,6 +41,7 @@ export class UserDeletionService {
 
     await db.update(users).set({
       role: 'DEACTIVATED',
+      status: 'Pending',
       scheduledDeletionAt,
       deletionReason: reason,
       deletionInitiatedBy: 'LOGIN_ADMIN',
@@ -161,6 +163,7 @@ export class UserDeletionService {
         // 3. Mark user role as BANNED & FRAUD_SEIZURE (retaining row for blacklist matching)
         await tx.update(users).set({
           role: 'BANNED',
+          status: 'Banned',
           isCompromised: true,
           duressActive: true,
           scheduledDeletionAt: null, // Do not delete row - retain for blacklist reference
@@ -200,7 +203,6 @@ export class UserDeletionService {
       deletionInitiatedBy: users.deletionInitiatedBy
     }).from(users).where(
       and(
-        eq(users.role, 'DEACTIVATED'),
         isNotNull(users.scheduledDeletionAt),
         lte(users.scheduledDeletionAt, now)
       )

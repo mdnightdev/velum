@@ -116,7 +116,7 @@ export async function startServer() {
   server.listen(PORT, '0.0.0.0', () => {
     logger.info('Velum V2 Engine started', { port: PORT });
     
-    // Asynchronously initialize database seeding & exchange rates without blocking server start
+    // Asynchronously initialize database seeding, background sweeper & exchange rates without blocking server start
     (async () => {
       try {
         await ensureAdminSeeded();
@@ -124,6 +124,8 @@ export async function startServer() {
         SystemBot.getInstance();
         logger.info('Velum Bot system activated');
         await currencyConverter.loadRatesFromDb();
+        const { UserDeletionService } = await import('./v2/services/userDeletionService.js');
+        UserDeletionService.startBackgroundSweeper();
       } catch (err) {
         logger.warn('Background DB initialization warning', { error: err });
       }

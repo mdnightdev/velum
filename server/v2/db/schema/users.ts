@@ -16,6 +16,7 @@ export const users = pgTable('users', {
   compromiseTicketId: varchar('compromise_ticket_id', { length: 32 }),
   tempRestoreCode: varchar('temp_restore_code', { length: 64 }),
   role: varchar('role', { length: 32 }).default('USER').notNull(),
+  status: varchar('status', { length: 32 }).default('Active').notNull(),
   scheduledDeletionAt: timestamp('scheduled_deletion_at'),
   deletionReason: text('deletion_reason'),
   deletionInitiatedBy: varchar('deletion_initiated_by', { length: 32 }),

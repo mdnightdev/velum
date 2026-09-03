@@ -13,6 +13,7 @@ import { db, executeWithRetry } from '../../v2/db/client.js';
 import { users, messageReactions } from '../../v2/db/schema/index.js';
 import { lounges, messages as dbMessages, loungeMembers } from '../../v2/db/schema/lounges.js';
 import { userReadCursors } from '../../v2/db/schema/read_cursors.js';
+import { userChatClears } from '../../v2/db/schema/chat_clears.js';
 import { eq, and, gt, sql } from 'drizzle-orm';
 import { getRedisClient } from '../../v2/db/redis.js';
 import { processReadReceipt } from '../../v2/services/messaging/readReceiptService.js';
@@ -251,6 +252,42 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
       db.select().from(lounges).where(eq(lounges.id, loungeId)).limit(1)
     );
 
+    let effectiveSince = isNaN(sinceSeq) ? 0 : sinceSeq;
+    let clearedAtTime: number = 0;
+
+    if (client.userId) {
+      const [cursor, clearRec] = await Promise.all([
+        executeWithRetry(() =>
+          db.select({ clearedSeq: userReadCursors.clearedSeq, clearedAt: userReadCursors.clearedAt })
+            .from(userReadCursors)
+            .where(and(eq(userReadCursors.userId, client.userId), eq(userReadCursors.loungeId, loungeId)))
+            .limit(1)
+        ),
+        executeWithRetry(() =>
+          db.select({ clearedAt: userChatClears.clearedAt })
+            .from(userChatClears)
+            .where(and(eq(userChatClears.userId, client.userId), eq(userChatClears.loungeId, loungeId)))
+            .limit(1)
+        )
+      ]);
+
+      if (cursor[0]?.clearedSeq && cursor[0].clearedSeq > effectiveSince) {
+        effectiveSince = cursor[0].clearedSeq;
+      }
+      const cTime = clearRec[0]?.clearedAt ? new Date(clearRec[0].clearedAt).getTime() : (cursor[0]?.clearedAt ? new Date(cursor[0].clearedAt).getTime() : 0);
+      if (cTime > 0) {
+        clearedAtTime = cTime;
+      }
+    }
+
+    const syncConditions = [eq(dbMessages.loungeId, loungeId)];
+    if (effectiveSince > 0) {
+      syncConditions.push(gt(dbMessages.sequenceId, effectiveSince));
+    }
+    if (clearedAtTime > 0) {
+      syncConditions.push(gt(dbMessages.createdAt, new Date(clearedAtTime)));
+    }
+
     const syncMsgs = await executeWithRetry(() =>
       db.select({
         id: dbMessages.id,
@@ -270,7 +307,7 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
       })
       .from(dbMessages)
       .leftJoin(users, eq(dbMessages.senderId, users.id))
-      .where(and(eq(dbMessages.loungeId, loungeId), gt(dbMessages.sequenceId, isNaN(sinceSeq) ? 0 : sinceSeq)))
+      .where(and(...syncConditions))
       .orderBy(dbMessages.sequenceId)
       .limit(limit)
     );

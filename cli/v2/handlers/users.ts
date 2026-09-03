@@ -23,6 +23,10 @@ export function simplifyRole(role: string): string {
 }
 
 export function resolveUserStatus(u: any, latestSessionTimestamp?: Date | null): string {
+  if (u.status) {
+    if (u.status === 'Pending' || u.status === 'Deactivated') return 'Pending';
+    if (u.status === 'Banned' || u.status === 'Blocked') return 'Blocked';
+  }
   if (u.scheduledDeletionAt) return 'Pending';
   const role = (u.role || '').toUpperCase();
   if (role === 'BLOCKED' || role === 'BANNED' || role === 'SUSPENDED' || stateManager.isJailed(u.username)) {
@@ -160,7 +164,7 @@ export async function handleUsers(ctx: CommandContext): Promise<void> {
   if (sub === 'restore') {
     const user = await requireUser(rawArgs, 'restore <id_or_username>');
     if (!user) return;
-    await userRepository.update(user.id, { scheduledDeletionAt: null, deletionReason: null, role: 'USER' });
+    await userRepository.update(user.id, { status: 'Active', scheduledDeletionAt: null, deletionReason: null, role: 'USER' });
     console.log(`[OK] Restored ${user.username} to active status.`);
     return;
   }

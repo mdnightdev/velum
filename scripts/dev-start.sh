@@ -38,7 +38,7 @@ fi
 
 # Step 1: PostgreSQL Health & Readiness Check
 echo -e "${YELLOW}[DEV-START] Step 1/4: Checking PostgreSQL database availability...${NC}"
-if [[ "$DATABASE_URL" =~ localhost ]] || [[ "$DATABASE_URL" =~ 127\.0\.0\.1 ]]; then
+if [[ "$DATABASE_URL" =~ localhost ]] || [[ "$DATABASE_URL" =~ 127\.0\.0\.1 ]] || [[ "$CLOUD_DATABASE_URL" =~ neon\.tech ]]; then
   if command -v pg_isready &> /dev/null; then
     if ! pg_isready -d "$DATABASE_URL" -q; then
       echo -e "${YELLOW}[DEV-START] Local PostgreSQL is not responding. Attempting service startup...${NC}"

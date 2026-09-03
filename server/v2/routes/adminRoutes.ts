@@ -693,6 +693,7 @@ adminRouter.post('/users/:id/restore', async (req: Request, res: Response) => {
 
     await db.update(users).set({
       role: 'USER',
+      status: 'Active',
       scheduledDeletionAt: null,
       deletionReason: null,
       deletionInitiatedBy: null,
