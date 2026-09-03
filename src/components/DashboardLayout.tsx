@@ -104,14 +104,17 @@ export default function DashboardLayout({
 
   const handleLoadProfileCard = async (profUser: any) => {
     try {
+      const targetUserId = profUser?.userId || profUser?.id || profUser?.user_id;
       const sId = fetchSessionId();
-      const res = await fetch(`/v2/user/${profUser.userId}/profile`, {
+      const res = await fetch(`/v2/user/${targetUserId}/profile`, {
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
         const data = await res.json();
         setProfileCardUser({
           ...profUser,
+          userId: targetUserId,
+          id: targetUserId,
           avatarUrl: data.avatarUrl || data.avatar || profUser.avatarUrl || profUser.avatar || '',
           displayName: data.displayName || profUser.displayName || profUser.username,
           bio: data.bio || '',
@@ -125,13 +128,18 @@ export default function DashboardLayout({
       } else {
         setProfileCardUser({
           ...profUser,
+          userId: targetUserId,
+          id: targetUserId,
           avatarUrl: profUser.avatarUrl || profUser.avatar || ''
         });
       }
     } catch (e) {
+      const targetUserId = profUser?.userId || profUser?.id || profUser?.user_id;
       setProfileCardUser({
         ...profUser,
-        avatarUrl: profUser.avatarUrl || profUser.avatar || ''
+        userId: targetUserId,
+        id: targetUserId,
+        avatarUrl: profUser?.avatarUrl || profUser?.avatar || ''
       });
     }
   };
@@ -672,7 +680,10 @@ export default function DashboardLayout({
               variant={isMobile ? 'mobile' : 'expanded'}
               onClose={() => setProfileCardUser(null)}
               onMessage={() => {
-                if (onSelectPeer) onSelectPeer({ userId: profileCardUser.userId, username: profileCardUser.username, avatar: profileCardUser.avatar });
+                const targetUid = profileCardUser.userId || profileCardUser.id || profileCardUser.user_id;
+                if (onSelectPeer && targetUid) {
+                  onSelectPeer({ userId: targetUid, username: profileCardUser.username, avatar: profileCardUser.avatar || profileCardUser.avatarUrl });
+                }
                 setActiveCategory('direct');
                 setProfileCardUser(null);
               }}
