@@ -1,6 +1,5 @@
-import { broadcastToRoom, connectedClients, getOrCreateDMLounge } from '../../websocket.js';
-import { db } from '../db/client.js';
-import { messages as dbMessages } from '../db/schema/lounges.js';
+import { broadcastToRoom, connectedClients } from '../../websocket.js';
+import { dmService } from './dmService.js';
 
 export class SystemBot {
   private static instance: SystemBot;
@@ -104,15 +103,7 @@ export class SystemBot {
     });
 
     try {
-      const loungeId = await getOrCreateDMLounge(roomId);
-      if (loungeId) {
-        await db.insert(dbMessages).values({
-          loungeId,
-          senderId: 999,
-          content: message,
-          encrypted: false
-        });
-      }
+      await dmService.sendMessage(999, userId, message, false);
     } catch (err) {
       console.error('[SystemBot] Failed to persist bot message:', err);
     }

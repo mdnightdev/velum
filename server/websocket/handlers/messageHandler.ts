@@ -5,7 +5,6 @@ import { connectedClients, roomMembers, broadcastToRoom, broadcastToUserDevices 
 import { checkRateLimit } from '../rateLimiter.js';
 import {
   getLoungeIdFromRoomId,
-  getOrCreateDMLounge,
   resetUnread,
   incrementUnread,
   markAllMessagesRead
@@ -428,15 +427,21 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
   }
   members.add(client.ws);
 
-  let targetLoungeId: number | null = null;
-  let isDM = false;
-  if (roomId.startsWith('dm_')) {
-    targetLoungeId = await getOrCreateDMLounge(roomId);
-    isDM = true;
-  } else {
-    targetLoungeId = loungeId;
-    isDM = false;
+  if (roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_')) {
+    const peerId = parseInt(roomId.replace('dm_', ''), 10);
+    if (!isNaN(peerId) && peerId > 0) {
+      await handleDirectMessage(client, {
+        to: peerId,
+        body: message.content || '',
+        enc: message.is_encrypted,
+        reply_to: message.reply_to,
+        client_msg_id: clientMsgId
+      });
+      return;
+    }
   }
+
+  let targetLoungeId: number | null = loungeId;
 
   if (clientMsgId && targetLoungeId) {
     try {
@@ -480,18 +485,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
 
   try {
     if (targetLoungeId) {
-      let deliveredTo: number[] = [];
-      if (isDM) {
-        const roomSockets = roomMembers.get(roomId);
-        if (roomSockets && roomSockets.size > 1) {
-          roomSockets.forEach(ws => {
-            const memberClient = connectedClients.get(ws);
-            if (memberClient && memberClient.userId !== client.userId) {
-              deliveredTo.push(memberClient.userId);
-            }
-          });
-        }
-      }
+      const deliveredTo: number[] = [];
 
       const replyToVal = message.reply_to ? parseInt(message.reply_to.toString(), 10) : null;
       const validReplyTo = (replyToVal !== null && !isNaN(replyToVal)) ? replyToVal : null;
@@ -575,41 +569,6 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
         client.ws.send(JSON.stringify(ackPayload));
       }
 
-      if (isDM && targetLoungeId) {
-        try {
-          const redis = await getRedisClient();
-          if (redis) {
-            const lastMsgPayload = {
-              id: String(insertedMessage.id),
-              message_id: String(insertedMessage.id),
-              content: insertedMessage.content,
-              senderId: insertedMessage.senderId,
-              user_id: insertedMessage.senderId,
-              is_encrypted: insertedMessage.encrypted,
-              deliveredTo: insertedMessage.deliveredTo,
-              createdAt: insertedMessage.createdAt?.toISOString() || new Date().toISOString()
-            };
-            await redis.set(`dm:last_msg:${targetLoungeId}`, JSON.stringify(lastMsgPayload));
-          }
-        } catch (e) {}
-      }
-
-      if (isDM) {
-        if (deliveredTo.length > 0) {
-          enrichedMessage.status = 'delivered';
-        } else {
-          enrichedMessage.status = 'sent';
-        }
-
-        const parts = roomId.replace('dm_', '').split('_');
-        if (parts.length >= 2) {
-          const uid1 = parseInt(parts[0], 10);
-          const uid2 = parseInt(parts[1], 10);
-          const recipientId = client.userId === uid1 ? uid2 : uid1;
-          await incrementUnread(recipientId, roomId);
-        }
-      }
-
       if (roomId.includes('announce') || roomId.includes('ANNOUNCE')) {
         (async () => {
           const loungeList = await executeWithRetry(() => db.select().from(lounges));
@@ -619,17 +578,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
 
             const allUsers = await executeWithRetry(() => db.select().from(users));
             for (const user of allUsers) {
-              const botDMRoomId = `dm_velum_${user.id}`;
-              const botLoungeId = await getOrCreateDMLounge(botDMRoomId);
-              if (botLoungeId) {
-                await executeWithRetry(() => db.insert(dbMessages).values({
-                  loungeId: botLoungeId,
-                  senderId: 999,
-                  content: broadcastContent,
-                  encrypted: false,
-                  deliveredTo: ''
-                }));
-              }
+              await dmService.sendMessage(999, user.id, broadcastContent, false).catch(() => {});
             }
           }
         })().catch(err => console.error('[WS Broadcast Error]:', err));
@@ -648,41 +597,9 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
     }
   }
 
-  if (roomId.startsWith('dm_')) {
-    const parts = roomId.replace('dm_', '').split('_');
-    if (parts.length >= 2) {
-      const uid1 = parseInt(parts[0], 10);
-      const uid2 = parseInt(parts[1], 10);
-      const targetId = client.userId === uid1 ? uid2 : uid1;
-      
-      const roomSockets = roomMembers.get(roomId);
-      for (const [c, clientData] of connectedClients.entries()) {
-        if (clientData && clientData.userId === targetId && c.readyState === WebSocket.OPEN) {
-          if (!roomSockets || !roomSockets.has(c)) {
-            c.send(JSON.stringify(enrichedMessage));
-          }
-        }
-      }
-    }
-  }
-
   (async () => {
     try {
-      if (isDM && targetLoungeId) {
-        const parts = roomId.replace('dm_', '').split('_');
-        if (parts.length >= 2) {
-          const uid1 = parseInt(parts[0], 10);
-          const uid2 = parseInt(parts[1], 10);
-          const recipientId = client.userId === uid1 ? uid2 : uid1;
-
-          await dispatchPushNotification(recipientId, targetLoungeId, {
-            title: `Direct Message from @${client.username}`,
-            body: message.content ? (message.content.length > 80 ? message.content.slice(0, 80) + '...' : message.content) : 'Sent a message',
-            roomId,
-            senderId: client.userId
-          }, message.content || '');
-        }
-      } else if (targetLoungeId) {
+      if (targetLoungeId) {
         const members = await executeWithRetry(() =>
           db.select({ userId: loungeMembers.userId })
             .from(loungeMembers)

@@ -19,7 +19,6 @@ import {
   getWebSocketDiagnostics
 } from './connectionManager.js';
 import { handleClientMessage, handleSendMessage } from './handlers/messageHandler.js';
-import { getOrCreateDMLounge } from './unreadManager.js';
 
 export { SystemBot };
 export {
@@ -29,8 +28,7 @@ export {
   broadcastToUserDevices,
   recordServerEventTimestamp,
   incrementReconnectCount,
-  getWebSocketDiagnostics,
-  getOrCreateDMLounge
+  getWebSocketDiagnostics
 };
 
 // Message batching for performance

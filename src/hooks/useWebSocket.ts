@@ -58,7 +58,13 @@ export function useWebSocket({
       const sessionToken = storage.getItem('velum-sessionId') || '';
       
       try {
-        const url = `/v2/lounges/${activeRoomId}/messages`;
+        const isDm = activeRoomId.startsWith('dm_') && !activeRoomId.startsWith('dm_velum_');
+        let url = `/v2/lounges/${activeRoomId}/messages`;
+        if (isDm) {
+          const peerId = activeRoomId.replace('dm_', '');
+          url = `/v2/dm/${peerId}`;
+        }
+
         const res = await fetch(url, {
           headers: {
             'Authorization': `Bearer ${sessionToken}`,
@@ -69,12 +75,37 @@ export function useWebSocket({
         const data = await res.json();
 
         if (data.messages && Array.isArray(data.messages)) {
-          if (data.messages.length === 0) {
-            await flushLoungeCache(activeRoomId, userId || undefined);
-            setMessages([]);
-          } else {
-            setMessages(data.messages);
-            await saveLocalMessages(data.messages, userId || undefined);
+          const normalized: Message[] = isDm ? data.messages.map((d: any) => ({
+            id: d.id,
+            message_id: String(d.id),
+            db_message_id: d.id,
+            room_id: activeRoomId,
+            lounge_id: activeRoomId,
+            user_id: d.sender,
+            username: d.sender === userId ? 'You' : `User #${d.sender}`,
+            content: d.body,
+            is_encrypted: !!d.encrypted,
+            reply_to: d.replyTo || null,
+            timestamp: d.created,
+            status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
+          })) : data.messages;
+
+          setMessages(prev => {
+            if (normalized.length === 0) return prev;
+            const map = new Map<string, Message>();
+            // Keep in-flight messages from WebSocket
+            prev.forEach(m => map.set(String(m.id || m.message_id || m.client_msg_id), m));
+            // Add server verified messages
+            normalized.forEach(m => map.set(String(m.id || m.message_id), m));
+            return Array.from(map.values()).sort((a, b) => {
+              const tA = new Date(a.timestamp || 0).getTime();
+              const tB = new Date(b.timestamp || 0).getTime();
+              return tA - tB;
+            });
+          });
+
+          if (normalized.length > 0) {
+            await saveLocalMessages(normalized, userId || undefined);
           }
         }
       } catch (err) {

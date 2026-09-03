@@ -4,40 +4,7 @@ import { lounges, messages as dbMessages } from '../v2/db/schema/lounges.js';
 import { eq, and, sql, ne } from 'drizzle-orm';
 import { getRedisClient } from '../v2/db/redis.js';
 
-export async function getOrCreateDMLounge(roomId: string): Promise<number | null> {
-  try {
-    return await executeWithRetry(async () => {
-      const [existing] = await db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1);
-      if (existing) {
-        return existing.id;
-      }
-      const [inserted] = await db.insert(lounges).values({
-        slug: roomId,
-        name: 'Direct Message',
-        type: 'dm',
-        isPrivate: true,
-        isOfficial: false,
-        isSystem: false
-      }).onConflictDoNothing({ target: lounges.slug }).returning();
-
-      if (inserted) {
-        return inserted.id;
-      }
-
-      // If concurrent insert occurred and onConflictDoNothing triggered, retrieve newly created row
-      const [reCheck] = await db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1);
-      return reCheck ? reCheck.id : null;
-    });
-  } catch (err) {
-    console.error('getOrCreateDMLounge error:', err);
-    return null;
-  }
-}
-
 export async function getLoungeIdFromRoomId(roomId: string): Promise<number | null> {
-  if (roomId.startsWith('dm_')) {
-    return await getOrCreateDMLounge(roomId);
-  }
   const [targetLounge] = await executeWithRetry(() => 
     db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1)
   );
@@ -49,7 +16,7 @@ export async function getLoungeIdFromRoomId(roomId: string): Promise<number | nu
     const [loungeById] = await executeWithRetry(() =>
       db.select().from(lounges).where(eq(lounges.id, numericId)).limit(1)
     );
-    if (loungeById) return loungeById.id;
+    return loungeById ? loungeById.id : null;
   }
   return null;
 }
