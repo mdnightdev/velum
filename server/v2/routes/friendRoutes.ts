@@ -4,8 +4,8 @@ import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { relationships } from '../db/schema/relationships.js';
-import { lounges, messages } from '../db/schema/lounges.js';
-import { eq, and, or, inArray, desc } from 'drizzle-orm';
+import { dms, dmClears } from '../db/schema/dms.js';
+import { eq, and, or, inArray, desc, gt, sql } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { connectedClients } from '../../websocket.js';
 import { getRedisClient } from '../db/redis.js';
@@ -90,78 +90,56 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
       const peer = peerUsers.find(u => u.id === peerId);
       const lastSeen = isUserOnline(peerId) ? 'online' : (peer?.updatedAt?.toISOString() || 'offline');
 
-      // DM lounge lookup
-      const dmSlug = `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`;
-      const dmLounge = await db.select().from(lounges).where(eq(lounges.slug, dmSlug)).limit(1);
+      // 1. Monotonic cutoff lookup from dm_clears
+      const [clearRecord] = await db
+        .select({ lastId: dmClears.lastId })
+        .from(dmClears)
+        .where(and(eq(dmClears.userId, currentUserId), eq(dmClears.peer, peerId)))
+        .limit(1);
+
+      const cutoffId = clearRecord?.lastId || 0;
+
+      // 2. Query latest message between pair
+      const [lastDm] = await db
+        .select()
+        .from(dms)
+        .where(
+          and(
+            or(
+              and(eq(dms.sender, currentUserId), eq(dms.peer, peerId)),
+              and(eq(dms.sender, peerId), eq(dms.peer, currentUserId))
+            ),
+            gt(dms.id, cutoffId)
+          )
+        )
+        .orderBy(desc(dms.id))
+        .limit(1);
 
       let lastMessage: any = null;
-      let unreadCount = 0;
+      if (lastDm) {
+        lastMessage = {
+          id: String(lastDm.id),
+          message_id: String(lastDm.id),
+          content: lastDm.body,
+          senderId: lastDm.sender,
+          user_id: lastDm.sender,
+          is_encrypted: lastDm.encrypted,
+          createdAt: lastDm.created?.toISOString() || new Date().toISOString()
+        };
+      }
 
-      if (dmLounge.length > 0) {
-        const loungeId = dmLounge[0].id;
-
-        // Redis Fast Path
-        if (redis) {
-          try {
-            const cached = await redis.get(`dm:last_msg:${loungeId}`);
-            if (typeof cached === 'string') {
-              lastMessage = JSON.parse(cached);
-            }
-          } catch (e) {
-            logger.debug('Redis DM cache read failed', { error: (e as Error).message, loungeId });
-          }
-        }
-
-        // Cache miss: Fallback to PostgreSQL
-        if (!lastMessage) {
-          const lastMsgRes = await db.select().from(messages)
-            .where(eq(messages.loungeId, loungeId))
-            .orderBy(desc(messages.createdAt))
-            .limit(1);
-
-          if (lastMsgRes.length > 0) {
-            const lm = lastMsgRes[0];
-            lastMessage = {
-              id: String(lm.id),
-              message_id: String(lm.id),
-              content: lm.content,
-              senderId: lm.senderId,
-              user_id: lm.senderId,
-              is_encrypted: lm.encrypted,
-              readBy: lm.readBy,
-              deliveredTo: lm.deliveredTo,
-              createdAt: lm.createdAt?.toISOString() || new Date().toISOString()
-            };
-            if (redis) {
-              try {
-                await redis.set(`dm:last_msg:${loungeId}`, JSON.stringify(lastMessage));
-              } catch (e) {
-                logger.debug('Redis DM cache write failed', { error: (e as Error).message, loungeId });
-              }
-            }
-          } else if (redis) {
-            try {
-              await redis.del(`dm:last_msg:${loungeId}`);
-            } catch (e) {
-              logger.debug('Redis DM cache delete failed', { error: (e as Error).message, loungeId });
-            }
-          }
-        }
-
-        // Count unread incoming messages from peer
-        const unreadMsgs = await db.select().from(messages).where(
+      // 3. Count unread incoming messages
+      const unreadList = await db
+        .select({ id: dms.id })
+        .from(dms)
+        .where(
           and(
-            eq(messages.loungeId, loungeId),
-            eq(messages.senderId, peerId)
+            eq(dms.sender, peerId),
+            eq(dms.peer, currentUserId),
+            gt(dms.id, cutoffId),
+            sql`${dms.readAt} IS NULL`
           )
         );
-
-        unreadCount = unreadMsgs.filter(m => {
-          if (!m.readBy) return true;
-          const readIds = m.readBy.split(',').map(Number);
-          return !readIds.includes(currentUserId);
-        }).length;
-      }
 
       return {
         friendId: peerId,
@@ -171,8 +149,8 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
         status: 'accepted',
         last_seen_at: lastSeen,
         active_lounge: null,
-        dm_room_id: dmSlug,
-        unread_count: unreadCount,
+        dm_room_id: `dm_${peerId}`,
+        unread_count: unreadList.length,
         last_message: lastMessage
       };
     }));

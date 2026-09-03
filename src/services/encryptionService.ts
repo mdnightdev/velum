@@ -1,4 +1,5 @@
 import { statelessE2eeService } from './statelessE2eeService.js';
+import crypto from 'node:crypto';
 
 export type EncryptionContext = {
   type: 'direct' | 'lounge';
@@ -7,54 +8,48 @@ export type EncryptionContext = {
   isEncrypted?: boolean;
 };
 
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 12;
+
+function getCipherKey(roomKey?: string): Buffer {
+  const master = process.env.LOUNGE_ENCRYPTION_KEY || 'velum-default-fallback-key-32b';
+  return crypto.createHash('sha256').update((roomKey || '') + master).digest();
+}
+
 /**
- * Low-level XOR encryption (for lounge/room messages) - UTF-8 byte safe
+ * Lounge encryption - AES-256-GCM
  */
-function encryptXOR(content: string, key: string): string {
+function encryptXOR(content: string, key?: string): string {
   if (!content) return '';
-  const encoder = new TextEncoder();
-  const textBytes = encoder.encode(content);
-  const keyBytes = encoder.encode(key || 'VELUM_KEY');
-  const xorBytes = new Uint8Array(textBytes.length);
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, getCipherKey(key), iv);
+  const encrypted = Buffer.concat([cipher.update(content, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
 
-  for (let i = 0; i < textBytes.length; i++) {
-    xorBytes[i] = textBytes[i] ^ keyBytes[i % keyBytes.length];
-  }
-
-  let binary = '';
-  for (let i = 0; i < xorBytes.length; i++) {
-    binary += String.fromCharCode(xorBytes[i]);
-  }
-  return btoa(binary);
+  // Pack IV (12B) + Tag (16B) + Ciphertext into Base64
+  return Buffer.concat([iv, tag, encrypted]).toString('base64');
 }
 
 /**
- * Low-level XOR decryption (for lounge/room messages) - UTF-8 byte safe
+ * Lounge decryption - AES-256-GCM
  */
-function decryptXOR(cipher: string, key: string): string {
-  if (!cipher) return '';
+function decryptXOR(cipherText: string, key?: string): string {
+  if (!cipherText) return '';
   try {
-    const binary = atob(cipher);
-    const cipherBytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      cipherBytes[i] = binary.charCodeAt(i);
-    }
+    const data = Buffer.from(cipherText, 'base64');
+    if (data.length < 28) return cipherText; // Not a valid GCM payload
 
-    const encoder = new TextEncoder();
-    const keyBytes = encoder.encode(key || 'VELUM_KEY');
-    const textBytes = new Uint8Array(cipherBytes.length);
+    const iv = data.subarray(0, IV_LENGTH);
+    const tag = data.subarray(IV_LENGTH, IV_LENGTH + 16);
+    const text = data.subarray(IV_LENGTH + 16);
 
-    for (let i = 0; i < cipherBytes.length; i++) {
-      textBytes[i] = cipherBytes[i] ^ keyBytes[i % keyBytes.length];
-    }
-
-    const decoder = new TextDecoder('utf-8', { fatal: false });
-    return decoder.decode(textBytes);
+    const decipher = crypto.createDecipheriv(ALGORITHM, getCipherKey(key), iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(text, undefined, 'utf8') + decipher.final('utf8');
   } catch {
-    return cipher;
+    return cipherText;
   }
 }
-
 /**
  * Encrypt message based on context:
  * - Direct messages: Pure Stateless Ephemeral ECDH + AES-256-GCM

@@ -14,6 +14,7 @@ import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { SystemBot } from '../services/systemBot.js';
 import { clearUserChatHistory } from '../services/loungeService.js';
+import { dmService } from '../services/dmService.js';
 
 export const userRouter = Router();
 
@@ -229,30 +230,9 @@ userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Respons
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
 
-    const dmSlug = targetUserId === 999 
-      ? `dm_velum_${currentUserId}`
-      : `dm_${Math.min(currentUserId, targetUserId)}_${Math.max(currentUserId, targetUserId)}`;
+    const { lastId } = await dmService.clearConversation(currentUserId, targetUserId);
 
-    // Resolve all lounges matching dmSlug or common DM memberships
-    const matchedLounges = await db.select().from(lounges).where(eq(lounges.slug, dmSlug));
-    const targetLoungeIds = new Set<number>(matchedLounges.map(l => l.id));
-
-    const members = await db.select().from(loungeMembers).where(inArray(loungeMembers.userId, [currentUserId, targetUserId]));
-    const userLounges = new Set(members.filter(m => m.userId === currentUserId).map(m => m.loungeId));
-    const targetLounges = new Set(members.filter(m => m.userId === targetUserId).map(m => m.loungeId));
-    
-    for (const lId of userLounges) {
-      if (targetLounges.has(lId)) {
-        targetLoungeIds.add(lId);
-      }
-    }
-
-    const allLoungeIds = Array.from(targetLoungeIds);
-    for (const lId of allLoungeIds) {
-      await clearUserChatHistory(currentUserId, lId);
-    }
-
-    res.json({ success: true, message: 'Chat history cleared for your account.' });
+    res.json({ success: true, clearedTillId: lastId, message: 'Chat history cleared for your account.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to clear chat history.' });
   }
