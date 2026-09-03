@@ -43,6 +43,7 @@ describe('V2 Auth Endpoints Integration Tests', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
+    authToken = res.body.token;
     expect(res.body.user.username).toBe(testUsername);
   });
 

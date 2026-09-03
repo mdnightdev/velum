@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert';
 import crypto from 'node:crypto';
 import { hashArgon2id, verifyArgon2id } from '../../server/v2/utils/crypto.js';

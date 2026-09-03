@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import fs from 'fs';
@@ -6,6 +6,18 @@ import path from 'path';
 import { mediaRouter } from '../routes/mediaRoutes';
 
 const app = express();
+
+vi.mock('../middleware/auth.js', () => ({
+  hashSessionToken: (token: string) => token,
+  auth: (req: any, res: any, next: any) => {
+    if (req.headers.authorization === 'Bearer mock-token') {
+      req.user = { userId: 1, username: 'testuser', role: 'USER' };
+      return next();
+    }
+    return res.status(401).json({ error: 'Unauthorized: Session token missing.' });
+  },
+}));
+
 
 // Serve uploads statically for positive control tests
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads'), {

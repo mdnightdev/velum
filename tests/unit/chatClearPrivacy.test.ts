@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { clearUserChatHistory } from '../../server/v2/services/loungeService.js';
 

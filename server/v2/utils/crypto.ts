@@ -6,8 +6,8 @@ import { config } from '../config.js';
 const scryptPromise = promisify(crypto.scrypt);
 
 // OWASP ASVS v4.0 Recommended Argon2id Parameters (Memory: 15MiB, Iterations: 3, Parallelism: 1)
-export const ARGON2_ITERATIONS = 3;
-export const ARGON2_MEMORY = 15360; // 15 MiB in KiB
+export const ARGON2_ITERATIONS = process.env.NODE_ENV === 'test' ? 1 : 3;
+export const ARGON2_MEMORY = process.env.NODE_ENV === 'test' ? 1024 : 15360;
 export const ARGON2_PARALLELISM = 1;
 export const ARGON2_HASH_LENGTH = 32;
 
