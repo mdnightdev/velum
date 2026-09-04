@@ -17,7 +17,7 @@ import { useResponsiveLayout } from '../hooks/useResponsive';
 import { BadgeCheck, Terminal, Radio, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
 import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
-import { getLocalKV, setLocalKV, flushLoungeCache } from '../utils/indexedDb';
+import { getLocalKV, setLocalKV, flushLoungeCache, purgeDmMessages } from '../utils/indexedDb';
 
 interface DashboardLayoutProps {
   user: any;
@@ -732,6 +732,7 @@ export default function DashboardLayout({
                   });
 
                   // 2. Wipe local device cache for this DM room
+                  await purgeDmMessages(targetId, user.userId);
                   await flushLoungeCache(dmRoomId, user.userId);
 
                   // 3. Mark deletion timestamp in localStorage

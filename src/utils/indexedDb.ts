@@ -8,7 +8,8 @@ import {
   STORE_USER_KV
 } from '../services/cryptoDbStore.js';
 
-const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours TTL
+// User chat messages are persistent on device
+const MAX_MESSAGE_AGE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year persistent storage
 
 /**
  * Saves or updates messages in user-isolated IndexedDB with schema normalization and zero-duplicate guarantees.
@@ -89,11 +90,20 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
     const db = await openCryptoDatabase(userId || 0);
     const now = Date.now();
     const all: any[] = await db.getAll(STORE_MESSAGES);
-    const targetRoom = String(loungeId);
-    
+    const targetRoom = String(loungeId || '');
+    const cleanTarget = targetRoom.replace(/^#\s*/, '');
+    let reciprocalDm = '';
+    if (cleanTarget.startsWith('dm_')) {
+      const parts = cleanTarget.replace('dm_', '').split('_');
+      if (parts.length === 2) {
+        reciprocalDm = `dm_${parts[1]}_${parts[0]}`;
+      }
+    }
+
     const valid = all
       .filter((m) => {
-        const roomMatches = String(m.loungeId) === targetRoom || String(m.room_id) === targetRoom || String(m.roomId) === targetRoom;
+        const mRoom = String(m.loungeId || m.room_id || m.roomId || '').replace(/^#\s*/, '');
+        const roomMatches = mRoom === cleanTarget || (reciprocalDm && mRoom === reciprocalDm) || (mRoom.includes(cleanTarget) && cleanTarget.length > 3);
         if (!roomMatches) return false;
         const msgTime = new Date(m.timestamp || m.createdAt || 0).getTime();
         return isNaN(msgTime) || (now - msgTime) <= MAX_MESSAGE_AGE_MS;
@@ -165,24 +175,65 @@ export async function flushLoungeCache(loungeId: string, userId?: number): Promi
     const all = await tx.store.getAll();
     const target = String(loungeId);
 
-    // Compute potential reciprocal DM room slug
-    let reciprocalTarget = '';
-    if (target.startsWith('dm_')) {
+    // Compute potential reciprocal DM room slug and pairwise slug
+    const candidateSlugs = new Set<string>([target]);
+    if (target.startsWith('dm_') && !target.startsWith('dm_velum_')) {
       const parts = target.replace('dm_', '').split('_');
       if (parts.length === 2) {
-        reciprocalTarget = `dm_${parts[1]}_${parts[0]}`;
+        candidateSlugs.add(`dm_${parts[1]}_${parts[0]}`);
+        candidateSlugs.add(`dm_${parts[0]}`);
+        candidateSlugs.add(`dm_${parts[1]}`);
+      } else if (parts.length === 1 && userId) {
+        const peerId = Number(parts[0]);
+        if (peerId) {
+          candidateSlugs.add(`dm_${Math.min(userId, peerId)}_${Math.max(userId, peerId)}`);
+          candidateSlugs.add(`dm_${userId}_${peerId}`);
+          candidateSlugs.add(`dm_${peerId}_${userId}`);
+        }
       }
     }
 
     for (const m of all) {
-      const mRoom = String(m.loungeId || m.room_id || m.roomId || '');
-      if (mRoom === target || (reciprocalTarget && mRoom === reciprocalTarget)) {
+      const mRoom = String(m.loungeId || m.room_id || m.roomId || '').replace(/^#\s*/, '');
+      if (candidateSlugs.has(mRoom)) {
         await tx.store.delete(m.id);
       }
     }
     await tx.done;
   } catch (err) {
     console.warn('[IndexedDB] flushLoungeCache error:', err);
+  }
+}
+
+/**
+ * Completely purges all direct messages between the user and a peer from local IndexedDB.
+ */
+export async function purgeDmMessages(peerId: number, userId?: number): Promise<void> {
+  if (!peerId) return;
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+    const all = await tx.store.getAll();
+    const myId = userId || 0;
+
+    const targetSlugs = new Set<string>([
+      `dm_${peerId}`,
+      `dm_${Math.min(myId, peerId)}_${Math.max(myId, peerId)}`,
+      `dm_${myId}_${peerId}`,
+      `dm_${peerId}_${myId}`
+    ]);
+
+    for (const m of all) {
+      const mRoom = String(m.loungeId || m.room_id || m.roomId || '').replace(/^#\s*/, '');
+      const sId = Number(m.senderId || m.user_id || 0);
+      const isPeer = sId === peerId || targetSlugs.has(mRoom);
+      if (isPeer) {
+        await tx.store.delete(m.id);
+      }
+    }
+    await tx.done;
+  } catch (err) {
+    console.warn('[IndexedDB] purgeDmMessages error:', err);
   }
 }
 

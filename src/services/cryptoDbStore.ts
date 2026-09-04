@@ -21,7 +21,39 @@ const dbInstances = new Map<number, IDBPDatabase>();
 const dbPromises = new Map<number, Promise<IDBPDatabase>>();
 
 export function getDatabaseName(userId: number): string {
-  return `velum_db_${userId}`;
+  const uid = (userId && !isNaN(userId)) ? userId : 0;
+  return `v_${uid}`;
+}
+
+async function migrateLegacyDatabases(targetUserId: number, targetDb: IDBPDatabase): Promise<void> {
+  if (typeof window === 'undefined' || !window.indexedDB) return;
+  const legacyNames = [`velum_db_${targetUserId}`, `velum_db_user_${targetUserId}`];
+  for (const oldName of legacyNames) {
+    try {
+      const oldDb = await openDB(oldName, DB_VERSION).catch(() => null);
+      if (!oldDb) continue;
+
+      const storeNames: string[] = Array.from(oldDb.objectStoreNames);
+      for (const rawStoreName of storeNames) {
+        const storeName = String(rawStoreName);
+        if (!targetDb.objectStoreNames.contains(storeName)) continue;
+        try {
+          const items = await oldDb.getAll(storeName);
+          if (items && items.length > 0) {
+            const tx = targetDb.transaction(storeName as any, 'readwrite');
+            for (const item of items) {
+              await tx.store.put(item);
+            }
+            await tx.done;
+          }
+        } catch (copyErr) {
+          console.warn(`[CryptoDB Migration] Failed copying store ${storeName} from ${oldName}:`, copyErr);
+        }
+      }
+      oldDb.close();
+      await deleteDB(oldName).catch(() => {});
+    } catch (_) {}
+  }
 }
 
 export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDatabase> {
@@ -86,7 +118,8 @@ export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDataba
       dbInstances.delete(targetUserId);
       dbPromises.delete(targetUserId);
     }
-  }).then((db) => {
+  }).then(async (db) => {
+    await migrateLegacyDatabases(targetUserId, db);
     dbInstances.set(targetUserId, db);
     dbPromises.delete(targetUserId);
     return db;

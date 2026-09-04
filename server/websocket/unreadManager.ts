@@ -5,19 +5,34 @@ import { eq, and, sql, ne } from 'drizzle-orm';
 import { getRedisClient } from '../v2/db/redis.js';
 
 export async function getLoungeIdFromRoomId(roomId: string): Promise<number | null> {
+  if (!roomId) return null;
+  const cleanRoom = roomId.toString().replace(/^#\s*/, '').trim();
+
+  // Try exact slug or clean slug match
   const [targetLounge] = await executeWithRetry(() => 
-    db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1)
+    db.select().from(lounges).where(eq(lounges.slug, cleanRoom)).limit(1)
   );
   if (targetLounge) {
     return targetLounge.id;
   }
-  const numericId = parseInt(roomId, 10);
-  if (!isNaN(numericId)) {
+
+  // Try numeric id match
+  const numericId = parseInt(cleanRoom, 10);
+  if (!isNaN(numericId) && numericId > 0) {
     const [loungeById] = await executeWithRetry(() =>
       db.select().from(lounges).where(eq(lounges.id, numericId)).limit(1)
     );
-    return loungeById ? loungeById.id : null;
+    if (loungeById) return loungeById.id;
   }
+
+  // Fallback: check raw roomId if cleanRoom didn't match
+  if (cleanRoom !== roomId) {
+    const [rawLounge] = await executeWithRetry(() =>
+      db.select().from(lounges).where(eq(lounges.slug, roomId)).limit(1)
+    );
+    if (rawLounge) return rawLounge.id;
+  }
+
   return null;
 }
 

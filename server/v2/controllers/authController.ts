@@ -445,7 +445,8 @@ export class AuthController {
         username: user.username,
         role: user.role,
         displayName: user.displayName,
-        avatarUrl: user.avatarUrl
+        avatarUrl: user.avatarUrl,
+        salt: user.salt
       }
     });
   }
@@ -465,6 +466,7 @@ export class AuthController {
     const safeUser = { 
       ...req.user, 
       avatar: req.user.avatarUrl || req.user.avatar || '',
+      salt: (req.user as any).salt,
       duress_active: undefined 
     };
     res.status(200).json({ user: safeUser });

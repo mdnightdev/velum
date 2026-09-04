@@ -233,11 +233,15 @@ export default function ChatArea({
           return m.room_id === `dm_velum_${currentUserId}` || m.room_id === 'dm_999';
         }
         const dmRoomId = `dm_${activePeerId}`;
-        const isMatchRoom = m.room_id === dmRoomId || m.lounge_id === dmRoomId;
-        const isParticipant = (Number(m.user_id) === Number(currentUserId) || Number(m.user_id) === Number(activePeerId));
-        return isMatchRoom || isParticipant;
+        const isMatchRoom = m.room_id === dmRoomId || m.lounge_id === dmRoomId || m.room_id === `dm_${Math.min(currentUserId, activePeerId)}_${Math.max(currentUserId, activePeerId)}`;
+        const isPeerToMe = Number(m.user_id) === Number(activePeerId);
+        const isPeerFromMe = Number(m.user_id) === Number(currentUserId) && (isMatchRoom || (m as any).to === activePeerId);
+        return isMatchRoom || isPeerToMe || isPeerFromMe;
       } else {
-        return m.room_id === roomId || (!m.room_id && m.lounge_id === roomId);
+        const cleanRoom = roomId.replace(/^#\s*/, '');
+        const mRoom = String(m.room_id || '').replace(/^#\s*/, '');
+        const mLounge = String(m.lounge_id || '').replace(/^#\s*/, '');
+        return mRoom === cleanRoom || mLounge === cleanRoom || (!mRoom && mLounge === cleanRoom) || (mRoom.includes(cleanRoom) && cleanRoom.length > 3);
       }
     });
 
@@ -385,7 +389,7 @@ export default function ChatArea({
         ? (replyingToMessage.db_message_id || parseInt(replyingToMessage.message_id || '0', 10) || undefined)
         : undefined;
 
-      const targetRoom = roomId || (activeChatPeer ? `dm_${activeChatPeer.userId}` : undefined);
+      const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
       const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
       onSendMessage(textToSend, null, isEnc, targetRoom, replyMsgId, textToSend);
       setReplyingToMessage(null);

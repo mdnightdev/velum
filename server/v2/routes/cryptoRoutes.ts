@@ -12,8 +12,8 @@ import { eq } from 'drizzle-orm';
 
 export const cryptoRouter = Router();
 
-// POST /v2/crypto/prekeys - Publish or refresh prekey bundle
-cryptoRouter.post('/crypto/prekeys', auth, async (req: Request, res: Response, next: NextFunction) => {
+// POST /v2/crypto/prekeys or /v2/prekeys - Publish or refresh prekey bundle
+const handlePublishPrekeys = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
     const {
@@ -58,10 +58,13 @@ cryptoRouter.post('/crypto/prekeys', auth, async (req: Request, res: Response, n
   } catch (err) {
     next(err);
   }
-});
+};
 
-// GET /v2/crypto/prekeys/:userId - Retrieve target user's prekey bundle for session initiation
-cryptoRouter.get('/crypto/prekeys/:userId', auth, async (req: Request, res: Response, next: NextFunction) => {
+cryptoRouter.post('/crypto/prekeys', auth, handlePublishPrekeys);
+cryptoRouter.post('/prekeys', auth, handlePublishPrekeys);
+
+// GET /v2/crypto/prekeys/:userId or /v2/prekeys/:userId - Retrieve target user's prekey bundle
+const handleFetchPrekeys = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const targetUserId = parseInt(req.params.userId, 10);
     if (isNaN(targetUserId)) {
@@ -79,7 +82,10 @@ cryptoRouter.get('/crypto/prekeys/:userId', auth, async (req: Request, res: Resp
   } catch (err) {
     next(err);
   }
-});
+};
+
+cryptoRouter.get('/crypto/prekeys/:userId', auth, handleFetchPrekeys);
+cryptoRouter.get('/prekeys/:userId', auth, handleFetchPrekeys);
 
 // POST /v2/crypto/safety-number - Generate fingerprint for identity verification
 cryptoRouter.post('/crypto/safety-number', auth, async (req: Request, res: Response, next: NextFunction) => {

@@ -98,11 +98,22 @@ export function useMessageDecryption({
           continue;
         }
 
-        const isDmRoom = (m.room_id || roomId || '').startsWith('dm_');
-        const peerId = activeChatPeer?.userId || (isOutgoing ? undefined : m.user_id);
+        const targetRoom = m.room_id || roomId || '';
+        const isDmRoom = targetRoom.startsWith('dm_') && !targetRoom.startsWith('dm_velum_');
+        let peerId = activeChatPeer?.userId;
+        if (!peerId && isDmRoom) {
+          const parsed = parseInt(targetRoom.replace('dm_', ''), 10);
+          if (!isNaN(parsed) && parsed > 0) {
+            peerId = parsed;
+          }
+        }
+        if (!peerId && !isOutgoing && m.user_id) {
+          peerId = Number(m.user_id);
+        }
+
         const context: EncryptionContext = {
           type: (activeChatPeer || isDmRoom) ? 'direct' : 'lounge',
-          roomId: m.room_id || roomId,
+          roomId: targetRoom,
           peerUserId: peerId,
           isEncrypted: !!(m.is_encrypted || (m as any).isEncrypted),
         };

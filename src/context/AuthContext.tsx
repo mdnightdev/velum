@@ -101,6 +101,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.velumDebug.userId = null;
       window.velumDebug.username = null;
     }
+
+    // Explicitly navigate away to clear authenticated UI hierarchy
+    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+      window.location.replace('/');
+    }
   };
 
   const resetFormStates = () => {
@@ -141,6 +146,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
               storage.setItem('velum-user', verifiedUser);
             } catch (_) {}
+            statelessE2eeService.setLocalUserId(verifiedUser.userId);
+            statelessE2eeService.initLocalIdentityKeys(verifiedUser.userId).catch(() => {});
             setIsLoadingSession(false);
             return;
           }
@@ -160,6 +167,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (cachedUser && cachedUser.userId) {
               setUser(cachedUser);
               setSessionId(sId);
+              statelessE2eeService.setLocalUserId(cachedUser.userId);
+              statelessE2eeService.initLocalIdentityKeys(cachedUser.userId).catch(() => {});
               setIsLoadingSession(false);
               return;
             }

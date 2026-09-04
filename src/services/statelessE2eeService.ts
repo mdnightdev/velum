@@ -1,7 +1,9 @@
 import {
   generateX25519KeyPair,
+  deriveX25519KeyPairFromSeed,
   calculateX25519SharedSecret,
   generateEd25519KeyPair,
+  deriveEd25519KeyPairFromSeed,
   signEd25519,
   encryptAesGcm,
   decryptAesGcm,
@@ -55,7 +57,7 @@ class StatelessE2eeService {
   /**
    * Initializes local identity keys in user IndexedDB and publishes public keys to server
    */
-  public async initLocalIdentityKeys(userId?: number): Promise<void> {
+  public async initLocalIdentityKeys(userId?: number, seedMaterial?: string, userSaltHex?: string): Promise<void> {
     const uid = userId || this.getLocalUserId();
     if (!uid) return;
 
@@ -63,8 +65,44 @@ class StatelessE2eeService {
     let identity = await loadLocalIdentityKeys(uid);
 
     if (!identity) {
-      const edIdentity = generateEd25519KeyPair();
-      const dhIdentity = generateX25519KeyPair();
+      let edIdentity;
+      let dhIdentity;
+
+      if (seedMaterial && window.crypto?.subtle) {
+        const enc = new TextEncoder();
+        const baseKey = await window.crypto.subtle.importKey(
+          'raw',
+          enc.encode(seedMaterial),
+          { name: 'PBKDF2' },
+          false,
+          ['deriveBits']
+        );
+        let saltBytes: Uint8Array;
+        if (userSaltHex && /^[0-9a-fA-F]+$/.test(userSaltHex)) {
+          saltBytes = fromHex(userSaltHex);
+        } else {
+          // Fallback to high-entropy user-scoped salt
+          const cachedUser = storage.getItem<any>('velum-user');
+          const rawSalt = cachedUser?.salt || (typeof cachedUser === 'string' ? JSON.parse(cachedUser)?.salt : '');
+          if (rawSalt && /^[0-9a-fA-F]+$/.test(rawSalt)) {
+            saltBytes = fromHex(rawSalt);
+          } else {
+            saltBytes = enc.encode(`velum_identity_salt_uid_${uid}_x25519`);
+          }
+        }
+        const bits = await window.crypto.subtle.deriveBits(
+          { name: 'PBKDF2', salt: saltBytes as unknown as BufferSource, iterations: 100000, hash: 'SHA-512' },
+          baseKey,
+          256
+        );
+        const seedBytes = new Uint8Array(bits);
+        edIdentity = deriveEd25519KeyPairFromSeed(seedBytes);
+        dhIdentity = deriveX25519KeyPairFromSeed(seedBytes);
+      } else {
+        edIdentity = generateEd25519KeyPair();
+        dhIdentity = generateX25519KeyPair();
+      }
+
       await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
       identity = { signing: edIdentity, dh: dhIdentity };
 
@@ -208,7 +246,7 @@ class StatelessE2eeService {
     // Handle v2 Dual-Recipient Envelope
     if (envelope.startsWith('e2ee:v2:')) {
       const parts = envelope.split(':');
-      if (parts.length !== 7) {
+      if (parts.length !== 8) {
         throw new Error('[StatelessE2EE] Invalid v2 envelope format');
       }
 

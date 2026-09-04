@@ -114,7 +114,7 @@ export function MessageItem({
   const parsedAttachmentData = firstAttachment?.data || '';
   const parsedMsgContent = firstAttachment ? (firstAttachment.caption || '') : activeContent;
 
-  if (!msg.deleted && !activeContent && attachments.length === 0 && !msg.content) {
+  if (!msg.deleted && !activeContent && attachments.length === 0 && !msg.content && !msg.plaintext) {
     return null;
   }
 
@@ -175,7 +175,7 @@ export function MessageItem({
                 let replyText = '';
                 if (repliedMsg) {
                   replyName = getSenderIdentity(repliedMsg).cleanName;
-                  replyText = getDecryptedText(repliedMsg);
+                  replyText = repliedMsg.plaintext || (repliedMsg as any).client_plaintext || getDecryptedText(repliedMsg);
                 } else if (msg.reply_preview) {
                   replyName = stripAt(msg.reply_preview.username || '');
                   replyText = msg.reply_preview.content;

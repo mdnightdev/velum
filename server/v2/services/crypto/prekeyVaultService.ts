@@ -76,10 +76,10 @@ export async function publishPrekeyBundle(
         updatedAt: new Date()
       });
     } else {
+      // Identity key is immutable once established: do NOT overwrite existing identityKey
       await db.update(userPrekeys)
         .set({
           registrationId,
-          identityKey: bundle.identityKey,
           signedPrekeyId,
           signedPrekey: signedPrekeyPub,
           signedPrekeySignature: signedPrekeySig,

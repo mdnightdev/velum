@@ -68,6 +68,12 @@ export function generateX25519KeyPair(): KeyPairBytes {
   return { privateKey: secretKey, publicKey };
 }
 
+export function deriveX25519KeyPairFromSeed(seed32: Uint8Array): KeyPairBytes {
+  const privateKey = new Uint8Array(seed32.slice(0, 32));
+  const publicKey = x25519.getPublicKey(privateKey);
+  return { privateKey, publicKey };
+}
+
 export function calculateX25519SharedSecret(privateKey: Uint8Array, publicKey: Uint8Array): Uint8Array {
   return x25519.getSharedSecret(privateKey, publicKey);
 }
@@ -75,6 +81,12 @@ export function calculateX25519SharedSecret(privateKey: Uint8Array, publicKey: U
 export function generateEd25519KeyPair(): KeyPairBytes {
   const { secretKey, publicKey } = ed25519.keygen();
   return { privateKey: secretKey, publicKey };
+}
+
+export function deriveEd25519KeyPairFromSeed(seed32: Uint8Array): KeyPairBytes {
+  const privateKey = new Uint8Array(seed32.slice(0, 32));
+  const publicKey = ed25519.getPublicKey(privateKey);
+  return { privateKey, publicKey };
 }
 
 export function signEd25519(message: Uint8Array, privateKey: Uint8Array): Uint8Array {

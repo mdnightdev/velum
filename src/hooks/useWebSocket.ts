@@ -52,8 +52,20 @@ export function useWebSocket({
   useEffect(() => {
     if (!activeRoomId) return;
 
-    // Clear old room state immediately so rooms don't bleed into each other
-    setMessages([]);
+    let isCurrentRoom = true;
+
+    // Instantly load cached messages from user-isolated store
+    getLocalMessages(activeRoomId, 100, userId || undefined)
+      .then(cached => {
+        if (isCurrentRoom && cached && cached.length > 0) {
+          setMessages(cached);
+        } else if (isCurrentRoom) {
+          setMessages([]);
+        }
+      })
+      .catch(() => {
+        if (isCurrentRoom) setMessages([]);
+      });
 
     const syncRoom = async () => {
       const sessionToken = storage.getItem('velum-sessionId') || '';
@@ -62,7 +74,10 @@ export function useWebSocket({
         const isDm = activeRoomId.startsWith('dm_') && !activeRoomId.startsWith('dm_velum_');
         let url = `/v2/lounges/${activeRoomId}/messages`;
         if (isDm) {
-          const peerId = activeRoomId.replace('dm_', '');
+          const parts = activeRoomId.replace('dm_', '').split('_');
+          const peerId = parts.length === 2
+            ? (Number(parts[0]) === userId ? parts[1] : parts[0])
+            : parts[0];
           url = `/v2/dm/${peerId}`;
         }
 
@@ -75,7 +90,7 @@ export function useWebSocket({
         });
         const data = await res.json();
 
-        if (data.messages && Array.isArray(data.messages)) {
+        if (data.messages && Array.isArray(data.messages) && isCurrentRoom) {
           const normalized: Message[] = isDm ? data.messages.map((d: any) => ({
             id: d.id,
             message_id: String(d.id),
@@ -91,13 +106,51 @@ export function useWebSocket({
             status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
           })) : data.messages;
 
+          const cachedLocal = await getLocalMessages(activeRoomId, 300, userId || undefined).catch(() => []);
+          const localPlaintextMap = new Map<string, string>();
+          cachedLocal.forEach((lm: any) => {
+            if (lm.plaintext) {
+              const keys = [lm.id, lm.message_id, lm.client_msg_id, lm.nonce, lm.db_message_id].filter(Boolean).map(String);
+              keys.forEach(k => localPlaintextMap.set(k, lm.plaintext));
+              if (lm.content) localPlaintextMap.set(lm.content, lm.plaintext);
+            }
+          });
+
+          const restoredNormalized = normalized.map((m: any) => {
+            const keys = [m.id, m.message_id, m.client_msg_id, m.nonce, m.db_message_id].filter(Boolean).map(String);
+            let pt = m.plaintext;
+            if (!pt) {
+              for (const k of keys) {
+                if (localPlaintextMap.has(k)) {
+                  pt = localPlaintextMap.get(k);
+                  break;
+                }
+              }
+              if (!pt && m.content && localPlaintextMap.has(m.content)) {
+                pt = localPlaintextMap.get(m.content);
+              }
+            }
+            return pt ? { ...m, plaintext: pt } : m;
+          });
+
+          if (!isCurrentRoom) return;
+
           setMessages(prev => {
-            if (normalized.length === 0) return prev;
+            if (restoredNormalized.length === 0) {
+              // Server has 0 messages; keep existing cached messages if present
+              return prev;
+            }
             const map = new Map<string, Message>();
             // Keep in-flight messages from WebSocket
             prev.forEach(m => map.set(String(m.id || m.message_id || m.client_msg_id), m));
-            // Add server verified messages
-            normalized.forEach(m => map.set(String(m.id || m.message_id), m));
+            // Add server verified messages with restored plaintext
+            restoredNormalized.forEach((m: any) => {
+              const existing = map.get(String(m.id || m.message_id));
+              map.set(String(m.id || m.message_id), {
+                ...m,
+                plaintext: m.plaintext || existing?.plaintext
+              });
+            });
             return Array.from(map.values()).sort((a, b) => {
               const tA = new Date(a.timestamp || 0).getTime();
               const tB = new Date(b.timestamp || 0).getTime();
@@ -105,20 +158,20 @@ export function useWebSocket({
             });
           });
 
-          if (normalized.length > 0) {
-            await saveLocalMessages(normalized, userId || undefined);
+          if (restoredNormalized.length > 0) {
+            await saveLocalMessages(restoredNormalized, userId || undefined);
           }
         }
       } catch (err) {
         console.warn('[Sync] Failed to sync messages:', err);
-        const cached = await getLocalMessages(activeRoomId, 100, userId || undefined);
-        if (cached && cached.length > 0) {
-          setMessages(cached);
-        }
       }
     };
 
     syncRoom();
+
+    return () => {
+      isCurrentRoom = false;
+    };
   }, [activeRoomId, wsConnected, userId]);
 
   // 2. Persist message state changes to local storage
@@ -238,6 +291,21 @@ export function useWebSocket({
       // Automatically drain persistent IndexedDB outbox queue upon socket restoration
       drainOutboxQueue((item) => {
         if (ws.readyState === WebSocket.OPEN) {
+          const isDm = item.room_id.startsWith('dm_') && !item.room_id.startsWith('dm_velum_');
+          if (isDm) {
+            const peerId = parseInt(item.room_id.replace('dm_', ''), 10);
+            if (!isNaN(peerId)) {
+              ws.send(JSON.stringify({
+                type: 'dm',
+                to: peerId,
+                body: item.content,
+                enc: item.is_encrypted,
+                reply_to: item.reply_to || null,
+                client_msg_id: item.client_msg_id
+              }));
+              return true;
+            }
+          }
           ws.send(JSON.stringify({
             type: 'send_message',
             room_id: item.room_id,
@@ -392,16 +460,52 @@ export function useWebSocket({
             });
           }
 
-          setLastMessages(prev => ({ ...prev, [dmRoomId]: dmMsg }));
-          window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
+          setLastMessages(prev => {
+            const existing = prev[dmRoomId];
+            const sameMessage = existing && (
+              (existing.message_id && String(existing.message_id) === String(dmMsg.message_id)) ||
+              (existing.id && String(existing.id) === String(dmMsg.id)) ||
+              (existing.db_message_id && String(existing.db_message_id) === String(dmMsg.db_message_id))
+            );
+            const mergedPlaintext = sameMessage ? (existing.plaintext || dmMsg.plaintext) : dmMsg.plaintext;
+            return { ...prev, [dmRoomId]: { ...dmMsg, plaintext: mergedPlaintext } };
+          });
 
-          if (activeRoomIdRef.current === dmRoomId) {
+          const currentActive = activeRoomIdRef.current || '';
+          const isCurrentRoom = currentActive === dmRoomId || 
+                                currentActive === `dm_${peerId}` || 
+                                currentActive === `dm_${Math.min(uid || 0, peerId)}_${Math.max(uid || 0, peerId)}`;
+
+          if (isCurrentRoom) {
             setMessages(prev => {
-              const existingIds = new Set(prev.map(m => String(m.id || m.message_id || m.db_message_id)));
-              if (existingIds.has(String(dmMsg.id))) return prev;
+              const existingIdx = prev.findIndex(m => {
+                const idMatch = (m.id && String(m.id) === String(dmMsg.id)) ||
+                                (m.message_id && String(m.message_id) === String(dmMsg.id)) ||
+                                (m.db_message_id && String(m.db_message_id) === String(dmMsg.id));
+                return idMatch;
+              });
+
+              if (existingIdx !== -1) {
+                const existing = prev[existingIdx];
+                const updated = {
+                  ...dmMsg,
+                  plaintext: existing.plaintext || dmMsg.plaintext,
+                  status: 'sent' as const
+                };
+                const nextArr = [...prev];
+                nextArr[existingIdx] = updated;
+                saveLocalMessages([updated], uid || undefined).catch(() => {});
+                return nextArr;
+              }
+
+              saveLocalMessages([dmMsg], uid || undefined).catch(() => {});
               return [...prev, dmMsg];
             });
+          } else {
+            saveLocalMessages([dmMsg], uid || undefined).catch(() => {});
           }
+
+          window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
         } else if (data.type === 'sync_response') {
           if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
             setMessages(prev => {
@@ -741,11 +845,23 @@ export function useWebSocket({
       timestamp: new Date().toISOString()
     };
     
-    if (destRoomId === activeRoomId) {
-      setMessages(prev => [...prev, optMessage]);
+    const isDirectMatch = destRoomId === activeRoomId;
+    let isDmMatch = false;
+    let dmPeerId: number | undefined = undefined;
+    if (isDm) {
+      dmPeerId = parseInt(destRoomId.replace('dm_', ''), 10);
+      if (!isNaN(dmPeerId) && userId) {
+        const pairwiseRoom = `dm_${Math.min(userId, dmPeerId)}_${Math.max(userId, dmPeerId)}`;
+        isDmMatch = activeRoomId === destRoomId || activeRoomId === pairwiseRoom;
+      }
+    }
+
+    if (isDirectMatch || isDmMatch) {
+      setMessages(prev => [...prev, { ...optMessage, to: dmPeerId } as any]);
     }
 
     setLastMessages(prev => ({ ...prev, [destRoomId]: optMessage }));
+    saveLocalMessages([optMessage], userId || undefined).catch(() => {});
 
     const outboxPayload = {
       client_msg_id: nonce,
@@ -822,16 +938,31 @@ export function useWebSocket({
     const nonce = (targetMsg as Message).client_msg_id || (targetMsg as Message).nonce || clientMsgId;
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'send_message',
-        room_id: destRoomId,
-        content: finalContent,
-        is_encrypted: shouldEncrypt,
-        expires_in: (targetMsg as Message).expires_in || null,
-        reply_to: (targetMsg as Message).reply_to || null,
-        client_msg_id: nonce,
-        nonce: nonce
-      }));
+      const isDm = destRoomId.startsWith('dm_') && !destRoomId.startsWith('dm_velum_');
+      if (isDm) {
+        const peerId = parseInt(destRoomId.replace('dm_', ''), 10);
+        if (!isNaN(peerId)) {
+          wsRef.current.send(JSON.stringify({
+            type: 'dm',
+            to: peerId,
+            body: finalContent,
+            enc: shouldEncrypt,
+            reply_to: (targetMsg as Message).reply_to || null,
+            client_msg_id: nonce
+          }));
+        }
+      } else {
+        wsRef.current.send(JSON.stringify({
+          type: 'send_message',
+          room_id: destRoomId,
+          content: finalContent,
+          is_encrypted: shouldEncrypt,
+          expires_in: (targetMsg as Message).expires_in || null,
+          reply_to: (targetMsg as Message).reply_to || null,
+          client_msg_id: nonce,
+          nonce: nonce
+        }));
+      }
     }
 
     setTimeout(() => {

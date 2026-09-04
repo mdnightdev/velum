@@ -6,7 +6,7 @@ import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview, parseAttachment, formatVoiceNotePreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
-import { getLocalMessages, flushLoungeCache } from '../../utils/indexedDb';
+import { getLocalMessages, flushLoungeCache, purgeDmMessages } from '../../utils/indexedDb';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
 import { getSessionId } from '../../utils/auth';
 
@@ -260,7 +260,8 @@ export default function DirectMainDashboard({
         return next;
       });
 
-      // 1. Wipe local cache for this DM room
+      // 1. Wipe local cache for this DM room across all aliases
+      await purgeDmMessages(peerId, currentUserId);
       await flushLoungeCache(dmRoomId, currentUserId);
 
       // 2. Call server to record monotonic clear cutoff
@@ -290,10 +291,11 @@ export default function DirectMainDashboard({
     let isMounted = true;
     const processPreviews = async () => {
       for (const r of relationshipsArray) {
-        const friendId = r.friendId;
-        const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
+        const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
+        if (!friendId) continue;
+        const dmRoomId = `dm_${friendId}`;
         const lm = lastMessages || {};
-        const candidateKeys = [dmRoomId, `dm_${friendId}`, `dm_${currentUserId}_${friendId}`, `dm_${friendId}_${currentUserId}`];
+        const candidateKeys = [dmRoomId, `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`, `dm_${currentUserId}_${friendId}`, `dm_${friendId}_${currentUserId}`];
         let last = r.last_message || null;
         for (const k of candidateKeys) {
           if (k && lm[k]) { last = lm[k]; break; }
@@ -577,10 +579,12 @@ export default function DirectMainDashboard({
         {/* Other friends/contacts */}
         {filteredFriends
           .filter(r => {
-            const delTime = deletedDms[r.friendId];
+            const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
+            if (!friendId) return false;
+            const delTime = deletedDms[friendId];
             if (delTime) {
-              const dmRoomId = `dm_${Math.min(currentUserId, r.friendId)}_${Math.max(currentUserId, r.friendId)}`;
-              const candidateKeys = [dmRoomId, `dm_${r.friendId}`, `dm_${currentUserId}_${r.friendId}`, `dm_${r.friendId}_${currentUserId}`];
+              const dmRoomId = `dm_${friendId}`;
+              const candidateKeys = [dmRoomId, `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`, `dm_${currentUserId}_${friendId}`, `dm_${friendId}_${currentUserId}`];
               let last: any = null;
               const lm = lastMessages || {};
               for (const k of candidateKeys) {
@@ -589,12 +593,14 @@ export default function DirectMainDashboard({
               const msgTime = last ? (last.createdAt ? new Date(last.createdAt).getTime() : last.created_at ? new Date(last.created_at).getTime() : (last.timestamp ? new Date(last.timestamp).getTime() : 0)) : 0;
               if (msgTime <= delTime) return false;
             }
-            const isArchived = archivedUserIds.includes(r.friendId);
+            const isArchived = archivedUserIds.includes(friendId);
             return filterTab === 'archived' ? isArchived : !isArchived;
           })
           .sort((a, b) => {
-            const dmA = `dm_${Math.min(currentUserId, a.friendId)}_${Math.max(currentUserId, a.friendId)}`;
-            const dmB = `dm_${Math.min(currentUserId, b.friendId)}_${Math.max(currentUserId, b.friendId)}`;
+            const idA = Number(a.friendId || a.userId || a.user_id || a.id);
+            const idB = Number(b.friendId || b.userId || b.user_id || b.id);
+            const dmA = `dm_${idA}`;
+            const dmB = `dm_${idB}`;
             const lm = lastMessages || {};
             const lastA = lm[dmA] || a.last_message;
             const lastB = lm[dmB] || b.last_message;
@@ -605,14 +611,15 @@ export default function DirectMainDashboard({
             return timeB - timeA;
           })
           .map(r => {
-            const friendId = r.friendId;
+            const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
+            if (!friendId) return null;
             const friendName = stripAt(r.username || r.displayName);
             const friendAvatar = r.avatarUrl;
-            const dmRoomId = `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`;
+            const dmRoomId = `dm_${friendId}`;
             const isArchived = archivedUserIds.includes(friendId);
             const candidateKeys = [
               dmRoomId,
-              `dm_${friendId}`,
+              `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`,
               `dm_${currentUserId}_${friendId}`,
               `dm_${friendId}_${currentUserId}`
             ];
@@ -870,10 +877,11 @@ export default function DirectMainDashboard({
                   return !newChatSearch || name.toLowerCase().includes(newChatSearch.toLowerCase());
                 })
                 .map(r => {
-                  const fId = r.friendId;
+                  const fId = Number(r.friendId || r.userId || r.user_id || r.id);
+                  if (!fId) return null;
                   const fName = stripAt(r.username || r.displayName || '');
                   const fAvatar = r.avatarUrl;
-                  const dmSlug = `dm_${Math.min(currentUserId, fId)}_${Math.max(currentUserId, fId)}`;
+                  const dmSlug = `dm_${fId}`;
 
                   return (
                     <div
