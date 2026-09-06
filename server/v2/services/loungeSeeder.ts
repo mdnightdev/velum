@@ -92,6 +92,23 @@ export async function ensureVelumLoungeSeeded() {
         encrypted BOOLEAN DEFAULT false NOT NULL,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS media_assets (
+        id SERIAL PRIMARY KEY,
+        uploader_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        storage_key TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        mime_type VARCHAR(128) NOT NULL,
+        byte_size INTEGER NOT NULL,
+        category VARCHAR(32) NOT NULL,
+        sha256 VARCHAR(64),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_media_assets_uploader ON media_assets (uploader_id);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_category ON media_assets (category);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_storage_key ON media_assets (storage_key);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_relative_path ON media_assets (relative_path);
     `);
 
     let [master] = await db.select().from(lounges).where(eq(lounges.id, 1));

@@ -9,7 +9,7 @@ export interface PresignedUploadRequest {
   mimeType: string;
   fileSizeBytes: number;
   sha256Checksum?: string;
-  folder?: 'media' | 'avatars' | 'voice_notes' | 'attachments';
+  folder?: string;
 }
 
 export interface PresignedUploadResponse {
@@ -25,6 +25,16 @@ export interface PresignedUploadResponse {
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB limit
 const ALLOWED_MIME_PREFIXES = ['image/', 'audio/', 'video/', 'application/pdf', 'text/'];
+
+export function getStoragePartition(folder: string | undefined, userId: number): { folderPath: string; category: 'avatar' | 'chat' | 'general' } {
+  const f = (folder || 'chat').toLowerCase();
+  if (f === 'avatars' || f === 'avatar') {
+    return { folderPath: `avatars/${userId}`, category: 'avatar' };
+  }
+  const now = new Date();
+  const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return { folderPath: `chat/${yearMonth}`, category: 'chat' };
+}
 
 export function validateUploadParameters(params: PresignedUploadRequest): { valid: boolean; error?: string } {
   if (!params.filename || typeof params.filename !== 'string') {
@@ -51,9 +61,9 @@ export function validateUploadParameters(params: PresignedUploadRequest): { vali
   return { valid: true };
 }
 
-const activePresignedTokens = new Map<string, { userId: number; expiresAt: number; filename: string; folder: string }>();
+const activePresignedTokens = new Map<string, { userId: number; expiresAt: number; filename: string; folder: string; category: 'avatar' | 'chat' | 'general' }>();
 
-export async function registerPresignedToken(token: string, data: { userId: number; expiresAt: number; filename: string; folder: string }) {
+export async function registerPresignedToken(token: string, data: { userId: number; expiresAt: number; filename: string; folder: string; category: 'avatar' | 'chat' | 'general' }) {
   const ttlSeconds = Math.max(1, Math.floor((data.expiresAt - Date.now()) / 1000));
   
   // Try Redis first for persistence
@@ -74,7 +84,7 @@ export async function registerPresignedToken(token: string, data: { userId: numb
   logger.debug('Presigned token stored in memory fallback', { token, ttlSeconds });
 }
 
-export async function validatePresignedToken(token: string): Promise<{ valid: boolean; userId?: number; folder?: string; filename?: string }> {
+export async function validatePresignedToken(token: string): Promise<{ valid: boolean; userId?: number; folder?: string; filename?: string; category?: 'avatar' | 'chat' | 'general' }> {
   // Try Redis first
   const redis = await getRedisClient();
   if (redis) {
@@ -83,10 +93,10 @@ export async function validatePresignedToken(token: string): Promise<{ valid: bo
       const data = await redis.get(tokenKey);
       if (data) {
         const rawStr = typeof data === 'string' ? data : JSON.stringify(data);
-        const parsed = JSON.parse(rawStr) as { userId: number; expiresAt: number; filename: string; folder: string };
+        const parsed = JSON.parse(rawStr) as { userId: number; expiresAt: number; filename: string; folder: string; category: 'avatar' | 'chat' | 'general' };
         if (Date.now() <= parsed.expiresAt) {
           logger.debug('Presigned token validated from Redis', { token, userId: parsed.userId });
-          return { valid: true, userId: parsed.userId, folder: parsed.folder, filename: parsed.filename };
+          return { valid: true, userId: parsed.userId, folder: parsed.folder, filename: parsed.filename, category: parsed.category };
         } else {
           await redis.del(tokenKey);
           logger.debug('Presigned token expired in Redis', { token });
@@ -105,7 +115,7 @@ export async function validatePresignedToken(token: string): Promise<{ valid: bo
     return { valid: false };
   }
   logger.debug('Presigned token validated from memory fallback', { token, userId: entry.userId });
-  return { valid: true, userId: entry.userId, folder: entry.folder, filename: entry.filename };
+  return { valid: true, userId: entry.userId, folder: entry.folder, filename: entry.filename, category: entry.category };
 }
 
 export async function generatePresignedUpload(
@@ -113,7 +123,7 @@ export async function generatePresignedUpload(
   userId: number,
   hostHeader: string
 ): Promise<PresignedUploadResponse> {
-  const folder = params.folder || 'media';
+  const { folderPath, category } = getStoragePartition(params.folder, userId);
   const rawExt = (path.extname(params.filename) || '.bin').replace('.', '').toLowerCase();
   let prefix = 'doc';
   if (params.mimeType.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(rawExt)) {
@@ -132,10 +142,11 @@ export async function generatePresignedUpload(
     userId,
     expiresAt: Date.now() + 900 * 1000,
     filename: cleanFilename,
-    folder
+    folder: folderPath,
+    category
   });
 
-  const relativePath = `/uploads/${folder}/${cleanFilename}`;
+  const relativePath = `/uploads/${folderPath}/${cleanFilename}`;
 
   // Check if S3 / R2 env vars are present, or fallback to server direct upload endpoint
   const s3Bucket = process.env.S3_BUCKET_NAME || process.env.R2_BUCKET_NAME;
@@ -146,12 +157,12 @@ export async function generatePresignedUpload(
 
   if (s3Bucket && s3Endpoint) {
     // S3 / R2 Presigned PUT URL format
-    uploadUrl = `${s3Endpoint}/${s3Bucket}/${folder}/${cleanFilename}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&token=${randomToken}`;
-    fileUrl = `${process.env.CDN_BASE_URL || s3Endpoint}/${s3Bucket}/${folder}/${cleanFilename}`;
+    uploadUrl = `${s3Endpoint}/${s3Bucket}/${folderPath}/${cleanFilename}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&token=${randomToken}`;
+    fileUrl = `${process.env.CDN_BASE_URL || s3Endpoint}/${s3Bucket}/${folderPath}/${cleanFilename}`;
   } else {
     // Local / direct server endpoint fallback
     const protocol = hostHeader.includes('localhost') || hostHeader.includes('127.0.0.1') ? 'http' : 'https';
-    uploadUrl = `${protocol}://${hostHeader}/v2/media/upload?token=${randomToken}&media_id=${mediaId}&folder=${folder}&filename=${encodeURIComponent(cleanFilename)}`;
+    uploadUrl = `${protocol}://${hostHeader}/v2/media/upload?token=${randomToken}&media_id=${mediaId}&folder=${encodeURIComponent(folderPath)}&filename=${encodeURIComponent(cleanFilename)}`;
     fileUrl = relativePath;
   }
 

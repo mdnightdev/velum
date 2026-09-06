@@ -182,6 +182,20 @@ export async function handleDeleteMessage(client: ClientConnection, message: any
         .where(eq(dbMessages.id, messageId))
     );
 
+    // Clean up any message-scoped media attachments from disk & database
+    try {
+      const { mediaService } = await import('../../v2/services/media/mediaService.js');
+      const mediaUrls = mediaService.extractMediaPaths(originalMsg.content);
+      for (const mediaUrl of mediaUrls) {
+        // Only delete message-scoped chat media, never avatars
+        if (mediaUrl.includes('/uploads/chat/') || mediaUrl.includes('/uploads/media/')) {
+          await mediaService.deleteAssetByPath(mediaUrl);
+        }
+      }
+    } catch (cleanErr) {
+      console.error('[WS Media Cleanup Error]:', cleanErr);
+    }
+
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (loungeId) {
       const redis = await getRedisClient();

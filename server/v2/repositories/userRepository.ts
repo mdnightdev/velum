@@ -155,6 +155,20 @@ export class UserRepository {
         await tx.delete(messages).where(eq(messages.senderId, userId));
         purgedTables.push('messages');
 
+        // Delete user media assets and avatar partition
+        const { mediaAssets } = await import('../db/schema/media.js');
+        await tx.delete(mediaAssets).where(eq(mediaAssets.uploaderId, userId));
+        purgedTables.push('media_assets');
+
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const userAvatarDir = path.join(process.cwd(), 'public', 'uploads', 'avatars', String(userId));
+          if (fs.existsSync(userAvatarDir)) {
+            await fs.promises.rm(userAvatarDir, { recursive: true, force: true }).catch(() => {});
+          }
+        } catch (e) {}
+
         // 3. Marketplace, Escrows, Cards
         await tx.delete(escrows).where(or(eq(escrows.buyerId, userId), eq(escrows.sellerId, userId)));
         purgedTables.push('escrows');

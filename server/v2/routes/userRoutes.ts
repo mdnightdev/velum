@@ -319,16 +319,29 @@ userRouter.post('/upload-avatar', authMiddleware, express.raw({ type: '*/*', lim
       return res.status(400).json({ error: 'Empty file payload' });
     }
     
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars');
+    const userId = req.user!.userId;
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars', String(userId));
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
     
-    const filename = `avatar-${req.user!.userId}-${Date.now()}.webp`;
+    // Consistent partitioned avatar storage per user, overwritten on update
+    const filename = `avatar.webp`;
     const filepath = path.join(uploadsDir, filename);
     await fs.promises.writeFile(filepath, buffer);
     
-    res.status(200).json({ url: `/uploads/avatars/${filename}` });
+    const relativeUrl = `/uploads/avatars/${userId}/${filename}`;
+    const { mediaService } = await import('../services/media/mediaService.js');
+    await mediaService.recordAsset({
+      uploaderId: userId,
+      storageKey: `avatars/${userId}/${filename}`,
+      relativePath: relativeUrl,
+      mimeType: 'image/webp',
+      byteSize: buffer.length,
+      category: 'avatar'
+    }).catch(err => console.error('[MEDIA] Failed to track avatar asset:', err));
+
+    res.status(200).json({ url: relativeUrl });
   } catch (err) {
     next(err);
   }
@@ -344,7 +357,10 @@ userRouter.post('/upload-media', authMiddleware, express.raw({ type: '*/*', limi
       return res.status(400).json({ error: 'Empty file payload' });
     }
 
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'media');
+    const userId = req.user!.userId;
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'chat', yearMonth);
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
@@ -375,7 +391,18 @@ userRouter.post('/upload-media', authMiddleware, express.raw({ type: '*/*', limi
     const filepath = path.join(uploadsDir, filename);
     await fs.promises.writeFile(filepath, buffer);
 
-    res.status(200).json({ url: `/uploads/media/${filename}` });
+    const relativeUrl = `/uploads/chat/${yearMonth}/${filename}`;
+    const { mediaService } = await import('../services/media/mediaService.js');
+    await mediaService.recordAsset({
+      uploaderId: userId,
+      storageKey: `chat/${yearMonth}/${filename}`,
+      relativePath: relativeUrl,
+      mimeType: contentType || 'application/octet-stream',
+      byteSize: buffer.length,
+      category: 'chat'
+    }).catch(err => console.error('[MEDIA] Failed to track chat asset:', err));
+
+    res.status(200).json({ url: relativeUrl });
   } catch (err) {
     next(err);
   }

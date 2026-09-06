@@ -3,14 +3,14 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { auth, hashSessionToken } from '../middleware/auth.js';
-import { userRepository } from '../repositories/userRepository.js';
+import { auth } from '../middleware/auth.js';
 import {
   validateUploadParameters,
   generatePresignedUpload,
   validatePresignedToken,
   verifyFileSha256
 } from '../services/media/presignedUploadService.js';
+import { mediaService } from '../services/media/mediaService.js';
 import { logger } from '../utils/logger.js';
 
 export const mediaRouter = Router();
@@ -19,7 +19,7 @@ export const mediaRouter = Router();
 // Upload validation helpers
 // ---------------------------------------------------------------------------
 
-const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'webm', 'mp4']);
+const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'webm', 'mp4', 'pdf', 'txt', 'csv', 'json', 'doc', 'docx', 'xls', 'xlsx']);
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -32,15 +32,10 @@ const MAGIC_BYTES: Record<string, MagicSignature[]> = {
   gif: [{ bytes: [0x47, 0x49, 0x46, 0x38] }],
   webp: [{ bytes: [0x52, 0x49, 0x46, 0x46] }], // 'RIFF' — WEBP marker sits at offset 8, checked below
   mp4: [{ bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }], // 'ftyp' at offset 4
-  webm: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3] }]
+  webm: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3] }],
+  pdf: [{ bytes: [0x25, 0x50, 0x44, 0x46] }] // '%PDF'
 };
 
-/**
- * Returns the extension (no dot, lowercased) if it's on the whitelist, else null.
- * Using path.extname on the basename means a double-extension trick like
- * "invoice.pdf.php" naturally resolves to "php" and gets rejected — no
- * special-casing needed for that bypass.
- */
 function getSafeExtension(rawFilename: string): string | null {
   const base = path.basename((rawFilename || '').replace(/\0/g, ''));
   const ext = path.extname(base).replace('.', '').toLowerCase();
@@ -50,7 +45,7 @@ function getSafeExtension(rawFilename: string): string | null {
 
 function matchesMagicBytes(buffer: Buffer, ext: string): boolean {
   const signatures = MAGIC_BYTES[ext];
-  if (!signatures) return false;
+  if (!signatures) return true; // Plaintext or unconstrained doc types pass through
 
   const basicMatch = signatures.some(({ bytes, offset = 0 }) => {
     if (buffer.length < offset + bytes.length) return false;
@@ -58,8 +53,7 @@ function matchesMagicBytes(buffer: Buffer, ext: string): boolean {
   });
   if (!basicMatch) return false;
 
-  // WEBP needs a second check: RIFF is a shared container header, the actual
-  // WEBP marker lives at offset 8.
+  // WEBP needs a second check: RIFF is a shared container header, the actual WEBP marker lives at offset 8.
   if (ext === 'webp') {
     if (buffer.length < 12) return false;
     const marker = buffer.subarray(8, 12).toString('ascii');
@@ -69,19 +63,17 @@ function matchesMagicBytes(buffer: Buffer, ext: string): boolean {
   return true;
 }
 
-/**
- * Cheap guard against HTML/JS/PHP polyglots that happen to start with a
- * valid magic-byte prefix (a crafted GIF/PNG can still carry a script tag
- * further into the file). Scans only the first slice of the buffer.
- */
 function containsScriptContent(buffer: Buffer): boolean {
   const sample = buffer.subarray(0, Math.min(buffer.length, 4096)).toString('utf8').toLowerCase();
   return /<script[\s>]/.test(sample) || /<\?php/.test(sample) || /<html[\s>]/.test(sample);
 }
 
-function safeUploadFolder(rawFolder: string | undefined): string {
-  const cleaned = (rawFolder || 'media').replace(/[^a-zA-Z0-9_-]/g, '');
-  return cleaned || 'media';
+function sanitizeStorageFolder(rawFolder: string | undefined): string {
+  const parts = (rawFolder || 'chat')
+    .split('/')
+    .map(p => p.replace(/[^a-zA-Z0-9_-]/g, ''))
+    .filter(Boolean);
+  return parts.join('/') || 'chat';
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +97,7 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
       rawExt === 'mp4' ? 'video/mp4' : 'image/webp'
     );
     const fileSizeBytes = Number(req.body.file_size_bytes || req.body.fileSizeBytes || 1024 * 1024);
-    const folder = safeUploadFolder(req.body.folder || req.body.type || 'media') as any;
+    const folder = req.body.folder || req.body.type || 'chat';
 
     const validation = validateUploadParameters({
       filename,
@@ -155,82 +147,45 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
   
   try {
     const contentLength = Number(req.headers['content-length'] || 0);
-    logger.debug('Upload request received', {
-      correlationId,
-      contentLength,
-      contentType: req.headers['content-type'],
-      userId: req.user?.userId,
-      filename: req.query.filename,
-      folder: req.query.folder
-    });
-    
+    const rawFilename = (req.query.filename as string) || `upload_${Date.now()}.bin`;
+    const folderParam = (req as any).presignedFolder || (req.query.folder as string);
+    const folder = sanitizeStorageFolder(folderParam);
+    const expectedSha = (req.headers['x-amz-checksum-sha256'] as string) || (req.query.sha256 as string);
+
     if (contentLength > MAX_UPLOAD_BYTES) {
-      logger.warn('Payload exceeds maximum size', {
-        correlationId,
-        contentLength,
-        maxSize: MAX_UPLOAD_BYTES
-      });
+      logger.warn('Payload exceeds maximum size', { correlationId, contentLength, maxSize: MAX_UPLOAD_BYTES });
       return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
     }
 
-    const rawFilename = (req.query.filename as string) || `upload_${Date.now()}.bin`;
-    const folder = safeUploadFolder(req.query.folder as string);
-    const expectedSha = (req.headers['x-amz-checksum-sha256'] as string) || (req.query.sha256 as string);
-
     const bodyBuffer = req.body as Buffer;
     if (!bodyBuffer || !Buffer.isBuffer(bodyBuffer) || bodyBuffer.length === 0) {
-      logger.warn('No binary payload received', {
-        correlationId,
-        bodyBufferExists: !!bodyBuffer,
-        isBuffer: bodyBuffer ? Buffer.isBuffer(bodyBuffer) : false,
-        bodyLength: bodyBuffer?.length || 0
-      });
+      logger.warn('No binary payload received', { correlationId });
       return res.status(400).json({ error: 'No binary payload received.' });
     }
 
     if (bodyBuffer.length > MAX_UPLOAD_BYTES) {
-      logger.warn('Body buffer exceeds maximum size', {
-        correlationId,
-        bodyLength: bodyBuffer.length,
-        maxSize: MAX_UPLOAD_BYTES
-      });
+      logger.warn('Body buffer exceeds maximum size', { correlationId, bodyLength: bodyBuffer.length, maxSize: MAX_UPLOAD_BYTES });
       return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
     }
 
     const ext = getSafeExtension(rawFilename);
     if (!ext) {
-      logger.warn('File type not allowed', {
-        correlationId,
-        rawFilename,
-        extractedExtension: path.extname(rawFilename)
-      });
+      logger.warn('File type not allowed', { correlationId, rawFilename });
       return res.status(400).json({ error: 'File type not allowed.' });
     }
 
     if (!matchesMagicBytes(bodyBuffer, ext)) {
-      logger.warn('Magic bytes mismatch', {
-        correlationId,
-        ext,
-        bufferLength: bodyBuffer.length,
-        bufferPrefix: bodyBuffer.subarray(0, 8).toString('hex')
-      });
+      logger.warn('Magic bytes mismatch', { correlationId, ext, bufferLength: bodyBuffer.length });
       return res.status(400).json({ error: 'File content does not match a valid file of this type.' });
     }
 
     if (containsScriptContent(bodyBuffer)) {
-      logger.warn('Script content detected', {
-        correlationId,
-        ext
-      });
+      logger.warn('Script content detected', { correlationId, ext });
       return res.status(400).json({ error: 'File content rejected: embedded script content detected.' });
     }
 
     if (expectedSha && !verifyFileSha256(bodyBuffer, expectedSha)) {
-      logger.warn('SHA-256 checksum mismatch', {
-        correlationId,
-        expectedSha,
-        computedSha: crypto.createHash('sha256').update(bodyBuffer).digest('hex').substring(0, 16) + '...'
-      });
+      logger.warn('SHA-256 checksum mismatch', { correlationId, expectedSha });
       return res.status(422).json({ error: 'SHA-256 checksum mismatch. Payload corrupted during transit.' });
     }
 
@@ -254,6 +209,20 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
     await fs.promises.writeFile(targetPath, bodyBuffer);
 
     const relativeUrl = `/uploads/${folder}/${generatedFilename}`;
+    const category: 'avatar' | 'chat' | 'general' = (req as any).presignedCategory || (folder.startsWith('avatars') ? 'avatar' : 'chat');
+
+    // Register media asset tracking record
+    await mediaService.recordAsset({
+      uploaderId: req.user!.userId,
+      storageKey: `${folder}/${generatedFilename}`,
+      relativePath: relativeUrl,
+      mimeType: (req.headers['content-type'] as string) || 'application/octet-stream',
+      byteSize: bodyBuffer.length,
+      category,
+      sha256: expectedSha || crypto.createHash('sha256').update(bodyBuffer).digest('hex')
+    }).catch(err => {
+      logger.error('[MEDIA] Failed to track asset in database', { relativeUrl, error: (err as Error).message });
+    });
 
     logger.info('Upload successful', {
       correlationId,
@@ -283,22 +252,8 @@ const uploadAuth = async (req: Request, res: Response, next: NextFunction) => {
   const correlationId = (req as any).correlationId || 'NO-CORR-ID';
   
   if (queryToken) {
-    logger.debug('Attempting presigned token validation', {
-      correlationId,
-      tokenPresent: true,
-      mediaId: req.query.media_id,
-      folder: req.query.folder
-    });
-    
     const tokenResult = await validatePresignedToken(queryToken);
     if (tokenResult.valid) {
-      logger.debug('Presigned token validation succeeded', {
-        correlationId,
-        userId: tokenResult.userId,
-        folder: tokenResult.folder,
-        filename: tokenResult.filename
-      });
-      
       req.user = {
         userId: tokenResult.userId || 1,
         username: 'uploader',
@@ -306,18 +261,15 @@ const uploadAuth = async (req: Request, res: Response, next: NextFunction) => {
         duress_active: false
       };
       (req as any).presignedFilename = tokenResult.filename;
+      (req as any).presignedFolder = tokenResult.folder;
+      (req as any).presignedCategory = tokenResult.category;
       return next();
     } else {
       logger.warn('Presigned token validation failed, falling back to session auth', {
         correlationId,
-        reason: 'Token not found or expired',
-        mediaId: req.query.media_id
+        reason: 'Token not found or expired'
       });
     }
-  } else {
-    logger.debug('No presigned token provided, using session auth', {
-      correlationId
-    });
   }
   
   return auth(req, res, next);
