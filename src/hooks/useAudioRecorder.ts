@@ -60,7 +60,7 @@ export function useAudioRecorder() {
       }
     } catch (err) {
       console.warn('Microphone permission check/access issue:', err);
-      setMicError('Microphone permission denied or blocked by iframe container.');
+      setMicError('Microphone permission denied or blocked by container.');
     }
   };
 
@@ -83,27 +83,18 @@ export function useAudioRecorder() {
     }
   };
 
-  const stopRecording = async (onRecordingComplete: (audioBase64: string, durationSeconds: number) => void) => {
+  const stopRecording = async (onRecordingComplete: (audioBlob: Blob, durationSeconds: number) => void) => {
     setIsRecording(false);
     setIsPaused(false);
     cleanupAudio();
     try {
       const audioBlob = await terminateMicrophoneStream();
-      if (audioBlob.size > 5 * 1024 * 1024) {
-        alert('Voice note exceeds 5MB limit. Please record a shorter message.');
+      if (audioBlob.size > 15 * 1024 * 1024) {
+        alert('Voice note exceeds 15MB limit. Please record a shorter message.');
         return;
       }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const audioBase64 = (reader.result as string).split(',')[1];
-        const seconds = secondsRef.current > 0 ? secondsRef.current : 4;
-        onRecordingComplete(audioBase64, seconds);
-      };
-      reader.onerror = () => {
-        alert('Failed to process voice note. Please try again.');
-      };
-      reader.readAsDataURL(audioBlob);
+      const seconds = secondsRef.current > 0 ? secondsRef.current : 1;
+      onRecordingComplete(audioBlob, seconds);
     } catch (err) {
       console.error('Failed to stop voice recording:', err);
     }

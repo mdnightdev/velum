@@ -114,10 +114,19 @@ export async function generatePresignedUpload(
   hostHeader: string
 ): Promise<PresignedUploadResponse> {
   const folder = params.folder || 'media';
-  const ext = path.extname(params.filename) || '.bin';
+  const rawExt = (path.extname(params.filename) || '.bin').replace('.', '').toLowerCase();
+  let prefix = 'doc';
+  if (params.mimeType.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(rawExt)) {
+    prefix = 'img';
+  } else if (params.mimeType.startsWith('audio/') || ['webm', 'ogg', 'mp3', 'm4a', 'wav'].includes(rawExt)) {
+    prefix = 'aud';
+  } else if (params.mimeType.startsWith('video/') || ['mp4', 'mov', 'mkv'].includes(rawExt)) {
+    prefix = 'vid';
+  }
+  const id10 = crypto.randomBytes(5).toString('hex');
+  const cleanFilename = `${prefix}_${id10}.${rawExt}`;
   const randomToken = crypto.randomBytes(16).toString('hex');
-  const mediaId = `media_${Date.now()}_${randomToken.slice(0, 8)}`;
-  const cleanFilename = `${mediaId}${ext}`;
+  const mediaId = `media_${id10}`;
 
   await registerPresignedToken(randomToken, {
     userId,

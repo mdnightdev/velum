@@ -19,7 +19,8 @@ import { SearchDrawer } from './Chat/SearchDrawer';
 import { PinnedMessageBar } from './Chat/PinnedMessageBar';
 import { MessageList } from './Chat/MessageList';
 import { ImageCropperModal } from './ImageCropperModal';
-import { streamFileDirectToCloudStorage } from '../utils/mediaPipeline';
+import { streamFileDirectToCloudStorage, generateAnonymousFilename } from '../utils/mediaPipeline';
+import { stripAttachmentTokens, getCleanPreview } from '../utils/messageParser';
 import { useLanguage } from '../i18n/LanguageContext';
 import { requestNotificationPermission, sendDesktopNotification } from '../utils/notifications';
 import { createLogger } from '../utils/logger';
@@ -282,17 +283,23 @@ export default function ChatArea({
   });
 
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const [croppingImage, setCroppingImage] = useState<{ src: string; fileName: string; file: File } | null>(null);
   const [fileErrorAlert, setFileErrorAlert] = useState<string | null>(null);
 
   const {
     handleTriggerPhotoInput,
+    handleTriggerVideoInput,
+    handleTriggerAudioInput,
     handleTriggerDocInput,
     handleDismissAttachment,
     handleFileSelect
   } = useAttachmentActions({
     photoInputRef,
+    videoInputRef,
+    audioInputRef,
     docInputRef,
     setSelectedAttachment,
     setCroppingImage,
@@ -310,16 +317,14 @@ export default function ChatArea({
       if (isSubmittingRef.current) return;
       isSubmittingRef.current = true;
       setIsSending(true);
-      stopRecording(async (audioBase64, durationSeconds) => {
+      stopRecording(async (audioBlob, durationSeconds) => {
         try {
-          const response = await fetch(`data:audio/webm;base64,${audioBase64}`);
-          const blob = await response.blob();
-          
-          const url = await streamFileDirectToCloudStorage(blob, 'media', blob.type.split('/')[1] || 'webm');
+          const ext = audioBlob.type.split('/')[1] || 'webm';
+          const url = await streamFileDirectToCloudStorage(audioBlob, 'media', ext);
           onSendMessage(`[Voice Note  duration:${durationSeconds}s url:${url}]`, null, false);
         } catch (err) {
           log.error('Audio upload failed', { error: (err as Error).message });
-          onSendMessage(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`, null, false);
+          alert('Voice note upload failed. Please try again.');
         } finally {
           isSubmittingRef.current = false;
           setIsSending(false);
@@ -377,11 +382,14 @@ export default function ChatArea({
             ? dataURItoBlob(selectedAttachment.data)
             : await (await fetch(selectedAttachment.data)).blob();
           
-          const url = await streamFileDirectToCloudStorage(blob, 'media', blob.type.split('/')[1] || selectedAttachment.name.split('.').pop() || 'bin');
-          textToSend = `[Attachment: ${selectedAttachment.name} size:${selectedAttachment.size} type:${selectedAttachment.type} url:${url}] ${inputText.trim()}`.trim();
+          const ext = blob.type.split('/')[1] || selectedAttachment.name.split('.').pop() || 'webp';
+          const anonymousName = generateAnonymousFilename(ext, selectedAttachment.type || blob.type);
+          const url = await streamFileDirectToCloudStorage(blob, 'media', ext);
+          textToSend = `[Attachment: ${anonymousName} size:${selectedAttachment.size} type:${selectedAttachment.type || blob.type || 'image/webp'} url:${url}] ${inputText.trim()}`.trim();
         } catch (err) {
           log.error('Attachment upload failed', { error: (err as Error).message });
-          textToSend = `[Attachment: ${selectedAttachment.name} size:${selectedAttachment.size} type:${selectedAttachment.type} data:${selectedAttachment.data}] ${inputText.trim()}`.trim();
+          alert('Attachment upload failed. Please try again.');
+          return;
         }
       }
 
@@ -504,7 +512,8 @@ export default function ChatArea({
         }}
         onCopySelected={(msg) => {
           const plainText = getDecryptedText(msg);
-          navigator.clipboard.writeText(plainText);
+          const textToCopy = stripAttachmentTokens(plainText) || getCleanPreview(plainText);
+          navigator.clipboard.writeText(textToCopy);
           setCopiedMessageId(msg.message_id);
           setTimeout(() => setCopiedMessageId(null), 2000);
           setSelectedMessage(null);
@@ -623,7 +632,7 @@ export default function ChatArea({
 
       <input
         type="file"
-        accept="image/*,video/*"
+        accept="image/*"
         multiple
         ref={photoInputRef}
         onChange={handleFileSelect}
@@ -632,7 +641,25 @@ export default function ChatArea({
 
       <input
         type="file"
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.tar,.gz,.json,.csv,*/*"
+        accept="video/*"
+        multiple
+        ref={videoInputRef}
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
+      <input
+        type="file"
+        accept="audio/*"
+        multiple
+        ref={audioInputRef}
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
+      <input
+        type="file"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.tar,.gz,.json,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/zip"
         multiple
         ref={docInputRef}
         onChange={handleFileSelect}
@@ -696,6 +723,8 @@ export default function ChatArea({
         onSend={handleSend}
         onSendVoiceNote={(voiceContent) => onSendMessage(voiceContent, null, false)}
         onTriggerPhotoInput={handleTriggerPhotoInput}
+        onTriggerVideoInput={handleTriggerVideoInput}
+        onTriggerAudioInput={handleTriggerAudioInput}
         onTriggerDocInput={handleTriggerDocInput}
         isPrivateSublounge={isPrivateSublounge}
         isMember={isMember}

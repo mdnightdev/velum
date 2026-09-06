@@ -441,6 +441,16 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
     }
   }
 
+  // Hard-block raw base64 data URIs from entering database storage
+  const contentStr = typeof message.content === 'string' ? message.content : '';
+  if (contentStr.includes('data:image/') || contentStr.includes('data:audio/') || contentStr.includes('data:video/')) {
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Raw data URI payloads are forbidden. Attachments must be uploaded via storage URLs.'
+    }));
+    return;
+  }
+
   let targetLoungeId: number | null = loungeId;
 
   if (clientMsgId && targetLoungeId) {
@@ -634,6 +644,15 @@ export async function handleDirectMessage(client: ClientConnection, message: any
     client.ws.send(JSON.stringify({
       type: 'error',
       message: 'Invalid direct message payload'
+    }));
+    return;
+  }
+
+  // Hard-block raw base64 data URIs in direct messages
+  if (body.includes('data:image/') || body.includes('data:audio/') || body.includes('data:video/')) {
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Raw data URI payloads are forbidden. Attachments must be uploaded via storage URLs.'
     }));
     return;
   }

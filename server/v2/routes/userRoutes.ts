@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { userController } from '../controllers/userController.js';
@@ -362,7 +363,15 @@ userRouter.post('/upload-media', authMiddleware, express.raw({ type: '*/*', limi
       extension = 'gif';
     }
 
-    const filename = `media-${req.user!.userId}-${Date.now()}.${extension}`;
+    let prefix = 'doc';
+    if (contentType.includes('image/') || ['webp', 'png', 'jpg', 'gif'].includes(extension)) {
+      prefix = 'img';
+    } else if (contentType.includes('audio/') || ['webm', 'm4a'].includes(extension)) {
+      prefix = 'aud';
+    } else if (contentType.includes('video/')) {
+      prefix = 'vid';
+    }
+    const filename = `${prefix}_${crypto.randomBytes(5).toString('hex')}.${extension}`;
     const filepath = path.join(uploadsDir, filename);
     await fs.promises.writeFile(filepath, buffer);
 

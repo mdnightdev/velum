@@ -89,27 +89,52 @@ export function formatVoiceNotePreview(content: string): string {
   return 'Voice message';
 }
 
+export function stripAttachmentTokens(content: string): string {
+  if (!content) return '';
+  return content
+    .replace(/\[Attachment:\s*.*?\]/g, '')
+    .replace(/\[Voice Note\s*.*?\]/g, '')
+    .trim();
+}
+
 export function getCleanPreview(content: string): string {
   if (!content) return '';
-  if (content.startsWith('[Voice Note')) {
-    return formatVoiceNotePreview(content);
+  const trimmed = content.trim();
+  if (trimmed.startsWith('e2ee:') || trimmed.startsWith('ratchet:v2:') || trimmed.startsWith('ratchet:v1:') || trimmed.startsWith('VEL_E2EE[')) {
+    return 'Encrypted Message';
   }
-  if (content.includes('[Attachment:')) {
-    const attachments = parseAttachment(content);
+  if (trimmed.startsWith('[Voice Note')) {
+    return formatVoiceNotePreview(trimmed);
+  }
+  if (trimmed.includes('[Attachment:')) {
+    const attachments = parseAttachment(trimmed);
+    const textOutside = stripAttachmentTokens(trimmed);
     if (attachments.length > 0) {
       if (attachments.length > 1) {
-        return `${attachments.length} items`;
+        return textOutside ? `${attachments.length} items: ${textOutside}` : `${attachments.length} items`;
       }
       const att = attachments[0];
-      const isVid = att.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name) || /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data);
+      const caption = att.caption || textOutside;
+      const isVid = att.type.startsWith('video/') ||
+        /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name) ||
+        /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data);
+
       if (isVid) {
-        return `Video${att.caption ? ' ' + att.caption : ''}`;
+        return caption ? `Video: ${caption}` : 'Video';
       }
-      return att.type.startsWith('image/')
-        ? `Photo${att.caption ? ' ' + att.caption : ''}`
-        : `${att.name}${att.caption ? ' ' + att.caption : ''}`;
+      if (att.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.name) || /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.data)) {
+        return caption ? `Photo: ${caption}` : 'Photo';
+      }
+      if (att.type.startsWith('audio/') || /\.(webm|ogg|mp3|m4a|wav)($|\?)/i.test(att.name) || /\.(webm|ogg|mp3|m4a|wav)($|\?)/i.test(att.data)) {
+        return caption ? `Voice message: ${caption}` : 'Voice message';
+      }
+
+      // Document / other file
+      const hasCleanName = att.name && !att.name.startsWith('doc_') && !att.name.startsWith('img_') && !att.name.startsWith('aud_') && !att.name.startsWith('vid_') && !att.name.includes('-') && !att.name.startsWith('upload_');
+      const docLabel = hasCleanName ? att.name : 'Document';
+      return caption ? `${docLabel}: ${caption}` : docLabel;
     }
-    return 'Attachment';
+    return textOutside || 'Attachment';
   }
-  return content;
+  return trimmed;
 }

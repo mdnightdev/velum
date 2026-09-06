@@ -1,5 +1,6 @@
 import React from 'react';
 import { Download, Maximize2, X } from 'lucide-react';
+import { getFormattedDownloadFilename } from '../utils/mediaPipeline';
 
 interface SecureImageCardProps {
   src: string;
@@ -8,6 +9,7 @@ interface SecureImageCardProps {
   caption?: string;
   isMe?: boolean;
   timestamp?: string;
+  containerClass?: string;
   children?: React.ReactNode;
 }
 
@@ -18,6 +20,7 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
   caption,
   isMe,
   timestamp,
+  containerClass,
   children
 }) => {
   const [isExpanded, setIsExpanded] = React.useState(false);
@@ -25,13 +28,13 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
   const handleDownload = () => {
     const link = document.createElement('a');
     link.href = src;
-    link.download = name || 'image';
+    link.download = getFormattedDownloadFilename(src, 'webp');
     link.click();
   };
 
   return (
     <>
-      <div className="relative rounded-2xl overflow-hidden shadow-md w-full max-w-[280px] min-h-[180px] aspect-[4/3] bg-velum-800/80 group">
+      <div className={`relative rounded-2xl overflow-hidden shadow-md bg-velum-800/80 group ${containerClass || 'w-full max-w-[280px] min-h-[180px] aspect-[4/3]'}`}>
         {/* Image */}
         <img
           src={src}

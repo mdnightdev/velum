@@ -3,6 +3,7 @@ import { ChevronLeft, Search, X, Reply, Pencil, Forward, Pin, Trash2, ShieldAler
 import { Message } from '../../types';
 import { formatLastSeen } from '../../utils/datetime';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
+import { getCleanPreview } from '../../utils/messageParser';
 
 interface ChatHeaderProps {
   wsConnected: boolean;
@@ -70,6 +71,7 @@ export function ChatHeader({
     if (!rawText || rawText.includes('VEL_E2EE') || rawText.includes('d%/dr/') || rawText.startsWith('m.')) {
       rawText = selectedMessage.content && !selectedMessage.content.includes('VEL_E2EE') ? selectedMessage.content : 'Encrypted Message';
     }
+    const cleanDisplay = getCleanPreview(rawText);
     return (
       <div className="px-3 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] pb-1.5 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -84,7 +86,7 @@ export function ChatHeader({
           <div className="flex flex-col min-w-0">
             <span className="text-[11px] font-semibold text-accent uppercase tracking-wider">1 selected</span>
             <span className="text-[10px] text-text-secondary truncate max-w-xs sm:max-w-md">
-              {rawText}
+              {cleanDisplay}
             </span>
           </div>
         </div>

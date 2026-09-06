@@ -1,6 +1,3 @@
-import { storage } from '../services/storageService';
-import { registerPushNotifications } from './pushNotifications';
-
 import { LocalNotifications } from '@capacitor/local-notifications';
 
 export interface NotificationPreferences {
@@ -19,10 +16,13 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
   pushPreferences: false
 };
 
+const APP_INIT_TIME = Date.now();
+let lastSoundPlayedAt = 0;
+
 export function getNotificationPreferences(): NotificationPreferences {
   if (typeof window === 'undefined') return DEFAULT_NOTIFICATION_PREFS;
   try {
-    const raw = storage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       return { ...DEFAULT_NOTIFICATION_PREFS, ...parsed };
@@ -36,49 +36,51 @@ export function saveNotificationPreferences(prefs: Partial<NotificationPreferenc
   const current = getNotificationPreferences();
   const next: NotificationPreferences = { ...current, ...prefs };
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(next));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   } catch {}
   return next;
 }
 
 /**
- * Synthesizes a crisp, pleasant chime using Web Audio API (0 network assets needed).
+ * Synthesizes a crisp chime using Web Audio API.
  */
 export function playNotificationSound(): void {
   if (typeof window === 'undefined') return;
+  const now = Date.now();
+  if (now - lastSoundPlayedAt < 1500) return;
+  lastSoundPlayedAt = now;
+
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
-    const now = ctx.currentTime;
+    const audioNow = ctx.currentTime;
 
-    // Primary note: high crystal chime
     const osc1 = ctx.createOscillator();
     const gain1 = ctx.createGain();
     osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(587.33, now); // D5
-    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.08); // A5
+    osc1.frequency.setValueAtTime(587.33, audioNow);
+    osc1.frequency.exponentialRampToValueAtTime(880, audioNow + 0.08);
 
-    gain1.gain.setValueAtTime(0.22, now);
-    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+    gain1.gain.setValueAtTime(0.22, audioNow);
+    gain1.gain.exponentialRampToValueAtTime(0.0001, audioNow + 0.35);
 
     osc1.connect(gain1);
     gain1.connect(ctx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.35);
+    osc1.start(audioNow);
+    osc1.stop(audioNow + 0.35);
 
-    // Harmonic bell shimmer
     const osc2 = ctx.createOscillator();
     const gain2 = ctx.createGain();
     osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(1174.66, now + 0.04); // D6
-    gain2.gain.setValueAtTime(0.12, now + 0.04);
-    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+    osc2.frequency.setValueAtTime(1174.66, audioNow + 0.04);
+    gain2.gain.setValueAtTime(0.12, audioNow + 0.04);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, audioNow + 0.28);
 
     osc2.connect(gain2);
     gain2.connect(ctx.destination);
-    osc2.start(now + 0.04);
-    osc2.stop(now + 0.28);
+    osc2.start(audioNow + 0.04);
+    osc2.stop(audioNow + 0.28);
   } catch {}
 }
 
@@ -103,28 +105,38 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
   return false;
 };
 
+function stringToNotificationId(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash % 100000);
+}
+
 export const sendDesktopNotification = (
   title: string,
   options?: { body?: string; icon?: string; tag?: string }
 ) => {
   if (typeof window === 'undefined') return;
 
-  // 1. Native Mobile Notification (Capacitor)
+  const tag = options?.tag || 'velum-chat';
+  const notifId = stringToNotificationId(tag);
+
   LocalNotifications.schedule({
     notifications: [
       {
         title: title,
         body: options?.body || '',
-        id: Math.floor(Math.random() * 100000),
-        channelId: 'velum_messages',
+        id: notifId,
+        channelId: 'velum_default',
         schedule: { at: new Date(Date.now() + 100) },
         sound: undefined,
         actionTypeId: '',
-        extra: { tag: options?.tag || 'velum-chat' }
+        extra: { tag }
       }
     ]
   }).catch(() => {
-    // 2. Web Browser Fallback
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
     try {
@@ -134,7 +146,7 @@ export const sendDesktopNotification = (
             registration.showNotification(title, {
               body: options?.body || '',
               icon: options?.icon || '/icon.png',
-              tag: options?.tag || 'velum-chat',
+              tag: tag,
             });
           })
           .catch(() => {});
@@ -144,7 +156,7 @@ export const sendDesktopNotification = (
       const notification = new Notification(title, {
         body: options?.body || '',
         icon: options?.icon || '/icon.png',
-        tag: options?.tag || 'velum-chat',
+        tag: tag,
       });
 
       notification.onclick = () => {
@@ -182,7 +194,7 @@ export function updateAppBadge(unreadCount: number): void {
 }
 
 /**
- * Handles incoming WebSocket message alerts (sound, desktop popup, in-app toast, app badge)
+ * Handles incoming WebSocket message alerts
  */
 export function handleInboundMessageNotification(msg: {
   senderName?: string;
@@ -193,14 +205,15 @@ export function handleInboundMessageNotification(msg: {
 }): void {
   if (msg.isFromMe) return;
 
+  // Drop alerts for messages synced in the first 3 seconds of startup
+  if (Date.now() - APP_INIT_TIME < 3000) return;
+
   const prefs = getNotificationPreferences();
 
-  // 1. Audio chime
   if (prefs.soundTriggers) {
     playNotificationSound();
   }
 
-  // 2. Desktop & In-App Popups
   if (prefs.desktopPopups) {
     const isBackground = typeof document !== 'undefined' && document.hidden;
     const isDifferentRoom = msg.roomId !== msg.activeRoomId;
@@ -210,7 +223,6 @@ export function handleInboundMessageNotification(msg: {
       previewText = 'New message';
     }
 
-    // In-app visual toast
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('velum-inapp-toast', {
         detail: {
@@ -221,7 +233,6 @@ export function handleInboundMessageNotification(msg: {
       }));
     }
 
-    // System desktop banner
     if (isBackground || isDifferentRoom) {
       sendDesktopNotification(msg.senderName || 'Velum', {
         body: previewText,

@@ -92,7 +92,11 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
   try {
     const userId = req.user!.userId;
     const rawExt = (req.body.extension || 'bin').replace(/^\./, '');
-    const filename = req.body.filename || `upload_${Date.now()}.${rawExt}`;
+    let defaultPrefix = 'doc';
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(rawExt)) defaultPrefix = 'img';
+    else if (['webm', 'ogg', 'mp3', 'm4a'].includes(rawExt)) defaultPrefix = 'aud';
+    else if (['mp4', 'mov'].includes(rawExt)) defaultPrefix = 'vid';
+    const filename = req.body.filename || `${defaultPrefix}_${crypto.randomBytes(5).toString('hex')}.${rawExt}`;
     const rawMime = req.body.mime_type || req.body.mimeType || (
       rawExt === 'webp' ? 'image/webp' :
       rawExt === 'png' ? 'image/png' :
@@ -235,9 +239,17 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
       fs.mkdirSync(publicUploadDir, { recursive: true });
     }
 
-    // Use presigned filename if available, otherwise generate server filename
+    // Use presigned filename if available, otherwise generate anonymous server filename
     const presignedFilename = (req as any).presignedFilename;
-    const generatedFilename = presignedFilename || `upload_${req.user!.userId}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${ext}`;
+    let prefix = 'doc';
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) {
+      prefix = 'img';
+    } else if (['webm', 'ogg', 'mp3', 'm4a', 'wav'].includes(ext)) {
+      prefix = 'aud';
+    } else if (['mp4', 'mov', 'mkv'].includes(ext)) {
+      prefix = 'vid';
+    }
+    const generatedFilename = presignedFilename || `${prefix}_${crypto.randomBytes(5).toString('hex')}.${ext}`;
     const targetPath = path.join(publicUploadDir, generatedFilename);
     await fs.promises.writeFile(targetPath, bodyBuffer);
 

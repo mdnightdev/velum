@@ -1,6 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import {rateLimit,ipKeyGenerator} from 'express-rate-limit';
 import cors from 'cors';
 import path from 'path';
 import { config } from './config.js';
@@ -31,15 +31,21 @@ const memoryMonitor = (req: express.Request, res: express.Response, next: expres
   next();
 };
 
+const isDevelopment = config.NODE_ENV === 'development' || config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test' || process.env.NODE_ENV !== 'production';
+
 // Connection queue middleware
 const activeConnections = new Map<string, number>();
 const MAX_CONCURRENT_CONNECTIONS = 200;
 
 const connectionQueue = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (isDevelopment) {
+    return next();
+  }
+
   const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
   const currentConnections = activeConnections.get(clientIp) || 0;
   
-  if (currentConnections > 10) {
+  if (currentConnections > 25) {
     logger.warn('Too many concurrent connections from single IP', { ip: clientIp, connections: currentConnections });
     return res.status(429).json({ error: 'Too many concurrent connections from your IP' });
   }
@@ -51,14 +57,20 @@ const connectionQueue = (req: express.Request, res: express.Response, next: expr
   
   activeConnections.set(clientIp, currentConnections + 1);
   
-  res.on('finish', () => {
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     const remaining = activeConnections.get(clientIp) || 0;
     if (remaining <= 1) {
       activeConnections.delete(clientIp);
     } else {
       activeConnections.set(clientIp, remaining - 1);
     }
-  });
+  };
+
+  res.on('finish', cleanup);
+  res.on('close', cleanup);
   
   next();
 };
@@ -108,25 +120,31 @@ app.get('/metrics', async (_req, res) => {
 app.use(express.json({ limit: '1mb' })); // Limit request body size to prevent large payload attacks
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-const isDevelopment = config.NODE_ENV === 'development' || config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test' || process.env.NODE_ENV !== 'production';
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 10000 : 30,
-  skip: () => isDevelopment,
+const rawAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
   message: 'Too many authentication attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false
 });
 
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 50000 : 2000,
-  skip: () => isDevelopment,
-  keyGenerator: (req) => (req as any).user?.userId ? `user_${(req as any).user.userId}` : (req.ip || '127.0.0.1'),
+const rawApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  keyGenerator: (req) => (req as any).user?.userId ? `user_${(req as any).user.userId}` : ipKeyGenerator(req.ip ?? '127.0.0.1'),
   standardHeaders: true,
   legacyHeaders: false
 });
+
+const authLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (isDevelopment) return next();
+  return rawAuthLimiter(req, res, next);
+};
+
+const apiLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (isDevelopment) return next();
+  return rawApiLimiter(req, res, next);
+};
 
 // Apply security headers
 app.use(helmet({
@@ -160,7 +178,7 @@ app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(self), camera=(self)');
   next();
 });
 

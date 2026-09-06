@@ -1,15 +1,108 @@
-import React from 'react';
-import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, Check, Copy, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, Check, Copy, ShieldCheck, Download, Maximize2, X } from 'lucide-react';
 import { Message, stripAt } from '../../types';
 import { AudioMessagePlayer } from '../AudioMessagePlayer';
 import { SecureImageCard } from '../SecureImageCard';
 import { MessageStatusTicks } from '../MessageStatusTicks';
-import { parseAttachment } from '../../utils/messageParser';
+import { parseAttachment, getCleanPreview } from '../../utils/messageParser';
 import { getSessionId } from '../../utils/auth';
 import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { ReactionPicker } from './ReactionPicker';
-import { resolveMediaUrl } from '../../utils/mediaPipeline';
+import { resolveMediaUrl, getFormattedDownloadFilename } from '../../utils/mediaPipeline';
+
+function VideoCard({
+  src,
+  caption,
+}: {
+  src: string;
+  caption?: string;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleDownload = () => {
+    const link = document.createElement('a');
+    link.href = src;
+    link.download = getFormattedDownloadFilename(src, 'mp4');
+    link.click();
+  };
+
+  return (
+    <>
+      <div className="relative rounded-2xl overflow-hidden shadow-md bg-black w-full max-w-[320px] max-h-[420px] border border-white-5 group">
+        <video
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          className="w-full max-h-[420px] object-contain rounded-2xl bg-black block"
+        />
+
+        <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-10">
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
+            title="Download"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsExpanded(true)}
+            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
+            title="Fullscreen"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {caption && (
+        <p className="px-2 py-1 text-xs text-text-primary whitespace-pre-wrap break-words">
+          {caption}
+        </p>
+      )}
+
+      {isExpanded && (
+        <div
+          className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-black/95 backdrop-blur-[var(--blur-backdrop-sm)] p-4 select-none"
+          onClick={() => setIsExpanded(false)}
+        >
+          <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownload();
+              }}
+              className="p-2.5 bg-velum-900/80 border border-white-10 rounded-full text-white hover:bg-velum-800 transition cursor-pointer"
+              title="Download"
+            >
+              <Download className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsExpanded(false)}
+              className="p-2.5 bg-velum-900/80 border border-white-10 rounded-full text-white hover:bg-velum-800 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <video
+            src={src}
+            controls
+            autoPlay
+            playsInline
+            className="max-w-full max-h-full object-contain rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
 
 const SYSTEM_ROLES: Record<number, { name: string; style: string }> = {
   1: { name: 'MIDNIGHT (executive)', style: 'bg-velum-700 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
@@ -119,17 +212,20 @@ export function MessageItem({
   }
 
   const isVideo = attachments.length > 0 && attachments.some((att) =>
-    att.type.startsWith('video/') ||
-    att.data.startsWith('data:video/') ||
+    att.type?.startsWith('video/') ||
+    att.data?.startsWith('data:video/') ||
     /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name) ||
-    /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data)
+    /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data) ||
+    att.name?.startsWith('vid_')
   );
 
   const isImageCard = !isVideo && attachments.length > 0 && attachments.every((att) => 
-    att.type.startsWith('image/') ||
-    att.data.startsWith('data:image/') ||
+    att.type?.startsWith('image/') ||
+    att.data?.startsWith('data:image/') ||
     /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.name) ||
-    /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.data)
+    /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.data) ||
+    att.name?.startsWith('img_') ||
+    (att.data?.includes('/uploads/media/') && !/\.(webm|ogg|mp3|m4a|wav|mp4|mov|pdf)($|\?)/i.test(att.data))
   );
 
   return (
@@ -175,10 +271,11 @@ export function MessageItem({
                 let replyText = '';
                 if (repliedMsg) {
                   replyName = getSenderIdentity(repliedMsg).cleanName;
-                  replyText = repliedMsg.plaintext || (repliedMsg as any).client_plaintext || getDecryptedText(repliedMsg);
+                  const raw = repliedMsg.plaintext || (repliedMsg as any).client_plaintext || getDecryptedText(repliedMsg);
+                  replyText = getCleanPreview(raw);
                 } else if (msg.reply_preview) {
                   replyName = stripAt(msg.reply_preview.username || '');
-                  replyText = msg.reply_preview.content;
+                  replyText = getCleanPreview(msg.reply_preview.content);
                 }
                 return (
                   <div 
@@ -198,18 +295,11 @@ export function MessageItem({
               ) : isVideo ? (
                 <div className="flex flex-col gap-1 w-full max-w-[320px]">
                   {attachments.map((att, idx) => (
-                    <div key={idx} className="relative rounded-2xl overflow-hidden bg-black border border-white-5 shadow-sm min-h-[180px] aspect-video">
-                      <video
-                        src={att.data}
-                        controls
-                        playsInline
-                        preload="metadata"
-                        className="w-full h-full object-contain rounded-2xl bg-black block"
-                      />
-                      {att.caption && (
-                        <p className="px-3 py-1.5 text-[12px] text-white whitespace-pre-wrap">{att.caption}</p>
-                      )}
-                    </div>
+                    <VideoCard
+                      key={idx}
+                      src={att.data}
+                      caption={att.caption}
+                    />
                   ))}
                   {parsedMsgContent && parsedMsgContent !== firstAttachment?.caption && (
                     <p className="px-1 text-[13px] text-white whitespace-pre-wrap">{parsedMsgContent}</p>
@@ -233,14 +323,13 @@ export function MessageItem({
                   </div>
                 </div>
               ) : isImageCard ? (
-                <div className={`grid gap-1.5 ${attachments.length > 1 ? 'grid-cols-2 max-w-[280px]' : 'grid-cols-1'}`}>
-                  {attachments.map((att, idx) => (
+                attachments.length === 1 ? (
+                  <div className="w-full max-w-[280px]">
                     <SecureImageCard
-                      key={idx}
-                      src={att.data}
-                      name={att.name}
-                      size={att.size}
-                      caption={idx === attachments.length - 1 ? (att.caption || parsedMsgContent) : ''}
+                      src={attachments[0].data}
+                      name={attachments[0].name}
+                      size={attachments[0].size}
+                      caption={attachments[0].caption || parsedMsgContent}
                       isMe={isMe}
                       timestamp={safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}
                     >
@@ -260,56 +349,125 @@ export function MessageItem({
                         }}
                       />
                     </SecureImageCard>
-                  ))}
-                </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col w-full max-w-[300px] rounded-2xl overflow-hidden bg-velum-800/40 border border-white-5 p-1">
+                    <div className={`grid gap-1 ${
+                      attachments.length === 2 ? 'grid-cols-2' :
+                      attachments.length === 3 ? 'grid-cols-2' :
+                      attachments.length === 4 ? 'grid-cols-2' :
+                      'grid-cols-6'
+                    }`}>
+                      {attachments.map((att, idx) => {
+                        let spanClass = 'col-span-1 aspect-square';
+                        if (attachments.length === 3 && idx === 0) {
+                          spanClass = 'col-span-2 aspect-[16/9]';
+                        } else if (attachments.length === 5) {
+                          spanClass = idx < 2 ? 'col-span-3 aspect-square' : 'col-span-2 aspect-square';
+                        }
+
+                        const isLast = idx === attachments.length - 1;
+
+                        return (
+                          <div key={idx} className={spanClass}>
+                            <SecureImageCard
+                              src={att.data}
+                              name={att.name}
+                              size={att.size}
+                              containerClass="w-full h-full min-h-0 rounded-xl"
+                              isMe={isMe}
+                              timestamp={safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}
+                            >
+                              {isLast ? (
+                                <>
+                                  <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
+                                  <MessageStatusTicks
+                                    status={msg.status}
+                                    isMe={isMe}
+                                    onRetry={() => {
+                                      if (msg.status === 'failed') {
+                                        const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                                        if (onRetryMessage) {
+                                          onRetryMessage(targetId);
+                                        } else {
+                                          onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </>
+                              ) : null}
+                            </SecureImageCard>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {parsedMsgContent && (
+                      <div className="p-2 text-xs text-text-primary whitespace-pre-wrap break-words">
+                        {parsedMsgContent}
+                      </div>
+                    )}
+                  </div>
+                )
               ) : (
                 <>
                   {/* Attachment Badge capsule if present */}
-                  {isAttachment && (
-                    <div className="mb-2.5">
-                      {parsedAttachmentData ? (
-                        <div
-                          className="flex items-center gap-3 p-3 bg-velum-900/40 border border-white-5 rounded-xl mb-2.5 select-none text-left cursor-pointer hover:bg-velum-900/60 transition"
-                          onClick={() => {
-                            const link = document.createElement('a');
-                            link.href = parsedAttachmentData;
-                            link.download = parsedAttachmentName;
-                            link.click();
-                          }}
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                              <polyline points="14 2 14 8 20 8" />
-                              <line x1="16" y1="13" x2="8" y2="13" />
-                              <line x1="16" y1="17" x2="8" y2="17" />
-                              <line x1="10" y1="9" x2="8" y2="9" />
-                            </svg>
+                  {isAttachment && (() => {
+                    const isInternalSlug = parsedAttachmentName.startsWith('img_') ||
+                      parsedAttachmentName.startsWith('aud_') ||
+                      parsedAttachmentName.startsWith('vid_') ||
+                      parsedAttachmentName.startsWith('doc_') ||
+                      parsedAttachmentName.startsWith('upload_') ||
+                      /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(parsedAttachmentName);
+                    const cleanAttachmentLabel = isInternalSlug ? 'Document' : parsedAttachmentName;
+                    const downloadFilename = getFormattedDownloadFilename(parsedAttachmentData || parsedAttachmentName, 'bin');
+
+                    return (
+                      <div className="mb-2.5">
+                        {parsedAttachmentData ? (
+                          <div
+                            className="flex items-center gap-3 p-3 bg-velum-900/40 border border-white-5 rounded-xl mb-2.5 select-none text-left cursor-pointer hover:bg-velum-900/60 transition"
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = parsedAttachmentData;
+                              link.download = downloadFilename;
+                              link.click();
+                            }}
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="16" y1="13" x2="8" y2="13" />
+                                <line x1="16" y1="17" x2="8" y2="17" />
+                                <line x1="10" y1="9" x2="8" y2="9" />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[11px] font-bold text-white block truncate">{cleanAttachmentLabel}</span>
+                              <span className="text-[8.5px] font-mono text-text-secondary block uppercase">Download file</span>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[11px] font-bold text-white block truncate">{parsedAttachmentName}</span>
-                            <span className="text-[8.5px] font-mono text-text-secondary block uppercase">{parsedAttachmentSize} • Click to download</span>
+                        ) : (
+                          <div className="flex items-center gap-3 p-3 bg-velum-900/40 border border-white-5 rounded-xl mb-2.5 select-none text-left">
+                            <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="16" y1="13" x2="8" y2="13" />
+                                <line x1="16" y1="17" x2="8" y2="17" />
+                                <line x1="10" y1="9" x2="8" y2="9" />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[11px] font-bold text-white block truncate">{cleanAttachmentLabel}</span>
+                              <span className="text-[8.5px] font-mono text-text-secondary block uppercase">Document</span>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-3 p-3 bg-velum-900/40 border border-white-5 rounded-xl mb-2.5 select-none text-left">
-                          <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                              <polyline points="14 2 14 8 20 8" />
-                              <line x1="16" y1="13" x2="8" y2="13" />
-                              <line x1="16" y1="17" x2="8" y2="17" />
-                              <line x1="10" y1="9" x2="8" y2="9" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[11px] font-bold text-white block truncate">{parsedAttachmentName}</span>
-                            <span className="text-[8.5px] font-mono text-text-secondary block uppercase">{parsedAttachmentSize} • attachment</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    );
+                  })()}
                   {parsedMsgContent && (
                     <div>
                       <p className="whitespace-pre-wrap message-content-wrap selectable-text">

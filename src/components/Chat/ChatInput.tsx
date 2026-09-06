@@ -9,6 +9,7 @@ import {
 import { Message, stripAt } from '../../types';
 import { Attachment } from './hooks/useMessageInput';
 import { getDraftAudioBlob } from '../../utils/mediaPipeline';
+import { getCleanPreview } from '../../utils/messageParser';
 
 export interface ChatInputProps {
   // Input state
@@ -26,7 +27,7 @@ export interface ChatInputProps {
   cancelRecording: () => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
-  stopRecording: (callback: (audioBase64: string, durationSeconds: number) => void) => void;
+  stopRecording: (callback: (audioBlob: Blob, durationSeconds: number) => void) => void;
   onToggleRecording: () => void;
   micError: string | null;
   setMicError: (val: string | null) => void;
@@ -58,6 +59,8 @@ export interface ChatInputProps {
   onSendVoiceNote: (voiceContent: string) => void;
   onTriggerFileInput?: () => void;
   onTriggerPhotoInput?: () => void;
+  onTriggerVideoInput?: () => void;
+  onTriggerAudioInput?: () => void;
   onTriggerDocInput?: () => void;
   isPrivateSublounge?: boolean;
   isMember?: boolean;
@@ -103,6 +106,8 @@ export function ChatInput({
   onSendVoiceNote,
   onTriggerFileInput,
   onTriggerPhotoInput,
+  onTriggerVideoInput,
+  onTriggerAudioInput,
   onTriggerDocInput,
   isPrivateSublounge,
   isMember,
@@ -353,11 +358,7 @@ export function ChatInput({
               {/* Send */}
               <button
                 type="button"
-                onClick={() => {
-                  stopRecording(async (audioBase64, durationSeconds) => {
-                    onSendVoiceNote(`[Voice Note  duration:${durationSeconds}s data:audio/webm;base64,${audioBase64}]`);
-                  });
-                }}
+                onClick={onToggleRecording}
                 className="w-9 h-9 rounded-full bg-accent hover:bg-accent-hover text-velum-950 flex items-center justify-center transition shadow-md active:scale-95 cursor-pointer"
                 title="Send voice note"
               >
@@ -429,7 +430,7 @@ export function ChatInput({
                   <Reply className="w-3.5 h-3.5 text-accent shrink-0" />
                   <span className="text-[9px] text-text-secondary uppercase">Replying to {stripAt(replyingToMessage.username || 'User')}:</span>
                   <span className="text-white normal-case truncate max-w-xs font-medium font-sans">
-                    {getDecryptedText(replyingToMessage)}
+                    {getCleanPreview(getDecryptedText(replyingToMessage))}
                   </span>
                 </div>
                 <button
@@ -503,7 +504,7 @@ export function ChatInput({
                             type="button"
                             onClick={() => {
                               setIsAttachmentMenuOpen(false);
-                              if (onTriggerPhotoInput) onTriggerPhotoInput();
+                              if (onTriggerVideoInput) onTriggerVideoInput();
                               else if (onTriggerFileInput) onTriggerFileInput();
                             }}
                             className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white-5 active:scale-95 transition-all cursor-pointer group"
