@@ -8,6 +8,7 @@ import LoadingFallback from './components/LoadingFallback';
 import { initAppearance } from './utils/appearance';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { registerPushNotifications } from './utils/pushNotifications';
+import { checkOtaUpdate, applyOtaUpdate } from './utils/otaUpdater';
 
 
 import { Toaster } from 'react-hot-toast';
@@ -61,6 +62,15 @@ function AppContent() {
           window.dispatchEvent(new CustomEvent('velum-open-room', { detail: { roomId: targetRoom } }));
         }
       }).catch(() => {});
+    }).catch(() => {});
+  }, []);
+
+  // Check for OTA updates silently on startup
+  useEffect(() => {
+    checkOtaUpdate().then(res => {
+      if (res.updateAvailable && res.manifest) {
+        applyOtaUpdate(res.manifest).catch(() => {});
+      }
     }).catch(() => {});
   }, []);
 
@@ -141,7 +151,20 @@ function AppContent() {
           const host = parsed.host;
           const pathname = parsed.pathname.replace(/^\//, '');
 
-          if (host === 'category') {
+          if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+            // Handle https://velum.chat/<path>
+            const parts = pathname.split('/');
+            const first = parts[0] || '';
+            const second = parts[1] || '';
+
+            if (first === 'dm' && second) {
+              setActiveRoomId(`dm_${second}`);
+            } else if (first === 'room' && second) {
+              setActiveRoomId(second);
+            } else if (first === 'wallet' || first === 'direct' || first === 'rooms' || first === 'people' || first === 'market') {
+              window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: first } }));
+            }
+          } else if (host === 'category') {
             window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: pathname } }));
           } else if (host === 'dm' || host === 'room') {
             const roomId = host === 'dm' ? `dm_${pathname}` : pathname;
@@ -152,6 +175,8 @@ function AppContent() {
             window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'wallet' } }));
           } else if (host === 'lounges' || host === 'rooms') {
             window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'rooms' } }));
+          } else if (host === 'people' || host === 'contacts') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'people' } }));
           }
         } catch {
           if (url.includes('wallet')) {
@@ -160,6 +185,8 @@ function AppContent() {
             window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'direct' } }));
           } else if (url.includes('rooms') || url.includes('lounges')) {
             window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'rooms' } }));
+          } else if (url.includes('people') || url.includes('contacts')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'people' } }));
           }
         }
       }).then(handle => {
