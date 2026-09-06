@@ -255,6 +255,47 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
   if (!roomId) return;
 
   try {
+    const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+    if (isDm) {
+      const parts = roomId.replace('dm_', '').split('_');
+      const peerId = parts.length === 2
+        ? (Number(parts[0]) === client.userId ? Number(parts[1]) : Number(parts[0]))
+        : Number(parts[0]);
+
+      if (!isNaN(peerId) && peerId > 0) {
+        const dmMessages = await dmService.getConversation(client.userId, peerId, limit);
+        const sinceId = sinceSeq; // In DMs, sequence is the message id
+        const filtered = sinceId > 0 ? dmMessages.filter(d => d.id > sinceId) : dmMessages;
+        const formatted = filtered.map(d => ({
+          id: d.id,
+          message_id: String(d.id),
+          db_message_id: d.id,
+          room_id: roomId,
+          lounge_id: roomId,
+          user_id: d.sender,
+          username: d.sender === client.userId ? (client.username || 'You') : `User #${d.sender}`,
+          content: d.body,
+          sequence_id: d.id,
+          client_msg_id: undefined,
+          is_encrypted: !!d.encrypted,
+          reply_to: d.replyTo || null,
+          timestamp: d.created ? d.created.toISOString() : new Date().toISOString(),
+          status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
+        }));
+
+        const maxId = dmMessages.length > 0 ? Math.max(...dmMessages.map(d => d.id)) : 0;
+        if (client.ws.readyState === WebSocket.OPEN) {
+          client.ws.send(JSON.stringify({
+            type: 'sync_response',
+            room_id: roomId,
+            messages: formatted,
+            max_seq: maxId
+          }));
+        }
+        return;
+      }
+    }
+
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (!loungeId) {
       if (client.ws.readyState === WebSocket.OPEN) {
@@ -735,6 +776,7 @@ export async function handleClientMessage(client: ClientConnection, message: any
     case 'dm':
       await handleDirectMessage(client, message);
       break;
+    case 'sync':
     case 'sync_request':
       await handleSyncRequest(client, message);
       break;

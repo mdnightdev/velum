@@ -27,7 +27,7 @@ interface UserWorkspaceProps {
   onRoomMute?: (targetId: number, mute: boolean) => void;
   onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
-  onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number) => void;
+  onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => void;
 }
 
 type ActivePanel = 'navigation' | 'directory' | 'workspace';

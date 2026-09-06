@@ -44,7 +44,7 @@ export interface ChatAreaProps {
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
   onRetryMessage?: (clientMsgId: string) => void;
-  onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number) => void;
+  onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => void;
   onMarkAllAsRead?: (roomId: string) => void;
   onMarkDelivered?: (messageId: string, roomId: string) => void;
   activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
@@ -459,13 +459,17 @@ export default function ChatArea({
         const isPeerToMe = m.user_id === otherId && (m.room_id === `dm_${currentUserId}` || m.room_id === `dm_${otherId}_${currentUserId}` || (m as any)._dm_target === currentUserId);
         isRelevant = isPeerFromMe || isPeerToMe || !!(m.room_id?.includes(`dm_${Math.min(currentUserId, otherId)}_${Math.max(currentUserId, otherId)}`));
       }
-      return isRelevant && m.user_id !== currentUserId && m.status !== 'read' && !markedMessageIdsRef.current.has(m.message_id);
+      const canonicalKey = String(m.id || m.message_id || '');
+      return isRelevant && m.user_id !== currentUserId && m.status !== 'read' && !markedMessageIdsRef.current.has(canonicalKey);
     });
     
     unreadMessages.forEach(m => {
-      if (document.hasFocus() && m.message_id) {
-        markedMessageIdsRef.current.add(m.message_id);
-        onMarkAsReadRef.current?.(m.message_id, m.room_id || roomId);
+      const canonicalKey = String(m.id || m.message_id || '');
+      if (document.hasFocus() && canonicalKey) {
+        markedMessageIdsRef.current.add(canonicalKey);
+        if (m.message_id) markedMessageIdsRef.current.add(m.message_id);
+        const dbId = typeof m.id === 'number' ? m.id : (m.db_message_id || undefined);
+        onMarkAsReadRef.current?.(canonicalKey, m.room_id || roomId, dbId, m.sequence_id);
       }
     });
   }, [messages, currentUserId, roomId, activeChatPeer?.userId]);

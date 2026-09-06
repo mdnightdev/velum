@@ -43,7 +43,7 @@ interface DashboardLayoutProps {
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
   onRetryMessage?: (clientMsgId: string) => void;
-  onMarkAsRead?: (messageId: string, roomId: string) => void;
+  onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => void;
   onMarkAllAsRead?: (roomId: string) => void;
 }
 

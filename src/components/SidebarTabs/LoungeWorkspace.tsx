@@ -297,8 +297,8 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const canCreateSublounge = !isOfficialLounge && (loungeData.isParentAdmin || isLoungeCreator);
   const loungeAvatar = loungeData.loungeDetails?.avatar_url || loungeData.loungeDetails?.avatarUrl || loungeData.loungeDetails?.icon_url || loungeData.loungeDetails?.iconUrl;
 
-  const handleMarkAsRead = (messageId: string, roomId: string) => {
-    props.onMarkAsRead?.(messageId, roomId);
+  const handleMarkAsRead = (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => {
+    props.onMarkAsRead?.(messageId, roomId, dbMessageId, sequenceId);
   };
 
   const handleMarkAllAsRead = (roomId: string) => {

@@ -27,6 +27,7 @@ export function useWebSocket({
 }: UseWebSocketParams) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
+  const roomMaxSeqRef = useRef<Map<string, number>>(new Map());
 
   // Background Periodic Key Rotation for Message History Forward Secrecy
   useEffect(() => {
@@ -53,19 +54,6 @@ export function useWebSocket({
     if (!activeRoomId) return;
 
     let isCurrentRoom = true;
-
-    // Instantly load cached messages from user-isolated store
-    getLocalMessages(activeRoomId, 100, userId || undefined)
-      .then(cached => {
-        if (isCurrentRoom && cached && cached.length > 0) {
-          setMessages(cached);
-        } else if (isCurrentRoom) {
-          setMessages([]);
-        }
-      })
-      .catch(() => {
-        if (isCurrentRoom) setMessages([]);
-      });
 
     const syncRoom = async () => {
       const sessionToken = storage.getItem('velum-sessionId') || '';
@@ -100,6 +88,7 @@ export function useWebSocket({
             user_id: d.sender,
             username: d.sender === userId ? 'You' : `User #${d.sender}`,
             content: d.body,
+            sequence_id: d.id,
             is_encrypted: !!d.encrypted,
             reply_to: d.replyTo || null,
             timestamp: d.created,
@@ -135,15 +124,21 @@ export function useWebSocket({
 
           if (!isCurrentRoom) return;
 
+          let maxSeq = roomMaxSeqRef.current.get(activeRoomId) || 0;
+          restoredNormalized.forEach((m: any) => {
+            const seq = m.sequence_id || (typeof m.id === 'number' ? m.id : 0);
+            if (seq > maxSeq) maxSeq = seq;
+          });
+          if (maxSeq > 0) {
+            roomMaxSeqRef.current.set(activeRoomId, maxSeq);
+          }
+
           setMessages(prev => {
             if (restoredNormalized.length === 0) {
-              // Server has 0 messages; keep existing cached messages if present
               return prev;
             }
             const map = new Map<string, Message>();
-            // Keep in-flight messages from WebSocket
             prev.forEach(m => map.set(String(m.id || m.message_id || m.client_msg_id), m));
-            // Add server verified messages with restored plaintext
             restoredNormalized.forEach((m: any) => {
               const existing = map.get(String(m.id || m.message_id));
               map.set(String(m.id || m.message_id), {
@@ -167,7 +162,41 @@ export function useWebSocket({
       }
     };
 
-    syncRoom();
+    // Instantly load cached messages from user-isolated store
+    getLocalMessages(activeRoomId, 100, userId || undefined)
+      .then(async cached => {
+        if (!isCurrentRoom) return;
+        let highestSeq = roomMaxSeqRef.current.get(activeRoomId) || 0;
+        if (cached && cached.length > 0) {
+          setMessages(cached);
+          cached.forEach(m => {
+            const seq = m.sequence_id || (typeof m.id === 'number' ? m.id : 0);
+            if (seq > highestSeq) highestSeq = seq;
+          });
+          if (highestSeq > 0) {
+            roomMaxSeqRef.current.set(activeRoomId, highestSeq);
+          }
+        } else {
+          setMessages([]);
+        }
+
+        // If socket is open and sequence is known, trigger delta sync over WS
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && highestSeq > 0) {
+          wsRef.current.send(JSON.stringify({
+            type: 'sync',
+            room_id: activeRoomId,
+            since_seq: highestSeq
+          }));
+        } else {
+          await syncRoom();
+        }
+      })
+      .catch(async () => {
+        if (isCurrentRoom) {
+          setMessages([]);
+          await syncRoom();
+        }
+      });
 
     return () => {
       isCurrentRoom = false;
@@ -286,6 +315,14 @@ export function useWebSocket({
       
       if (activeRoomIdRef.current) {
         ws.send(JSON.stringify({ type: 'join_room', room_id: activeRoomIdRef.current }));
+        const highestSeq = roomMaxSeqRef.current.get(activeRoomIdRef.current) || 0;
+        if (highestSeq > 0) {
+          ws.send(JSON.stringify({
+            type: 'sync',
+            room_id: activeRoomIdRef.current,
+            since_seq: highestSeq
+          }));
+        }
       }
 
       // Automatically drain persistent IndexedDB outbox queue upon socket restoration
@@ -351,6 +388,14 @@ export function useWebSocket({
           if (data.action === 'read_cursor_update' || data.action === 'mark_all_read') {
             if (data.room_id) {
               setUnreadCounts(prev => ({ ...prev, [data.room_id]: 0 }));
+              if (data.action === 'read_cursor_update' && data.last_read_seq && data.room_id === activeRoomIdRef.current) {
+                setMessages(prev => prev.map(m => {
+                  if (m.sequence_id && m.sequence_id <= data.last_read_seq) {
+                    return { ...m, status: 'read' };
+                  }
+                  return m;
+                }));
+              }
             }
           }
           return;
@@ -423,6 +468,13 @@ export function useWebSocket({
             removeOutboxMessage(String(ackClientId), userId || undefined);
           }
           const canonicalId = data.id || data.db_message_id || data.message_id;
+          if (data.room_id) {
+            const seq = data.sequence_id || (typeof canonicalId === 'number' ? canonicalId : 0);
+            if (seq) {
+              const cur = roomMaxSeqRef.current.get(data.room_id) || 0;
+              if (seq > cur) roomMaxSeqRef.current.set(data.room_id, seq);
+            }
+          }
           setMessages(prev => prev.map(m => {
             const matches = (ackClientId && (m.client_msg_id === ackClientId || String(m.id) === String(ackClientId) || m.message_id === ackClientId || m.nonce === ackClientId));
             if (matches) {
@@ -444,6 +496,13 @@ export function useWebSocket({
           const dmRoomId = `dm_${peerId}`;
           const canonicalId = data.id || data.db_message_id || data.message_id;
           const clientMsgId = data.client_msg_id || data.nonce;
+          if (dmRoomId) {
+            const seq = typeof canonicalId === 'number' ? canonicalId : 0;
+            if (seq) {
+              const cur = roomMaxSeqRef.current.get(dmRoomId) || 0;
+              if (seq > cur) roomMaxSeqRef.current.set(dmRoomId, seq);
+            }
+          }
           const dmMsg: Message = {
             id: canonicalId,
             client_msg_id: clientMsgId,
@@ -517,13 +576,28 @@ export function useWebSocket({
           window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
         } else if (data.type === 'sync_response') {
           if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
-            setMessages(prev => {
-              const existingIds = new Set(prev.map(m => String(m.db_message_id || m.message_id)));
-              const newMsgs = data.messages.filter((m: Message) => !existingIds.has(String(m.db_message_id || m.message_id)));
-              if (newMsgs.length === 0) return prev;
-              const merged = [...prev, ...newMsgs];
-              return merged.sort((a, b) => (a.sequence_id || 0) - (b.sequence_id || 0));
-            });
+            const newMsgs = data.messages;
+            if (newMsgs.length > 0) {
+              setMessages(prev => {
+                const existingIds = new Set(prev.map(m => String(m.id || m.message_id || m.client_msg_id)));
+                const incomingFiltered = newMsgs.filter((m: Message) => !existingIds.has(String(m.id || m.message_id || m.client_msg_id)));
+                if (incomingFiltered.length === 0) return prev;
+                const merged = [...prev, ...incomingFiltered];
+                return merged.sort((a, b) => {
+                  const seqA = a.sequence_id || (typeof a.id === 'number' ? a.id : 0);
+                  const seqB = b.sequence_id || (typeof b.id === 'number' ? b.id : 0);
+                  if (seqA && seqB) return seqA - seqB;
+                  return new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime();
+                });
+              });
+              saveLocalMessages(newMsgs, userId || undefined).catch(() => {});
+            }
+            if (data.max_seq) {
+              const currentMax = roomMaxSeqRef.current.get(data.room_id) || 0;
+              if (data.max_seq > currentMax) {
+                roomMaxSeqRef.current.set(data.room_id, data.max_seq);
+              }
+            }
           }
         } else if (data.type === 'reaction_update') {
           setMessages(prev => prev.map(m => {
@@ -564,7 +638,7 @@ export function useWebSocket({
             if (lastReadSeq && m.sequence_id) {
               isReadTarget = m.sequence_id <= lastReadSeq;
             } else if (targetMsgId) {
-              isReadTarget = String(m.message_id) === String(targetMsgId) || String(m.db_message_id) === String(targetMsgId);
+              isReadTarget = String(m.message_id) === String(targetMsgId) || String(m.id) === String(targetMsgId) || String(m.db_message_id) === String(targetMsgId);
             }
 
             if (isReadTarget) {
@@ -663,6 +737,12 @@ export function useWebSocket({
           }
 
           if (data.room_id) {
+            const canonicalId = data.id || data.db_message_id || data.message_id;
+            const seq = data.sequence_id || (typeof canonicalId === 'number' ? canonicalId : 0);
+            if (seq) {
+              const cur = roomMaxSeqRef.current.get(data.room_id) || 0;
+              if (seq > cur) roomMaxSeqRef.current.set(data.room_id, seq);
+            }
             const newMessage = data as Message;
             const isFromMe = Boolean(uid && String(newMessage.user_id) === String(uid));
 
@@ -1055,14 +1135,15 @@ export function useWebSocket({
     }));
   };
 
-  const markAsRead = (messageId: string, roomId: string, dbMessageId?: number) => {
+  const markAsRead = (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => {
     // Note: Counter reset is now handled server-side in handleMarkRead
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'mark_read',
       message_id: messageId,
       room_id: roomId,
-      db_message_id: dbMessageId
+      db_message_id: dbMessageId,
+      sequence_id: sequenceId
     }));
   };
 
@@ -1100,7 +1181,7 @@ export function useWebSocket({
   const requestSync = (roomId: string, sinceSeq: number) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
-      type: 'sync_request',
+      type: 'sync',
       room_id: roomId,
       since_seq: sinceSeq
     }));
