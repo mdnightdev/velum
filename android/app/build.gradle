@@ -7,9 +7,9 @@ android {
         applicationId "com.midnightdev.velum"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 220
-        versionName "2.2.0"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        versionCode (System.getenv('GITHUB_RUN_NUMBER')?.toInteger() ?: 220)
+        versionName (System.getenv('APP_VERSION') ?: "2.2.0")
+		testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             cruncherEnabled = false
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
@@ -17,17 +17,22 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file('velum-release.keystore')
-            storePassword 'velum2026'
-            keyAlias 'velum'
-            keyPassword 'velum2026'
+            storeFile file(System.getenv('KEYSTORE_FILE'))
+            storePassword System.getenv('KEYSTORE_PASSWORD')
+            keyAlias System.getenv('KEY_ALIAS')
+            keyPassword System.getenv('KEY_PASSWORD')
         }
     }
     buildTypes {
         release {
             signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            debuggable true
         }
     }
 }

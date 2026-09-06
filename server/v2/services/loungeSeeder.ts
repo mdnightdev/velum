@@ -111,11 +111,15 @@ export async function ensureVelumLoungeSeeded() {
       CREATE INDEX IF NOT EXISTS idx_media_assets_relative_path ON media_assets (relative_path);
     `);
 
+    await db.execute(sql`
+      UPDATE lounges SET slug = 'velum_master_lounge' WHERE id = 1 AND (slug = 'velum_lounge' OR slug IS NULL);
+    `);
+
     let [master] = await db.select().from(lounges).where(eq(lounges.id, 1));
     if (!master) {
       const [inserted] = await db.insert(lounges).values({
         id: 1,
-        slug: 'velum_lounge',
+        slug: 'velum_master_lounge',
         name: 'Velum Lounge',
         description: 'Velum Lounge',
         isOfficial: true,

@@ -153,7 +153,7 @@ export function ChatHeader({
   return (
     <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] pb-2 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
       <div className="flex items-center gap-2 min-w-0">
-        {isMobile && onBackToDeck && (
+        {onBackToDeck && (
           <button
             type="button"
             onClick={onBackToDeck}

@@ -124,6 +124,31 @@ export class BankController {
       await redis.del('bank:all_transactions');
     }
 
+    try {
+      const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+      broadcastToUserDevices(req.user!.userId, {
+        type: 'wallet_updated',
+        balance: result.newSenderBalance,
+        timestamp: new Date().toISOString()
+      });
+      broadcastToUserDevices(targetUserId, {
+        type: 'wallet_updated',
+        timestamp: new Date().toISOString()
+      });
+      broadcastToUserDevices(targetUserId, {
+        type: 'notification_received',
+        notification: {
+          id: `tx_${Date.now()}`,
+          title: 'Payment Received',
+          message: `You received $${parsedAmount.toFixed(2)} from user #${req.user!.userId}`,
+          type: 'TRANSACTION',
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (wsErr) {
+      console.warn('[WS Bank Broadcast Error]:', wsErr);
+    }
+
     res.status(200).json({
       transaction: result.transaction,
       newBalance: result.newSenderBalance

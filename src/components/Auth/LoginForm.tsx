@@ -1,6 +1,8 @@
 import React from 'react';
 import { User, Lock, Key, Eye, EyeOff, KeyRound, HelpCircle, LifeBuoy } from 'lucide-react';
 import PasswordInput from '../PasswordInput';
+import { useBiometricAuth } from '../../hooks/useBiometricAuth';
+
 
 interface LoginFormProps {
   username: string;
@@ -39,6 +41,18 @@ export default function LoginForm({
   onSwitchToRegister,
   onPasskeyLogin
 }: LoginFormProps) {
+
+  const { isNative, authenticate } = useBiometricAuth();
+
+  const handleBiometricClick = async () => {
+    if (isNative) {
+      const verified = await authenticate('Scan biometric to sign in');
+      if (!verified) return;
+    }
+    onPasskeyLogin?.();
+  };
+
+
   return (
     <form onSubmit={onSubmit} className="w-full space-y-4">
       {!isAdminPortal ? (
@@ -126,13 +140,13 @@ export default function LoginForm({
       {/* Passkey Alternative */}
       {onPasskeyLogin && !isAdminPortal && (
         <button
-          type="button"
-          onClick={onPasskeyLogin}
-          className="w-full bg-white-5 hover:bg-white-10 border border-white-10 text-text-primary font-medium py-3 px-6 rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer mt-2"
-        >
-          <KeyRound className="w-3.5 h-3.5 text-accent" />
-          <span>Sign In with Passkey / Face ID</span>
-        </button>
+  type="button"
+  onClick={handleBiometricClick}
+  className="w-full bg-white-5 hover:bg-white-10 border border-white-10 text-text-primary font-medium py-3 px-6 rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer mt-2"
+>
+  <KeyRound className="w-3.5 h-3.5 text-accent" />
+  <span>{isNative ? 'Sign In with Biometrics' : 'Sign In with Passkey / Face ID'}</span>
+</button>
       )}
 
       {!isAdminPortal && (

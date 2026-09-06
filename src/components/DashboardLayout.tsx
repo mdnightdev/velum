@@ -202,6 +202,47 @@ export default function DashboardLayout({
     }
   }, [user]);
 
+  // Silent background revalidation on visibility change, online event, and socket reconnection
+  useEffect(() => {
+    if (!user?.userId) return;
+
+    const handleSilentRevalidate = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        loadPeopleAndRequests();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleSilentRevalidate);
+    window.addEventListener('online', handleSilentRevalidate);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSilentRevalidate);
+      window.removeEventListener('online', handleSilentRevalidate);
+    };
+  }, [user?.userId]);
+
+  useEffect(() => {
+    if (wsConnected && user?.userId) {
+      loadPeopleAndRequests();
+    }
+  }, [wsConnected, user?.userId]);
+
+  useEffect(() => {
+    if (!user?.userId) return;
+
+    const handleSocialUpdate = () => {
+      loadPeopleAndRequests();
+    };
+
+    window.addEventListener('velum-social-update', handleSocialUpdate);
+    window.addEventListener('velum-profile-update', handleSocialUpdate);
+
+    return () => {
+      window.removeEventListener('velum-social-update', handleSocialUpdate);
+      window.removeEventListener('velum-profile-update', handleSocialUpdate);
+    };
+  }, [user?.userId]);
+
   const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
 
   const handleRespondFriendRequest = async (requestId: string, action: 'accepted' | 'declined') => {

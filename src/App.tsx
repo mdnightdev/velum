@@ -7,6 +7,8 @@ import { useWebSocket } from './hooks/useWebSocket';
 import LoadingFallback from './components/LoadingFallback';
 import { initAppearance } from './utils/appearance';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { registerPushNotifications } from './utils/pushNotifications';
+
 
 import { Toaster } from 'react-hot-toast';
 import MaintenanceBanner from './components/MaintenanceBanner';
@@ -32,9 +34,10 @@ function AppContent() {
 
    // Request notification permission on login via Capacitor
  useEffect(() => {
-  if (isAuthenticated) {
-    LocalNotifications.requestPermissions().then(() => {
-      // Create high-priority notification channel for popups/heads-up banners
+        if (isAuthenticated) {
+          registerPushNotifications();
+          LocalNotifications.requestPermissions().then(() => {
+
       LocalNotifications.createChannel({
         id: 'velum_messages',
         name: 'Velum Messages',
@@ -209,8 +212,11 @@ function AppContent() {
       activeChatPeer={activeChatPeer}
       onSelectPeer={(peer) => {
         setActiveChatPeer(peer);
-        if (peer) {
-          setActiveRoomId(`dm_${peer.userId}`);
+        if (peer && user) {
+          const dmRoomId = peer.userId === 999 
+            ? `dm_velum_${user.userId}`
+            : `dm_${Math.min(user.userId, peer.userId)}_${Math.max(user.userId, peer.userId)}`;
+          setActiveRoomId(dmRoomId);
         } else {
           setActiveRoomId('');
         }

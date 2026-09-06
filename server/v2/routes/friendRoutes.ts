@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
@@ -6,8 +6,7 @@ import { users } from '../db/schema/users.js';
 import { relationships } from '../db/schema/relationships.js';
 import { dms, dmClears } from '../db/schema/dms.js';
 import { eq, and, or, inArray, desc, gt, sql } from 'drizzle-orm';
-import type { Request, Response } from 'express';
-import { connectedClients } from '../../websocket.js';
+import { connectedClients, broadcastToUserDevices } from '../../websocket.js';
 import { getRedisClient } from '../db/redis.js';
 import { logger } from '../utils/logger.js';
 
@@ -224,6 +223,24 @@ const handleSendFriendRequest = async (req: Request, res: Response) => {
       status: 'pending'
     });
     
+    try {
+      const senderUser = await db.select().from(users).where(eq(users.id, currentUserId)).limit(1);
+      const senderName = senderUser[0]?.displayName || senderUser[0]?.username || `User #${currentUserId}`;
+      broadcastToUserDevices(receiverId, {
+        type: 'friend_request_received',
+        senderId: currentUserId,
+        sender_name: senderName,
+        timestamp: new Date().toISOString()
+      });
+      broadcastToUserDevices(currentUserId, {
+        type: 'friend_request_sent',
+        receiverId,
+        timestamp: new Date().toISOString()
+      });
+    } catch (wsErr) {
+      logger.warn('Failed to broadcast friend request WS event', { error: wsErr });
+    }
+
     res.status(201).json({ success: true, message: 'Friend request sent.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to send friend request.' });
@@ -241,14 +258,33 @@ friendRouter.post('/accept/:requestId', async (req: Request, res: Response) => {
   if (!relList.length) {
     return res.status(404).json({ error: 'Friend request not found.' });
   }
+  const rel = relList[0];
   await db.update(relationships).set({ status: 'accepted', updatedAt: new Date() }).where(eq(relationships.id, relId));
+  try {
+    broadcastToUserDevices(rel.userId, { type: 'friend_request_accepted', requestId: relId, peerId: rel.friendId, timestamp: new Date().toISOString() });
+    broadcastToUserDevices(rel.friendId, { type: 'friend_request_accepted', requestId: relId, peerId: rel.userId, timestamp: new Date().toISOString() });
+  } catch (wsErr) {
+    logger.warn('Failed to broadcast friend request accept WS event', { error: wsErr });
+  }
   res.json({ success: true, message: 'Friend request accepted.' });
 });
 
 friendRouter.post('/reject/:requestId', async (req: Request, res: Response) => {
   req.body.action = 'rejected';
   const relId = parseInt(req.params.requestId, 10);
-  await db.delete(relationships).where(eq(relationships.id, relId));
+  const relList = await db.select().from(relationships).where(eq(relationships.id, relId)).limit(1);
+  if (relList.length) {
+    const rel = relList[0];
+    await db.delete(relationships).where(eq(relationships.id, relId));
+    try {
+      broadcastToUserDevices(rel.userId, { type: 'friend_request_rejected', requestId: relId, peerId: rel.friendId, timestamp: new Date().toISOString() });
+      broadcastToUserDevices(rel.friendId, { type: 'friend_request_rejected', requestId: relId, peerId: rel.userId, timestamp: new Date().toISOString() });
+    } catch (wsErr) {
+      logger.warn('Failed to broadcast friend request reject WS event', { error: wsErr });
+    }
+  } else {
+    await db.delete(relationships).where(eq(relationships.id, relId));
+  }
   res.json({ success: true, message: 'Friend request rejected.' });
 });
 
@@ -262,14 +298,27 @@ friendRouter.post('/requests/:requestId/respond', async (req: Request, res: Resp
     if (!relList.length) {
       return res.status(404).json({ error: 'Friend request not found.' });
     }
+    const rel = relList[0];
 
     if (action === 'accepted') {
       await db.update(relationships).set({
         status: 'accepted',
         updatedAt: new Date()
       }).where(eq(relationships.id, relId));
+      try {
+        broadcastToUserDevices(rel.userId, { type: 'friend_request_accepted', requestId: relId, peerId: rel.friendId, timestamp: new Date().toISOString() });
+        broadcastToUserDevices(rel.friendId, { type: 'friend_request_accepted', requestId: relId, peerId: rel.userId, timestamp: new Date().toISOString() });
+      } catch (wsErr) {
+        logger.warn('Failed to broadcast friend request accepted WS event', { error: wsErr });
+      }
     } else {
       await db.delete(relationships).where(eq(relationships.id, relId));
+      try {
+        broadcastToUserDevices(rel.userId, { type: 'friend_request_rejected', requestId: relId, peerId: rel.friendId, timestamp: new Date().toISOString() });
+        broadcastToUserDevices(rel.friendId, { type: 'friend_request_rejected', requestId: relId, peerId: rel.userId, timestamp: new Date().toISOString() });
+      } catch (wsErr) {
+        logger.warn('Failed to broadcast friend request rejected WS event', { error: wsErr });
+      }
     }
 
     res.json({ success: true, message: 'Friend request response processed.' });

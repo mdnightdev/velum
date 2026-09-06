@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "963064543983",
+    "project_id": "velum-401f9",
+    "storage_bucket": "velum-401f9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:963064543983:android:e8499e814663b348b6f91a",
+        "android_client_info": {
+          "package_name": "com.midnightdev.velum"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJTr5OUJun4_2djeGIogWuLRJDCtOMqig"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -10,6 +10,19 @@ import { wallets } from '../db/schema/wallets.js';
 import { eq, and } from 'drizzle-orm';
 import { currencyConverter } from '../services/currencyConverter.js';
 
+const broadcastUserWalletUpdate = async (userId: number, balance?: string) => {
+  try {
+    const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+    broadcastToUserDevices(userId, {
+      type: 'wallet_updated',
+      balance,
+      timestamp: new Date().toISOString()
+    });
+  } catch (wsErr) {
+    console.warn('[WS Payment Wallet Broadcast Error]:', wsErr);
+  }
+};
+
 export class PaymentController {
   async getPaymentMethods(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
@@ -118,6 +131,8 @@ export class PaymentController {
       return { transaction, newBalance };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -176,6 +191,8 @@ export class PaymentController {
       return { transaction, newBalance, updatedCard };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -265,6 +282,8 @@ export class PaymentController {
       return { transaction, newBalance };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -340,6 +359,8 @@ export class PaymentController {
       return { transaction, newBalance };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -511,6 +532,8 @@ export class PaymentController {
 
       return { newFromBalance, newToBalance };
     });
+
+    broadcastUserWalletUpdate(req.user!.userId);
 
     res.status(200).json({
       success: true,

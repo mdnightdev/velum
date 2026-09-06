@@ -32,6 +32,15 @@ export const OFFICIAL_SLUGS_ORDER = [
   'velum_executives'
 ];
 
+export function matchLounge(l: any, rawId: string): boolean {
+  if (!l || !rawId) return false;
+  if (l.slug === rawId || l.id.toString() === rawId) return true;
+  if ((rawId === 'velum_master_lounge' || rawId === 'velum_lounge') && (l.slug === 'velum_master_lounge' || l.slug === 'velum_lounge' || l.id === 1)) {
+    return true;
+  }
+  return false;
+}
+
 export async function getConversationsSummary(currentUserId?: number) {
   if (!currentUserId) {
     return { summary: {}, unreadCounts: {} };
@@ -352,7 +361,7 @@ export async function getUserLounges(user?: any) {
 export async function getLoungeDetails(rawId: string, user?: any) {
   const isAdmin = checkIsSystemAdmin(user);
   const all = await loungeRepository.findAll();
-  const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  const target = all.find(l => matchLounge(l, rawId));
 
   if (!target) {
     return { error: `Lounge "${rawId}" not found.`, status: 404 };
@@ -365,7 +374,7 @@ export async function getLoungeDetails(rawId: string, user?: any) {
   const sublounges = all.filter(l => l.parentLoungeId === target.id);
   const visibleSublounges = isAdmin ? sublounges : sublounges.filter(l => !l.isHidden);
 
-  if (target.slug === 'velum_master_lounge') {
+  if (target.slug === 'velum_master_lounge' || target.id === 1) {
     visibleSublounges.sort((a, b) => {
       const idxA = OFFICIAL_SLUGS_ORDER.indexOf(a.slug || '');
       const idxB = OFFICIAL_SLUGS_ORDER.indexOf(b.slug || '');
@@ -397,7 +406,7 @@ export async function getLoungeRooms(rawId: string, user?: any) {
   const isAdmin = checkIsSystemAdmin(user);
 
   const all = await loungeRepository.findAll();
-  const parent = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  const parent = all.find(l => matchLounge(l, rawId));
 
   if (!parent) {
     return { rooms: [] };
@@ -422,7 +431,7 @@ export async function getLoungeRooms(rawId: string, user?: any) {
     return false;
   });
 
-  if (parent.slug === 'velum_master_lounge') {
+  if (parent.slug === 'velum_master_lounge' || parent.id === 1) {
     visibleSubs.sort((a, b) => {
       const idxA = OFFICIAL_SLUGS_ORDER.indexOf(a.slug || '');
       const idxB = OFFICIAL_SLUGS_ORDER.indexOf(b.slug || '');
@@ -450,7 +459,7 @@ export async function getLoungeRooms(rawId: string, user?: any) {
 
 export async function getLoungeMembersList(rawId: string) {
   const all = await loungeRepository.findAll();
-  const parent = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  const parent = all.find(l => matchLounge(l, rawId));
 
   if (!parent) {
     return { members: [] };

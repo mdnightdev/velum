@@ -36,11 +36,19 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Build APKs with Gradle
-        working-directory: ./android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Decode Keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/velum-release.keystore
+
+    - name: Build APKs with Gradle
+      working-directory: ./android
+      env:
+        KEYSTORE_FILE: velum-release.keystore
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      run: |
+        chmod +x gradlew
+        ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4

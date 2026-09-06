@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { encryptMessage, EncryptionContext } from '../services/encryptionService';
 import { statelessE2eeService } from '../services/statelessE2eeService';
-import { getLocalMessages, saveLocalMessages, flushLoungeCache, deleteLocalMessage } from '../utils/indexedDb';
+import { flushLoungeCache, deleteLocalMessage, purgeDmMessages, getLocalMessages } from '../utils/indexedDb';
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 import { storage } from '../services/storageService';
 import { handleInboundMessageNotification, updateAppBadge } from '../utils/notifications';
+import { useChatStore } from '../stores/chatStore';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -25,8 +26,22 @@ export function useWebSocket({
   onMessageReceived,
   onSessionCompromised
 }: UseWebSocketParams) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [wsConnected, setWsConnected] = useState(false);
+  const messages = useChatStore((state) => state.messages);
+  const setMessages = useChatStore((state) => state.setMessages);
+  const appendMessage = useChatStore((state) => state.appendMessage);
+  const mergeMessages = useChatStore((state) => state.mergeMessages);
+  const updateMessage = useChatStore((state) => state.updateMessage);
+  const removeMessage = useChatStore((state) => state.removeMessage);
+  const clearRoomMessages = useChatStore((state) => state.clearRoomMessages);
+  const lastMessages = useChatStore((state) => state.lastMessages);
+  const setLastMessage = useChatStore((state) => state.setLastMessage);
+  const setLastMessages = useChatStore((state) => state.setLastMessages);
+  const unreadCounts = useChatStore((state) => state.unreadCounts);
+  const setUnreadCount = useChatStore((state) => state.setUnreadCount);
+  const setUnreadCounts = useChatStore((state) => state.setUnreadCounts);
+  const wsConnected = useChatStore((state) => state.wsConnected);
+  const setWsConnected = useChatStore((state) => state.setWsConnected);
+
   const roomMaxSeqRef = useRef<Map<string, number>>(new Map());
 
   // Background Periodic Key Rotation for Message History Forward Secrecy
@@ -49,11 +64,18 @@ export function useWebSocket({
     runRotationCheck();
   }, [isAuthenticated]);
 
-  // 1. Instantly render cached messages when switching rooms or reconnecting
+  // Delta synchronization when switching rooms or reconnecting
   useEffect(() => {
     if (!activeRoomId) return;
 
     let isCurrentRoom = true;
+
+    // Immediately hydrate local cached messages with existing plaintexts for instant render
+    getLocalMessages(activeRoomId, 100, userId || 0).then((localMsgs) => {
+      if (localMsgs && localMsgs.length > 0 && isCurrentRoom) {
+        mergeMessages(localMsgs);
+      }
+    }).catch(() => {});
 
     const syncRoom = async () => {
       const sessionToken = storage.getItem('velum-sessionId') || '';
@@ -95,37 +117,8 @@ export function useWebSocket({
             status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
           })) : data.messages;
 
-          const cachedLocal = await getLocalMessages(activeRoomId, 300, userId || undefined).catch(() => []);
-          const localPlaintextMap = new Map<string, string>();
-          cachedLocal.forEach((lm: any) => {
-            if (lm.plaintext) {
-              const keys = [lm.id, lm.message_id, lm.client_msg_id, lm.nonce, lm.db_message_id].filter(Boolean).map(String);
-              keys.forEach(k => localPlaintextMap.set(k, lm.plaintext));
-              if (lm.content) localPlaintextMap.set(lm.content, lm.plaintext);
-            }
-          });
-
-          const restoredNormalized = normalized.map((m: any) => {
-            const keys = [m.id, m.message_id, m.client_msg_id, m.nonce, m.db_message_id].filter(Boolean).map(String);
-            let pt = m.plaintext;
-            if (!pt) {
-              for (const k of keys) {
-                if (localPlaintextMap.has(k)) {
-                  pt = localPlaintextMap.get(k);
-                  break;
-                }
-              }
-              if (!pt && m.content && localPlaintextMap.has(m.content)) {
-                pt = localPlaintextMap.get(m.content);
-              }
-            }
-            return pt ? { ...m, plaintext: pt } : m;
-          });
-
-          if (!isCurrentRoom) return;
-
           let maxSeq = roomMaxSeqRef.current.get(activeRoomId) || 0;
-          restoredNormalized.forEach((m: any) => {
+          normalized.forEach((m: any) => {
             const seq = m.sequence_id || (typeof m.id === 'number' ? m.id : 0);
             if (seq > maxSeq) maxSeq = seq;
           });
@@ -133,85 +126,29 @@ export function useWebSocket({
             roomMaxSeqRef.current.set(activeRoomId, maxSeq);
           }
 
-          setMessages(prev => {
-            if (restoredNormalized.length === 0) {
-              return prev;
-            }
-            const map = new Map<string, Message>();
-            prev.forEach(m => map.set(String(m.id || m.message_id || m.client_msg_id), m));
-            restoredNormalized.forEach((m: any) => {
-              const existing = map.get(String(m.id || m.message_id));
-              map.set(String(m.id || m.message_id), {
-                ...m,
-                plaintext: m.plaintext || existing?.plaintext
-              });
-            });
-            return Array.from(map.values()).sort((a, b) => {
-              const tA = new Date(a.timestamp || 0).getTime();
-              const tB = new Date(b.timestamp || 0).getTime();
-              return tA - tB;
-            });
-          });
-
-          if (restoredNormalized.length > 0) {
-            await saveLocalMessages(restoredNormalized, userId || undefined);
-          }
+          mergeMessages(normalized);
         }
       } catch (err) {
         console.warn('[Sync] Failed to sync messages:', err);
       }
     };
 
-    // Instantly load cached messages from user-isolated store
-    getLocalMessages(activeRoomId, 100, userId || undefined)
-      .then(async cached => {
-        if (!isCurrentRoom) return;
-        let highestSeq = roomMaxSeqRef.current.get(activeRoomId) || 0;
-        if (cached && cached.length > 0) {
-          setMessages(cached);
-          cached.forEach(m => {
-            const seq = m.sequence_id || (typeof m.id === 'number' ? m.id : 0);
-            if (seq > highestSeq) highestSeq = seq;
-          });
-          if (highestSeq > 0) {
-            roomMaxSeqRef.current.set(activeRoomId, highestSeq);
-          }
-        } else {
-          setMessages([]);
-        }
-
-        // If socket is open and sequence is known, trigger delta sync over WS
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && highestSeq > 0) {
-          wsRef.current.send(JSON.stringify({
-            type: 'sync',
-            room_id: activeRoomId,
-            since_seq: highestSeq
-          }));
-        } else {
-          await syncRoom();
-        }
-      })
-      .catch(async () => {
-        if (isCurrentRoom) {
-          setMessages([]);
-          await syncRoom();
-        }
-      });
+    const highestSeq = roomMaxSeqRef.current.get(activeRoomId) || 0;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && highestSeq > 0) {
+      wsRef.current.send(JSON.stringify({
+        type: 'sync',
+        room_id: activeRoomId,
+        since_seq: highestSeq
+      }));
+    } else {
+      syncRoom();
+    }
 
     return () => {
       isCurrentRoom = false;
     };
-  }, [activeRoomId, wsConnected, userId]);
-
-  // 2. Persist message state changes to local storage
-  useEffect(() => {
-    if (activeRoomId && messages.length > 0) {
-      saveLocalMessages(messages, userId || undefined);
-    }
-  }, [activeRoomId, messages, userId]);
+  }, [activeRoomId, userId]);
   
-  const [lastMessages, setLastMessages] = useState<Record<string, Message>>({});
-  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const activeRoomIdRef = useRef(activeRoomId);
   const isAuthenticatedRef = useRef(isAuthenticated);
@@ -267,6 +204,39 @@ export function useWebSocket({
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated;
   }, [isAuthenticated]);
+
+  // Silent background revalidation on visibility change and network online events
+  useEffect(() => {
+    if (!userId || !isAuthenticated) return;
+
+    const handleSilentRevalidate = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING) {
+          connectWebSocket(userId);
+        } else if (wsRef.current.readyState === WebSocket.OPEN) {
+          const currentRoom = activeRoomIdRef.current;
+          if (currentRoom) {
+            const highestSeq = roomMaxSeqRef.current.get(currentRoom) || 0;
+            if (highestSeq > 0) {
+              wsRef.current.send(JSON.stringify({
+                type: 'sync',
+                room_id: currentRoom,
+                since_seq: highestSeq
+              }));
+            }
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleSilentRevalidate);
+    window.addEventListener('online', handleSilentRevalidate);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSilentRevalidate);
+      window.removeEventListener('online', handleSilentRevalidate);
+    };
+  }, [userId, isAuthenticated]);
 
   const connectWebSocket = (uid: number) => {
     if (reconnectTimeoutRef.current) {
@@ -326,37 +296,46 @@ export function useWebSocket({
       }
 
       // Automatically drain persistent IndexedDB outbox queue upon socket restoration
-      drainOutboxQueue((item) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const isDm = item.room_id.startsWith('dm_') && !item.room_id.startsWith('dm_velum_');
-          if (isDm) {
-            const peerId = parseInt(item.room_id.replace('dm_', ''), 10);
-            if (!isNaN(peerId)) {
-              ws.send(JSON.stringify({
-                type: 'dm',
-                to: peerId,
-                body: item.content,
-                enc: item.is_encrypted,
-                reply_to: item.reply_to || null,
-                client_msg_id: item.client_msg_id
-              }));
-              return true;
+      drainOutboxQueue(
+        (item) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            const isDm = item.room_id.startsWith('dm_') && !item.room_id.startsWith('dm_velum_');
+            if (isDm) {
+              const peerId = parseInt(item.room_id.replace('dm_', ''), 10);
+              if (!isNaN(peerId)) {
+                ws.send(JSON.stringify({
+                  type: 'dm',
+                  to: peerId,
+                  body: item.content,
+                  enc: item.is_encrypted,
+                  reply_to: item.reply_to || null,
+                  client_msg_id: item.client_msg_id
+                }));
+                return true;
+              }
             }
+            ws.send(JSON.stringify({
+              type: 'send_message',
+              room_id: item.room_id,
+              content: item.content,
+              is_encrypted: item.is_encrypted,
+              expires_in: item.expires_in,
+              reply_to: item.reply_to,
+              client_msg_id: item.client_msg_id,
+              nonce: item.client_msg_id
+            }));
+            return true;
           }
-          ws.send(JSON.stringify({
-            type: 'send_message',
-            room_id: item.room_id,
-            content: item.content,
-            is_encrypted: item.is_encrypted,
-            expires_in: item.expires_in,
-            reply_to: item.reply_to,
-            client_msg_id: item.client_msg_id,
-            nonce: item.client_msg_id
-          }));
-          return true;
+          return false;
+        },
+        userId || undefined,
+        (failedClientId) => {
+          updateMessage(
+            (m) => Boolean(m.client_msg_id === failedClientId || String(m.id) === failedClientId || m.nonce === failedClientId),
+            (m) => ({ ...m, status: 'failed' })
+          );
         }
-        return false;
-      }, userId || undefined);
+      );
 
       pingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -387,14 +366,12 @@ export function useWebSocket({
         if (data.type === 'multi_device_sync') {
           if (data.action === 'read_cursor_update' || data.action === 'mark_all_read') {
             if (data.room_id) {
-              setUnreadCounts(prev => ({ ...prev, [data.room_id]: 0 }));
+              setUnreadCount(data.room_id, 0);
               if (data.action === 'read_cursor_update' && data.last_read_seq && data.room_id === activeRoomIdRef.current) {
-                setMessages(prev => prev.map(m => {
-                  if (m.sequence_id && m.sequence_id <= data.last_read_seq) {
-                    return { ...m, status: 'read' };
-                  }
-                  return m;
-                }));
+                updateMessage(
+                  (m) => Boolean(m.sequence_id && m.sequence_id <= data.last_read_seq),
+                  (m) => ({ ...m, status: 'read' })
+                );
               }
             }
           }
@@ -416,7 +393,7 @@ export function useWebSocket({
             timestamp: new Date().toISOString(),
             expires_in: null
           };
-          setMessages(prev => [...prev, broadcastMsg]);
+          appendMessage(broadcastMsg);
           return;
         }
         
@@ -436,7 +413,7 @@ export function useWebSocket({
               timestamp: new Date().toISOString(),
               expires_in: null
             };
-            setMessages(prev => [...prev, systemMsg]);
+            appendMessage(systemMsg);
           }
         } else if (data.type === 'kicked_alert') {
           alert('You have been kicked from this room.');
@@ -475,21 +452,18 @@ export function useWebSocket({
               if (seq > cur) roomMaxSeqRef.current.set(data.room_id, seq);
             }
           }
-          setMessages(prev => prev.map(m => {
-            const matches = (ackClientId && (m.client_msg_id === ackClientId || String(m.id) === String(ackClientId) || m.message_id === ackClientId || m.nonce === ackClientId));
-            if (matches) {
-              return {
-                ...m,
-                id: canonicalId || m.id,
-                message_id: String(canonicalId || m.id),
-                db_message_id: typeof canonicalId === 'number' ? canonicalId : m.db_message_id,
-                sequence_id: data.sequence_id ?? m.sequence_id,
-                client_msg_id: ackClientId,
-                status: 'sent'
-              };
-            }
-            return m;
-          }));
+          updateMessage(
+            (m) => Boolean(ackClientId && (m.client_msg_id === ackClientId || String(m.id) === String(ackClientId) || m.message_id === ackClientId || m.nonce === ackClientId)),
+            (m) => ({
+              ...m,
+              id: canonicalId || m.id,
+              message_id: String(canonicalId || m.id),
+              db_message_id: typeof canonicalId === 'number' ? canonicalId : m.db_message_id,
+              sequence_id: data.sequence_id ?? m.sequence_id,
+              client_msg_id: ackClientId,
+              status: 'sent'
+            })
+          );
         } else if (data.type === 'dm') {
           const isFromMe = uid && String(data.from) === String(uid);
           const peerId = isFromMe ? data.to : data.from;
@@ -527,70 +501,22 @@ export function useWebSocket({
               roomId: dmRoomId,
               activeRoomId: activeRoomIdRef.current
             });
+            if (dmRoomId !== activeRoomIdRef.current) {
+              setUnreadCounts(prev => ({
+                ...prev,
+                [dmRoomId]: (prev[dmRoomId] || 0) + 1
+              }));
+            }
           }
 
-          setLastMessages(prev => {
-            const existing = prev[dmRoomId];
-            const sameMessage = existing && (
-              (existing.id && String(existing.id) === String(dmMsg.id)) ||
-              (existing.client_msg_id && String(existing.client_msg_id) === String(dmMsg.client_msg_id))
-            );
-            const mergedPlaintext = sameMessage ? (existing.plaintext || dmMsg.plaintext) : dmMsg.plaintext;
-            return { ...prev, [dmRoomId]: { ...dmMsg, plaintext: mergedPlaintext } };
-          });
-
-          const currentActive = activeRoomIdRef.current || '';
-          const isCurrentRoom = currentActive === dmRoomId || 
-                                currentActive === `dm_${peerId}` || 
-                                currentActive === `dm_${Math.min(uid || 0, peerId)}_${Math.max(uid || 0, peerId)}`;
-
-          if (isCurrentRoom) {
-            setMessages(prev => {
-              const existingIdx = prev.findIndex(m => {
-                if (clientMsgId && (m.client_msg_id === clientMsgId || String(m.id) === String(clientMsgId))) {
-                  return true;
-                }
-                return String(m.id) === String(canonicalId);
-              });
-
-              if (existingIdx !== -1) {
-                const existing = prev[existingIdx];
-                const updated: Message = {
-                  ...dmMsg,
-                  plaintext: existing.plaintext || dmMsg.plaintext,
-                  status: 'sent'
-                };
-                const nextArr = [...prev];
-                nextArr[existingIdx] = updated;
-                saveLocalMessages([updated], uid || undefined).catch(() => {});
-                return nextArr;
-              }
-
-              saveLocalMessages([dmMsg], uid || undefined).catch(() => {});
-              return [...prev, dmMsg];
-            });
-          } else {
-            saveLocalMessages([dmMsg], uid || undefined).catch(() => {});
-          }
-
+          setLastMessage(dmRoomId, dmMsg);
+          appendMessage(dmMsg);
           window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
         } else if (data.type === 'sync_response') {
           if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
             const newMsgs = data.messages;
             if (newMsgs.length > 0) {
-              setMessages(prev => {
-                const existingIds = new Set(prev.map(m => String(m.id || m.message_id || m.client_msg_id)));
-                const incomingFiltered = newMsgs.filter((m: Message) => !existingIds.has(String(m.id || m.message_id || m.client_msg_id)));
-                if (incomingFiltered.length === 0) return prev;
-                const merged = [...prev, ...incomingFiltered];
-                return merged.sort((a, b) => {
-                  const seqA = a.sequence_id || (typeof a.id === 'number' ? a.id : 0);
-                  const seqB = b.sequence_id || (typeof b.id === 'number' ? b.id : 0);
-                  if (seqA && seqB) return seqA - seqB;
-                  return new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime();
-                });
-              });
-              saveLocalMessages(newMsgs, userId || undefined).catch(() => {});
+              mergeMessages(newMsgs);
             }
             if (data.max_seq) {
               const currentMax = roomMaxSeqRef.current.get(data.room_id) || 0;
@@ -600,48 +526,53 @@ export function useWebSocket({
             }
           }
         } else if (data.type === 'reaction_update') {
-          setMessages(prev => prev.map(m => {
-            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
-              return { ...m, reactions: data.reactions };
-            }
-            return m;
-          }));
+          updateMessage(
+            (m) => String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id) || String(m.id) === String(data.message_id),
+            (m) => ({ ...m, reactions: data.reactions })
+          );
         } else if (data.type === 'message_edit') {
-          setMessages(prev => prev.map(m => {
-            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
-              return {
-                ...m,
-                content: data.content,
-                is_edited: true,
-                edited_at: data.edited_at
-              };
-            }
-            return m;
-          }));
+          updateMessage(
+            (m) => String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id) || String(m.id) === String(data.message_id),
+            (m) => ({
+              ...m,
+              content: data.content,
+              is_edited: true,
+              edited_at: data.edited_at
+            })
+          );
         } else if (data.type === 'message_deleted') {
-          setMessages(prev => prev.filter(m => String(m.message_id) !== String(data.message_id) && String(m.db_message_id) !== String(data.message_id)));
-          deleteLocalMessage(data.message_id, userId || undefined);
+          const targetId = String(data.message_id);
+          removeMessage(targetId);
+          deleteLocalMessage(targetId, userId || undefined);
+          removeOutboxMessage(targetId, userId || undefined);
+          if (data.room_id) {
+            setLastMessages(prev => {
+              const current = prev[data.room_id];
+              if (current && (String(current.id) === targetId || String(current.message_id) === targetId || String(current.db_message_id) === targetId || String(current.client_msg_id) === targetId)) {
+                const next = { ...prev };
+                delete next[data.room_id];
+                return next;
+              }
+              return prev;
+            });
+          }
         } else if (data.type === 'message_pinned') {
-          setMessages(prev => prev.map(m => {
-            if (String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id)) {
-              return { ...m, is_pinned: !!data.is_pinned };
-            }
-            return m;
-          }));
+          updateMessage(
+            (m) => String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id) || String(m.id) === String(data.message_id),
+            (m) => ({ ...m, is_pinned: !!data.is_pinned })
+          );
         } else if (data.type === 'message_read') {
           const readerId = data.reader_id || data.user_id;
           const lastReadSeq = data.last_read_seq;
           const targetMsgId = data.last_read_msg_id || data.message_id;
 
-          setMessages(prev => prev.map(m => {
-            let isReadTarget = false;
-            if (lastReadSeq && m.sequence_id) {
-              isReadTarget = m.sequence_id <= lastReadSeq;
-            } else if (targetMsgId) {
-              isReadTarget = String(m.message_id) === String(targetMsgId) || String(m.id) === String(targetMsgId) || String(m.db_message_id) === String(targetMsgId);
-            }
-
-            if (isReadTarget) {
+          updateMessage(
+            (m) => {
+              if (lastReadSeq && m.sequence_id) return m.sequence_id <= lastReadSeq;
+              if (targetMsgId) return String(m.message_id) === String(targetMsgId) || String(m.id) === String(targetMsgId) || String(m.db_message_id) === String(targetMsgId);
+              return false;
+            },
+            (m) => {
               const currentReadBy = typeof m.read_by === 'string' ? m.read_by.split(',') : (Array.isArray(m.read_by) ? m.read_by : []);
               if (readerId && !currentReadBy.map(String).includes(String(readerId))) {
                 currentReadBy.push(String(readerId));
@@ -652,12 +583,12 @@ export function useWebSocket({
                 status: 'read' as 'sent' | 'delivered' | 'read'
               };
             }
-            return m;
-          }));
+          );
         } else if (data.type === 'message_delivered') {
           const receiverId = data.receiver_id || data.user_id;
-          setMessages(prev => prev.map(m => {
-            if ((String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id))) {
+          updateMessage(
+            (m) => Boolean(String(m.message_id) === String(data.message_id) || String(m.db_message_id) === String(data.message_id) || String(m.id) === String(data.message_id)),
+            (m) => {
               const currentDel = typeof m.delivered_to === 'string' ? m.delivered_to.split(',') : (Array.isArray(m.delivered_to) ? m.delivered_to : []);
               if (receiverId && !currentDel.map(String).includes(String(receiverId))) {
                 currentDel.push(String(receiverId));
@@ -668,66 +599,62 @@ export function useWebSocket({
                 status: m.status === 'read' ? 'read' : ('delivered' as 'sent' | 'delivered' | 'read')
               };
             }
-            return m;
-          }));
-        } else if (data.type === 'lounge_cleaned') {
-          if (activeRoomIdRef.current === data.roomId) {
-            setMessages([]);
+          );
+        } else if (data.type === 'lounge_cleaned' || data.type === 'room_cleared' || data.type === 'chat_cleared') {
+          const targetRoom = data.roomId || data.room_id || data.loungeId;
+          if (targetRoom) {
+            clearRoomMessages(targetRoom);
+            flushLoungeCache(targetRoom, userId || undefined);
+            if (targetRoom.startsWith('dm_') && !targetRoom.startsWith('dm_velum_')) {
+              const parts = targetRoom.replace('dm_', '').split('_');
+              const peerId = parts.length === 2
+                ? (Number(parts[0]) === userId ? Number(parts[1]) : Number(parts[0]))
+                : Number(parts[0]);
+              if (!isNaN(peerId) && peerId > 0) {
+                purgeDmMessages(peerId, userId || undefined);
+              }
+            }
+            setLastMessages(prev => {
+              const next = { ...prev };
+              delete next[targetRoom];
+              return next;
+            });
           }
         } else if (data.type === 'history') {
           const historyMessages: Message[] = data.messages || [];
-          if (data.room_id === activeRoomIdRef.current) {
-            // Silently merge with local known plaintexts in background
-            getLocalMessages(data.room_id, 200, uid).then((localMsgs) => {
-              const localMap = new Map<string, string>();
-              localMsgs.forEach(lm => {
-                if (lm.plaintext) {
-                  const lk = [lm.message_id, lm.id, lm.client_msg_id, lm.nonce, lm.db_message_id].filter(Boolean).map(String);
-                  for (const k of lk) {
-                    localMap.set(k, lm.plaintext);
-                  }
-                  if (lm.content) localMap.set(lm.content, lm.plaintext);
-                }
-              });
-
-              setMessages(prev => {
-                const prevMap = new Map<string, Message>();
-                prev.forEach(p => {
-                  const pk = [p.message_id, p.id, p.client_msg_id, p.nonce, p.db_message_id].filter(Boolean).map(String);
-                  for (const k of pk) {
-                    prevMap.set(k, p);
-                  }
-                });
-
-                return historyMessages.map(hm => {
-                  const keys = [hm.message_id, hm.id, hm.client_msg_id, hm.nonce, (hm as any).db_message_id].filter(Boolean).map(String);
-                  let plaintext = hm.plaintext;
-                  if (!plaintext) {
-                    for (const k of keys) {
-                      if (prevMap.has(k) && prevMap.get(k)!.plaintext) {
-                        plaintext = prevMap.get(k)!.plaintext;
-                        break;
-                      }
-                      if (localMap.has(k)) {
-                        plaintext = localMap.get(k);
-                        break;
-                      }
-                    }
-                    if (!plaintext && localMap.has(hm.content)) {
-                      plaintext = localMap.get(hm.content);
-                    }
-                  }
-                  return plaintext ? { ...hm, plaintext } : hm;
-                });
-              });
-            }).catch(() => {
-              setMessages(historyMessages);
-            });
+          if (data.room_id === activeRoomIdRef.current && historyMessages.length > 0) {
+            mergeMessages(historyMessages);
           }
           if (data.messages && data.messages.length > 0 && data.room_id) {
             const latest = data.messages[data.messages.length - 1];
-            setLastMessages(prev => ({ ...prev, [data.room_id]: latest }));
+            setLastMessage(data.room_id, latest);
           }
+        } else if (data.type === 'friend_request_received' || data.type === 'friend_request_accepted' || data.type === 'friend_request_rejected' || data.type === 'friend_request_sent') {
+          window.dispatchEvent(new CustomEvent('velum-social-update', { detail: data }));
+          if (data.type === 'friend_request_received') {
+            handleInboundMessageNotification({
+              senderName: data.sender_name || 'Contact',
+              content: 'Sent you a friend request',
+              isFromMe: false,
+              roomId: 'notifications',
+              activeRoomId: activeRoomIdRef.current
+            });
+          }
+        } else if (data.type === 'wallet_updated') {
+          window.dispatchEvent(new CustomEvent('velum-wallet-update', { detail: data }));
+        } else if (data.type === 'notification_received') {
+          window.dispatchEvent(new CustomEvent('velum-notifications-update', { detail: data }));
+          if (data.notification?.title) {
+            handleInboundMessageNotification({
+              senderName: data.notification.title,
+              content: data.notification.message || '',
+              isFromMe: false,
+              roomId: 'notifications',
+              activeRoomId: activeRoomIdRef.current
+            });
+          }
+        } else if (data.type === 'user_profile_updated') {
+          window.dispatchEvent(new CustomEvent('velum-profile-update', { detail: data }));
         } else {
           window.dispatchEvent(new CustomEvent('velum-message-received', { detail: data }));
           
@@ -746,7 +673,7 @@ export function useWebSocket({
             const newMessage = data as Message;
             const isFromMe = Boolean(uid && String(newMessage.user_id) === String(uid));
 
-            // Trigger notification alert (sound chime, desktop banner) for incoming messages
+            // Trigger notification alert for incoming messages
             if (!isFromMe && newMessage.user_id) {
               handleInboundMessageNotification({
                 senderName: newMessage.username || (newMessage as any).sender_name || 'Velum',
@@ -757,87 +684,37 @@ export function useWebSocket({
               });
             }
 
-            setLastMessages(prev => {
-              const existing = prev[data.room_id];
-              const sameMessage = existing && (
-                (existing.message_id && String(existing.message_id) === String(newMessage.message_id)) ||
-                (existing.client_msg_id && String(existing.client_msg_id) === String(newMessage.client_msg_id)) ||
-                (existing.nonce && existing.nonce === newMessage.nonce)
-              );
-              // The server echo never carries plaintext. If this update is
-              // just the ack for a message we already know the plaintext of
-              // (via optimistic send), keep our known plaintext instead of
-              // letting the server's ciphertext-only version clobber it.
-              const mergedPlaintext = sameMessage
-                ? (existing.plaintext || newMessage.plaintext)
-                : newMessage.plaintext;
-              return {
+            // Increment unread counter for incoming messages not in active room
+            if (!isFromMe && data.room_id !== activeRoomIdRef.current) {
+              setUnreadCounts(prev => ({
                 ...prev,
-                [data.room_id]: { ...newMessage, plaintext: mergedPlaintext }
-              };
-            });
+                [data.room_id]: (prev[data.room_id] || 0) + 1
+              }));
+            }
+
+            setLastMessage(data.room_id, newMessage);
           }
 
           if (data.room_id === activeRoomIdRef.current) {
-            setMessages(prev => {
-              const canonicalId = data.id || data.db_message_id || data.message_id;
-              const clientMsgId = data.client_msg_id || data.nonce;
-              const newMessage: Message = {
-                ...data,
-                id: canonicalId,
-                client_msg_id: clientMsgId,
-                message_id: String(canonicalId),
-                db_message_id: typeof canonicalId === 'number' ? canonicalId : data.db_message_id
-              };
-              const isFromMe = Boolean(uid && String(newMessage.user_id) === String(uid));
+            const canonicalId = data.id || data.db_message_id || data.message_id;
+            const clientMsgId = data.client_msg_id || data.nonce;
+            const newMessage: Message = {
+              ...data,
+              id: canonicalId,
+              client_msg_id: clientMsgId,
+              message_id: String(canonicalId),
+              db_message_id: typeof canonicalId === 'number' ? canonicalId : data.db_message_id
+            };
 
-              // Check if we have an optimistic message to replace by client_msg_id
-              if (isFromMe || !newMessage.user_id) {
-                const optIdx = prev.findIndex(m => {
-                  const mIsMe = !m.user_id || String(m.user_id) === String(uid);
-                  if (!mIsMe) return false;
-                  return Boolean(
-                    (clientMsgId && (m.client_msg_id === clientMsgId || String(m.id) === String(clientMsgId))) ||
-                    (canonicalId && String(m.id) === String(canonicalId))
-                  );
-                });
+            appendMessage(newMessage);
 
-                if (optIdx !== -1) {
-                  const originalPlaintext = prev[optIdx].plaintext;
-                  const newArr = [...prev];
-                  newArr[optIdx] = {
-                    ...newMessage,
-                    plaintext: originalPlaintext || newMessage.plaintext,
-                    status: 'sent'
-                  };
-                  if (onMessageReceived) {
-                    onMessageReceived(newArr[optIdx]);
-                  }
-                  return newArr;
-                }
-              }
-
-              const exists = prev.some(m => 
-                String(m.id) === String(canonicalId) ||
-                (clientMsgId && m.client_msg_id && m.client_msg_id === clientMsgId)
-              );
-              if (exists) return prev;
-              if (onMessageReceived) {
-                onMessageReceived(newMessage);
-              }
-              // Automatically mark as delivered when received
-              if (newMessage.id && newMessage.user_id !== uid) {
-                markDelivered(String(newMessage.id), newMessage.room_id);
-              }
-              // Increment unread counter for incoming messages not in active room
-              if (newMessage.user_id !== uid && newMessage.room_id && newMessage.room_id !== activeRoomIdRef.current) {
-                setUnreadCounts(prev => ({
-                  ...prev,
-                  [newMessage.room_id]: (prev[newMessage.room_id] || 0) + 1
-                }));
-              }
-              return [...prev, newMessage];
-            });
+            if (onMessageReceived) {
+              onMessageReceived(newMessage);
+            }
+            // Automatically mark as delivered when received (DMs only)
+            if (newMessage.id && newMessage.user_id !== uid && newMessage.room_id?.startsWith('dm_')) {
+              markDelivered(String(newMessage.id), newMessage.room_id);
+            }
           }
         }
       } catch (err) {
@@ -951,11 +828,15 @@ export function useWebSocket({
     }
 
     if (isDirectMatch || isDmMatch) {
-      setMessages(prev => [...prev, { ...optMessage, to: dmPeerId } as any]);
+      appendMessage({ ...optMessage, to: dmPeerId } as any);
     }
 
-    setLastMessages(prev => ({ ...prev, [destRoomId]: optMessage }));
-    saveLocalMessages([optMessage], userId || undefined).catch(() => {});
+    setLastMessage(destRoomId, optMessage);
+    if (isDm && dmPeerId && userId) {
+      const pairwise = `dm_${Math.min(userId, dmPeerId)}_${Math.max(userId, dmPeerId)}`;
+      setLastMessage(pairwise, optMessage);
+      setLastMessage(`dm_${dmPeerId}`, optMessage);
+    }
 
     const outboxPayload = {
       client_msg_id: clientMsgId,
@@ -999,30 +880,30 @@ export function useWebSocket({
     
     // Add a timeout to transition 'sending' to 'failed' if no ACK after 10s
     setTimeout(() => {
-      setMessages(prev => prev.map(m => {
-        if ((m.client_msg_id === clientMsgId || m.id === clientMsgId) && m.status === 'sending') {
-          return { ...m, status: 'failed' };
-        }
-        return m;
-      }));
+      updateMessage(
+        (m) => Boolean((m.client_msg_id === clientMsgId || String(m.id) === clientMsgId) && m.status === 'sending'),
+        (m) => ({ ...m, status: 'failed' })
+      );
     }, 10000);
   };
 
   const retryMessage = async (clientMsgId: string) => {
     let targetMsg: Message | undefined;
-    setMessages(prev => {
-      return prev.map(m => {
-        const matches = (m.client_msg_id && m.client_msg_id === clientMsgId) ||
+    updateMessage(
+      (m) => {
+        const matches = Boolean(
+          (m.client_msg_id && m.client_msg_id === clientMsgId) ||
           (m.nonce && m.nonce === clientMsgId) ||
           (m.message_id && m.message_id === clientMsgId) ||
-          (m.id && String(m.id) === clientMsgId);
+          (m.id && String(m.id) === clientMsgId)
+        );
         if (matches) {
           targetMsg = m;
-          return { ...m, status: 'sending' };
         }
-        return m;
-      });
-    });
+        return matches;
+      },
+      (m) => ({ ...m, status: 'sending' })
+    );
 
     if (!targetMsg) return;
 
@@ -1030,6 +911,20 @@ export function useWebSocket({
     const finalContent = (targetMsg as Message).content;
     const shouldEncrypt = !!((targetMsg as Message).is_encrypted || (targetMsg as any).isEncrypted);
     const nonce = (targetMsg as Message).client_msg_id || (targetMsg as Message).nonce || clientMsgId;
+    const rawExpires = (targetMsg as Message).expires_in;
+    const expiresIn: number | null = rawExpires ? Number(rawExpires) : null;
+
+    // Re-enqueue in outbox for reliable delivery
+    await enqueueOutboxMessage({
+      client_msg_id: nonce,
+      room_id: destRoomId,
+      content: finalContent,
+      is_encrypted: shouldEncrypt,
+      expires_in: expiresIn,
+      reply_to: (targetMsg as Message).reply_to || null,
+      timestamp: (targetMsg as Message).timestamp || new Date().toISOString(),
+      retryCount: 0
+    }, userId || undefined);
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const isDm = destRoomId.startsWith('dm_') && !destRoomId.startsWith('dm_velum_');
@@ -1060,12 +955,10 @@ export function useWebSocket({
     }
 
     setTimeout(() => {
-      setMessages(prev => prev.map(m => {
-        if ((m.nonce === nonce || m.client_msg_id === nonce || m.message_id === nonce) && m.status === 'sending') {
-          return { ...m, status: 'failed' };
-        }
-        return m;
-      }));
+      updateMessage(
+        (m) => Boolean((m.nonce === nonce || m.client_msg_id === nonce || m.message_id === nonce) && m.status === 'sending'),
+        (m) => ({ ...m, status: 'failed' })
+      );
     }, 10000);
   };
 
@@ -1117,6 +1010,9 @@ export function useWebSocket({
   };
 
   const deleteMessage = (messageId: string, roomId: string) => {
+    deleteLocalMessage(messageId, userId || undefined);
+    removeOutboxMessage(messageId, userId || undefined);
+    setMessages(prev => prev.filter(m => String(m.id) !== String(messageId) && String(m.message_id) !== String(messageId) && String(m.db_message_id) !== String(messageId) && String(m.client_msg_id) !== String(messageId)));
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'delete_message',
@@ -1156,6 +1052,7 @@ export function useWebSocket({
   };
 
   const markDelivered = (messageId: string, roomId: string, dbMessageId?: number) => {
+    if (!roomId?.startsWith('dm_')) return;
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'mark_delivered',

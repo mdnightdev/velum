@@ -32,3 +32,5 @@ photos/
 pgdata/
 emergency/
 *.bak
+*.keystore
+firebase-service-account.json

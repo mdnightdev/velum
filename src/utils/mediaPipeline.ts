@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { getSessionId } from './auth';
 
 interface UploadConfig {
@@ -196,8 +197,8 @@ export const cancelMicrophoneStream = (): void => {
 };
 
 /**
- * PHASE C: SECURE PRESIGNED LEASE TOKEN DISPATCH TO CLOUDFLARE R2
- * Enforces anonymous UUID naming and rejects raw metadata payloads.
+ * DIRECT FAST-PATH MEDIA STREAMING
+ * Uploads directly to /v2/media/upload using axios with instant progress and zero timeout cascading.
  */
 export const streamFileDirectToCloudStorage = async (
   processedBlob: Blob,
@@ -208,67 +209,27 @@ export const streamFileDirectToCloudStorage = async (
   const mimeType = processedBlob.type || 'image/webp';
   const cleanExt = mimeType.split('/')[1] || fileExtension.replace(/^\./, '') || 'webp';
   const anonymousFilename = generateAnonymousFilename(cleanExt, mimeType);
+  const folder = folderDestination === 'avatars' ? 'avatars' : 'chat';
 
-  try {
-    // 1. Fetch secure upload config from Velum node
-    const tokenNegotiator = await fetch('/v2/storage/upload-token', {
-      method: "POST",
+  const response = await axios.post(
+    `/v2/media/upload?filename=${encodeURIComponent(anonymousFilename)}&folder=${encodeURIComponent(folder)}`,
+    processedBlob,
+    {
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${sid}`
+        'Content-Type': mimeType,
+        'Authorization': `Bearer ${sid}`,
+        'x-session-id': sid,
+        'x-session-token': sid
       },
-      body: JSON.stringify({
-        filename: anonymousFilename,
-        mimeType: mimeType,
-        fileSizeBytes: processedBlob.size || 1024,
-        folder: folderDestination,
-        extension: cleanExt,
-        type: folderDestination
-      })
-    });
-
-    if (tokenNegotiator.ok) {
-      const data = await tokenNegotiator.json();
-      const uploadUrl = data.presigned?.uploadUrl || data.uploadUrl;
-      const relativeDbPath = data.presigned?.relativePath || data.relativeDbPath;
-
-      if (uploadUrl && uploadUrl.startsWith('http')) {
-        // Stream binary payload directly to Cloudflare R2 / S3 edge or direct upload handler
-        const httpPipe = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Type": mimeType,
-            ...(data.presigned?.headers || {})
-          },
-          body: processedBlob
-        });
-
-        if (httpPipe.ok) {
-          return relativeDbPath;
-        }
-      }
+      timeout: 30000
     }
-  } catch (err) {
-    console.warn('[STORAGE] Presigned S3 upload failed, falling back to local server upload:', err);
+  );
+
+  if (response.data && (response.data.url || response.data.relative_path)) {
+    return response.data.url || response.data.relative_path;
   }
 
-  // Fallback to direct binary POST endpoint
-  const endpoint = folderDestination === 'avatars' ? '/v2/user/upload-avatar' : '/v2/user/upload-media';
-  const uploadRes = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': mimeType,
-      'Authorization': `Bearer ${sid}`
-    },
-    body: processedBlob
-  });
-
-  if (!uploadRes.ok) {
-    throw new Error("Target object server streaming channel rejected bytes");
-  }
-
-  const data = await uploadRes.json();
-  return data.url; 
+  throw new Error('Upload completed but server returned no storage URL');
 };
 
 /**

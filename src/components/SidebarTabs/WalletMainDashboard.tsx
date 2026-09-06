@@ -163,6 +163,22 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
 
   useEffect(() => {
     loadData();
+
+    const handleRefresh = () => {
+      if (!document.hidden || navigator.onLine) {
+        loadData();
+      }
+    };
+
+    window.addEventListener('velum-wallet-update', handleRefresh);
+    window.addEventListener('visibilitychange', handleRefresh);
+    window.addEventListener('online', handleRefresh);
+
+    return () => {
+      window.removeEventListener('velum-wallet-update', handleRefresh);
+      window.removeEventListener('visibilitychange', handleRefresh);
+      window.removeEventListener('online', handleRefresh);
+    };
   }, []);
 
   const getConversionRate = (from: string, to: string): number => {

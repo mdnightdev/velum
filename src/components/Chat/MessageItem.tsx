@@ -189,6 +189,7 @@ export function MessageItem({
   onRoomMute,
 }: MessageItemProps) {
   const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
+  const isDm = Boolean(roomId && roomId.startsWith('dm_'));
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
   const isCipher = msg.content?.startsWith('e2ee:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
   const msgKey = String(msg.id ?? msg.client_msg_id ?? msg.message_id ?? '');
@@ -305,34 +306,7 @@ export function MessageItem({
                   )}
                   <div className={`flex items-center gap-1 mt-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
                     <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
-                    <MessageStatusTicks
-                      status={msg.status}
-                      isMe={isMe}
-                      onRetry={() => {
-                        if (msg.status === 'failed') {
-                          const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
-                          if (onRetryMessage) {
-                            onRetryMessage(targetId);
-                          } else {
-                            onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : isImageCard ? (
-                attachments.length === 1 ? (
-                  <div className="w-full max-w-[280px]">
-                    <SecureImageCard
-                      src={attachments[0].data}
-                      name={attachments[0].name}
-                      size={attachments[0].size}
-                      caption={attachments[0].caption || parsedMsgContent}
-                      isMe={isMe}
-                      timestamp={safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}
-                    >
-                      <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
+                    {isDm && (
                       <MessageStatusTicks
                         status={msg.status}
                         isMe={isMe}
@@ -347,6 +321,37 @@ export function MessageItem({
                           }
                         }}
                       />
+                    )}
+                  </div>
+                </div>
+              ) : isImageCard ? (
+                attachments.length === 1 ? (
+                  <div className="w-full max-w-[280px]">
+                    <SecureImageCard
+                      src={attachments[0].data}
+                      name={attachments[0].name}
+                      size={attachments[0].size}
+                      caption={attachments[0].caption || parsedMsgContent}
+                      isMe={isMe}
+                      timestamp={safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}
+                    >
+                      <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
+                      {isDm && (
+                        <MessageStatusTicks
+                          status={msg.status}
+                          isMe={isMe}
+                          onRetry={() => {
+                            if (msg.status === 'failed') {
+                              const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                              if (onRetryMessage) {
+                                onRetryMessage(targetId);
+                              } else {
+                                onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                              }
+                            }
+                          }}
+                        />
+                      )}
                     </SecureImageCard>
                   </div>
                 ) : (
@@ -380,20 +385,22 @@ export function MessageItem({
                               {isLast ? (
                                 <>
                                   <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
-                                  <MessageStatusTicks
-                                    status={msg.status}
-                                    isMe={isMe}
-                                    onRetry={() => {
-                                      if (msg.status === 'failed') {
-                                        const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
-                                        if (onRetryMessage) {
-                                          onRetryMessage(targetId);
-                                        } else {
-                                          onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                                  {isDm && (
+                                    <MessageStatusTicks
+                                      status={msg.status}
+                                      isMe={isMe}
+                                      onRetry={() => {
+                                        if (msg.status === 'failed') {
+                                          const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                                          if (onRetryMessage) {
+                                            onRetryMessage(targetId);
+                                          } else {
+                                            onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                                          }
                                         }
-                                      }
-                                    }}
-                                  />
+                                      }}
+                                    />
+                                  )}
                                 </>
                               ) : null}
                             </SecureImageCard>
@@ -533,20 +540,22 @@ export function MessageItem({
           {!isImageCard && !isVideo && (
             <div className={`flex items-center gap-1 mt-1 -mb-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
               <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
-              <MessageStatusTicks 
-                status={msg.status} 
-                isMe={isMe} 
-                onRetry={() => {
-                  if (msg.status === 'failed') {
-                    const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
-                    if (onRetryMessage) {
-                      onRetryMessage(targetId);
-                    } else {
-                      onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+              {isDm && (
+                <MessageStatusTicks 
+                  status={msg.status} 
+                  isMe={isMe} 
+                  onRetry={() => {
+                    if (msg.status === 'failed') {
+                      const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                      if (onRetryMessage) {
+                        onRetryMessage(targetId);
+                      } else {
+                        onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
+                      }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              )}
             </div>
           )}
 

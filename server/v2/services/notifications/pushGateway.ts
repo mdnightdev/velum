@@ -1,6 +1,7 @@
+import { messaging } from './firebase.js';
 import webpush from 'web-push';
 import { db, executeWithRetry } from '../../db/client.js';
-import { pushSubscriptions, loungeMuteSettings, users } from '../../db/schema/index.js';
+import { pushSubscriptions, loungeMuteSettings, users, fcmTokens } from '../../db/schema/index.js';
 import { eq, and } from 'drizzle-orm';
 
 let vapidKeys = {
@@ -104,7 +105,8 @@ export async function dispatchPushNotification(
       db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, recipientUserId))
     );
 
-    if (subscriptions.length === 0) return false;
+    const fcmSent = await sendFcmNotification(recipientUserId, payload);
+  if (subscriptions.length === 0) return fcmSent;
 
     const notificationData = JSON.stringify({
       title: payload.title,
@@ -140,4 +142,82 @@ export async function dispatchPushNotification(
     console.error('[WebPush] Dispatch error:', err);
     return false;
   }
+}
+
+
+export async function saveFcmToken(
+  userId: number,
+  token: string,
+  deviceId?: string,
+  platform: string = "android"
+): Promise<void> {
+  await executeWithRetry(() =>
+    db.insert(fcmTokens)
+      .values({
+        userId,
+        token,
+        deviceId: deviceId || null,
+        platform,
+        lastUsedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: fcmTokens.token,
+        set: {
+          userId,
+          deviceId: deviceId || null,
+          platform,
+          lastUsedAt: new Date(),
+        },
+      })
+  );
+}
+
+export async function removeFcmToken(token: string): Promise<void> {
+  await executeWithRetry(() =>
+    db.delete(fcmTokens).where(eq(fcmTokens.token, token))
+  );
+}
+
+export async function sendFcmNotification(
+  recipientUserId: number,
+  payload: PushNotificationPayload
+): Promise<boolean> {
+  if (!messaging) return false;
+
+  const tokens = await executeWithRetry(() =>
+    db.select({ token: fcmTokens.token })
+      .from(fcmTokens)
+      .where(eq(fcmTokens.userId, recipientUserId))
+  );
+
+  if (!tokens.length) return false;
+
+  const registrationTokens = tokens.map((t) => t.token);
+
+  const response = await messaging.sendEachForMulticast({
+    tokens: registrationTokens,
+    notification: {
+      title: payload.title,
+      body: payload.body,
+    },
+    data: {
+      url: payload.url || "/v2",
+      roomId: payload.roomId || "",
+    },
+  });
+
+  // Clean up invalid or expired registration tokens
+  response.responses.forEach((resp, idx) => {
+    if (!resp.success) {
+      const errCode = resp.error?.code;
+      if (
+        errCode === "messaging/invalid-registration-token" ||
+        errCode === "messaging/registration-token-not-registered"
+      ) {
+        removeFcmToken(registrationTokens[idx]).catch(console.error);
+      }
+    }
+  });
+
+  return response.successCount > 0;
 }

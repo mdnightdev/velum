@@ -233,6 +233,17 @@ userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Respons
 
     const { lastId } = await dmService.clearConversation(currentUserId, targetUserId);
 
+    try {
+      const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+      broadcastToUserDevices(currentUserId, {
+        type: 'room_cleared',
+        room_id: `dm_${targetUserId}`,
+        cleared_till_id: lastId
+      });
+    } catch (wsErr) {
+      console.warn('[WS Clear Broadcast Error]:', wsErr);
+    }
+
     res.json({ success: true, clearedTillId: lastId, message: 'Chat history cleared for your account.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to clear chat history.' });
@@ -289,8 +300,9 @@ userRouter.post('/profile', authMiddleware, async (req: Request, res: Response) 
       return res.status(404).json({ error: 'User not found.' });
     }
     
-    res.json({
-      success: true,
+    const userPayload = {
+      type: 'user_profile_updated',
+      userId: currentUserId,
       user: {
         userId: updatedUser[0].id,
         id: updatedUser[0].id,
@@ -303,6 +315,34 @@ userRouter.post('/profile', authMiddleware, async (req: Request, res: Response) 
         role: updatedUser[0].role,
         createdAt: updatedUser[0].createdAt
       }
+    };
+
+    try {
+      const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+      broadcastToUserDevices(currentUserId, userPayload);
+      const friendRows = await db.select({
+        userId: relationships.userId,
+        friendId: relationships.friendId
+      }).from(relationships).where(
+        and(
+          eq(relationships.status, 'accepted'),
+          or(
+            eq(relationships.userId, currentUserId),
+            eq(relationships.friendId, currentUserId)
+          )
+        )
+      );
+      for (const row of friendRows) {
+        const friendId = row.userId === currentUserId ? row.friendId : row.userId;
+        broadcastToUserDevices(friendId, userPayload);
+      }
+    } catch (wsErr) {
+      console.warn('[WS Profile Broadcast Error]:', wsErr);
+    }
+
+    res.json({
+      success: true,
+      user: userPayload.user
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update profile.' });

@@ -1,7 +1,7 @@
 {
   "version": "2.2.0",
-  "buildTime": "2026-09-04T16:41:35.748Z",
-  "bundleHash": "1f6711f3018e6ca38231616d3c01c873751093af59a6fc9f3e745e4b512674eb",
+  "buildTime": "2026-09-06T21:17:17.499Z",
+  "bundleHash": "c09a91273bcbbe42998444e4cbbee47ea50c348b12d2d8ec040472fd372cd872",
   "bundleUrl": "/v2/ota/bundle.zip",
-  "sizeBytes": 1954961
+  "sizeBytes": 74568804
 }

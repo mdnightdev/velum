@@ -59,15 +59,19 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
       // Store compact normalized payload (strip duplicate/bloated metadata)
       const record = {
         id: canonicalId,
+        message_id: canonicalId,
         db_message_id: dbId,
         loungeId,
+        room_id: loungeId,
         senderId: msg.senderId ?? msg.user_id,
+        user_id: msg.user_id ?? msg.senderId,
         username: msg.username || '',
         avatar: msg.avatar || '',
         content: msg.content || '',
         plaintext: existingPlaintext || msg.plaintext,
         is_encrypted: Boolean(msg.is_encrypted || msg.encrypted || msg.isEncrypted),
         sequenceId: msg.sequenceId ?? msg.sequence_id ?? 0,
+        sequence_id: msg.sequenceId ?? msg.sequence_id ?? 0,
         client_msg_id: clientNonce,
         createdAt: rawTime,
         timestamp: rawTime
@@ -92,18 +96,28 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
     const all: any[] = await db.getAll(STORE_MESSAGES);
     const targetRoom = String(loungeId || '');
     const cleanTarget = targetRoom.replace(/^#\s*/, '');
-    let reciprocalDm = '';
+    const allowedSlugs = new Set<string>([cleanTarget]);
+
     if (cleanTarget.startsWith('dm_')) {
       const parts = cleanTarget.replace('dm_', '').split('_');
       if (parts.length === 2) {
-        reciprocalDm = `dm_${parts[1]}_${parts[0]}`;
+        allowedSlugs.add(`dm_${parts[1]}_${parts[0]}`);
+        allowedSlugs.add(`dm_${parts[0]}`);
+        allowedSlugs.add(`dm_${parts[1]}`);
+      } else if (parts.length === 1 && userId) {
+        const peerId = parseInt(parts[0], 10);
+        if (!isNaN(peerId)) {
+          allowedSlugs.add(`dm_${Math.min(userId, peerId)}_${Math.max(userId, peerId)}`);
+          allowedSlugs.add(`dm_${userId}_${peerId}`);
+          allowedSlugs.add(`dm_${peerId}_${userId}`);
+        }
       }
     }
 
     const valid = all
       .filter((m) => {
         const mRoom = String(m.loungeId || m.room_id || m.roomId || '').replace(/^#\s*/, '');
-        const roomMatches = mRoom === cleanTarget || (reciprocalDm && mRoom === reciprocalDm) || (mRoom.includes(cleanTarget) && cleanTarget.length > 3);
+        const roomMatches = allowedSlugs.has(mRoom);
         if (!roomMatches) return false;
         const msgTime = new Date(m.timestamp || m.createdAt || 0).getTime();
         return isNaN(msgTime) || (now - msgTime) <= MAX_MESSAGE_AGE_MS;

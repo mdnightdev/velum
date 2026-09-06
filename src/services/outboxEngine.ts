@@ -55,7 +55,11 @@ export async function removeOutboxMessage(clientMsgId: string, userId?: number):
 /**
  * Drains and re-transmits outbox messages sequentially over an active WebSocket connection
  */
-export async function drainOutboxQueue(sendWebSocketFrame: (payload: OutboxPayload) => boolean, userId?: number): Promise<number> {
+export async function drainOutboxQueue(
+  sendWebSocketFrame: (payload: OutboxPayload) => boolean,
+  userId?: number,
+  onPermanentFailure?: (clientMsgId: string) => void
+): Promise<number> {
   if (isDraining) return 0;
   isDraining = true;
   try {
@@ -64,19 +68,30 @@ export async function drainOutboxQueue(sendWebSocketFrame: (payload: OutboxPaylo
 
     const now = Date.now();
     const MAX_STALE_MS = 5 * 60 * 1000; // 5 minutes max age
+    const MAX_RETRIES = 5;
 
     let drainedCount = 0;
     for (const item of pending) {
       const itemAge = now - new Date(item.timestamp).getTime();
-      if (itemAge > MAX_STALE_MS) {
-        // Drop stale outbox item to prevent infinite reconnect spam
+      const currentRetries = (item.retryCount || 0) + 1;
+
+      if (itemAge > MAX_STALE_MS || currentRetries > MAX_RETRIES) {
+        // Drop permanently failed outbox item and notify UI
         await removeOutboxMessage(item.client_msg_id, userId);
+        if (onPermanentFailure) {
+          onPermanentFailure(item.client_msg_id);
+        }
         continue;
       }
 
+      // Record retry attempt
+      try {
+        const db = await openCryptoDatabase(userId || 0);
+        await db.put(STORE_OUTBOX, { ...item, retryCount: currentRetries });
+      } catch {}
+
       const success = sendWebSocketFrame(item);
       if (success) {
-        await removeOutboxMessage(item.client_msg_id, userId);
         drainedCount++;
       } else {
         break; // Socket unable to send, stop draining

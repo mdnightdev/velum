@@ -55,6 +55,24 @@ export default function NotificationsMainDashboard({
     else setItems([]);
   }, [selectedCategory]);
 
+  useEffect(() => {
+    const handleRefresh = () => {
+      if (selectedCategory && (!document.hidden || navigator.onLine)) {
+        loadCategoryItems(selectedCategory);
+      }
+    };
+
+    window.addEventListener('velum-notifications-update', handleRefresh);
+    window.addEventListener('visibilitychange', handleRefresh);
+    window.addEventListener('online', handleRefresh);
+
+    return () => {
+      window.removeEventListener('velum-notifications-update', handleRefresh);
+      window.removeEventListener('visibilitychange', handleRefresh);
+      window.removeEventListener('online', handleRefresh);
+    };
+  }, [selectedCategory]);
+
   return (
     <div id="notifications_dashboard" className="flex-1 bg-transparent p-0 w-full select-none text-text-primary">
       {/* Top Bar with Category Tabs */}

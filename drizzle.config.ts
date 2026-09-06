@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 const getCleanUrl = () => {
-  const raw = (process.env.DATABASE_URL || process.env.CLOUD_DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/velum').trim().replace(/\s+/g, '');
+  const raw = (process.env.DATABASE_URL || process.env.CLOUD_DATABASE_URL || '').trim().replace(/\s+/g, '');
   let clean = raw.replace(/(&|\?)channel_binding=[^&]+/g, '').replace('-pooler', '');
   if (!clean.includes('uselibpqcompat=true')) {
     clean += (clean.includes('?') ? '&' : '?') + 'uselibpqcompat=true';

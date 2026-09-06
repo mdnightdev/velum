@@ -3,7 +3,8 @@ import { Message } from '../../../types';
 import { decryptMessage, encryptMessage, EncryptionContext } from '../../../services/encryptionService';
 import { statelessE2eeService } from '../../../services/statelessE2eeService';
 import { parseAttachment } from '../../../utils/messageParser';
-import { saveLocalMessages, getLocalMessages } from '../../../utils/indexedDb';
+import { saveLocalMessages } from '../../../utils/indexedDb';
+import { useChatStore } from '../../../stores/chatStore';
 
 export function useMessageDecryption({
   messages,
@@ -26,21 +27,6 @@ export function useMessageDecryption({
     }
 
     const processDecryption = async () => {
-      // Preload local messages for this room from user-isolated store to restore known plaintexts
-      const localStore = await getLocalMessages(roomId, 300, currentUserId).catch(() => []);
-      const localPlaintextMap = new Map<string, string>();
-      for (const lm of localStore) {
-        if (lm.plaintext) {
-          const lk = [lm.message_id, lm.id, lm.client_msg_id, lm.nonce, lm.db_message_id].filter(Boolean).map(String);
-          for (const k of lk) {
-            localPlaintextMap.set(k, lm.plaintext);
-          }
-          if (lm.content) {
-            localPlaintextMap.set(lm.content, lm.plaintext);
-          }
-        }
-      }
-
       const pending: Array<{
         keys: string[];
         ciphertext: string;
@@ -56,22 +42,19 @@ export function useMessageDecryption({
 
         if (!m.content || keys.length === 0) continue;
 
-        // Restore plaintext from local database if omitted in memory
-        if (!m.plaintext) {
+        const isEncryptedPayload = m.content.startsWith('e2ee:') || m.content.startsWith('VEL_E2EE[');
+
+        // 1. If not an encrypted payload, content is already plaintext
+        if (!isEncryptedPayload) {
+          m.plaintext = m.content;
           for (const k of keys) {
-            if (localPlaintextMap.has(k)) {
-              m.plaintext = localPlaintextMap.get(k);
-              break;
-            }
+            cacheRef.current[k] = { ciphertext: m.content, plaintext: m.content };
+            syncDecrypted[k] = m.content;
           }
-          if (!m.plaintext && localPlaintextMap.has(m.content)) {
-            m.plaintext = localPlaintextMap.get(m.content);
-          }
+          continue;
         }
 
-        const isOutgoing = Boolean(currentUserId && String(m.user_id) === String(currentUserId));
-
-        // 1. If plaintext already attached in memory, map to all key aliases immediately
+        // 2. If plaintext already attached in memory, map to all key aliases immediately
         if (m.plaintext) {
           for (const k of keys) {
             cacheRef.current[k] = { ciphertext: m.content, plaintext: m.plaintext };
@@ -80,7 +63,7 @@ export function useMessageDecryption({
           continue;
         }
 
-        // 2. Check if cached under any alias
+        // 3. Check if cached under any alias
         let cachedPlaintext: string | null = null;
         for (const k of keys) {
           const cached = cacheRef.current[k];
@@ -91,6 +74,7 @@ export function useMessageDecryption({
         }
 
         if (cachedPlaintext) {
+          m.plaintext = cachedPlaintext;
           for (const k of keys) {
             cacheRef.current[k] = { ciphertext: m.content, plaintext: cachedPlaintext };
             syncDecrypted[k] = cachedPlaintext;
@@ -98,6 +82,7 @@ export function useMessageDecryption({
           continue;
         }
 
+        const isOutgoing = Boolean(currentUserId && String(m.user_id) === String(currentUserId));
         const targetRoom = m.room_id || roomId || '';
         const isDmRoom = targetRoom.startsWith('dm_') && !targetRoom.startsWith('dm_velum_');
         let peerId = activeChatPeer?.userId;
@@ -141,41 +126,51 @@ export function useMessageDecryption({
       if (pending.length === 0) return;
 
       // Decrypt inbound messages sequentially to maintain Double Ratchet state ordering
+      const batchMapEntries: Record<string, string> = {};
+      const messagesToPersist: any[] = [];
+      const store = useChatStore.getState();
+
       for (const item of pending) {
         if (!isMounted) return;
 
         try {
           const decrypted = await decryptMessage(item.ciphertext, item.context);
-          const newMapEntries: Record<string, string> = {};
 
           for (const k of item.keys) {
             cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: decrypted };
-            newMapEntries[k] = decrypted;
+            batchMapEntries[k] = decrypted;
           }
 
-          if (isMounted) {
-            setDecryptedMap((prev) => ({ ...prev, ...newMapEntries }));
-          }
+          // Permanently store plaintext in Zustand memory
+          store.updateMessage(
+            (msg) => item.keys.some((k) => String(msg.id) === k || String(msg.client_msg_id) === k || String(msg.message_id) === k),
+            (msg) => ({ ...msg, plaintext: decrypted })
+          );
 
-          // Persist to local storage so page refresh retains plaintext
-          saveLocalMessages([{
+          // Queue for single batch persistence to user device IndexedDB
+          messagesToPersist.push({
             id: item.keys[0],
             message_id: item.keys[0],
             room_id: item.context.roomId,
             loungeId: item.context.roomId,
             plaintext: decrypted,
-            content: item.ciphertext
-          }], currentUserId).catch(() => {});
+            content: item.ciphertext,
+            user_id: item.context.peerUserId
+          });
         } catch {
-          const errorEntries: Record<string, string> = {};
           for (const k of item.keys) {
             cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: '[Decryption Error]' };
-            errorEntries[k] = '[Decryption Error]';
-          }
-          if (isMounted) {
-            setDecryptedMap((prev) => ({ ...prev, ...errorEntries }));
+            batchMapEntries[k] = '[Decryption Error]';
           }
         }
+      }
+
+      if (isMounted && Object.keys(batchMapEntries).length > 0) {
+        setDecryptedMap((prev) => ({ ...prev, ...batchMapEntries }));
+      }
+
+      if (messagesToPersist.length > 0) {
+        saveLocalMessages(messagesToPersist, currentUserId).catch(() => {});
       }
     };
 
@@ -194,6 +189,10 @@ export function useMessageDecryption({
     for (const k of keys) {
       if (decryptedMap[k]) return decryptedMap[k];
       if (cacheRef.current[k]) return cacheRef.current[k].plaintext;
+    }
+    // If not an encrypted token, content is plaintext - never return empty string
+    if (msg.content && !msg.content.startsWith('e2ee:') && !msg.content.startsWith('VEL_E2EE[')) {
+      return msg.content;
     }
     return '';
   };

@@ -10,7 +10,7 @@ import {
   markAllMessagesRead
 } from '../unreadManager.js';
 import { db, executeWithRetry } from '../../v2/db/client.js';
-import { users, messageReactions } from '../../v2/db/schema/index.js';
+import { users, messageReactions, dms } from '../../v2/db/schema/index.js';
 import { lounges, messages as dbMessages, loungeMembers } from '../../v2/db/schema/lounges.js';
 import { userReadCursors } from '../../v2/db/schema/read_cursors.js';
 import { userChatClears } from '../../v2/db/schema/chat_clears.js';
@@ -168,6 +168,45 @@ export async function handleDeleteMessage(client: ClientConnection, message: any
     );
 
     if (!originalMsg) {
+      const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+      if (isDm) {
+        const [dmMsg] = await executeWithRetry(() =>
+          db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+        );
+        if (dmMsg) {
+          if (dmMsg.sender !== client.userId) {
+            client.ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized. You can only delete your own messages.' }));
+            return;
+          }
+          await executeWithRetry(() =>
+            db.delete(dms).where(eq(dms.id, messageId))
+          );
+          try {
+            const { mediaService } = await import('../../v2/services/media/mediaService.js');
+            const mediaUrls = mediaService.extractMediaPaths(dmMsg.body);
+            for (const mediaUrl of mediaUrls) {
+              if (mediaUrl.includes('/uploads/chat/') || mediaUrl.includes('/uploads/media/')) {
+                await mediaService.deleteAssetByPath(mediaUrl);
+              }
+            }
+          } catch (cleanErr) {
+            console.error('[WS Media Cleanup Error]:', cleanErr);
+          }
+
+          broadcastToUserDevices(client.userId, {
+            type: 'message_deleted',
+            message_id: String(messageId),
+            room_id: roomId
+          });
+          broadcastToUserDevices(dmMsg.peer, {
+            type: 'message_deleted',
+            message_id: String(messageId),
+            room_id: `dm_${client.userId}`
+          });
+          return;
+        }
+      }
+
       client.ws.send(JSON.stringify({ type: 'error', message: 'Message not found.' }));
       return;
     }
@@ -426,15 +465,17 @@ export async function handleMarkRead(client: ClientConnection, message: any) {
     console.error('Failed to mark message as read:', err);
   }
 
-  broadcastToRoom(roomId, {
-    type: 'message_read',
-    message_id: message.message_id || message.db_message_id,
-    last_read_msg_id: message.db_message_id || message.last_read_msg_id,
-    last_read_seq: message.last_read_seq,
-    reader_id: client.userId,
-    user_id: client.userId,
-    room_id: roomId
-  }, client.ws);
+  if (roomId.startsWith('dm_')) {
+    broadcastToRoom(roomId, {
+      type: 'message_read',
+      message_id: message.message_id || message.db_message_id,
+      last_read_msg_id: message.db_message_id || message.last_read_msg_id,
+      last_read_seq: message.last_read_seq,
+      reader_id: client.userId,
+      user_id: client.userId,
+      room_id: roomId
+    }, client.ws);
+  }
 
   broadcastToUserDevices(client.userId, {
     type: 'multi_device_sync',
@@ -448,6 +489,8 @@ export async function handleMarkRead(client: ClientConnection, message: any) {
 
 export async function handleMarkDelivered(client: ClientConnection, message: any) {
   const roomId = message.room_id ? message.room_id.toString() : '';
+  if (!roomId.startsWith('dm_')) return;
+
   const dbMessageId = message.db_message_id ? parseInt(message.db_message_id.toString(), 10) : parseInt(message.message_id, 10);
 
   if (!isNaN(dbMessageId)) {
@@ -727,6 +770,9 @@ export async function handleDirectMessage(client: ClientConnection, message: any
       client_msg_id: clientMsgId,
       message_id: String(created.id),
       db_message_id: created.id,
+      sequence_id: created.id,
+      room_id: `dm_${to}`,
+      to,
       nonce: clientMsgId,
       created: created.created
     }));

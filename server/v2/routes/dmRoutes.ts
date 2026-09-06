@@ -74,6 +74,17 @@ dmRouter.delete('/:peer', async (req: Request, res: Response) => {
 
     const { lastId } = await dmService.clearConversation(userId, peerId);
 
+    try {
+      const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+      broadcastToUserDevices(userId, {
+        type: 'room_cleared',
+        room_id: `dm_${peerId}`,
+        cleared_till_id: lastId
+      });
+    } catch (wsErr) {
+      logger.warn('Failed to broadcast room_cleared event', { error: (wsErr as Error).message });
+    }
+
     res.json({
       success: true,
       clearedTillId: lastId,
