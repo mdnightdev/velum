@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Plus, Trash2, Key, BookOpen, Menu } from 'lucide-react';
+import { Plus, Trash2, BookOpen, ChevronLeft } from 'lucide-react';
 
 interface SavedMainDashboardProps {
   savedNotes: string[];
@@ -8,7 +8,7 @@ interface SavedMainDashboardProps {
   isDark?: boolean;
   onSaveNote: (e: React.FormEvent) => void;
   onDeleteNote: (idx: number) => void;
-  onToggleSidebar?: () => void;
+  onBack?: () => void;
 }
 
 export default function SavedMainDashboard({
@@ -18,21 +18,20 @@ export default function SavedMainDashboard({
   isDark = true,
   onSaveNote,
   onDeleteNote,
-  onToggleSidebar
+  onBack
 }: SavedMainDashboardProps) {
   return (
-    <div id="saved_vault_dashboard" className="flex-1 bg-transparent p-3 sm:p-4 space-y-4 max-w-5xl mx-auto w-full select-none text-text-primary">
-      {onToggleSidebar && (
-        <div className="md:hidden pb-2.5 border-b border-velum-600 flex items-center gap-2">
+    <div id="saved_dashboard" className="flex-1 bg-transparent p-2.5 sm:p-3 space-y-3 w-full select-none text-text-primary">
+      {onBack && (
+        <div className="flex items-center gap-2 pb-1">
           <button
-            onClick={onToggleSidebar}
-            className="p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
-            aria-label="Open sidebar menu"
-            title="Open Navigation"
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition py-1 px-2 rounded-lg hover:bg-velum-800 cursor-pointer"
           >
-            <Menu className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4" />
+            <span>Back</span>
           </button>
-          <span className="text-xs font-semibold text-text-primary">Saved Notes</span>
         </div>
       )}
 
@@ -46,7 +45,7 @@ export default function SavedMainDashboard({
 
           <div>
             <textarea
-              id="vault_new_note_text"
+              id="new_note_text"
               required
               rows={4}
               value={newSavedNoteText}
@@ -56,11 +55,11 @@ export default function SavedMainDashboard({
           </div>
 
           <button
-            id="vault_save_note_btn"
+            id="save_note_btn"
             type="submit"
             className="w-full py-2 bg-accent hover:bg-accent-hover text-black text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <Key className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Save Note</span>
           </button>
         </form>
@@ -98,10 +97,6 @@ export default function SavedMainDashboard({
                     <p className="text-xs text-text-primary leading-relaxed break-all select-text font-normal">
                       {note}
                     </p>
-                  </div>
-                  <div className="text-[10px] text-text-secondary flex items-center gap-1 pt-2 border-t border-velum-600">
-                    <ShieldCheck className="w-3 h-3 text-status-online" />
-                    <span>Private note</span>
                   </div>
                 </div>
               ))}

@@ -529,7 +529,7 @@ export function ChatInput({
                             }}
                             className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-white-5 active:scale-95 transition-all cursor-pointer group"
                           >
-                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#2A9D8F] to-[#48CAE4] text-white flex items-center justify-center shadow-md shadow-teal-950/40 group-hover:scale-105 transition-transform">
+                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-accent to-accent-hover text-black flex items-center justify-center shadow-md shadow-black/40 group-hover:scale-105 transition-transform">
                               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
                                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Sliders, UserPlus, MessageSquare, MoreHorizontal, Unlock, UserCheck, Check, X, Shield, Globe, Menu } from 'lucide-react';
+import { Search, Sliders, UserPlus, MessageSquare, MoreHorizontal, Unlock, UserCheck, Check, X, Shield, Globe } from 'lucide-react';
 import { FriendRequest, stripAt } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -16,7 +16,6 @@ interface PeopleMainDashboardProps {
   onSelectPeer: (peer: { userId: number; username: string; avatar?: string }) => void;
   onSectionView: (view: string) => void;
   getCountryOnly: (loc: string | null) => string;
-  onToggleSidebar?: () => void;
 }
 
 import { formatLastSeen } from '../../utils/datetime';
@@ -35,8 +34,7 @@ export default function PeopleMainDashboard({
   loadAndShowProfileCard,
   onSelectPeer,
   onSectionView,
-  getCountryOnly,
-  onToggleSidebar
+  getCountryOnly
 }: PeopleMainDashboardProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'pending' | 'blocked'>('all');
@@ -153,16 +151,6 @@ export default function PeopleMainDashboard({
       {/* Search & Header Section */}
       <div className="p-3 sm:p-4 flex items-center justify-between gap-2 border-b border-velum-600 shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              className="md:hidden p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
-              aria-label="Open sidebar menu"
-              title="Open Navigation"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
           <div className="relative flex items-center flex-1 max-w-sm h-8 px-2.5 rounded-lg border border-velum-600 bg-velum-750 focus-within:border-accent/40">
             <Search className="w-3.5 h-3.5 flex-shrink-0 text-text-disabled" />
             <input

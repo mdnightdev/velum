@@ -4,4 +4,5 @@
     <color name="colorPrimaryDark">#08090C</color>
     <color name="colorAccent">#C89B8A</color>
     <color name="splashBackground">#08090C</color>
+    <color name="velumBackground">#0C0E12</color>
 </resources>

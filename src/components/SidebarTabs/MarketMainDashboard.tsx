@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MarketListing, EscrowTransaction } from '../../types';
-import { ShoppingBag, Search, SlidersHorizontal, Plus, Sparkles, Terminal, Code, ShieldCheck, Database, Cpu, Menu } from 'lucide-react';
+import { ShoppingBag, Search, SlidersHorizontal, Plus, Sparkles, Terminal, Code, ShieldCheck, Database, Cpu } from 'lucide-react';
 
 import { MarketListingsView } from '../Market/MarketListingsView';
 import { MarketEscrowsView } from '../Market/MarketEscrowsView';
@@ -17,7 +17,6 @@ interface MarketMainDashboardProps {
   currentUserId: number;
   currentUserRole: string;
   isDark?: boolean;
-  onToggleSidebar?: () => void;
 }
 
 const TECH_CATEGORIES = [
@@ -32,8 +31,7 @@ const TECH_CATEGORIES = [
 export default function MarketMainDashboard({
   currentUserId,
   currentUserRole,
-  isDark = true,
-  onToggleSidebar
+  isDark = true
 }: MarketMainDashboardProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'browse' | 'orders' | 'inventory'>('browse');
@@ -208,20 +206,10 @@ export default function MarketMainDashboard({
     });
 
   return (
-    <div id="market_dashboard" className="flex-1 bg-transparent p-3 sm:p-4 space-y-4 max-w-7xl mx-auto w-full text-text-primary">
+    <div id="market_dashboard" className="flex-1 bg-transparent p-0 w-full text-text-primary">
       {/* Top Header Segment */}
-      <div className="flex items-center justify-between gap-2 border-b border-velum-600 pb-2.5 shrink-0">
+      <div className="flex items-center justify-between gap-2 border-b border-velum-600 p-3 shrink-0">
         <div className="flex items-center gap-2">
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              className="md:hidden p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
-              aria-label="Open sidebar menu"
-              title="Open Navigation"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
           {/* Toggle Mode Switch */}
           <div className="flex items-center gap-1 bg-velum-800 p-1 rounded-lg border border-velum-600">
             <button

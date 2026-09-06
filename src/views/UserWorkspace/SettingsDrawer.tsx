@@ -676,9 +676,9 @@ export default function SettingsDrawer({
         className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-200"
         onClick={onClose}
       />
-            <div className="w-full h-full bg-velum-950 flex flex-col relative overflow-hidden z-10 animate-in fade-in duration-150">
+            <div className="w-full h-full bg-velum-850 flex flex-col relative overflow-hidden z-10 animate-in fade-in duration-150">
   
-        <div className="p-4 md:p-4 border-b border-white-10 flex items-center justify-between flex-shrink-0 bg-velum-900">
+        <div className="p-4 md:p-4 border-b border-velum-600 flex items-center justify-between flex-shrink-0 bg-velum-850">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-widest text-accent font-mono">Settings</h2>
           </div>
@@ -701,7 +701,7 @@ export default function SettingsDrawer({
                     <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
                       {t('settings.account', 'Account')}
                     </div>
-                    <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+                    <div className="bg-velum-800 border border-velum-600 rounded-2xl overflow-hidden divide-y divide-velum-600/50 shadow-sm">
                       {[
                         { id: 'account', label: t('settings.account', 'Account'), icon: User },
                         { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
@@ -731,7 +731,7 @@ export default function SettingsDrawer({
                     <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
                       App
                     </div>
-                    <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+                    <div className="bg-velum-800 border border-velum-600 rounded-2xl overflow-hidden divide-y divide-velum-600/50 shadow-sm">
                       {[
                         { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
                         { id: 'media', label: t('settings.media', 'Media & Storage'), icon: Mic },
@@ -761,7 +761,7 @@ export default function SettingsDrawer({
                     <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
                       More
                     </div>
-                    <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+                    <div className="bg-velum-800 border border-velum-600 rounded-2xl overflow-hidden divide-y divide-velum-600/50 shadow-sm">
                       {[
                         { id: 'diagnostics', label: 'Diagnostics', icon: Activity },
                         { id: 'about', label: 'About Velum', icon: Info }

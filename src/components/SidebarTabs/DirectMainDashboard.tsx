@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Bot, Menu, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search, Info } from 'lucide-react';
+import { MessageSquare, Bot, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search, Info, Wallet, Settings, LogOut, Bookmark } from 'lucide-react';
 import { decryptMessage, decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -46,9 +46,9 @@ function renderPreviewWithIcons(content: string) {
     if (isImg) {
       return (
         <span className="inline-flex items-center gap-1 truncate">
-          <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2.5" y="2.5" width="19" height="19" rx="4" />
-            <circle cx="8.5" cy="8.5" r="2" />
+          <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
             <polyline points="21 15 16 10 5 21" />
           </svg>
           <span className="truncate">{att ? (att.caption ? `Photo ${att.caption}` : 'Photo') : 'Photo'}</span>
@@ -58,10 +58,9 @@ function renderPreviewWithIcons(content: string) {
     return (
       <span className="inline-flex items-center gap-1 truncate">
         <svg className="w-3.5 h-3.5 text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
         </svg>
-        <span className="truncate">{att ? (att.caption ? `${att.name} ${att.caption}` : att.name) : 'Attachment'}</span>
+        <span className="truncate">{att?.name || 'Attachment'}</span>
       </span>
     );
   }
@@ -101,7 +100,7 @@ function isStatelessDmEnvelope(raw: string): boolean {
 
 interface DirectMainDashboardProps {
   friendRequests: any[];
-  friendRelationships: any[];
+  friendRelationships: any;
   currentUserId: number;
   isDark: boolean;
   onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
@@ -111,7 +110,10 @@ interface DirectMainDashboardProps {
   lastMessages?: Record<string, any>;
   loadAndShowProfileCard: (user: any) => void;
   getCountryOnly: (location: string) => string;
-  onToggleSidebar?: () => void;
+  onOpenSettings?: () => void;
+  onOpenWallet?: () => void;
+  onOpenSaved?: () => void;
+  onLogout?: () => void;
 }
 
 
@@ -128,7 +130,10 @@ export default function DirectMainDashboard({
   lastMessages = {},
   loadAndShowProfileCard,
   getCountryOnly,
-  onToggleSidebar
+  onOpenSettings,
+  onOpenWallet,
+  onOpenSaved,
+  onLogout
 }: DirectMainDashboardProps) {
   const { t } = useLanguage();
 
@@ -172,6 +177,22 @@ export default function DirectMainDashboard({
   const [isNewChatPickerOpen, setIsNewChatPickerOpen] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState('');
   const [quickAvatarPeer, setQuickAvatarPeer] = useState<{ userId: number; username: string; displayName?: string; avatarUrl?: string; bio?: string } | null>(null);
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
+        setIsHeaderMenuOpen(false);
+      }
+    };
+    if (isHeaderMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isHeaderMenuOpen]);
 
   // Helper to un-delete a contact
   const unDeleteContact = (peerId: number) => {
@@ -334,15 +355,6 @@ export default function DirectMainDashboard({
               }
             } catch (e) {}
           }
-        } else {
-          if (isMounted) {
-            setDecryptedPreviews(prev => {
-              if (!prev[friendId]) return prev;
-              const copy = { ...prev };
-              delete copy[friendId];
-              return copy;
-            });
-          }
         }
       }
     };
@@ -463,16 +475,6 @@ export default function DirectMainDashboard({
         </div>
       ) : (
         <div className="p-3 pt-[calc(env(safe-area-inset-top,0px)+0.875rem)] px-4 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2.5">
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              className="md:hidden p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
-              aria-label="Open sidebar menu"
-              title="Open Navigation"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
           <div className="relative flex-1 flex items-center h-9 px-3 rounded-xl border border-velum-600 bg-velum-750 focus-within:border-accent/40">
             <input
               type="text"
@@ -481,6 +483,72 @@ export default function DirectMainDashboard({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-transparent border-none outline-none text-xs text-text-primary placeholder-text-disabled"
             />
+          </div>
+          <div className="relative shrink-0" ref={headerMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsHeaderMenuOpen(prev => !prev)}
+              className="p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+              title="More options"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {isHeaderMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-44 bg-velum-850 border border-velum-600 rounded-lg shadow-none py-1.5 z-50 flex flex-col animate-in fade-in duration-100">
+                {onOpenWallet && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsHeaderMenuOpen(false);
+                      onOpenWallet();
+                    }}
+                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
+                  >
+                    <Wallet className="w-4 h-4 text-accent" />
+                    <span>Wallet</span>
+                  </button>
+                )}
+                {onOpenSaved && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsHeaderMenuOpen(false);
+                      onOpenSaved();
+                    }}
+                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
+                  >
+                    <Bookmark className="w-4 h-4 text-accent" />
+                    <span>Saved</span>
+                  </button>
+                )}
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsHeaderMenuOpen(false);
+                      onOpenSettings();
+                    }}
+                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4 text-text-secondary" />
+                    <span>Settings</span>
+                  </button>
+                )}
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsHeaderMenuOpen(false);
+                      onLogout();
+                    }}
+                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-alert-error hover:bg-alert-error/10 text-left transition cursor-pointer border-t border-velum-600/50 mt-1 pt-2"
+                  >
+                    <LogOut className="w-4 h-4 text-alert-error" />
+                    <span>Log Out</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -590,8 +658,11 @@ export default function DirectMainDashboard({
               for (const k of candidateKeys) {
                 if (k && lm[k]) { last = lm[k]; break; }
               }
+              if (!last && r.last_message) {
+                last = r.last_message;
+              }
               const msgTime = last ? (last.createdAt ? new Date(last.createdAt).getTime() : last.created_at ? new Date(last.created_at).getTime() : (last.timestamp ? new Date(last.timestamp).getTime() : 0)) : 0;
-              if (msgTime <= delTime) return false;
+              if (delTime && msgTime && msgTime <= delTime) return false;
             }
             const isArchived = archivedUserIds.includes(friendId);
             return filterTab === 'archived' ? isArchived : !isArchived;
@@ -800,7 +871,7 @@ export default function DirectMainDashboard({
           setNewChatSearch('');
           setIsNewChatPickerOpen(true);
         }}
-        className="fixed bottom-8 right-6 z-30 w-15 h-15 rounded-2xl bg-accent hover:bg-accent-hover active:scale-95 text-velum-900 shadow-2xl shadow-accent/40 flex items-center justify-center cursor-pointer transition-all group"
+        className="fixed bottom-8 right-6 z-30 w-15 h-15 rounded-2xl bg-accent hover:bg-accent-hover active:scale-95 text-velum-900 shadow-none flex items-center justify-center cursor-pointer transition-all group"
         title="Start new conversation"
         aria-label="Start new conversation"
       >

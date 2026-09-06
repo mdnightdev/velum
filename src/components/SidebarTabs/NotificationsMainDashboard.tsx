@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, HelpCircle, Inbox, Bell, ShoppingCart, Menu } from 'lucide-react';
+import { Mail, HelpCircle, Inbox, Bell, ShoppingCart } from 'lucide-react';
 import { FriendRequest } from '../../types';
 import { getSessionId } from '../../utils/auth';
 
@@ -9,7 +9,6 @@ interface NotificationsMainDashboardProps {
   isDark?: boolean;
   handleRespondFriendRequest: (requestId: string, action: 'accepted' | 'declined') => void;
   notificationCounts?: { transactions: number; market: number; system?: number };
-  onToggleSidebar?: () => void;
 }
 
 export default function NotificationsMainDashboard({
@@ -17,8 +16,7 @@ export default function NotificationsMainDashboard({
   currentUserId,
   isDark = true,
   handleRespondFriendRequest,
-  notificationCounts = { transactions: 0, market: 0 },
-  onToggleSidebar
+  notificationCounts = { transactions: 0, market: 0 }
 }: NotificationsMainDashboardProps) {
   const [selectedCategory, setSelectedCategory] = useState<'transactions' | 'market'>('transactions');
   const [items, setItems] = useState<any[]>([]);
@@ -58,20 +56,10 @@ export default function NotificationsMainDashboard({
   }, [selectedCategory]);
 
   return (
-    <div id="notifications_dashboard" className="flex-1 bg-transparent p-3 sm:p-4 space-y-4 max-w-4xl mx-auto w-full select-none text-text-primary">
+    <div id="notifications_dashboard" className="flex-1 bg-transparent p-0 w-full select-none text-text-primary">
       {/* Top Bar with Category Tabs */}
-      <div className="flex items-center justify-between gap-2 border-b border-velum-600 pb-2.5 shrink-0">
+      <div className="flex items-center justify-between gap-2 border-b border-velum-600 p-3 shrink-0">
         <div className="flex items-center gap-2">
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              className="md:hidden p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
-              aria-label="Open sidebar menu"
-              title="Open Navigation"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
           <div className="flex items-center gap-1 bg-velum-800 p-1 rounded-lg border border-velum-600">
             <button
               type="button"

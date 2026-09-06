@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, Menu, ChevronLeft, Search, Clock, Info } from 'lucide-react';
+import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, ChevronLeft, Search, Clock, Info } from 'lucide-react';
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { useResponsiveLayout } from '../../hooks/useResponsive';
@@ -8,13 +8,11 @@ import { getSessionId } from '../../utils/auth';
 interface TicketsMainDashboardProps {
   currentUserId: number;
   isDark?: boolean;
-  onToggleSidebar?: () => void;
 }
 
 export default function TicketsMainDashboard({
   currentUserId,
-  isDark = true,
-  onToggleSidebar
+  isDark = true
 }: TicketsMainDashboardProps) {
   const { t } = useLanguage();
   const { isMobile: _isMobile, isTablet } = useResponsiveLayout();
@@ -185,14 +183,6 @@ export default function TicketsMainDashboard({
     <div className={`flex flex-col h-full bg-velum-850 border-r border-white/5 ${isMobile && (activeTicketId || isCreating) ? 'hidden' : 'w-full md:w-80 flex-shrink-0'}`}>
       <div className="p-4 border-b border-white/5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          {onToggleSidebar && isMobile && (
-            <button 
-              onClick={onToggleSidebar} 
-              className="p-1.5 -ml-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-          )}
           <h2 className="text-sm font-bold uppercase tracking-widest text-text-primary">Support Tickets</h2>
         </div>
         <button 

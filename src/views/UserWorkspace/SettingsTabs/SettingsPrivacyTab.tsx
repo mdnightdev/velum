@@ -274,7 +274,7 @@ export function SettingsPrivacyTab({
         )}
 
         <form onSubmit={handlePasswordReset} className="space-y-4">
-          <div className="bg-velum-900 border border-white-10 rounded-2xl overflow-hidden divide-y divide-white-5 shadow-sm">
+          <div className="bg-velum-800 border border-velum-600 rounded-2xl overflow-hidden divide-y divide-velum-600/50 shadow-sm">
             <div className="p-3.5 flex flex-col gap-1 focus-within:bg-white-5/30 transition">
               <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-text-secondary">
                 Current Password
@@ -366,7 +366,7 @@ export function SettingsPrivacyTab({
       {/* Confirmation Modal - Compromised Account */}
       {confirmCompromiseOpen && (
         <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-velum-900 border border-white-10 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4">
+          <div className="bg-velum-850 border border-velum-600 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4">
             <div className="flex items-center gap-3 text-red-400">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <h4 className="text-sm font-semibold text-text-primary">Report Compromised Account</h4>
@@ -399,7 +399,7 @@ export function SettingsPrivacyTab({
       {/* Confirmation Modal - 7-Day Account Deletion */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-velum-900 border border-white-10 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4">
+          <div className="bg-velum-850 border border-velum-600 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4">
             <div className="flex items-center gap-3 text-red-400">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <h4 className="text-sm font-semibold text-text-primary">Delete Account</h4>

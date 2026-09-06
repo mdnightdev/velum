@@ -76,7 +76,7 @@ export function SettingsAccountTab({
               <button
                 type="button"
                 onClick={handleDeleteBanner || handleDeleteAvatar}
-                className="w-8 h-8 rounded-lg bg-velum-900/70 hover:bg-velum-800 text-text-secondary hover:text-text-primary border border-velum-600/60 backdrop-blur-md flex items-center justify-center transition cursor-pointer"
+                className="w-8 h-8 rounded-lg bg-velum-850/80 hover:bg-velum-800 text-text-secondary hover:text-text-primary border border-velum-600/60 backdrop-blur-md flex items-center justify-center transition cursor-pointer"
                 title="Remove Banner"
                 aria-label="Remove Banner"
               >
@@ -84,7 +84,7 @@ export function SettingsAccountTab({
               </button>
             )}
             <label 
-              className="w-8 h-8 rounded-lg bg-velum-900/70 hover:bg-velum-800 text-text-secondary hover:text-text-primary border border-velum-600/60 backdrop-blur-md flex items-center justify-center transition cursor-pointer"
+              className="w-8 h-8 rounded-lg bg-velum-850/80 hover:bg-velum-800 text-text-secondary hover:text-text-primary border border-velum-600/60 backdrop-blur-md flex items-center justify-center transition cursor-pointer"
               title="Change Banner"
               aria-label="Change Banner"
             >

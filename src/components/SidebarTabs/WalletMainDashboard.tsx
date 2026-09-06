@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowRightLeft, CreditCard, Upload, Trash2, Building, 
   Plus, ArrowDownToLine, ChevronDown, Check, X, Landmark, ArrowUpRight,
-  Activity, Menu
+  Activity
 } from 'lucide-react';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getSessionId } from '../../utils/auth';
@@ -10,7 +10,6 @@ import { getSessionId } from '../../utils/auth';
 interface WalletMainDashboardProps {
   isDark?: boolean;
   currentUserId: number;
-  onToggleSidebar?: () => void;
 }
 
 // Custom Dropdown Component to replace <select>
@@ -82,7 +81,7 @@ const DEBIT_ISSUERS = ['Visa', 'Mastercard', 'UnionPay', 'Discover', 'JCB', 'Mae
 const CREDIT_ISSUERS = ['Velum Black', 'Velum Platinum', 'Velum Titanium', 'American Express', 'Capital One', 'Chase Sapphire'];
 const BANK_ISSUERS = ['Bank of Taiwan', 'CTBC Bank', 'Cathay United Bank', 'E.SUN Bank', 'HSBC', 'Chase Bank', 'Barclays', 'Citibank', 'Standard Chartered', 'Bank of America', 'Wells Fargo', 'Santander', 'UBS'];
 
-export default function WalletMainDashboard({ currentUserId, isDark, onToggleSidebar }: WalletMainDashboardProps) {
+export default function WalletMainDashboard({ currentUserId, isDark }: WalletMainDashboardProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'overview' | 'methods'>('overview');
   
@@ -374,22 +373,10 @@ export default function WalletMainDashboard({ currentUserId, isDark, onToggleSid
   const secondaryBalanceCents = secondaryBalanceObj ? secondaryBalanceObj.balance_cents : 0;
 
   return (
-    <div className="flex-1 bg-transparent p-3 sm:p-4 select-none font-sans overflow-y-auto max-w-4xl mx-auto w-full text-text-primary">
+    <div className="flex-1 bg-transparent p-0 select-none font-sans overflow-y-auto w-full text-text-primary">
       
       {/* Top Nav */}
-      <div className="flex justify-between items-center mb-4">
-        <div>
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              className="md:hidden p-1.5 rounded-lg border border-velum-600 text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
-              aria-label="Open sidebar menu"
-              title="Open Navigation"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+      <div className="flex justify-end items-center px-3 pt-3 pb-1">
         <div className="flex bg-velum-800 border border-velum-600 p-1 rounded-lg shrink-0">
           <button 
             onClick={() => setActiveTab('overview')} 

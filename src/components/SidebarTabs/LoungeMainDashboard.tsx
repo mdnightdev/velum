@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {Lock, Globe, Plus, X, Link, Menu } from 'lucide-react';
+import { Lock, Globe, Plus, X, Link } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
 import { useLanguage } from '../../i18n/LanguageContext';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -15,7 +15,6 @@ interface LoungeMainDashboardProps {
   onSectionView?: (view: any) => void;
   unreadCounts?: Record<string, number>;
   lastMessages?: Record<string, any>;
-  onToggleSidebar?: () => void;
 }
 
 
@@ -26,8 +25,7 @@ export default function LoungeMainDashboard({
   onLoungeSelect,
   onSectionView,
   unreadCounts,
-  lastMessages = {},
-  onToggleSidebar
+  lastMessages = {}
 }: LoungeMainDashboardProps) {
   const { t } = useLanguage();
   const [lounges, setLounges] = useState<any[]>(() => {
@@ -279,16 +277,6 @@ export default function LoungeMainDashboard({
       
       {/* Search Header Bar */}
       <div className="p-2.5 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
-        {onToggleSidebar && (
-          <button
-            onClick={onToggleSidebar}
-            className="md:hidden p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer shrink-0"
-            aria-label="Open sidebar menu"
-            title="Open Navigation"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-        )}
         <div className="relative flex-1 flex items-center">
           <input
             type="text"
@@ -442,10 +430,10 @@ export default function LoungeMainDashboard({
         {/* Create Lounge Button */}
         <button
           onClick={() => setShowCreateLoungeModal(true)}
-          className={`p-3.5 rounded-full border shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-[var(--blur-backdrop-md)] ${
+          className={`p-3.5 rounded-full border shadow-none transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-[var(--blur-backdrop-md)] ${
             isDark 
-              ? 'bg-accent-10 border-accent-20 text-accent hover:bg-accent-20 hover:border-accent-40 shadow-black-60' 
-              : 'bg-white-10 border-velum-600 text-text-secondary hover:text-velum-900 shadow-lg'
+              ? 'bg-accent-10 border-accent-20 text-accent hover:bg-accent-20 hover:border-accent-40' 
+              : 'bg-white-10 border-velum-600 text-text-secondary hover:text-velum-900'
           }`}
           title="Create a Lounge"
         >
@@ -455,10 +443,10 @@ export default function LoungeMainDashboard({
         {/* Join Lounge Button */}
         <button
           onClick={() => setShowJoinLoungeMobileModal(true)}
-          className={`p-3.5 rounded-full border shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-[var(--blur-backdrop-md)] ${
+          className={`p-3.5 rounded-full border shadow-none transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-[var(--blur-backdrop-md)] ${
             isDark 
-              ? 'bg-white-2 border-white-10 text-text-secondary hover:text-white shadow-black-60' 
-              : 'bg-white-10 border-velum-600 text-text-disabled hover:text-velum-900 shadow-lg'
+              ? 'bg-white-2 border-white-10 text-text-secondary hover:text-white' 
+              : 'bg-white-10 border-velum-600 text-text-disabled hover:text-velum-900'
           }`}
           title="Join a Lounge"
         >

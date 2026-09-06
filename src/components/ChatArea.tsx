@@ -99,7 +99,6 @@ export default function ChatArea({
   isDark,
   onBackToDeck,
   isMobile,
-  onToggleSidebar,
   roomName,
   isPrivateSublounge,
   roomAccessLevel,
@@ -321,7 +320,10 @@ export default function ChatArea({
         try {
           const ext = audioBlob.type.split('/')[1] || 'webm';
           const url = await streamFileDirectToCloudStorage(audioBlob, 'media', ext);
-          onSendMessage(`[Voice Note  duration:${durationSeconds}s url:${url}]`, null, false);
+          const voicePayload = `[Voice Note duration:${durationSeconds}s url:${url}]`;
+          const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
+          const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
+          onSendMessage(voicePayload, null, isEnc, targetRoom, undefined, voicePayload);
         } catch (err) {
           log.error('Audio upload failed', { error: (err as Error).message });
           alert('Voice note upload failed. Please try again.');
@@ -725,7 +727,11 @@ export default function ChatArea({
         t={t}
         isSending={isSending}
         onSend={handleSend}
-        onSendVoiceNote={(voiceContent) => onSendMessage(voiceContent, null, false)}
+        onSendVoiceNote={(voiceContent) => {
+          const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
+          const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
+          onSendMessage(voiceContent, null, isEnc, targetRoom, undefined, voiceContent);
+        }}
         onTriggerPhotoInput={handleTriggerPhotoInput}
         onTriggerVideoInput={handleTriggerVideoInput}
         onTriggerAudioInput={handleTriggerAudioInput}
