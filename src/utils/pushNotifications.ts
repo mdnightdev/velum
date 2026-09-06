@@ -70,11 +70,22 @@ export async function registerPushNotifications(): Promise<boolean> {
       });
 
       PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        console.log('[Push] Notification received:', notification);
+        const data = notification?.data || {};
+        if (data.type === 'wallet_updated') {
+          window.dispatchEvent(new CustomEvent('velum-wallet-update', { detail: data }));
+        } else if (data.type === 'friend_request_received' || data.type === 'friend_request_accepted') {
+          window.dispatchEvent(new CustomEvent('velum-social-update', { detail: data }));
+        } else {
+          window.dispatchEvent(new CustomEvent('velum-notifications-update', { detail: data }));
+        }
       });
 
       PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-        console.log('[Push] Notification action performed:', action);
+        const data = action.notification?.data || {};
+        const targetRoom = data.roomId || data.room_id || data.room;
+        if (targetRoom) {
+          window.dispatchEvent(new CustomEvent('velum-open-room', { detail: { roomId: targetRoom } }));
+        }
       });
 
       await PushNotifications.register();

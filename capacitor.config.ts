@@ -5,13 +5,14 @@ const config: CapacitorConfig = {
   appName: 'velum',
   webDir: 'dist',
   server: {
-    //url: 'http://127.0.0.1:3000',
-    cleartext: true,
     androidScheme: 'https'
   },
   plugins: {
     PushNotifications: {
       presentationOptions: ['badge', 'sound', 'alert']
+    },
+    LocalNotifications: {
+      iconColor: '#3B82F6'
     }
   }
 };

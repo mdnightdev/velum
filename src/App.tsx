@@ -96,6 +96,18 @@ function AppContent() {
     }
   }, [activeChatPeer, user]);
 
+  // Push notification click navigation
+  useEffect(() => {
+    const handleOpenRoom = (e: any) => {
+      const targetRoom = e.detail?.roomId;
+      if (targetRoom) {
+        setActiveRoomId(targetRoom);
+      }
+    };
+    window.addEventListener('velum-open-room', handleOpenRoom);
+    return () => window.removeEventListener('velum-open-room', handleOpenRoom);
+  }, []);
+
   // WebSocket connection integration
   const ws = useWebSocket({
     userId: user ? Number(user.userId) : null,
