@@ -4,4 +4,7 @@
     <string name="title_activity_main">velum</string>
     <string name="package_name">com.midnightdev.velum</string>
     <string name="custom_url_scheme">com.midnightdev.velum</string>
+    <string name="shortcut_chats">Chats</string>
+    <string name="shortcut_wallet">Wallet</string>
+    <string name="shortcut_lounges">Lounges</string>
 </resources>

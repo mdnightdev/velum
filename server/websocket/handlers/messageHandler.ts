@@ -722,8 +722,8 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
         for (const m of members) {
           if (m.userId !== client.userId) {
             await dispatchPushNotification(m.userId, targetLoungeId, {
-              title: `#${roomId} - @${client.username}`,
-              body: message.content ? (message.content.length > 80 ? message.content.slice(0, 80) + '...' : message.content) : 'Sent a message',
+              title: roomId,
+              body: client.username ? `${client.username}: ${message.content || ''}` : (message.content || ''),
               roomId,
               senderId: client.userId
             }, message.content || '');
@@ -777,6 +777,21 @@ export async function handleDirectMessage(client: ClientConnection, message: any
       created: created.created
     }));
 
+    // Ensure sender display name is always populated
+    let senderName = client.username;
+    if (!senderName || senderName.startsWith('User #')) {
+      const [u] = await executeWithRetry(() =>
+        db.select({ username: users.username, displayName: users.displayName })
+          .from(users)
+          .where(eq(users.id, client.userId))
+          .limit(1)
+      );
+      if (u) {
+        senderName = u.displayName || u.username;
+        client.username = senderName;
+      }
+    }
+
     // 2. Dispatch to recipient active connections
     const outFrame = {
       type: 'dm',
@@ -790,15 +805,15 @@ export async function handleDirectMessage(client: ClientConnection, message: any
       enc: created.encrypted,
       reply_to: created.replyTo,
       created: created.created,
-      sender_username: client.username
+      sender_username: senderName || client.username || 'Direct Message'
     };
 
     broadcastToUserDevices(to, outFrame);
 
     // 3. Push notification fallback
     dispatchPushNotification(to, 0, {
-      title: `@${client.username || 'Direct Message'}`,
-      body: encrypted ? 'Sent you an encrypted message' : (body.length > 80 ? body.substring(0, 80) + '...' : body),
+      title: senderName || client.username || 'Direct Message',
+      body: body,
       roomId: `dm_${client.userId}`,
       senderId: client.userId
     }, body).catch(err => console.error('[Push Gateway Error]:', err));

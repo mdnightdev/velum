@@ -4,6 +4,10 @@ import { computeClientHash, checkPasswordStrength } from '../utils/crypto';
 import { LegalDocType } from '../../LegalDocModal';
 import { RecoveryViewMode } from '../AccountRecovery';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+import { Capacitor } from '@capacitor/core';
+import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
+import { saveBiometricSession, getBiometricSession } from '../../../hooks/useBiometricAuth';
+import { statelessE2eeService } from '../../../services/statelessE2eeService';
 
 interface UseAuthFormOptions {
   onLoginSuccess: (user: any, sessionId: string, deviceId: string, activeView: string) => void;
@@ -72,6 +76,28 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
 
   const handlePasskeyLogin = async () => {
     setAuthError(null);
+
+    if (Capacitor.isNativePlatform()) {
+      const session = getBiometricSession();
+      if (!session || !session.token) {
+        setAuthError('No saved biometric credentials found. Please sign in with your password first to enable biometric unlock.');
+        return;
+      }
+      try {
+        await BiometricAuth.authenticate({
+          reason: `Verify identity to sign in as ${session.user?.username || 'user'}`,
+          cancelTitle: 'Cancel',
+          allowDeviceCredential: true
+        });
+
+        onLoginSuccess(session.user, session.token, session.deviceId || 'native-biometric', 'chat');
+        return;
+      } catch (err: any) {
+        console.warn('[Biometrics] Unlock cancelled or failed:', err);
+        return;
+      }
+    }
+
     try {
       const optsRes = await fetch('/api/v2/webauthn/authenticate/options', {
         method: 'POST',
@@ -218,8 +244,17 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         else if (data.user?.role === 'LOGIN_ADMIN' || data.user?.role === 'SUPPORT_ADMIN' || data.user?.role === 'ADMIN') destination = 'admin';
         
         const deviceId = data.deviceId || (await collectDeviceFingerprint()).deviceId;
-        
-        onLoginSuccess(data.user, data.token || data.sessionId, deviceId, destination);
+        const sessionToken = data.token || data.sessionId;
+
+        if (data.user?.userId && password) {
+          statelessE2eeService.initLocalIdentityKeys(data.user.userId, password, data.user.salt).catch(console.error);
+        }
+
+        if (Capacitor.isNativePlatform() && sessionToken && data.user) {
+          saveBiometricSession(data.user, sessionToken, deviceId);
+        }
+
+        onLoginSuccess(data.user, sessionToken, deviceId, destination);
       } else {
         if (data.compromisedPortalActive && data.ticket) {
           setAuthError(data.error);
@@ -339,6 +374,12 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
           }
 
           const deviceId = loginData.deviceId || (await collectDeviceFingerprint()).deviceId;
+          if (loginData.user?.userId && password) {
+            statelessE2eeService.initLocalIdentityKeys(loginData.user.userId, password, loginData.user.salt || salt).catch(console.error);
+          }
+          if (Capacitor.isNativePlatform() && sessionToken && loginData.user) {
+            saveBiometricSession(loginData.user, sessionToken, deviceId);
+          }
           onLoginSuccess(loginData.user, sessionToken, deviceId, 'chat');
           return;
         }

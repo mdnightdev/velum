@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, startTransition 
 import { createLogger } from '../utils/logger';
 import { statelessE2eeService } from '../services/statelessE2eeService';
 import { storage } from '../services/storageService';
+import { clearBiometricSession } from '../hooks/useBiometricAuth';
 
 const log = createLogger('AuthContext');
 
@@ -93,6 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       storage.clearSession();
+      clearBiometricSession();
     } catch (e) {
       log.warn('Session storage clear warning', { error: (e as Error).message });
     }

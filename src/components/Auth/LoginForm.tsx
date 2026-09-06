@@ -42,13 +42,9 @@ export default function LoginForm({
   onPasskeyLogin
 }: LoginFormProps) {
 
-  const { isNative, authenticate } = useBiometricAuth();
+  const { isNative } = useBiometricAuth();
 
-  const handleBiometricClick = async () => {
-    if (isNative) {
-      const verified = await authenticate('Scan biometric to sign in');
-      if (!verified) return;
-    }
+  const handleBiometricClick = () => {
     onPasskeyLogin?.();
   };
 
@@ -140,13 +136,13 @@ export default function LoginForm({
       {/* Passkey Alternative */}
       {onPasskeyLogin && !isAdminPortal && (
         <button
-  type="button"
-  onClick={handleBiometricClick}
-  className="w-full bg-white-5 hover:bg-white-10 border border-white-10 text-text-primary font-medium py-3 px-6 rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer mt-2"
->
-  <KeyRound className="w-3.5 h-3.5 text-accent" />
-  <span>{isNative ? 'Sign In with Biometrics' : 'Sign In with Passkey / Face ID'}</span>
-</button>
+          type="button"
+          onClick={handleBiometricClick}
+          className="w-full bg-white-5 hover:bg-white-10 border border-white-10 text-text-primary font-medium py-3 px-6 rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer mt-2"
+        >
+          <KeyRound className="w-3.5 h-3.5 text-accent" />
+          <span>{isNative ? 'Sign In with Fingerprint / Face' : 'Sign In with Passkey / Face ID'}</span>
+        </button>
       )}
 
       {!isAdminPortal && (

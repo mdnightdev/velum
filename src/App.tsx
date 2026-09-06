@@ -32,23 +32,44 @@ function AppContent() {
   }, []);
 
 
-   // Request notification permission on login via Capacitor
- useEffect(() => {
-        if (isAuthenticated) {
-          registerPushNotifications();
-          LocalNotifications.requestPermissions().then(() => {
-
+  // Request notification permissions and register system channels immediately on mount
+  useEffect(() => {
+    LocalNotifications.requestPermissions().then(() => {
       LocalNotifications.createChannel({
         id: 'velum_messages',
-        name: 'Velum Messages',
-        description: 'New chat messages and alerts',
-        importance: 5, // 5 = High importance (makes it pop up on screen)
+        name: 'Messages',
+        description: 'Direct messages and lounge notifications',
+        importance: 5,
         visibility: 1,
         vibration: true,
       }).catch(() => {});
+
+      LocalNotifications.createChannel({
+        id: 'velum_default',
+        name: 'General Alerts',
+        description: 'General system notifications',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+      }).catch(() => {});
+
+      LocalNotifications.removeAllListeners().catch(() => {});
+      LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+        const data = action.notification?.extra || {};
+        const targetRoom = data.roomId || data.room_id || data.tag;
+        if (targetRoom && targetRoom !== 'velum-chat') {
+          window.dispatchEvent(new CustomEvent('velum-open-room', { detail: { roomId: targetRoom } }));
+        }
+      }).catch(() => {});
     }).catch(() => {});
-  }
-}, [isAuthenticated]);
+  }, []);
+
+  // Register push notifications when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      registerPushNotifications();
+    }
+  }, [isAuthenticated]);
 
  
 
@@ -106,6 +127,49 @@ function AppContent() {
     };
     window.addEventListener('velum-open-room', handleOpenRoom);
     return () => window.removeEventListener('velum-open-room', handleOpenRoom);
+  }, []);
+
+  // Native deep link & shortcut URL router
+  useEffect(() => {
+    let removeListener: (() => void) | null = null;
+    import('@capacitor/app').then(({ App: CapApp }) => {
+      CapApp.addListener('appUrlOpen', (event) => {
+        const url = event.url;
+        if (!url) return;
+        try {
+          const parsed = new URL(url);
+          const host = parsed.host;
+          const pathname = parsed.pathname.replace(/^\//, '');
+
+          if (host === 'category') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: pathname } }));
+          } else if (host === 'dm' || host === 'room') {
+            const roomId = host === 'dm' ? `dm_${pathname}` : pathname;
+            setActiveRoomId(roomId);
+          } else if (host === 'chats' || host === 'direct') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'direct' } }));
+          } else if (host === 'wallet') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'wallet' } }));
+          } else if (host === 'lounges' || host === 'rooms') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'rooms' } }));
+          }
+        } catch {
+          if (url.includes('wallet')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'wallet' } }));
+          } else if (url.includes('direct') || url.includes('chats')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'direct' } }));
+          } else if (url.includes('rooms') || url.includes('lounges')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'rooms' } }));
+          }
+        }
+      }).then(handle => {
+        removeListener = () => handle.remove();
+      });
+    }).catch(() => {});
+
+    return () => {
+      if (removeListener) removeListener();
+    };
   }, []);
 
   // WebSocket connection integration

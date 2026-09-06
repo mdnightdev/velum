@@ -21,6 +21,8 @@ import {
 } from './cryptoDbStore.js';
 import { getSessionId } from '../utils/auth.js';
 import { storage } from './storageService';
+import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import { sha512 } from '@noble/hashes/sha2.js';
 
 class StatelessE2eeService {
   private localUserId: number | null = null;
@@ -68,15 +70,7 @@ class StatelessE2eeService {
       let edIdentity;
       let dhIdentity;
 
-      if (seedMaterial && window.crypto?.subtle) {
-        const enc = new TextEncoder();
-        const baseKey = await window.crypto.subtle.importKey(
-          'raw',
-          enc.encode(seedMaterial),
-          { name: 'PBKDF2' },
-          false,
-          ['deriveBits']
-        );
+      if (seedMaterial) {
         let saltBytes: Uint8Array;
         if (userSaltHex && /^[0-9a-fA-F]+$/.test(userSaltHex)) {
           saltBytes = fromHex(userSaltHex);
@@ -87,15 +81,11 @@ class StatelessE2eeService {
           if (rawSalt && /^[0-9a-fA-F]+$/.test(rawSalt)) {
             saltBytes = fromHex(rawSalt);
           } else {
-            saltBytes = enc.encode(`velum_identity_salt_uid_${uid}_x25519`);
+            saltBytes = utf8ToBytes(`velum_identity_salt_uid_${uid}_x25519`);
           }
         }
-        const bits = await window.crypto.subtle.deriveBits(
-          { name: 'PBKDF2', salt: saltBytes as unknown as BufferSource, iterations: 100000, hash: 'SHA-512' },
-          baseKey,
-          256
-        );
-        const seedBytes = new Uint8Array(bits);
+
+        const seedBytes = pbkdf2(sha512, seedMaterial, saltBytes, { c: 10000, dkLen: 32 });
         edIdentity = deriveEd25519KeyPairFromSeed(seedBytes);
         dhIdentity = deriveX25519KeyPairFromSeed(seedBytes);
       } else {

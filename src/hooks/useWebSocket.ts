@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Message } from '../types';
-import { encryptMessage, EncryptionContext } from '../services/encryptionService';
+import { encryptMessage, decryptMessage, EncryptionContext } from '../services/encryptionService';
 import { statelessE2eeService } from '../services/statelessE2eeService';
 import { flushLoungeCache, deleteLocalMessage, purgeDmMessages, getLocalMessages } from '../utils/indexedDb';
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
@@ -494,13 +494,26 @@ export function useWebSocket({
           };
 
           if (!isFromMe) {
-            handleInboundMessageNotification({
-              senderName: dmMsg.username,
-              content: dmMsg.content,
-              isFromMe: false,
-              roomId: dmRoomId,
-              activeRoomId: activeRoomIdRef.current
-            });
+            const senderName = (data.sender_username || dmMsg.username || `User #${data.from}`).replace(/^@/, '');
+            
+            const notifyDm = (bodyText: string) => {
+              handleInboundMessageNotification({
+                senderName,
+                content: bodyText,
+                isFromMe: false,
+                roomId: dmRoomId,
+                activeRoomId: activeRoomIdRef.current
+              });
+            };
+
+            if (dmMsg.is_encrypted || (dmMsg.content && (dmMsg.content.startsWith('e2ee:') || dmMsg.content.startsWith('VEL_E2EE[')))) {
+              decryptMessage(dmMsg.content, { type: 'direct', peerUserId: data.from })
+                .then(notifyDm)
+                .catch(() => notifyDm('Sent a message'));
+            } else {
+              notifyDm(dmMsg.content);
+            }
+
             if (dmRoomId !== activeRoomIdRef.current) {
               setUnreadCounts(prev => ({
                 ...prev,
@@ -673,15 +686,27 @@ export function useWebSocket({
             const newMessage = data as Message;
             const isFromMe = Boolean(uid && String(newMessage.user_id) === String(uid));
 
-            // Trigger notification alert for incoming messages
             if (!isFromMe && newMessage.user_id) {
-              handleInboundMessageNotification({
-                senderName: newMessage.username || (newMessage as any).sender_name || 'Velum',
-                content: newMessage.plaintext || newMessage.content,
-                isFromMe: false,
-                roomId: data.room_id,
-                activeRoomId: activeRoomIdRef.current
-              });
+              const senderDisplayName = (newMessage.username || (newMessage as any).sender_name || 'Velum').replace(/^@/, '');
+              const rawContent = newMessage.plaintext || newMessage.content || '';
+              
+              const notifyLounge = (bodyText: string) => {
+                handleInboundMessageNotification({
+                  senderName: `#${data.room_id}`,
+                  content: senderDisplayName ? `${senderDisplayName}: ${bodyText}` : bodyText,
+                  isFromMe: false,
+                  roomId: data.room_id,
+                  activeRoomId: activeRoomIdRef.current
+                });
+              };
+
+              if (rawContent && (rawContent.startsWith('VEL_E2EE[') || rawContent.startsWith('e2ee:'))) {
+                decryptMessage(rawContent, { type: 'lounge', roomId: data.room_id })
+                  .then(notifyLounge)
+                  .catch(() => notifyLounge('Sent a message'));
+              } else {
+                notifyLounge(rawContent);
+              }
             }
 
             // Increment unread counter for incoming messages not in active room

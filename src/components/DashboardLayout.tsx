@@ -12,7 +12,7 @@ import WalletMainDashboard from './SidebarTabs/WalletMainDashboard';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
 import ProfileCard from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
-import { MessageSquare, Compass, ShoppingBag, Bell, Menu } from 'lucide-react';
+import { MessageSquare, Globe, ShoppingBag, Bell, Menu, Users } from 'lucide-react';
 import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
 import { getLocalKV, setLocalKV, flushLoungeCache, purgeDmMessages } from '../utils/indexedDb';
@@ -242,6 +242,17 @@ export default function DashboardLayout({
       window.removeEventListener('velum-profile-update', handleSocialUpdate);
     };
   }, [user?.userId]);
+
+  useEffect(() => {
+    const handleOpenCategory = (e: any) => {
+      const cat = e.detail?.category;
+      if (cat) {
+        setActiveCategory(cat);
+      }
+    };
+    window.addEventListener('velum-open-category', handleOpenCategory);
+    return () => window.removeEventListener('velum-open-category', handleOpenCategory);
+  }, []);
 
   const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
 
@@ -692,6 +703,28 @@ export default function DashboardLayout({
               <button
                 type="button"
                 onClick={() => {
+                  setActiveCategory('people');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }}
+                className={`flex-1 flex flex-col items-center justify-center py-1 relative transition cursor-pointer ${
+                  activeCategory === 'people' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <div className="relative">
+                  <Users className="w-6 h-6" />
+                  {friendRequests.length > 0 && (
+                    <span className="absolute -top-1 -right-2 bg-accent text-velum-900 text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                      {friendRequests.length}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium mt-0.5">Contacts</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setActiveCategory('rooms');
                   onRoomSelect('');
                   if (onClearChatPeer) onClearChatPeer();
@@ -701,7 +734,7 @@ export default function DashboardLayout({
                 }`}
               >
                 <div className="relative">
-                  <Compass className="w-6 h-6" />
+                  <Globe className="w-6 h-6" />
                   {totalLoungeUnread > 0 && (
                     <span className="absolute -top-1 -right-2 bg-accent text-velum-900 text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
                       {totalLoungeUnread > 99 ? '99+' : totalLoungeUnread}

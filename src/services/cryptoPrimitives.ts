@@ -1,6 +1,7 @@
 import { x25519, ed25519 } from '@noble/curves/ed25519.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { gcm } from '@noble/ciphers/aes.js';
 
 export interface KeyPairBytes {
   privateKey: Uint8Array;
@@ -140,7 +141,7 @@ export function deriveX3DHRKey(dhOutputs: Uint8Array[]): Uint8Array {
 }
 
 // ---------------------------------------------------------------------------
-// Symmetric Authenticated Encryption: AES-256-GCM (via WebCrypto)
+// Symmetric Authenticated Encryption: AES-256-GCM (WebCrypto + Noble fallback)
 // ---------------------------------------------------------------------------
 
 export async function encryptAesGcm(
@@ -149,32 +150,44 @@ export async function encryptAesGcm(
   ivBytes: Uint8Array,
   associatedData?: Uint8Array
 ): Promise<{ ciphertext: Uint8Array; tag: Uint8Array }> {
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    keyBytes as any,
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt']
-  );
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyBytes as any,
+        { name: 'AES-GCM' },
+        false,
+        ['encrypt']
+      );
 
-  const encryptedBuffer = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv: ivBytes as any,
-      ...(associatedData ? { additionalData: associatedData as any } : {}),
-      tagLength: 128
-    },
-    cryptoKey,
-    plaintextBytes as any
-  );
+      const encryptedBuffer = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: ivBytes as any,
+          ...(associatedData ? { additionalData: associatedData as any } : {}),
+          tagLength: 128
+        },
+        cryptoKey,
+        plaintextBytes as any
+      );
 
-  const encryptedArray = new Uint8Array(encryptedBuffer);
-  // WebCrypto appends the 16-byte authentication tag to the end of the ciphertext
-  const tagStart = encryptedArray.length - 16;
-  const ciphertext = encryptedArray.slice(0, tagStart);
-  const tag = encryptedArray.slice(tagStart);
+      const encryptedArray = new Uint8Array(encryptedBuffer);
+      const tagStart = encryptedArray.length - 16;
+      const ciphertext = encryptedArray.slice(0, tagStart);
+      const tag = encryptedArray.slice(tagStart);
 
-  return { ciphertext, tag };
+      return { ciphertext, tag };
+    }
+  } catch {}
+
+  // Pure JS fallback via @noble/ciphers (runs everywhere, including Android WebView without Secure Context)
+  const cipher = gcm(keyBytes, ivBytes, associatedData);
+  const encrypted = cipher.encrypt(plaintextBytes);
+  const tagStart = encrypted.length - 16;
+  return {
+    ciphertext: encrypted.slice(0, tagStart),
+    tag: encrypted.slice(tagStart)
+  };
 }
 
 export async function decryptAesGcm(
@@ -184,29 +197,36 @@ export async function decryptAesGcm(
   ivBytes: Uint8Array,
   associatedData?: Uint8Array
 ): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    keyBytes as any,
-    { name: 'AES-GCM' },
-    false,
-    ['decrypt']
-  );
-
-  // Recombine ciphertext and 16-byte tag for WebCrypto
   const combined = new Uint8Array(ciphertextBytes.length + tagBytes.length);
   combined.set(ciphertextBytes, 0);
   combined.set(tagBytes, ciphertextBytes.length);
 
-  const decryptedBuffer = await crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv: ivBytes as any,
-      ...(associatedData ? { additionalData: associatedData as any } : {}),
-      tagLength: 128
-    },
-    cryptoKey,
-    combined as any
-  );
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyBytes as any,
+        { name: 'AES-GCM' },
+        false,
+        ['decrypt']
+      );
 
-  return new Uint8Array(decryptedBuffer);
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: ivBytes as any,
+          ...(associatedData ? { additionalData: associatedData as any } : {}),
+          tagLength: 128
+        },
+        cryptoKey,
+        combined as any
+      );
+
+      return new Uint8Array(decryptedBuffer);
+    }
+  } catch {}
+
+  // Pure JS fallback via @noble/ciphers (runs everywhere, including Android WebView without Secure Context)
+  const cipher = gcm(keyBytes, ivBytes, associatedData);
+  return cipher.decrypt(combined);
 }

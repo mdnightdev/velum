@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
 export interface NotificationPreferences {
@@ -85,6 +86,17 @@ export function playNotificationSound(): void {
 }
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const status = await LocalNotifications.checkPermissions();
+      if (status.display === 'granted') return true;
+      const req = await LocalNotifications.requestPermissions();
+      return req.display === 'granted';
+    } catch {
+      return false;
+    }
+  }
+
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return false;
   }
@@ -116,11 +128,12 @@ function stringToNotificationId(str: string): number {
 
 export const sendDesktopNotification = (
   title: string,
-  options?: { body?: string; icon?: string; tag?: string }
+  options?: { body?: string; icon?: string; tag?: string; roomId?: string }
 ) => {
   if (typeof window === 'undefined') return;
 
-  const tag = options?.tag || 'velum-chat';
+  const tag = options?.tag || options?.roomId || 'velum-chat';
+  const roomId = options?.roomId || (tag !== 'velum-chat' ? tag : undefined);
   const notifId = stringToNotificationId(tag);
 
   LocalNotifications.schedule({
@@ -129,11 +142,10 @@ export const sendDesktopNotification = (
         title: title,
         body: options?.body || '',
         id: notifId,
-        channelId: 'velum_default',
-        schedule: { at: new Date(Date.now() + 100) },
+        channelId: 'velum_messages',
         sound: undefined,
         actionTypeId: '',
-        extra: { tag }
+        extra: { tag, roomId }
       }
     ]
   }).catch(() => {
@@ -218,15 +230,13 @@ export function handleInboundMessageNotification(msg: {
     const isBackground = typeof document !== 'undefined' && document.hidden;
     const isDifferentRoom = msg.roomId !== msg.activeRoomId;
 
-    let previewText = msg.content || 'Sent a message';
-    if (previewText.startsWith('e2ee:') || previewText.startsWith('VEL_E2EE[')) {
-      previewText = 'New message';
-    }
+    const cleanSender = (msg.senderName || 'Velum').replace(/^@/, '');
+    const previewText = msg.content || '';
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('velum-inapp-toast', {
         detail: {
-          title: msg.senderName || 'Velum',
+          title: cleanSender,
           body: previewText,
           roomId: msg.roomId
         }
@@ -234,9 +244,10 @@ export function handleInboundMessageNotification(msg: {
     }
 
     if (isBackground || isDifferentRoom) {
-      sendDesktopNotification(msg.senderName || 'Velum', {
+      sendDesktopNotification(cleanSender, {
         body: previewText,
-        tag: msg.roomId || 'velum-chat'
+        tag: msg.roomId || 'velum-chat',
+        roomId: msg.roomId
       });
     }
   }
