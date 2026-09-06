@@ -2,6 +2,7 @@ package com.midnightdev.velum;
 
 import android.os.Bundle;
 import android.util.Log;
+import android.view.WindowManager;
 import com.getcapacitor.BridgeActivity;
 import java.io.File;
 
@@ -11,6 +12,11 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Prevent screen capture, screen recording, and system recents switcher previews
+        getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        );
         checkRootDetection();
         checkTamperDetection();
     }
