@@ -33,6 +33,7 @@ export function useMessageLifecycle(
   currentUserId: number
 ) {
   const handleAck = useCallback((ackData: {
+    id?: string | number;
     client_msg_id?: string;
     nonce?: string;
     message_id?: string;
@@ -41,13 +42,15 @@ export function useMessageLifecycle(
   }) => {
     const targetKey = ackData.client_msg_id || ackData.nonce;
     if (!targetKey) return;
+    const canonicalId = ackData.id || ackData.db_message_id || ackData.message_id;
 
     setMessages(prev => prev.map(m => {
-      if (m.nonce === targetKey || m.client_msg_id === targetKey || m.message_id === targetKey) {
+      if (m.client_msg_id === targetKey || String(m.id) === targetKey || m.nonce === targetKey || m.message_id === targetKey) {
         return {
           ...m,
-          message_id: ackData.message_id ? String(ackData.message_id) : m.message_id,
-          db_message_id: ackData.db_message_id ?? m.db_message_id,
+          id: canonicalId || m.id,
+          message_id: canonicalId ? String(canonicalId) : m.message_id,
+          db_message_id: typeof canonicalId === 'number' ? canonicalId : m.db_message_id,
           sequence_id: ackData.sequence_id ?? m.sequence_id,
           client_msg_id: targetKey,
           status: 'sent'
@@ -58,18 +61,19 @@ export function useMessageLifecycle(
   }, [setMessages]);
 
   const handleDelivered = useCallback((delData: {
+    id?: string | number;
     message_id?: string | number;
     db_message_id?: number;
     receiver_id?: number;
     user_id?: number;
   }) => {
-    const targetMsgId = delData.db_message_id || delData.message_id;
+    const targetMsgId = delData.id || delData.db_message_id || delData.message_id;
     if (!targetMsgId) return;
 
     const recipient = delData.receiver_id || delData.user_id;
 
     setMessages(prev => prev.map(m => {
-      if (String(m.db_message_id || m.message_id) === String(targetMsgId)) {
+      if (String(m.id) === String(targetMsgId) || String(m.db_message_id || m.message_id) === String(targetMsgId)) {
         const currentDel = m.delivered_to ? (typeof m.delivered_to === 'string' ? m.delivered_to.split(',') : m.delivered_to) : [];
         if (recipient && !currentDel.map(String).includes(String(recipient))) {
           currentDel.push(String(recipient));

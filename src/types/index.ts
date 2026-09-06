@@ -82,8 +82,9 @@ export interface IpAddress {
 }
 
 export interface Message {
-  id?: string;
-  message_id: string;
+  id: string | number;
+  client_msg_id?: string;
+  message_id?: string;
   room_id: string;
   user_id: number;
   username?: string;
@@ -92,11 +93,10 @@ export interface Message {
   timestamp: string | number;
   created_at?: string | number;
   nonce?: string;
-  client_msg_id?: string;
   sequence_id?: number;
   read_by?: string | string[];
   delivered_to?: string | string[];
-  status?: 'sent' | 'delivered' | 'read' | string;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | string;
   deleted?: boolean;
   reactions?: Record<string, string[]>;
   burn_seconds?: number | null;

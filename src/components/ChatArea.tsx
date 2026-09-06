@@ -248,15 +248,15 @@ export default function ChatArea({
 
     const seen = new Set<string>();
     const deduplicated: Message[] = [];
-    // Process in reverse so confirmed sent status and permanent db_message_id override temporary optimistic drafts
+    // Process in reverse so confirmed sent status and permanent server id override temporary optimistic drafts
     for (let i = raw.length - 1; i >= 0; i--) {
       const m = raw[i];
-      const keys = [m.db_message_id, m.id, m.message_id, m.client_msg_id, m.nonce]
-        .filter(Boolean)
-        .map(String);
-      const isDuplicate = keys.some(k => seen.has(k));
+      const primaryKey = String(m.id ?? m.client_msg_id ?? m.message_id);
+      const clientKey = m.client_msg_id ? String(m.client_msg_id) : null;
+      const isDuplicate = seen.has(primaryKey) || (clientKey && seen.has(clientKey));
       if (!isDuplicate) {
-        keys.forEach(k => seen.add(k));
+        seen.add(primaryKey);
+        if (clientKey) seen.add(clientKey);
         deduplicated.unshift(m);
       }
     }
@@ -365,7 +365,7 @@ export default function ChatArea({
             }
           }
           onEditMessage(
-            originalMsg?.db_message_id ? String(originalMsg.db_message_id) : editingMessageId,
+            String(originalMsg?.id || editingMessageId),
             roomId,
             finalEditContent
           );
@@ -394,7 +394,7 @@ export default function ChatArea({
       }
 
       const replyMsgId = replyingToMessage 
-        ? (replyingToMessage.db_message_id || parseInt(replyingToMessage.message_id || '0', 10) || undefined)
+        ? (replyingToMessage.id ? String(replyingToMessage.id) : undefined)
         : undefined;
 
       const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;

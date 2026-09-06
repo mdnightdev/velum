@@ -314,6 +314,7 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
     );
 
     const formattedMessages = syncMsgs.map(m => ({
+      id: m.id,
       message_id: String(m.id),
       db_message_id: m.id,
       room_id: roomId,
@@ -464,6 +465,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
       if (existing) {
         const ackPayload = {
           type: 'message_ack',
+          id: existing.id,
           client_msg_id: clientMsgId,
           nonce: message.nonce || clientMsgId,
           message_id: String(existing.id),
@@ -558,7 +560,9 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
       });
 
       const isoTime = insertedMessage.createdAt ? insertedMessage.createdAt.toISOString() : new Date().toISOString();
+      enrichedMessage.id = insertedMessage.id;
       enrichedMessage.db_message_id = insertedMessage.id;
+      enrichedMessage.message_id = String(insertedMessage.id);
       enrichedMessage.sequence_id = insertedMessage.sequenceId;
       enrichedMessage.reply_to = validReplyTo;
       enrichedMessage.reply_preview = replyPreview;
@@ -567,13 +571,14 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
 
       const ackPayload = {
         type: 'message_ack',
+        id: insertedMessage.id,
         client_msg_id: clientMsgId,
         nonce: message.nonce || clientMsgId,
-        message_id: messageId,
+        message_id: String(insertedMessage.id),
         db_message_id: insertedMessage.id,
         sequence_id: insertedMessage.sequenceId,
         room_id: roomId,
-        timestamp: insertedMessage.createdAt ? insertedMessage.createdAt.toISOString() : new Date().toISOString()
+        timestamp: isoTime
       };
       if (client.ws.readyState === WebSocket.OPEN) {
         client.ws.send(JSON.stringify(ackPayload));
@@ -663,8 +668,11 @@ export async function handleDirectMessage(client: ClientConnection, message: any
     // 1. ACK to sender with canonical server ID
     client.ws.send(JSON.stringify({
       type: 'dm_ack',
-      client_msg_id: clientMsgId,
       id: created.id,
+      client_msg_id: clientMsgId,
+      message_id: String(created.id),
+      db_message_id: created.id,
+      nonce: clientMsgId,
       created: created.created
     }));
 
@@ -672,6 +680,9 @@ export async function handleDirectMessage(client: ClientConnection, message: any
     const outFrame = {
       type: 'dm',
       id: created.id,
+      client_msg_id: clientMsgId,
+      message_id: String(created.id),
+      db_message_id: created.id,
       from: client.userId,
       to,
       body: created.body,

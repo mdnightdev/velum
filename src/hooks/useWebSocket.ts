@@ -357,8 +357,10 @@ export function useWebSocket({
         }
 
         if (data.type === 'broadcast') {
+          const broadcastId = `broadcast_${Date.now()}`;
           const broadcastMsg: Message = {
-            message_id: `broadcast_${Date.now()}`,
+            id: broadcastId,
+            message_id: broadcastId,
             lounge_id: 'system',
             room_id: activeRoomIdRef.current,
             user_id: 999,
@@ -375,8 +377,10 @@ export function useWebSocket({
         
         if (data.type === 'system_alert') {
           if (!data.room_id || data.room_id === activeRoomIdRef.current) {
+            const sysId = `sys_${Date.now()}`;
             const systemMsg: Message = {
-              message_id: `sys_${Date.now()}`,
+              id: sysId,
+              message_id: sysId,
               lounge_id: 'system',
               room_id: data.room_id || activeRoomIdRef.current,
               user_id: 0,
@@ -414,18 +418,21 @@ export function useWebSocket({
             alert(`Error: ${data.message}`);
           }
         } else if (data.type === 'message_ack' || data.type === 'dm_ack') {
-          const ackNonce = data.client_msg_id || data.nonce;
-          if (ackNonce) {
-            removeOutboxMessage(ackNonce, userId || undefined);
+          const ackClientId = data.client_msg_id || data.nonce;
+          if (ackClientId) {
+            removeOutboxMessage(String(ackClientId), userId || undefined);
           }
+          const canonicalId = data.id || data.db_message_id || data.message_id;
           setMessages(prev => prev.map(m => {
-            if (m.nonce === ackNonce || m.client_msg_id === ackNonce || m.message_id === ackNonce) {
+            const matches = (ackClientId && (m.client_msg_id === ackClientId || String(m.id) === String(ackClientId) || m.message_id === ackClientId || m.nonce === ackClientId));
+            if (matches) {
               return {
                 ...m,
-                message_id: data.id ? String(data.id) : (data.message_id ? String(data.message_id) : m.message_id),
-                db_message_id: data.id || data.db_message_id,
-                sequence_id: data.sequence_id,
-                client_msg_id: ackNonce,
+                id: canonicalId || m.id,
+                message_id: String(canonicalId || m.id),
+                db_message_id: typeof canonicalId === 'number' ? canonicalId : m.db_message_id,
+                sequence_id: data.sequence_id ?? m.sequence_id,
+                client_msg_id: ackClientId,
                 status: 'sent'
               };
             }
@@ -435,10 +442,13 @@ export function useWebSocket({
           const isFromMe = uid && String(data.from) === String(uid);
           const peerId = isFromMe ? data.to : data.from;
           const dmRoomId = `dm_${peerId}`;
+          const canonicalId = data.id || data.db_message_id || data.message_id;
+          const clientMsgId = data.client_msg_id || data.nonce;
           const dmMsg: Message = {
-            message_id: String(data.id),
-            db_message_id: data.id,
-            id: data.id,
+            id: canonicalId,
+            client_msg_id: clientMsgId,
+            message_id: String(canonicalId),
+            db_message_id: typeof canonicalId === 'number' ? canonicalId : undefined,
             room_id: dmRoomId,
             lounge_id: dmRoomId,
             user_id: data.from,
@@ -463,9 +473,8 @@ export function useWebSocket({
           setLastMessages(prev => {
             const existing = prev[dmRoomId];
             const sameMessage = existing && (
-              (existing.message_id && String(existing.message_id) === String(dmMsg.message_id)) ||
               (existing.id && String(existing.id) === String(dmMsg.id)) ||
-              (existing.db_message_id && String(existing.db_message_id) === String(dmMsg.db_message_id))
+              (existing.client_msg_id && String(existing.client_msg_id) === String(dmMsg.client_msg_id))
             );
             const mergedPlaintext = sameMessage ? (existing.plaintext || dmMsg.plaintext) : dmMsg.plaintext;
             return { ...prev, [dmRoomId]: { ...dmMsg, plaintext: mergedPlaintext } };
@@ -479,18 +488,18 @@ export function useWebSocket({
           if (isCurrentRoom) {
             setMessages(prev => {
               const existingIdx = prev.findIndex(m => {
-                const idMatch = (m.id && String(m.id) === String(dmMsg.id)) ||
-                                (m.message_id && String(m.message_id) === String(dmMsg.id)) ||
-                                (m.db_message_id && String(m.db_message_id) === String(dmMsg.id));
-                return idMatch;
+                if (clientMsgId && (m.client_msg_id === clientMsgId || String(m.id) === String(clientMsgId))) {
+                  return true;
+                }
+                return String(m.id) === String(canonicalId);
               });
 
               if (existingIdx !== -1) {
                 const existing = prev[existingIdx];
-                const updated = {
+                const updated: Message = {
                   ...dmMsg,
                   plaintext: existing.plaintext || dmMsg.plaintext,
-                  status: 'sent' as const
+                  status: 'sent'
                 };
                 const nextArr = [...prev];
                 nextArr[existingIdx] = updated;
@@ -691,19 +700,25 @@ export function useWebSocket({
 
           if (data.room_id === activeRoomIdRef.current) {
             setMessages(prev => {
-              const newMessage = data as Message;
+              const canonicalId = data.id || data.db_message_id || data.message_id;
+              const clientMsgId = data.client_msg_id || data.nonce;
+              const newMessage: Message = {
+                ...data,
+                id: canonicalId,
+                client_msg_id: clientMsgId,
+                message_id: String(canonicalId),
+                db_message_id: typeof canonicalId === 'number' ? canonicalId : data.db_message_id
+              };
               const isFromMe = Boolean(uid && String(newMessage.user_id) === String(uid));
 
-              // Check if we have an optimistic message to replace by nonce ONLY for our own outgoing messages
+              // Check if we have an optimistic message to replace by client_msg_id
               if (isFromMe || !newMessage.user_id) {
-                const targetKey = newMessage.client_msg_id || newMessage.nonce || newMessage.message_id;
                 const optIdx = prev.findIndex(m => {
                   const mIsMe = !m.user_id || String(m.user_id) === String(uid);
                   if (!mIsMe) return false;
-                  return (
-                    (targetKey && (m.client_msg_id === targetKey || m.nonce === targetKey || m.message_id === targetKey)) ||
-                    (newMessage.client_msg_id && (m.client_msg_id === newMessage.client_msg_id || m.nonce === newMessage.client_msg_id || m.message_id === newMessage.client_msg_id)) ||
-                    (newMessage.nonce && (m.client_msg_id === newMessage.nonce || m.nonce === newMessage.nonce || m.message_id === newMessage.nonce))
+                  return Boolean(
+                    (clientMsgId && (m.client_msg_id === clientMsgId || String(m.id) === String(clientMsgId))) ||
+                    (canonicalId && String(m.id) === String(canonicalId))
                   );
                 });
 
@@ -713,7 +728,7 @@ export function useWebSocket({
                   newArr[optIdx] = {
                     ...newMessage,
                     plaintext: originalPlaintext || newMessage.plaintext,
-                    status: newMessage.status || 'sent'
+                    status: 'sent'
                   };
                   if (onMessageReceived) {
                     onMessageReceived(newArr[optIdx]);
@@ -723,18 +738,16 @@ export function useWebSocket({
               }
 
               const exists = prev.some(m => 
-                (data.message_id && String(m.message_id) === String(data.message_id)) ||
-                (data.db_message_id && String(m.db_message_id) === String(data.db_message_id)) ||
-                (data.nonce && m.nonce && String(m.nonce) === String(data.nonce)) ||
-                (data.client_msg_id && m.client_msg_id && String(m.client_msg_id) === String(data.client_msg_id))
+                String(m.id) === String(canonicalId) ||
+                (clientMsgId && m.client_msg_id && m.client_msg_id === clientMsgId)
               );
               if (exists) return prev;
               if (onMessageReceived) {
                 onMessageReceived(newMessage);
               }
               // Automatically mark as delivered when received
-              if (newMessage.message_id && newMessage.user_id !== uid) {
-                markDelivered(newMessage.message_id, newMessage.room_id);
+              if (newMessage.id && newMessage.user_id !== uid) {
+                markDelivered(String(newMessage.id), newMessage.room_id);
               }
               // Increment unread counter for incoming messages not in active room
               if (newMessage.user_id !== uid && newMessage.room_id && newMessage.room_id !== activeRoomIdRef.current) {
@@ -829,11 +842,12 @@ export function useWebSocket({
       }
     }
     
-    const nonce = crypto.randomUUID();
+    const clientMsgId = crypto.randomUUID();
     const optMessage: Message = {
-      message_id: nonce,
-      nonce: nonce,
-      client_msg_id: nonce,
+      id: clientMsgId,
+      client_msg_id: clientMsgId,
+      message_id: clientMsgId,
+      nonce: clientMsgId,
       room_id: destRoomId,
       user_id: userId || 0,
       username: 'You',
@@ -864,7 +878,7 @@ export function useWebSocket({
     saveLocalMessages([optMessage], userId || undefined).catch(() => {});
 
     const outboxPayload = {
-      client_msg_id: nonce,
+      client_msg_id: clientMsgId,
       room_id: destRoomId,
       content: finalContent,
       is_encrypted: shouldEncrypt,
@@ -887,7 +901,7 @@ export function useWebSocket({
           body: finalContent,
           enc: shouldEncrypt,
           reply_to: replyTo || null,
-          client_msg_id: nonce
+          client_msg_id: clientMsgId
         }));
       } else {
         wsRef.current.send(JSON.stringify({
@@ -897,8 +911,8 @@ export function useWebSocket({
           is_encrypted: shouldEncrypt,
           expires_in: burnSeconds,
           reply_to: replyTo || null,
-          client_msg_id: nonce,
-          nonce: nonce
+          client_msg_id: clientMsgId,
+          nonce: clientMsgId
         }));
       }
     }
@@ -906,7 +920,7 @@ export function useWebSocket({
     // Add a timeout to transition 'sending' to 'failed' if no ACK after 10s
     setTimeout(() => {
       setMessages(prev => prev.map(m => {
-        if (m.nonce === nonce && m.status === 'sending') {
+        if ((m.client_msg_id === clientMsgId || m.id === clientMsgId) && m.status === 'sending') {
           return { ...m, status: 'failed' };
         }
         return m;

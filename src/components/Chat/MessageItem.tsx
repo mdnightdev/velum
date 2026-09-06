@@ -191,12 +191,11 @@ export function MessageItem({
   const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
   const isCipher = msg.content?.startsWith('e2ee:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
-  const msgKey = String(msg.message_id || msg.id || msg.client_msg_id || msg.nonce || '');
+  const msgKey = String(msg.id ?? msg.client_msg_id ?? msg.message_id ?? '');
     const decryptedFallback = (getDecryptedText ? getDecryptedText(msg) : '') || (msgKey ? decryptedMap[msgKey] : '');
-  const activeContent = msg.plaintext || (msg as any).client_plaintext || decryptedFallback || (isCipher ? '...' : (msg.content || ''));
-
-  const isVoiceNote = !msg.deleted && activeContent && activeContent.startsWith('[Voice Note');
-  const isAttachment = !msg.deleted && activeContent && activeContent.includes('[Attachment:');
+  const activeContent = (msgKey && decryptedMap[msgKey]) || decryptedFallback || (isCipher ? '···' : (msg.content || ''));
+  const isVoiceNote = activeContent.startsWith('[Voice Note') || activeContent.startsWith('[Voice Message');
+  const isAttachment = activeContent.includes('[Attachment:');
 
   const attachments = isAttachment ? parseAttachment(activeContent) : [];
   const firstAttachment = attachments[0];
@@ -230,10 +229,10 @@ export function MessageItem({
 
   return (
     <div
-      key={msg.message_id || msg.id || msg.nonce || (msg.created_at ? `${msg.user_id}-${msg.created_at}` : undefined) || `msg-${index}`}
-      id={`msg-${msg.message_id}`}
+      key={msg.id || msg.client_msg_id || msg.message_id || (msg.created_at ? `${msg.user_id}-${msg.created_at}` : undefined) || `msg-${index}`}
+      id={`msg-${msg.id || msg.client_msg_id || msg.message_id}`}
       className={`flex message-bubble-container group relative select-none ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
-      data-message-id={msg.message_id}
+      data-message-id={String(msg.id || msg.client_msg_id || msg.message_id)}
       style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       onTouchStart={() => handleTouchStart(msg)}
       onClick={(e) => {
@@ -265,7 +264,7 @@ export function MessageItem({
             <>
               {msg.reply_to && (() => {
                 const repliedMsg = conversationMessages.find(
-                  m => String(m.db_message_id) === String(msg.reply_to) || String(m.message_id) === String(msg.reply_to)
+                  m => String(m.id) === String(msg.reply_to) || String(m.client_msg_id) === String(msg.reply_to) || String(m.message_id) === String(msg.reply_to)
                 );
                 let replyName = '';
                 let replyText = '';
@@ -559,7 +558,7 @@ export function MessageItem({
                   <button
                     key={emoji}
                     type="button"
-                    onClick={() => onSendReaction?.(msg.db_message_id ? String(msg.db_message_id) : msg.message_id, msg.room_id || roomId, emoji)}
+                    onClick={() => onSendReaction?.(String(msg.id || msg.message_id), msg.room_id || roomId, emoji)}
                     className="bg-text-primary/5 border border-white-5 hover:bg-text-primary/10 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-mono transition cursor-pointer"
                     title={users.join(', ')}
                   >
@@ -574,11 +573,11 @@ export function MessageItem({
 
 
           {/* Animated Emoji Reaction Drawer overlays */}
-          {showEmojisForMsg === msg.message_id && (
+          {showEmojisForMsg === String(msg.id || msg.message_id) && (
             <ReactionPicker
               isMe={isMe}
               onSelectReaction={(reaction) => {
-                if (onSendReaction) onSendReaction(msg.db_message_id ? String(msg.db_message_id) : msg.message_id, msg.room_id || roomId, reaction);
+                if (onSendReaction) onSendReaction(String(msg.id || msg.message_id), msg.room_id || roomId, reaction);
                 setShowEmojisForMsg(null);
               }}
             />
