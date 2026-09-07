@@ -590,46 +590,15 @@ body:has(input:focus, textarea:focus) .bottom-nav {
   animation: loading-sweep 1.3s ease-in-out infinite;
 }
 
-/* Ambient Velum Dark Canvas Texture & Soft Radial Vignette */
+/* Solid Velum Canvas Wallpaper */
 .chat-wallpaper {
-  background-color: #111113;
-  background-image:
-    radial-gradient(
-      circle at 10% 15%,
-      rgba(200, 155, 138, 0.07) 0,
-      transparent 28%
-    ),
-    radial-gradient(
-      circle at 90% 30%,
-      rgba(200, 155, 138, 0.035) 0,
-      transparent 24%
-    ),
-    radial-gradient(
-      circle at 30% 100%,
-      rgba(145, 180, 170, 0.035) 0,
-      transparent 30%
-    );
-      position: relative;
-      z-index: 0;
+  background-color: var(--color-velum-900, #08090C);
+  position: relative;
+  z-index: 0;
 }
 
 .chat-wallpaper::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(
-      circle at 50% 50%,
-      rgba(200, 155, 138, 0.02) 0%,
-      transparent 70%
-    ),
-    radial-gradient(
-      circle at 50% 50%,
-      transparent 40%,
-      rgba(11, 13, 18, 0.85) 100%
-    );
-  pointer-events: none;
-  z-index: 0;
+  display: none;
 }
 
 @keyframes bounce-slow {

@@ -5,7 +5,7 @@ import {
   fromHex
 } from './cryptoPrimitives.js';
 
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 export const STORE_IDENTITY = 'identity_keys';
 export const STORE_SIGNED_PREKEY = 'signed_prekeys';
 export const STORE_VAULT_METADATA = 'vault_metadata';
@@ -42,7 +42,10 @@ export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDataba
       if (!db.objectStoreNames.contains(STORE_IDENTITY)) {
         db.createObjectStore(STORE_IDENTITY, { keyPath: 'id' });
       }
-      if (!db.objectStoreNames.contains(STORE_VAULT_METADATA)) {
+      if (!db.objectStoreNames.contains(STORE_SIGNED_PREKEY)) {
+        db.createObjectStore(STORE_SIGNED_PREKEY, { keyPath: 'id' });
+      }
+	  if (!db.objectStoreNames.contains(STORE_VAULT_METADATA)) {
         db.createObjectStore(STORE_VAULT_METADATA, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_MESSAGES)) {

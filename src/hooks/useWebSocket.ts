@@ -251,21 +251,30 @@ export function useWebSocket({
       oldWs.close();
     }
 
-    let host = window.location.host;
-    const isCapacitorOrLocalApk =
-      (window as any).Capacitor?.isNativePlatform?.() ||
-      window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'ionic:' ||
-      !host ||
-      host === 'localhost' ||
-      (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173');
-
-    if (isCapacitorOrLocalApk) {
-      host = '127.0.0.1:3000';
-    }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const currentSessionId = storage.getItem('velum-sessionId') || storage.getItem('velum_sessionId') || sessionId;
-    const wsUrl = `${protocol}//${host}/ws?userId=${uid}&sessionId=${encodeURIComponent(currentSessionId || '')}`;
+    const configuredWsBase = import.meta.env.VITE_WS_URL;
+    let wsUrl: string;
+
+    if (configuredWsBase) {
+      const cleanBase = configuredWsBase.replace(/\/+$/, '');
+      wsUrl = `${cleanBase}/ws?userId=${uid}&sessionId=${encodeURIComponent(currentSessionId || '')}`;
+    } else {
+      let host = window.location.host;
+      const isCapacitorOrLocalApk =
+        (window as any).Capacitor?.isNativePlatform?.() ||
+        window.location.protocol === 'capacitor:' ||
+        window.location.protocol === 'ionic:' ||
+        !host ||
+        host === 'localhost' ||
+        (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173');
+
+      if (isCapacitorOrLocalApk) {
+        const apiBase = import.meta.env.VITE_API_URL;
+        host = apiBase ? apiBase.replace(/^https?:\/\//, '').replace(/\/+$/, '') : '127.0.0.1:3000';
+      }
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//${host}/ws?userId=${uid}&sessionId=${encodeURIComponent(currentSessionId || '')}`;
+    }
 
     console.log('Connecting socket: ', wsUrl);
     const ws = new WebSocket(wsUrl);

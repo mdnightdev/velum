@@ -109,6 +109,16 @@ export async function ensureVelumLoungeSeeded() {
       CREATE INDEX IF NOT EXISTS idx_media_assets_category ON media_assets (category);
       CREATE INDEX IF NOT EXISTS idx_media_assets_storage_key ON media_assets (storage_key);
       CREATE INDEX IF NOT EXISTS idx_media_assets_relative_path ON media_assets (relative_path);
+
+      CREATE TABLE IF NOT EXISTS dm_reactions (
+        id SERIAL PRIMARY KEY,
+        message_id INTEGER REFERENCES dms(id) ON DELETE CASCADE NOT NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        emoji VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+        CONSTRAINT unique_dm_user_emoji UNIQUE (message_id, user_id, emoji)
+      );
+      CREATE INDEX IF NOT EXISTS idx_dm_reactions_message ON dm_reactions (message_id);
     `);
 
     await db.execute(sql`

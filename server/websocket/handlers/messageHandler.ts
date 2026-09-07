@@ -11,7 +11,7 @@ import {
   getPeerIdFromDmRoom
 } from '../unreadManager.js';
 import { db, executeWithRetry } from '../../v2/db/client.js';
-import { users, messageReactions, dms } from '../../v2/db/schema/index.js';
+import { users, messageReactions, dms, dmReactions } from '../../v2/db/schema/index.js';
 import { lounges, messages as dbMessages, loungeMembers } from '../../v2/db/schema/lounges.js';
 import { userReadCursors } from '../../v2/db/schema/read_cursors.js';
 import { userChatClears } from '../../v2/db/schema/chat_clears.js';
@@ -29,8 +29,84 @@ export async function handleAddReaction(client: ClientConnection, message: any) 
     const messageId = parseInt(message.message_id, 10);
     const emoji = message.emoji;
     const roomId = message.room_id;
-    if (isNaN(messageId) || !emoji || !roomId) return;
-    
+    if (isNaN(messageId) || !emoji || !roomId || !client.userId) return;
+
+    const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+
+    if (isDm) {
+      const [dmMsg] = await executeWithRetry(() =>
+        db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+      );
+      if (!dmMsg) return;
+
+      const [existing] = await executeWithRetry(() =>
+        db.select()
+          .from(dmReactions)
+          .where(and(
+            eq(dmReactions.messageId, messageId),
+            eq(dmReactions.userId, client.userId),
+            eq(dmReactions.emoji, emoji)
+          ))
+          .limit(1)
+      );
+
+      if (existing) {
+        await executeWithRetry(() =>
+          db.delete(dmReactions)
+            .where(eq(dmReactions.id, existing.id))
+        );
+      } else {
+        await executeWithRetry(() =>
+          db.insert(dmReactions)
+            .values({
+              messageId,
+              userId: client.userId,
+              emoji
+            })
+        );
+      }
+
+      const allReactions = await executeWithRetry(() =>
+        db.select({
+          emoji: dmReactions.emoji,
+          username: users.username
+        })
+        .from(dmReactions)
+        .innerJoin(users, eq(dmReactions.userId, users.id))
+        .where(eq(dmReactions.messageId, messageId))
+      );
+
+      const reactionsMap: Record<string, string[]> = {};
+      for (const react of allReactions) {
+        if (!reactionsMap[react.emoji]) {
+          reactionsMap[react.emoji] = [];
+        }
+        reactionsMap[react.emoji].push(react.username);
+      }
+
+      broadcastToRoom(roomId, {
+        type: 'reaction_update',
+        message_id: String(messageId),
+        reactions: reactionsMap
+      });
+
+      const otherUser = dmMsg.peer === client.userId ? dmMsg.sender : dmMsg.peer;
+      broadcastToUserDevices(client.userId, {
+        type: 'reaction_update',
+        message_id: String(messageId),
+        room_id: roomId,
+        reactions: reactionsMap
+      });
+      broadcastToUserDevices(otherUser, {
+        type: 'reaction_update',
+        message_id: String(messageId),
+        room_id: `dm_${client.userId}`,
+        reactions: reactionsMap
+      });
+      return;
+    }
+
+    // Lounge message reactions
     const [existing] = await executeWithRetry(() =>
       db.select()
         .from(messageReactions)
@@ -109,6 +185,55 @@ export async function handleEditMessage(client: ClientConnection, message: any) 
     );
 
     if (!originalMsg) {
+      const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+      if (isDm) {
+        const [dmMsg] = await executeWithRetry(() =>
+          db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+        );
+        if (dmMsg) {
+          if (dmMsg.sender !== client.userId) {
+            client.ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized. You can only edit your own messages.' }));
+            return;
+          }
+          const timeDiffMinutes = (Date.now() - new Date(dmMsg.created).getTime()) / (1000 * 60);
+          if (timeDiffMinutes > 15) {
+            client.ws.send(JSON.stringify({ type: 'error', message: 'Message editing window (15 minutes) has expired.' }));
+            return;
+          }
+          await executeWithRetry(() =>
+            db.update(dms)
+              .set({ body: content })
+              .where(eq(dms.id, messageId))
+          );
+          broadcastToRoom(roomId, {
+            type: 'message_edit',
+            message_id: String(messageId),
+            room_id: roomId,
+            content,
+            is_edited: true,
+            edited_at: new Date().toISOString()
+          });
+          const otherUser = dmMsg.peer === client.userId ? dmMsg.sender : dmMsg.peer;
+          broadcastToUserDevices(client.userId, {
+            type: 'message_edit',
+            message_id: String(messageId),
+            room_id: roomId,
+            content,
+            is_edited: true,
+            edited_at: new Date().toISOString()
+          });
+          broadcastToUserDevices(otherUser, {
+            type: 'message_edit',
+            message_id: String(messageId),
+            room_id: `dm_${client.userId}`,
+            content,
+            is_edited: true,
+            edited_at: new Date().toISOString()
+          });
+          return;
+        }
+      }
+
       client.ws.send(JSON.stringify({ type: 'error', message: 'Message not found.' }));
       return;
     }

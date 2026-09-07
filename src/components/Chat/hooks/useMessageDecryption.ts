@@ -157,7 +157,14 @@ export function useMessageDecryption({
             content: item.ciphertext,
             user_id: item.context.peerUserId
           });
-        } catch {
+        } catch (err) {
+          console.error('[useMessageDecryption] Batch item decryption failed:', {
+            error: err instanceof Error ? err.message : err,
+            stack: err instanceof Error ? err.stack : undefined,
+            keys: item.keys,
+            context: item.context,
+            ciphertext: item.ciphertext
+          });
           for (const k of item.keys) {
             cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: '[Decryption Error]' };
             batchMapEntries[k] = '[Decryption Error]';

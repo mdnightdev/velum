@@ -1,6 +1,6 @@
-import { eq, and, or, gt, desc, asc, sql } from 'drizzle-orm';
+import { eq, and, or, gt, inArray, desc, asc, sql } from 'drizzle-orm';
 import { db, executeWithRetry } from '../db/client.js';
-import { dms, dmClears, type Dm, type NewDm } from '../db/schema/dms.js';
+import { dms, dmClears, dmReactions, type Dm, type NewDm } from '../db/schema/dms.js';
 import { users } from '../db/schema/users.js';
 
 export class DmService {
@@ -34,7 +34,34 @@ export class DmService {
         .orderBy(asc(dms.id))
         .limit(limit);
 
-      return messages;
+      const messageIds = messages.map(m => m.id);
+      const reactionsMap: Record<number, Record<string, string[]>> = {};
+      if (messageIds.length > 0) {
+        const reactionsList = await db
+          .select({
+            messageId: dmReactions.messageId,
+            emoji: dmReactions.emoji,
+            username: users.username
+          })
+          .from(dmReactions)
+          .innerJoin(users, eq(dmReactions.userId, users.id))
+          .where(inArray(dmReactions.messageId, messageIds));
+
+        for (const react of reactionsList) {
+          if (!reactionsMap[react.messageId]) {
+            reactionsMap[react.messageId] = {};
+          }
+          if (!reactionsMap[react.messageId][react.emoji]) {
+            reactionsMap[react.messageId][react.emoji] = [];
+          }
+          reactionsMap[react.messageId][react.emoji].push(react.username);
+        }
+      }
+
+      return messages.map(m => ({
+        ...m,
+        reactions: reactionsMap[m.id] || {}
+      })) as any[];
     });
   }
 

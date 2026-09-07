@@ -113,7 +113,13 @@ export async function decryptMessage(content: string, context: EncryptionContext
     try {
       return await statelessE2eeService.decryptDirectMessage(content, context.peerUserId);
     } catch (err) {
-      console.error('[encryptionService] Stateless E2EE decryption error:', err);
+      console.error('[encryptionService] Stateless E2EE decryption error:', {
+        error: err instanceof Error ? err.message : err,
+        stack: err instanceof Error ? err.stack : undefined,
+        peerUserId: context.peerUserId,
+        roomId: context.roomId,
+        envelope: content
+      });
       return '[Encrypted Message]';
     }
   }

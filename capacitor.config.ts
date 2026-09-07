@@ -1,11 +1,14 @@
+import 'dotenv/config';
 import { CapacitorConfig } from '@capacitor/cli';
+
+const serverUrl = process.env.VITE_API_URL || process.env.API_URL || 'http://127.0.0.1:3000';
 
 const config: CapacitorConfig = {
   appId: 'com.midnightdev.velum',
   appName: 'velum',
   webDir: 'dist',
   server: {
-    url: 'http://127.0.0.1:3000',
+    url: serverUrl,
     cleartext: true
   },
   plugins: {
