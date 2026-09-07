@@ -96,14 +96,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setSessionId(null);
     setDeviceId(null);
+    setIsLoadingSession(false);
 
     if (window.velumDebug) {
       window.velumDebug.userId = null;
       window.velumDebug.username = null;
-    }
-
-    if (typeof window !== 'undefined') {
-      window.location.href = '/';
     }
   };
 
@@ -116,7 +113,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const verifySessionOnBoot = async () => {
       const sId = storage.getItem('velum-sessionId');
       if (!sId) {
-        handleLogout();
+        setUser(null);
+        setSessionId(null);
+        setDeviceId(null);
         setIsLoadingSession(false);
         return;
       }
@@ -151,7 +150,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
         } else if (res.status === 401 || res.status === 403) {
-          handleLogout();
+          try {
+            storage.clearSession();
+            clearBiometricSession();
+          } catch (_) {}
+          setUser(null);
+          setSessionId(null);
+          setDeviceId(null);
           setIsLoadingSession(false);
           return;
         }
@@ -173,6 +178,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           } catch (_) {}
         }
+        try {
+          storage.clearSession();
+          clearBiometricSession();
+        } catch (_) {}
+        setUser(null);
+        setSessionId(null);
+        setDeviceId(null);
         setIsLoadingSession(false);
       }
     };
