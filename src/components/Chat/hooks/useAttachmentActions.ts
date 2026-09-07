@@ -1,21 +1,10 @@
 import React, { RefObject } from 'react';
-import toast from 'react-hot-toast';
 import { streamFileDirectToCloudStorage, stripImageMetadataAndCompress, generateAnonymousFilename } from '../../../utils/mediaPipeline';
 import { Attachment } from './useMessageInput';
+import { velumToast } from '../../../utils/toast';
 
 export const MAX_ATTACHMENT_BATCH = 5;
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
-
-export const velumToastStyle = {
-  style: {
-    background: '#101218',
-    color: '#F5F2EB',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontFamily: 'system-ui, sans-serif'
-  }
-};
 
 export function compressImageToBlob(file: File): Promise<Blob> {
   return stripImageMetadataAndCompress(file, 1200, 0.85);
@@ -72,7 +61,7 @@ export function useAttachmentActions({
 
     // 1. Enforce 5-attachment maximum & drop excess with Velum-styled toast
     if (fileList.length > MAX_ATTACHMENT_BATCH) {
-      toast('Attachment limit exceeded. Keeping first 5 items.', velumToastStyle);
+      velumToast.error('Attachment limit exceeded. Keeping first 5 items.');
       fileList = fileList.slice(0, MAX_ATTACHMENT_BATCH);
     }
 
@@ -80,7 +69,7 @@ export function useAttachmentActions({
     const validFiles: File[] = [];
     for (const file of fileList) {
       if (file.size > MAX_FILE_SIZE_BYTES) {
-        toast.error(`'${file.name}' exceeds 25 MB limit.`, velumToastStyle);
+        velumToast.error(`'${file.name}' exceeds 25 MB limit.`);
       } else {
         validFiles.push(file);
       }
@@ -146,7 +135,7 @@ export function useAttachmentActions({
     }
 
     if (failureCount > 0) {
-      toast.error(`${failureCount} attachment(s) failed to upload.`, velumToastStyle);
+      velumToast.error(`${failureCount} attachment(s) failed to upload.`);
     }
 
     if (payloadParts.length > 0) {

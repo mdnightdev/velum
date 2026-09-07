@@ -12,6 +12,7 @@ import ManageLoungeModal from '../Lounge/ManageLoungeModal';
 import SanctionDialog from '../Lounge/SanctionDialog';
 import PrivateSubloungeBanner from '../Lounge/PrivateSubloungeBanner';
 import { getSessionId } from '../../utils/auth';
+import { velumToast } from '../../utils/toast';
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const [mobileTab, setMobileTab] = useState<'rooms' | 'members' | 'about'>('rooms');
@@ -88,7 +89,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(data.isMuted ? 'Muted user. They can no longer disturb you.' : 'Unmuted user.');
+        velumToast.info(data.isMuted ? 'Muted user. They can no longer disturb you.' : 'Unmuted user.');
         setSelectedMember((prev: any) => {
           const prevId = prev?.user_id || prev?.userId;
           if (prev && String(prevId) === String(targetId)) {
@@ -110,7 +111,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(data.isBlocked ? 'Blocked user. User Blocked!' : 'Unblocked user.');
+        velumToast.info(data.isBlocked ? 'Blocked user. User Blocked!' : 'Unblocked user.');
         if (data.isBlocked && props.onRoomSelect) {
           props.onRoomSelect('');
         }
@@ -134,7 +135,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
-        alert(`Chat deleted.`);
+        velumToast.success(`Chat deleted.`);
         if (props.onRoomSelect) props.onRoomSelect('');
       }
     } catch(e) {}
@@ -152,7 +153,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetUserId: targetId, reason: reason.trim() })
       });
-      if (res.ok) alert(`Report submitted.`);
+      if (res.ok) velumToast.success(`Report submitted.`);
     } catch(e) {}
     setSelectedMember(null);
   };

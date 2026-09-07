@@ -31,7 +31,8 @@ export const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
   duressPasscode: z.string().optional(),
-  panicPhrase: z.string().optional()
+  panicPhrase: z.string().optional(),
+  emergencyPhrase: z.string().optional()
 });
 
 export const verifyPasscodeSchema = z.object({

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  User, Lock, X, Check, Upload, Bell, Volume2, 
-  Type, ShieldCheck, CheckCircle, AlertTriangle, Palette, 
-  Laptop, Monitor, Trash2, Camera, Mic, Image as ImageIcon, 
+import {
+  User, Lock, X, Check, Upload, Bell, Volume2,
+  Type, ShieldCheck, CheckCircle, AlertTriangle, Palette,
+  Laptop, Monitor, Trash2, Camera, Mic, Image as ImageIcon,
   Sparkles, Globe, Clock, Shield, Zap, Play, Info, ChevronRight, Activity
 } from 'lucide-react';
 import PasswordInput from '../../components/PasswordInput';
@@ -18,6 +18,7 @@ import { SettingsAboutTab } from './SettingsTabs/SettingsAboutTab';
 import { useBuildVersion } from '../../hooks/useBuildVersion';
 import logoSvg from '../../assets/logo.svg?raw';
 import { getSessionId } from '../../utils/auth';
+import { velumToast } from '../../utils/toast';
 import { computeClientHash } from '../../services/encryptionService';
 import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
 import { submitDiagnosticLogs, collectClientDiagnosticsPayload } from '../../utils/diagnostics';
@@ -631,15 +632,15 @@ export default function SettingsDrawer({
         headers
       });
       if (res.ok) {
-        window.alert("Account deleted successfully.");
+        velumToast.success("Account deleted successfully.");
         storage.clear();
         window.location.reload();
       } else {
         const data = await res.json();
-        window.alert(data.error || "Failed to delete account.");
+        velumToast.error(data.error || "Failed to delete account.");
       }
     } catch {
-      window.alert("Connection failed.");
+      velumToast.error("Connection failed.");
     }
   };
 

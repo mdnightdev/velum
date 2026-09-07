@@ -33,7 +33,7 @@ export async function handleSys(ctx: CommandContext): Promise<void> {
 
   if (sub === 'ccache') {
     await stateManager.clearRuntimeCaches();
-    console.log('[OK] In-memory and runtime caches evicted.');
+    console.log('Cache cleared.');
     return;
   }
 
@@ -42,13 +42,13 @@ export async function handleSys(ctx: CommandContext): Promise<void> {
     const sid = parseInt(sidStr, 10);
     if (!sidStr || isNaN(sid)) { console.log('Usage: kill <session_id>'); return; }
     await db.delete(sessions).where(eq(sessions.id, sid));
-    console.log(`[OK] Terminated session ${sid}.`);
+    console.log(`Session terminated.`);
     return;
   }
 
   if (sub === 'flush') {
     await db.delete(sessions);
-    console.log('[OK] Cleared all sessions.');
+    console.log('All sessions cleared.');
     return;
   }
 }

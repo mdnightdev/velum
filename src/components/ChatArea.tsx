@@ -18,6 +18,7 @@ import { ChatInput } from './Chat/ChatInput';
 import { SearchDrawer } from './Chat/SearchDrawer';
 import { PinnedMessageBar } from './Chat/PinnedMessageBar';
 import { MessageList } from './Chat/MessageList';
+import { velumToast } from '../utils/toast';
 import { ImageCropperModal } from './ImageCropperModal';
 import { streamFileDirectToCloudStorage, generateAnonymousFilename } from '../utils/mediaPipeline';
 import { stripAttachmentTokens, getCleanPreview } from '../utils/messageParser';
@@ -326,7 +327,7 @@ export default function ChatArea({
           onSendMessage(voicePayload, null, isEnc, targetRoom, undefined, voicePayload);
         } catch (err) {
           log.error('Audio upload failed', { error: (err as Error).message });
-          alert('Voice note upload failed. Please try again.');
+          velumToast.error('Voice note upload failed. Please try again.');
         } finally {
           isSubmittingRef.current = false;
           setIsSending(false);
