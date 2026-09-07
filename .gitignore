@@ -35,3 +35,10 @@ emergency/
 *.keystore
 firebase-service-account.json
 PLANNING.md
+Cat/
+reports.md
+test-ecdh.cjs
+query.gql
+redis-data/
+.devin/
+toast-plan.md
