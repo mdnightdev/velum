@@ -145,7 +145,8 @@ export const sendDesktopNotification = (
         channelId: 'velum_messages',
         sound: undefined,
         actionTypeId: '',
-        extra: { tag, roomId }
+        extra: { tag, roomId },
+        ...({ isExactNotification: false } as any)
       }
     ]
   }).catch(() => {

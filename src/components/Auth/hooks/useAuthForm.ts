@@ -247,7 +247,11 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         const sessionToken = data.token || data.sessionId;
 
         if (data.user?.userId && password) {
-          statelessE2eeService.initLocalIdentityKeys(data.user.userId, password, data.user.salt).catch(console.error);
+          try {
+            await statelessE2eeService.initLocalIdentityKeys(data.user.userId, password, data.user.salt);
+          } catch (e) {
+            console.error('[StatelessE2EE] Key derivation failed:', e);
+          }
         }
 
         if (Capacitor.isNativePlatform() && sessionToken && data.user) {

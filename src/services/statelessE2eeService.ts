@@ -88,17 +88,21 @@ class StatelessE2eeService {
         const seedBytes = pbkdf2(sha512, seedMaterial, saltBytes, { c: 10000, dkLen: 32 });
         edIdentity = deriveEd25519KeyPairFromSeed(seedBytes);
         dhIdentity = deriveX25519KeyPairFromSeed(seedBytes);
+
+        await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
+        identity = { signing: edIdentity, dh: dhIdentity };
+
+        const spk = generateX25519KeyPair();
+        const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
+        await saveSignedPrekey(uid, 1, spk, spkSignature);
       } else {
-        edIdentity = generateEd25519KeyPair();
-        dhIdentity = generateX25519KeyPair();
+        // Without seedMaterial, check if keys can be restored from localStorage
+        identity = await loadLocalIdentityKeys(uid);
+        if (!identity) {
+          console.warn('[StatelessE2EE] Identity keys absent and no seed provided. Waiting for authenticated credentials.');
+          return;
+        }
       }
-
-      await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
-      identity = { signing: edIdentity, dh: dhIdentity };
-
-      const spk = generateX25519KeyPair();
-      const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
-      await saveSignedPrekey(uid, 1, spk, spkSignature);
     }
 
     let signedPrekey = await loadSignedPrekey(uid);

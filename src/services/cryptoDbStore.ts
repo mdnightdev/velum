@@ -174,21 +174,52 @@ export interface LocalIdentityKeys {
 }
 
 export async function saveLocalIdentityKeys(userId: number, keys: LocalIdentityKeys): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  await db.put(STORE_IDENTITY, {
+  const payload = {
     id: 'local_identity',
     signingPrivateKeyHex: toHex(keys.signing.privateKey),
     signingPublicKeyHex: toHex(keys.signing.publicKey),
     dhPrivateKeyHex: toHex(keys.dh.privateKey),
     dhPublicKeyHex: toHex(keys.dh.publicKey),
     createdAt: Date.now()
-  });
+  };
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`velum_identity_keys_${userId}`, JSON.stringify(payload));
+    }
+  } catch {}
+
+  try {
+    const db = await openCryptoDatabase(userId);
+    await db.put(STORE_IDENTITY, payload);
+  } catch (err) {
+    console.warn('[CryptoDB] Failed saving identity keys to IndexedDB:', err);
+  }
 }
 
 export async function loadLocalIdentityKeys(userId: number): Promise<LocalIdentityKeys | null> {
-  const db = await openCryptoDatabase(userId);
-  const record = await db.get(STORE_IDENTITY, 'local_identity');
+  let record: any = null;
+
+  try {
+    const db = await openCryptoDatabase(userId);
+    record = await db.get(STORE_IDENTITY, 'local_identity');
+  } catch (err) {
+    console.warn('[CryptoDB] Error loading identity keys from IndexedDB:', err);
+  }
+
+  if (!record || !record.signingPrivateKeyHex || !record.dhPrivateKeyHex) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem(`velum_identity_keys_${userId}`);
+        if (stored) {
+          record = JSON.parse(stored);
+        }
+      }
+    } catch {}
+  }
+
   if (!record || !record.signingPrivateKeyHex || !record.dhPrivateKeyHex) return null;
+
   return {
     signing: {
       privateKey: fromHex(record.signingPrivateKeyHex),
