@@ -195,7 +195,6 @@ export default function DashboardLayout({
   useEffect(() => {
     if (user?.userId) {
       statelessE2eeService.setLocalUserId(Number(user.userId));
-      statelessE2eeService.initLocalIdentityKeys(Number(user.userId)).catch(console.error);
       loadPeopleAndRequests();
       const interval = setInterval(loadPeopleAndRequests, 45000);
       return () => clearInterval(interval);

@@ -92,14 +92,10 @@ class StatelessE2eeService {
       const spk = generateX25519KeyPair();
       const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
       await saveSignedPrekey(uid, 1, spk, spkSignature);
-    } else {
-      // Without seedMaterial, restore from storage or generate high-entropy keypair
+        } else {
       identity = await loadLocalIdentityKeys(uid);
       if (!identity) {
-        const edIdentity = generateEd25519KeyPair();
-        const dhIdentity = generateX25519KeyPair();
-        await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
-        identity = { signing: edIdentity, dh: dhIdentity };
+        return;
       }
     }
 
@@ -110,6 +106,12 @@ class StatelessE2eeService {
       await saveSignedPrekey(uid, 1, spk, spkSignature);
       signedPrekey = { keyId: 1, keyPair: spk, signature: spkSignature };
     }
+
+    if (!seedMaterial) {
+      return;
+    }
+
+
 
     // Publish public identity key and signed prekey to backend
     try {
@@ -181,11 +183,7 @@ class StatelessE2eeService {
 
     const uid = this.getLocalUserId();
     let localKeys = uid ? await loadLocalIdentityKeys(uid) : null;
-    if (!localKeys || !localKeys.dh) {
-      if (uid) await this.initLocalIdentityKeys(uid);
-      localKeys = uid ? await loadLocalIdentityKeys(uid) : null;
-    }
-
+    
     if (!localKeys || !localKeys.dh) {
       throw new Error('[StatelessE2EE] Local identity key unavailable');
     }
@@ -221,11 +219,7 @@ class StatelessE2eeService {
     }
 
     let localKeys = await loadLocalIdentityKeys(uid);
-    if (!localKeys || !localKeys.dh) {
-      await this.initLocalIdentityKeys(uid);
-      localKeys = await loadLocalIdentityKeys(uid);
-    }
-
+    
     if (!localKeys || !localKeys.dh) {
       throw new Error('[StatelessE2EE] Local identity key not found in storage');
     }

@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     statelessE2eeService.setLocalUserId(loginUser.userId);
-    statelessE2eeService.initLocalIdentityKeys(loginUser.userId).catch(() => {});
+
 
     if (window.velumDebug) {
       window.velumDebug.userId = loginUser.userId;
@@ -144,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               storage.setItem('velum-user', verifiedUser);
             } catch (_) {}
             statelessE2eeService.setLocalUserId(verifiedUser.userId);
-            statelessE2eeService.initLocalIdentityKeys(verifiedUser.userId).catch(() => {});
+           
             setIsLoadingSession(false);
             return;
           }
@@ -171,7 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUser(cachedUser);
               setSessionId(sId);
               statelessE2eeService.setLocalUserId(cachedUser.userId);
-              statelessE2eeService.initLocalIdentityKeys(cachedUser.userId).catch(() => {});
+              
               setIsLoadingSession(false);
               return;
             }
