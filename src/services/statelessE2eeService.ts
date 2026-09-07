@@ -64,44 +64,39 @@ class StatelessE2eeService {
     if (!uid) return;
 
     this.localUserId = uid;
-    let identity = await loadLocalIdentityKeys(uid);
+    let identity: any = null;
 
-    if (!identity) {
-      let edIdentity;
-      let dhIdentity;
-
-      if (seedMaterial) {
-        let saltBytes: Uint8Array;
-        if (userSaltHex && /^[0-9a-fA-F]+$/.test(userSaltHex)) {
-          saltBytes = fromHex(userSaltHex);
-        } else {
-          // Fallback to high-entropy user-scoped salt
-          const cachedUser = storage.getItem<any>('velum-user');
-          const rawSalt = cachedUser?.salt || (typeof cachedUser === 'string' ? JSON.parse(cachedUser)?.salt : '');
-          if (rawSalt && /^[0-9a-fA-F]+$/.test(rawSalt)) {
-            saltBytes = fromHex(rawSalt);
-          } else {
-            saltBytes = utf8ToBytes(`velum_identity_salt_uid_${uid}_x25519`);
-          }
-        }
-
-        const seedBytes = pbkdf2(sha512, seedMaterial, saltBytes, { c: 10000, dkLen: 32 });
-        edIdentity = deriveEd25519KeyPairFromSeed(seedBytes);
-        dhIdentity = deriveX25519KeyPairFromSeed(seedBytes);
-
-        await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
-        identity = { signing: edIdentity, dh: dhIdentity };
-
-        const spk = generateX25519KeyPair();
-        const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
-        await saveSignedPrekey(uid, 1, spk, spkSignature);
+    if (seedMaterial) {
+      let saltBytes: Uint8Array;
+      if (userSaltHex && /^[0-9a-fA-F]+$/.test(userSaltHex)) {
+        saltBytes = fromHex(userSaltHex);
       } else {
-        // Without seedMaterial, check if keys can be restored from localStorage
-        identity = await loadLocalIdentityKeys(uid);
-        if (!identity) {
-          console.warn('[StatelessE2EE] Identity keys absent and no seed provided. Waiting for authenticated credentials.');
-          return;
+        // Fallback to high-entropy user-scoped salt
+        const cachedUser = storage.getItem<any>('velum-user');
+        const rawSalt = cachedUser?.salt || (typeof cachedUser === 'string' ? JSON.parse(cachedUser)?.salt : '');
+        if (rawSalt && /^[0-9a-fA-F]+$/.test(rawSalt)) {
+          saltBytes = fromHex(rawSalt);
+        } else {
+          saltBytes = utf8ToBytes(`velum_identity_salt_uid_${uid}_x25519`);
         }
+      }
+
+      const seedBytes = pbkdf2(sha512, seedMaterial, saltBytes, { c: 10000, dkLen: 32 });
+      const edIdentity = deriveEd25519KeyPairFromSeed(seedBytes);
+      const dhIdentity = deriveX25519KeyPairFromSeed(seedBytes);
+
+      await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
+      identity = { signing: edIdentity, dh: dhIdentity };
+
+      const spk = generateX25519KeyPair();
+      const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
+      await saveSignedPrekey(uid, 1, spk, spkSignature);
+    } else {
+      // Without seedMaterial, check if keys can be restored from storage
+      identity = await loadLocalIdentityKeys(uid);
+      if (!identity) {
+        console.warn('[StatelessE2EE] Identity keys absent and no seed provided. Waiting for authenticated credentials.');
+        return;
       }
     }
 

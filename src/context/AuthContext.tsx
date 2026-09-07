@@ -86,12 +86,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {}
     }
 
-    startTransition(() => {
-      setUser(null);
-      setSessionId(null);
-      setDeviceId(null);
-    });
-
     try {
       storage.clearSession();
       clearBiometricSession();
@@ -99,14 +93,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       log.warn('Session storage clear warning', { error: (e as Error).message });
     }
 
+    setUser(null);
+    setSessionId(null);
+    setDeviceId(null);
+
     if (window.velumDebug) {
       window.velumDebug.userId = null;
       window.velumDebug.username = null;
     }
 
-    // Explicitly navigate away to clear authenticated UI hierarchy
-    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-      window.location.replace('/');
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
     }
   };
 
