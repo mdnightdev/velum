@@ -14,7 +14,7 @@ if (typeof window !== 'undefined') {
       window.location.protocol === 'ionic:' ||
       (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173');
 
-    const backendBase = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3000';
+    const backendBase = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '');
     if (isCapacitorOrLocalApk && (url.startsWith('/v2/') || url.startsWith('/api/') || url.startsWith('/uploads/'))) {
       const cleanBase = backendBase.replace(/\/+$/, '');
       const targetUrl = `${cleanBase}${url.startsWith('/') ? '' : '/'}${url}`;

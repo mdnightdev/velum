@@ -10,6 +10,9 @@ export default defineConfig({
     'process.env': {},
     global: 'globalThis',
   },
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+  },
   plugins: [wasm(), react(), tailwindcss()],
   server: {
     port: 3000,

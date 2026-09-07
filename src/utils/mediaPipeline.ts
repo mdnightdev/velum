@@ -249,8 +249,8 @@ export function resolveMediaUrl(url: string | null | undefined): string {
   );
 
   if (isCapacitorOrLocalApk) {
-    const backendBase = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-    return `${backendBase}${url.startsWith('/') ? '' : '/'}${url}`;
+    const backendBase = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+    return backendBase ? `${backendBase}${url.startsWith('/') ? '' : '/'}${url}` : url;
   }
 
   return url;

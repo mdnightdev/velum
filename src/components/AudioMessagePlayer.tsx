@@ -46,8 +46,10 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ content,
       const isCapacitor = typeof window !== 'undefined' && 
         (window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port));
       if (isCapacitor) {
-        const backendBase = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-        src = `${backendBase}${src}`;
+        const backendBase = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+        if (backendBase) {
+          src = `${backendBase}${src}`;
+        }
       }
     }
 

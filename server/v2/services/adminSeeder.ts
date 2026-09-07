@@ -6,6 +6,7 @@ import { reserves } from '../db/schema/reserves.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { hashArgon2id } from '../utils/crypto.js';
 import { reserveRepository } from '../repositories/reserveRepository.js';
+import { logger } from '../utils/logger.js';
 
 const ADMIN_USERS = [
   {
@@ -46,7 +47,7 @@ export async function ensureExchangeRatesSeeded() {
 
       const existing = await db.select().from(exchangeRates).limit(1);
       if (existing.length === 0) {
-        console.log('[AdminSeeder] Seeding exchange rates database table...');
+        logger.info('[AdminSeeder] Seeding exchange rates database table...');
         const ratesToInsert = [];
         for (const base of rawCurrencies) {
           for (const quote of rawCurrencies) {
@@ -61,11 +62,11 @@ export async function ensureExchangeRatesSeeded() {
           }
         }
         await db.insert(exchangeRates).values(ratesToInsert);
-        console.log(`[AdminSeeder] Successfully seeded ${ratesToInsert.length} exchange rate pairs.`);
+        logger.info(`[AdminSeeder] Successfully seeded ${ratesToInsert.length} exchange rate pairs.`);
       }
     });
   } catch (err) {
-    console.error('[AdminSeeder] Failed to seed exchange rates:', err);
+    logger.error('[AdminSeeder] Failed to seed exchange rates:', err);
   }
 }
 
@@ -149,21 +150,21 @@ export async function ensureReservesSeeded() {
       const vcb = await reserveRepository.getReserve('Main Account');
       if (!vcb) {
         await reserveRepository.updateBalance('Main Account', 0);
-        console.log('[AdminSeeder] Seeded default central bank reserve: Main Account ($0.00)');
+        logger.info('[AdminSeeder] Seeded default central bank reserve: Main Account ($0.00)');
       }
       const sb = await reserveRepository.getReserve('Reserve Account');
       if (!sb) {
         await reserveRepository.updateBalance('Reserve Account', 0);
-        console.log('[AdminSeeder] Seeded default sentry bank reserve: Reserve Account ($0.00)');
+        logger.info('[AdminSeeder] Seeded default sentry bank reserve: Reserve Account ($0.00)');
       }
       const escrow = await reserveRepository.getReserve('Trading Account');
       if (!escrow) {
         await reserveRepository.updateBalance('Trading Account', 0);
-        console.log('[AdminSeeder] Seeded default escrow reserve: Trading Account ($0.00)');
+        logger.info('[AdminSeeder] Seeded default escrow reserve: Trading Account ($0.00)');
       }
     });
   } catch (err) {
-    console.error('[AdminSeeder] Failed to seed/migrate reserves:', err);
+    logger.error('[AdminSeeder] Failed to seed/migrate reserves:', err);
   }
 }
 
@@ -176,7 +177,7 @@ export async function ensureAdminSeeded() {
         const password = process.env[adminUser.passwordEnv];
         
         if (!password) {
-          console.warn(`[AdminSeeder] Skipping ${adminUser.username}: ${adminUser.passwordEnv} not set in environment`);
+          logger.warn(`[AdminSeeder] Skipping ${adminUser.username}: ${adminUser.passwordEnv} not set in environment`);
           continue;
         }
 
@@ -198,16 +199,16 @@ export async function ensureAdminSeeded() {
             displayName: adminUser.displayName
           }).onConflictDoNothing();
           
-          console.log(`[AdminSeeder] Created admin user: ${adminUser.username} (ID: ${adminUser.id})`);
+          logger.info(`[AdminSeeder] Created admin user: ${adminUser.username} (ID: ${adminUser.id})`);
         } else {
           // Check if password needs update by re-hashing with existing salt
           const passwordHash = await hashArgon2id(password, Buffer.from(existing.salt, 'hex'));
           
           if (passwordHash !== existing.passwordHash) {
             await db.update(users).set({ passwordHash }).where(eq(users.id, existing.id));
-            console.log(`[AdminSeeder] Updated password for admin user: ${existing.username} (ID: ${existing.id})`);
+            logger.info(`[AdminSeeder] Updated password for admin user: ${existing.username} (ID: ${existing.id})`);
           } else {
-            console.log(`[AdminSeeder] Admin user already exists and password is current: ${existing.username} (ID: ${existing.id})`);
+            logger.info(`[AdminSeeder] Admin user already exists and password is current: ${existing.username} (ID: ${existing.id})`);
           }
         }
       }
@@ -223,7 +224,7 @@ export async function ensureAdminSeeded() {
           role: 'ADMIN',
           displayName: 'Velum Bot'
         }).onConflictDoNothing();
-        console.log('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
+        logger.info('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
       }
 
       // Advance sequence past reserved system IDs (1, 2, 999) so regular registrations start at 1000+
@@ -240,6 +241,6 @@ export async function ensureAdminSeeded() {
     
     isSeeded = true;
   } catch (err) {
-    console.error('[AdminSeeder] Seeding error:', err);
+    logger.error('[AdminSeeder] Seeding error:', err);
   }
 }

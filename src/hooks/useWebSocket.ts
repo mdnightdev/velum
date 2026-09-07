@@ -270,7 +270,7 @@ export function useWebSocket({
 
       if (isCapacitorOrLocalApk) {
         const apiBase = import.meta.env.VITE_API_URL;
-        host = apiBase ? apiBase.replace(/^https?:\/\//, '').replace(/\/+$/, '') : '127.0.0.1:3000';
+        host = apiBase ? apiBase.replace(/^https?:\/\//, '').replace(/\/+$/, '') : (window.location.host || 'localhost');
       }
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       wsUrl = `${protocol}//${host}/ws?userId=${uid}&sessionId=${encodeURIComponent(currentSessionId || '')}`;
