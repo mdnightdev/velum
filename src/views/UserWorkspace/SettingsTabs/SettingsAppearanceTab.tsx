@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Sun, Moon, Monitor } from 'lucide-react';
+import { Sun, Moon, Monitor } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { getStoredAppearanceSettings, applyAppearanceSettings } from '../../../utils/appearance';
 
 interface SettingsAppearanceTabProps {
@@ -31,7 +32,6 @@ export function SettingsAppearanceTab({
   const [activeScaling, setActiveScaling] = useState<'cozy' | 'compact'>(initial.messageScaling || propScaling || 'cozy');
   const [activeFont, setActiveFont] = useState<'small' | 'medium' | 'large'>(initial.fontAdjustment || propFont || 'medium');
   const [activeMotion, setActiveMotion] = useState<boolean>(initial.reducedMotion ?? propMotion ?? false);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const current = getStoredAppearanceSettings();
@@ -41,18 +41,11 @@ export function SettingsAppearanceTab({
     setActiveMotion(current.reducedMotion);
   }, []);
 
-  const triggerToast = (msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => {
-      setToastMsg(null);
-    }, 2000);
-  };
-
   const handleThemeChange = (newTheme: 'dark' | 'light' | 'system') => {
     setActiveTheme(newTheme);
     applyAppearanceSettings({ theme: newTheme });
     handleSaveAppearance(newTheme, activeScaling, activeFont, activeMotion);
-    triggerToast(`Theme set to ${newTheme}`);
+    toast(`Theme set to ${newTheme}`);
     if (onToggleTheme && ((newTheme === 'light' && activeTheme !== 'light') || (newTheme === 'dark' && activeTheme !== 'dark'))) {
       onToggleTheme();
     }
@@ -62,14 +55,14 @@ export function SettingsAppearanceTab({
     setActiveScaling(newScaling);
     applyAppearanceSettings({ messageScaling: newScaling });
     handleSaveAppearance(activeTheme, newScaling, activeFont, activeMotion);
-    triggerToast(`Message density set to ${newScaling}`);
+    toast(`Message density set to ${newScaling}`);
   };
 
   const handleFontChange = (newFont: 'small' | 'medium' | 'large') => {
     setActiveFont(newFont);
     applyAppearanceSettings({ fontAdjustment: newFont });
     handleSaveAppearance(activeTheme, activeScaling, newFont, activeMotion);
-    triggerToast(`Font size set to ${newFont}`);
+    toast(`Font size set to ${newFont}`);
   };
 
   const handleMotionChange = () => {
@@ -77,20 +70,11 @@ export function SettingsAppearanceTab({
     setActiveMotion(nextMotion);
     applyAppearanceSettings({ reducedMotion: nextMotion });
     handleSaveAppearance(activeTheme, activeScaling, activeFont, nextMotion);
-    triggerToast(`Reduced motion ${nextMotion ? 'enabled' : 'disabled'}`);
+    toast(`Reduced motion ${nextMotion ? 'enabled' : 'disabled'}`);
   };
-
-  const displayMsg = toastMsg || parentMsg;
 
   return (
     <div className="w-full max-w-4xl space-y-6">
-      {displayMsg && (
-        <div className="p-3.5 bg-status-online-bg text-status-online rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2 transition-all">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{displayMsg}</span>
-        </div>
-      )}
-
       <div>
         <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">
           Appearance

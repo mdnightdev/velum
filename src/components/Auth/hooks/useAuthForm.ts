@@ -94,6 +94,10 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         return;
       } catch (err: any) {
         console.warn('[Biometrics] Unlock cancelled or failed:', err);
+        const errMsg = err?.message || String(err || '');
+        if (errMsg && !errMsg.toLowerCase().includes('cancel') && !errMsg.toLowerCase().includes('user')) {
+          setAuthError(`Biometric authentication failed: ${errMsg}`);
+        }
         return;
       }
     }
@@ -346,34 +350,41 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
           const loginData = await loginRes.json();
           const sessionToken = loginData.token || loginData.sessionId;
 
-          // If biometrics/passkey requested, register hardware passkey immediately
+          // If biometrics/passkey requested
           if (enableBiometrics && sessionToken) {
-            try {
-              const optRes = await fetch('/api/v2/webauthn/register/options', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${sessionToken}`
-                }
-              });
-
-              if (optRes.ok) {
-                const options = await optRes.json();
-                const regResponse = await startRegistration({ optionsJSON: options });
-                await fetch('/api/v2/webauthn/register/verify', {
+            if (Capacitor.isNativePlatform()) {
+              const deviceId = loginData.deviceId || (await collectDeviceFingerprint()).deviceId;
+              if (loginData.user) {
+                saveBiometricSession(loginData.user, sessionToken, deviceId);
+              }
+            } else {
+              try {
+                const optRes = await fetch('/api/v2/webauthn/register/options', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${sessionToken}`
-                  },
-                  body: JSON.stringify({
-                    response: regResponse,
-                    nickname: `Primary Passkey (${new Date().toLocaleDateString()})`
-                  })
+                  }
                 });
+
+                if (optRes.ok) {
+                  const options = await optRes.json();
+                  const regResponse = await startRegistration({ optionsJSON: options });
+                  await fetch('/api/v2/webauthn/register/verify', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${sessionToken}`
+                    },
+                    body: JSON.stringify({
+                      response: regResponse,
+                      nickname: `Primary Passkey (${new Date().toLocaleDateString()})`
+                    })
+                  });
+                }
+              } catch (bioErr) {
+                console.warn('[WebAuthn] Initial passkey enrollment skipped or cancelled:', bioErr);
               }
-            } catch (bioErr) {
-              console.warn('[WebAuthn] Initial biometric enrollment skipped or cancelled:', bioErr);
             }
           }
 

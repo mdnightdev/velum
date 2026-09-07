@@ -28,6 +28,7 @@ export interface ChatStoreState {
   setUnreadCount: (roomId: string, count: number) => void;
   setUnreadCounts: (counts: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => void;
   resetUnreadCount: (roomId: string) => void;
+  clearRoomUnread: (roomId: string) => void;
   setRoomMaxSeq: (roomId: string, seq: number) => void;
 }
 
@@ -185,12 +186,21 @@ export const useChatStore = create<ChatStoreState>()(
       },
 
       resetUnreadCount: (roomId) => {
-        set((state) => ({
-          unreadCounts: {
-            ...state.unreadCounts,
-            [roomId]: 0
-          }
-        }));
+        set((state) => {
+          if (!state.unreadCounts[roomId]) return state;
+          const next = { ...state.unreadCounts };
+          delete next[roomId];
+          return { unreadCounts: next };
+        });
+      },
+
+      clearRoomUnread: (roomId) => {
+        set((state) => {
+          if (!state.unreadCounts[roomId]) return state;
+          const next = { ...state.unreadCounts };
+          delete next[roomId];
+          return { unreadCounts: next };
+        });
       },
 
       setRoomMaxSeq: (roomId, seq) => {

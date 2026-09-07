@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Bell, Volume2, MessageSquare, Radio } from 'lucide-react';
+import { Bell, Volume2, MessageSquare, Radio } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { 
   getNotificationPreferences, 
   saveNotificationPreferences, 
@@ -36,7 +37,6 @@ export function SettingsNotificationsTab({
   const [sound, setSound] = useState<boolean>(initial.soundTriggers ?? propSound ?? true);
   const [badges, setBadges] = useState<boolean>(initial.unreadBadges ?? propBadges ?? true);
   const [push, setPush] = useState<boolean>(initial.pushPreferences ?? propPush ?? false);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const current = getNotificationPreferences();
@@ -46,13 +46,6 @@ export function SettingsNotificationsTab({
     setPush(current.pushPreferences);
   }, []);
 
-  const triggerToast = (msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => {
-      setToastMsg(null);
-    }, 2000);
-  };
-
   const handleTogglePopups = async () => {
     const next = !popups;
     setPopups(next);
@@ -60,9 +53,9 @@ export function SettingsNotificationsTab({
     handleSaveNotifications(next, sound, badges, push);
     if (next) {
       const granted = await requestNotificationPermission();
-      triggerToast(granted ? 'In-app & desktop alerts enabled' : 'Alerts enabled (Browser permission required)');
+      toast(granted ? 'In-app & desktop alerts enabled' : 'Alerts enabled (Browser permission required)');
     } else {
-      triggerToast('In-app alerts disabled');
+      toast('In-app alerts disabled');
     }
   };
 
@@ -73,9 +66,9 @@ export function SettingsNotificationsTab({
     handleSaveNotifications(popups, next, badges, push);
     if (next) {
       playNotificationSound(); // Play test sample chime
-      triggerToast('Audio chime alert enabled');
+      toast('Audio chime alert enabled');
     } else {
-      triggerToast('Audio alerts muted');
+      toast('Audio alerts muted');
     }
   };
 
@@ -85,7 +78,7 @@ export function SettingsNotificationsTab({
     saveNotificationPreferences({ unreadBadges: next });
     handleSaveNotifications(popups, sound, next, push);
     updateAppBadge(next ? 1 : 0);
-    triggerToast(`Unread badges ${next ? 'enabled' : 'disabled'}`);
+    toast(`Unread badges ${next ? 'enabled' : 'disabled'}`);
   };
 
   const handleTogglePush = async () => {
@@ -95,23 +88,14 @@ export function SettingsNotificationsTab({
     handleSaveNotifications(popups, sound, badges, next);
     if (next) {
       const success = await registerPushNotifications();
-      triggerToast(success ? 'Push notifications active' : 'Push notifications configured');
+      toast(success ? 'Push notifications active' : 'Push notifications configured');
     } else {
-      triggerToast('Push notifications disabled');
+      toast('Push notifications disabled');
     }
   };
 
-  const displayMsg = toastMsg || parentMsg;
-
   return (
     <div className="w-full max-w-4xl space-y-6">
-      {displayMsg && (
-        <div className="p-3.5 bg-status-online-bg text-status-online rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2 transition-all">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{displayMsg}</span>
-        </div>
-      )}
-
       <div>
         <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">
           Notifications

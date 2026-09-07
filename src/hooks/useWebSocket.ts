@@ -6,7 +6,7 @@ import { flushLoungeCache, deleteLocalMessage, purgeDmMessages, getLocalMessages
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 import { storage } from '../services/storageService';
-import { handleInboundMessageNotification, updateAppBadge } from '../utils/notifications';
+import { handleInboundMessageNotification, updateAppBadge, dismissDeliveredNotification } from '../utils/notifications';
 import { useChatStore } from '../stores/chatStore';
 
 interface UseWebSocketParams {
@@ -502,7 +502,8 @@ export function useWebSocket({
                 content: bodyText,
                 isFromMe: false,
                 roomId: dmRoomId,
-                activeRoomId: activeRoomIdRef.current
+                activeRoomId: activeRoomIdRef.current,
+                timestamp: data.created ? new Date(data.created).getTime() : Date.now()
               });
             };
 
@@ -657,15 +658,6 @@ export function useWebSocket({
           window.dispatchEvent(new CustomEvent('velum-wallet-update', { detail: data }));
         } else if (data.type === 'notification_received') {
           window.dispatchEvent(new CustomEvent('velum-notifications-update', { detail: data }));
-          if (data.notification?.title) {
-            handleInboundMessageNotification({
-              senderName: data.notification.title,
-              content: data.notification.message || '',
-              isFromMe: false,
-              roomId: 'notifications',
-              activeRoomId: activeRoomIdRef.current
-            });
-          }
         } else if (data.type === 'user_profile_updated') {
           window.dispatchEvent(new CustomEvent('velum-profile-update', { detail: data }));
         } else {
@@ -696,7 +688,8 @@ export function useWebSocket({
                   content: senderDisplayName ? `${senderDisplayName}: ${bodyText}` : bodyText,
                   isFromMe: false,
                   roomId: data.room_id,
-                  activeRoomId: activeRoomIdRef.current
+                  activeRoomId: activeRoomIdRef.current,
+                  timestamp: newMessage.timestamp ? new Date(newMessage.timestamp).getTime() : Date.now()
                 });
               };
 
@@ -1057,7 +1050,18 @@ export function useWebSocket({
   };
 
   const markAsRead = (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => {
-    // Note: Counter reset is now handled server-side in handleMarkRead
+    if (!roomId) return;
+    setUnreadCounts(prev => {
+      const current = prev[roomId] || 0;
+      if (current <= 1) {
+        if (!prev[roomId]) return prev;
+        const next = { ...prev };
+        delete next[roomId];
+        return next;
+      }
+      return { ...prev, [roomId]: current - 1 };
+    });
+    dismissDeliveredNotification(roomId).catch(() => {});
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'mark_read',
@@ -1069,6 +1073,14 @@ export function useWebSocket({
   };
 
   const markAllAsRead = (roomId: string) => {
+    if (!roomId) return;
+    setUnreadCounts(prev => {
+      if (!prev[roomId]) return prev;
+      const next = { ...prev };
+      delete next[roomId];
+      return next;
+    });
+    dismissDeliveredNotification(roomId).catch(() => {});
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'mark_all_read',
@@ -1091,8 +1103,9 @@ export function useWebSocket({
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({ type: 'join_room', room_id: roomId, invite_code: inviteCode }));
 
-    // Reset unread counter when joining a room
+    // Reset unread counter when joining a room and dismiss its delivered notifications
     setUnreadCounts(prev => ({ ...prev, [roomId]: 0 }));
+    dismissDeliveredNotification(roomId).catch(() => {});
   };
 
   const leaveRoom = (roomId: string) => {
@@ -1114,6 +1127,15 @@ export function useWebSocket({
       wsRef.current.close();
     }
   };
+
+  // Sync app badge and document title with total unread counts
+  useEffect(() => {
+    let totalUnread = 0;
+    Object.values(unreadCounts || {}).forEach(cnt => {
+      totalUnread += Math.max(0, Number(cnt) || 0);
+    });
+    updateAppBadge(totalUnread);
+  }, [unreadCounts]);
 
   useEffect(() => {
     if (isAuthenticated && userId) {

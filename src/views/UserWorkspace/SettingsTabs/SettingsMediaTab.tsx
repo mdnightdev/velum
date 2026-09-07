@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { CheckCircle, Mic, Play, Trash2, HardDrive, Image as ImageIcon } from 'lucide-react';
+import { Mic, Play, Trash2, HardDrive, Image as ImageIcon } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { purgeCryptoDatabase } from '../../../services/cryptoDbStore';
 
 interface SettingsMediaTabProps {
@@ -21,28 +22,20 @@ export function SettingsMediaTab({
 }: SettingsMediaTabProps) {
   const [voice, setVoice] = useState<boolean>(propVoice);
   const [autoPlay, setAutoPlay] = useState<boolean>(propAutoPlay);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isClearingCache, setIsClearingCache] = useState(false);
-
-  const triggerToast = (msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => {
-      setToastMsg(null);
-    }, 2000);
-  };
 
   const handleToggleVoice = () => {
     const next = !voice;
     setVoice(next);
     handleSaveMedia(next, autoPlay);
-    triggerToast(`Voice playback ${next ? 'enabled' : 'disabled'}`);
+    toast(`Voice playback ${next ? 'enabled' : 'disabled'}`);
   };
 
   const handleToggleAutoPlay = () => {
     const next = !autoPlay;
     setAutoPlay(next);
     handleSaveMedia(voice, next);
-    triggerToast(`Auto-play voice notes ${next ? 'enabled' : 'disabled'}`);
+    toast(`Auto-play voice notes ${next ? 'enabled' : 'disabled'}`);
   };
 
   const handleClearMediaCache = async () => {
@@ -55,25 +48,16 @@ export function SettingsMediaTab({
         const cacheKeys = await window.caches.keys();
         await Promise.all(cacheKeys.map(k => window.caches.delete(k)));
       }
-      triggerToast('Local media cache cleared.');
+      toast('Local media cache cleared.');
     } catch {
-      triggerToast('Cache reset complete.');
+      toast('Cache reset complete.');
     } finally {
       setIsClearingCache(false);
     }
   };
 
-  const displayMsg = toastMsg || parentMsg;
-
   return (
     <div className="w-full max-w-4xl space-y-6">
-      {displayMsg && (
-        <div className="p-3.5 bg-status-online-bg text-status-online rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2 transition-all">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{displayMsg}</span>
-        </div>
-      )}
-
       {parentErr && (
         <div className="p-3.5 bg-alert-error-bg text-alert-error rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
           <span>{parentErr}</span>

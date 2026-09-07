@@ -88,7 +88,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       storage.clearSession();
-      clearBiometricSession();
     } catch (e) {
       log.warn('Session storage clear warning', { error: (e as Error).message });
     }

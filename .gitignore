@@ -34,3 +34,4 @@ emergency/
 *.bak
 *.keystore
 firebase-service-account.json
+PLANNING.md

@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import toast from 'react-hot-toast';
 
 export interface NotificationPreferences {
   desktopPopups: boolean;
@@ -47,6 +48,7 @@ export function saveNotificationPreferences(prefs: Partial<NotificationPreferenc
  */
 export function playNotificationSound(): void {
   if (typeof window === 'undefined') return;
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
   const now = Date.now();
   if (now - lastSoundPlayedAt < 1500) return;
   lastSoundPlayedAt = now;
@@ -126,6 +128,42 @@ function stringToNotificationId(str: string): number {
   return Math.abs(hash % 100000);
 }
 
+export const dismissDeliveredNotification = async (tagOrRoomId?: string): Promise<void> => {
+  if (typeof window === 'undefined') return;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (tagOrRoomId) {
+        const notifId = stringToNotificationId(tagOrRoomId);
+        const plugin = LocalNotifications as any;
+        if (typeof plugin.removeDeliveredNotificationsById === 'function') {
+          await plugin.removeDeliveredNotificationsById({ ids: [notifId] }).catch(() => {});
+        } else if (typeof plugin.removeDeliveredNotifications === 'function') {
+          await plugin.removeDeliveredNotifications({
+            notifications: [{ id: notifId, title: '', body: '' }]
+          }).catch(() => {});
+        }
+      } else {
+        await LocalNotifications.removeAllDeliveredNotifications().catch(() => {});
+      }
+    } catch {}
+    return;
+  }
+
+  try {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      const reg = await navigator.serviceWorker.ready;
+      const filter = tagOrRoomId ? { tag: tagOrRoomId } : undefined;
+      const notifications = await reg.getNotifications(filter);
+      notifications.forEach((n) => n.close());
+    }
+  } catch {}
+};
+
+export const dismissAllNotifications = async (): Promise<void> => {
+  await dismissDeliveredNotification();
+};
+
 export const sendDesktopNotification = (
   title: string,
   options?: { body?: string; icon?: string; tag?: string; roomId?: string }
@@ -146,7 +184,7 @@ export const sendDesktopNotification = (
         sound: undefined,
         actionTypeId: '',
         extra: { tag, roomId },
-        ...({ isExactNotification: false } as any)
+        ...({ isExactNotification: false, allowWhileIdle: false } as any)
       }
     ]
   }).catch(() => {
@@ -215,36 +253,34 @@ export function handleInboundMessageNotification(msg: {
   isFromMe?: boolean;
   roomId?: string;
   activeRoomId?: string;
+  timestamp?: number;
 }): void {
   if (msg.isFromMe) return;
 
-  // Drop alerts for messages synced in the first 3 seconds of startup
-  if (Date.now() - APP_INIT_TIME < 3000) return;
+  // Drop alerts for messages synced before app launch or older than current session init
+  if (msg.timestamp && msg.timestamp < APP_INIT_TIME) return;
+
+  const isVisible = typeof document !== 'undefined' && !document.hidden;
+  const isViewingSameRoom = isVisible && msg.roomId && msg.activeRoomId && msg.roomId === msg.activeRoomId;
+
+  // If user is currently active and viewing the exact same conversation, suppress notification
+  if (isViewingSameRoom) return;
 
   const prefs = getNotificationPreferences();
+  const cleanSender = (msg.senderName || 'Velum').replace(/^@/, '');
+  const previewText = msg.content || '';
 
-  if (prefs.soundTriggers) {
-    playNotificationSound();
-  }
-
-  if (prefs.desktopPopups) {
-    const isBackground = typeof document !== 'undefined' && document.hidden;
-    const isDifferentRoom = msg.roomId !== msg.activeRoomId;
-
-    const cleanSender = (msg.senderName || 'Velum').replace(/^@/, '');
-    const previewText = msg.content || '';
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('velum-inapp-toast', {
-        detail: {
-          title: cleanSender,
-          body: previewText,
-          roomId: msg.roomId
-        }
-      }));
+  if (isVisible) {
+    // In-app foreground: crisp Web Audio chime + single-token toast
+    if (prefs.soundTriggers) {
+      playNotificationSound();
     }
-
-    if (isBackground || isDifferentRoom) {
+    if (prefs.desktopPopups && previewText) {
+      toast(`${cleanSender}: ${previewText}`);
+    }
+  } else {
+    // Out-of-app background: hand off 100% to OS ringer / vibration profile
+    if (prefs.desktopPopups) {
       sendDesktopNotification(cleanSender, {
         body: previewText,
         tag: msg.roomId || 'velum-chat',

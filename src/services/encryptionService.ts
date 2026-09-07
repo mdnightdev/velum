@@ -108,10 +108,10 @@ export async function encryptMessage(content: string, context: EncryptionContext
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
-  // 1. Stateless Direct Message (v2 Dual-Recipient & v1 Legacy)
-  if (content.startsWith('e2ee:v2:') || content.startsWith('e2ee:v1:') || content.startsWith('e2ee:')) {
+  // 1. Stateless Direct Message (v3 Static DH, v2 Dual-Recipient & v1 Legacy)
+  if (content.startsWith('e2ee:v3:') || content.startsWith('e2ee:v2:') || content.startsWith('e2ee:v1:') || content.startsWith('e2ee:')) {
     try {
-      return await statelessE2eeService.decryptDirectMessage(content);
+      return await statelessE2eeService.decryptDirectMessage(content, context.peerUserId);
     } catch (err) {
       console.error('[encryptionService] Stateless E2EE decryption error:', err);
       return '[Encrypted Message]';

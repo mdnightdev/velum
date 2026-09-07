@@ -137,6 +137,16 @@ export async function getConversationsSummary(currentUserId?: number) {
     }
   }
 
+  // Fetch active memberships and ownerships for current user to restrict unread counts
+  const userMemberships = await db
+    .select({ loungeId: loungeMembers.loungeId })
+    .from(loungeMembers)
+    .where(and(eq(loungeMembers.userId, currentUserId), eq(loungeMembers.status, 'active')));
+  const activeLoungeIdSet = new Set(userMemberships.map(m => m.loungeId));
+  for (const l of allLounges) {
+    if (l.ownerId === currentUserId) activeLoungeIdSet.add(l.id);
+  }
+
   // 3. Assemble response in memory
   for (const lounge of allLounges) {
     const roomId = lounge.slug || `lounge_${lounge.id}`;
@@ -144,7 +154,7 @@ export async function getConversationsSummary(currentUserId?: number) {
     const clearedAt = clearedAtMap.get(lounge.id) || 0;
 
     const unread = unreadPerLounge.get(lounge.id) || 0;
-    if (unread > 0) {
+    if (unread > 0 && activeLoungeIdSet.has(lounge.id)) {
       unreadCounts[roomId] = unread;
     }
 

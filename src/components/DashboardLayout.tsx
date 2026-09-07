@@ -184,7 +184,7 @@ export default function DashboardLayout({
 
     if (relRes.status === 'fulfilled' && relRes.value.ok) {
       const relData = await relRes.value.json();
-      setFriendRelationships(relData);
+      setFriendRelationships(relData.relationships || relData || []);
     }
 
     } catch (err) {
@@ -342,11 +342,26 @@ export default function DashboardLayout({
 
   const totalDmUnread = React.useMemo(() => {
     let sum = 0;
+    const validDmRooms = new Set<string>();
+    const myUid = Number(user?.userId || 0);
+    if (myUid) {
+      validDmRooms.add(`dm_velum_${myUid}`);
+    }
+    const rels = Array.isArray(friendRelationships) ? friendRelationships : ((friendRelationships as any)?.relationships || []);
+    rels.forEach((r: any) => {
+      const fid = Number(r.friendId || r.id || r.userId);
+      if (fid && myUid) {
+        validDmRooms.add(`dm_${Math.min(myUid, fid)}_${Math.max(myUid, fid)}`);
+      }
+    });
+
     Object.entries(computedUnreadCounts || {}).forEach(([key, val]) => {
-      if (key.startsWith('dm_')) sum += Math.max(0, Number(val) || 0);
+      if (validDmRooms.has(key)) {
+        sum += Math.max(0, Number(val) || 0);
+      }
     });
     return sum;
-  }, [computedUnreadCounts]);
+  }, [computedUnreadCounts, friendRelationships, user?.userId]);
 
   const totalLoungeUnread = React.useMemo(() => {
     let sum = 0;
@@ -355,6 +370,10 @@ export default function DashboardLayout({
     });
     return sum;
   }, [computedUnreadCounts]);
+
+  const pendingRequestsCount = React.useMemo(() => {
+    return (friendRequests || []).filter(r => r.status === 'pending' && (Number(r.receiver_id) === Number(user?.userId) || !r.receiver_id)).length;
+  }, [friendRequests, user?.userId]);
 
   try {
     return (
@@ -713,9 +732,9 @@ export default function DashboardLayout({
               >
                 <div className="relative">
                   <Users className="w-6 h-6" />
-                  {friendRequests.length > 0 && (
+                  {pendingRequestsCount > 0 && (
                     <span className="absolute -top-1 -right-2 bg-accent text-velum-900 text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
-                      {friendRequests.length}
+                      {pendingRequestsCount}
                     </span>
                   )}
                 </div>
@@ -772,11 +791,6 @@ export default function DashboardLayout({
               >
                 <div className="relative">
                   <Bell className="w-6 h-6" />
-                  {friendRequests.length > 0 && (
-                    <span className="absolute -top-1 -right-2 bg-alert-error text-white text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
-                      {friendRequests.length}
-                    </span>
-                  )}
                 </div>
                 <span className="text-[10px] font-medium mt-0.5">Alerts</span>
               </button>

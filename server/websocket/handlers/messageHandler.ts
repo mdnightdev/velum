@@ -7,7 +7,8 @@ import {
   getLoungeIdFromRoomId,
   resetUnread,
   incrementUnread,
-  markAllMessagesRead
+  markAllMessagesRead,
+  getPeerIdFromDmRoom
 } from '../unreadManager.js';
 import { db, executeWithRetry } from '../../v2/db/client.js';
 import { users, messageReactions, dms } from '../../v2/db/schema/index.js';
@@ -446,6 +447,13 @@ export async function handleMarkRead(client: ClientConnection, message: any) {
 
   await resetUnread(client.userId, roomId);
 
+  if (roomId.startsWith('dm_')) {
+    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+    if (peerId) {
+      await dmService.markAsRead(client.userId, peerId);
+    }
+  }
+
   try {
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (loungeId) {
@@ -719,14 +727,17 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
             .where(and(eq(loungeMembers.loungeId, targetLoungeId!), eq(loungeMembers.status, 'active')))
         );
 
+        const isEncrypted = !!(message.is_encrypted || (typeof message.content === 'string' && (message.content.startsWith('e2ee:') || message.content.startsWith('ratchet:') || message.content.startsWith('VEL_E2EE['))));
+        const pushContent = isEncrypted ? 'New message' : (message.content || '');
+
         for (const m of members) {
           if (m.userId !== client.userId) {
             await dispatchPushNotification(m.userId, targetLoungeId, {
               title: roomId,
-              body: client.username ? `${client.username}: ${message.content || ''}` : (message.content || ''),
+              body: client.username ? `${client.username}: ${pushContent}` : pushContent,
               roomId,
               senderId: client.userId
-            }, message.content || '');
+            }, pushContent);
           }
         }
       }
@@ -811,12 +822,16 @@ export async function handleDirectMessage(client: ClientConnection, message: any
     broadcastToUserDevices(to, outFrame);
 
     // 3. Push notification fallback
+    const isEncrypted = created.encrypted || (typeof body === 'string' && (body.startsWith('e2ee:') || body.startsWith('ratchet:') || body.startsWith('VEL_E2EE[')));
+    const pushBody = isEncrypted ? 'New message' : (body || 'New message');
+    const dmRoomId = `dm_${Math.min(client.userId, to)}_${Math.max(client.userId, to)}`;
+
     dispatchPushNotification(to, 0, {
       title: senderName || client.username || 'Direct Message',
-      body: body,
-      roomId: `dm_${client.userId}`,
+      body: pushBody,
+      roomId: dmRoomId,
       senderId: client.userId
-    }, body).catch(err => console.error('[Push Gateway Error]:', err));
+    }, pushBody).catch(err => console.error('[Push Gateway Error]:', err));
   } catch (err) {
     console.error('[WS Direct Message Error]:', err);
     client.ws.send(JSON.stringify({

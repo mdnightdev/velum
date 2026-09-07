@@ -3,6 +3,20 @@ import { userUnreadCounts } from '../v2/db/schema/index.js';
 import { lounges, messages as dbMessages } from '../v2/db/schema/lounges.js';
 import { eq, and, sql, ne } from 'drizzle-orm';
 import { getRedisClient } from '../v2/db/redis.js';
+import { dmService } from '../v2/services/dmService.js';
+
+export function getPeerIdFromDmRoom(roomId: string, currentUserId: number): number | null {
+  if (!roomId || !roomId.startsWith('dm_')) return null;
+  if (roomId.startsWith('dm_velum_')) return 999;
+  const parts = roomId.replace('dm_', '').split('_').map(Number).filter(n => !isNaN(n));
+  if (parts.length === 1) {
+    return parts[0];
+  }
+  if (parts.length >= 2) {
+    return parts[0] === currentUserId ? parts[1] : parts[0];
+  }
+  return null;
+}
 
 export async function getLoungeIdFromRoomId(roomId: string): Promise<number | null> {
   if (!roomId) return null;
@@ -64,10 +78,27 @@ export async function incrementUnread(userId: number, roomId: string) {
 
 export async function resetUnread(userId: number, roomId: string) {
   try {
+    if (roomId.startsWith('dm_')) {
+      const peerId = getPeerIdFromDmRoom(roomId, userId);
+      if (peerId) {
+        await dmService.markAsRead(userId, peerId);
+      }
+    }
+
     const redis = await getRedisClient();
     if (redis) {
       const key = `unread:${userId}:${roomId}`;
       await redis.del(key);
+
+      if (roomId.startsWith('dm_')) {
+        const peerId = getPeerIdFromDmRoom(roomId, userId);
+        if (peerId) {
+          await redis.del(`unread:${userId}:dm_${peerId}`);
+          await redis.del(`unread:${userId}:dm_${Math.min(userId, peerId)}_${Math.max(userId, peerId)}`);
+          await redis.del(`unread:${userId}:dm_${userId}_${peerId}`);
+          await redis.del(`unread:${userId}:dm_${peerId}_${userId}`);
+        }
+      }
     }
 
     const loungeId = await getLoungeIdFromRoomId(roomId);
@@ -89,6 +120,15 @@ export async function resetUnread(userId: number, roomId: string) {
 
 export async function markAllMessagesRead(userId: number, roomId: string) {
   try {
+    if (roomId.startsWith('dm_')) {
+      const peerId = getPeerIdFromDmRoom(roomId, userId);
+      if (peerId) {
+        await dmService.markAsRead(userId, peerId);
+      }
+      await resetUnread(userId, roomId);
+      return;
+    }
+
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (!loungeId) return;
 

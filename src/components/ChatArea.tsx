@@ -22,7 +22,7 @@ import { ImageCropperModal } from './ImageCropperModal';
 import { streamFileDirectToCloudStorage, generateAnonymousFilename } from '../utils/mediaPipeline';
 import { stripAttachmentTokens, getCleanPreview } from '../utils/messageParser';
 import { useLanguage } from '../i18n/LanguageContext';
-import { requestNotificationPermission, sendDesktopNotification } from '../utils/notifications';
+import { requestNotificationPermission, dismissDeliveredNotification } from '../utils/notifications';
 import { createLogger } from '../utils/logger';
 import { getSessionId } from '../utils/auth';
 
@@ -423,18 +423,6 @@ export default function ChatArea({
     requestNotificationPermission();
   }, []);
 
-  const prevMessagesLengthRef = useRef(messages.length);
-  useEffect(() => {
-    if (messages.length > prevMessagesLengthRef.current) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.user_id !== currentUserId) {
-        const senderName = lastMsg.username || activeChatPeer?.username || 'Velum Member';
-        sendDesktopNotification(`New message from ${senderName}`, { body: 'New message' });
-      }
-    }
-    prevMessagesLengthRef.current = messages.length;
-  }, [messages, currentUserId, activeChatPeer?.username]);
-
   const onMarkAsReadRef = useRef(onMarkAsRead);
   const markAllAsReadRef = useRef(onMarkAllAsRead);
   useEffect(() => {
@@ -445,6 +433,7 @@ export default function ChatArea({
   useEffect(() => {
     if (!roomId) return;
     markAllAsReadRef.current?.(roomId);
+    dismissDeliveredNotification(roomId).catch(() => {});
   }, [roomId]);
 
   useEffect(() => {

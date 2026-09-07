@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, ChevronLeft, Search, Clock, Info } from 'lucide-react';
+import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, ChevronLeft, Search, Clock } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { useResponsiveLayout } from '../../hooks/useResponsive';
@@ -30,8 +31,6 @@ export default function TicketsMainDashboard({
   const [loading, setLoading] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  
   const dropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -48,11 +47,6 @@ export default function TicketsMainDashboard({
   const stripSystemTags = (str?: string | null): string => {
     if (!str) return '';
     return str.replace(/\[Forwarded Details \/ Encrypted Metadata\]:\s*/gi, '').trim();
-  };
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
   };
 
   const loadTickets = async () => {
@@ -118,15 +112,15 @@ export default function TicketsMainDashboard({
         setReason('');
         setCredentials('');
         setIssueType('general_support');
-        showToast('Support ticket submitted successfully.');
+        toast('Support ticket submitted successfully.');
         await loadTickets();
         setIsCreating(false);
       } else {
         const data = await res.json();
-        showToast(data.error || 'Failed to submit ticket.');
+        toast(data.error || 'Failed to submit ticket.');
       }
     } catch (err) {
-      showToast('Network error occurred while submitting ticket.');
+      toast('Network error occurred while submitting ticket.');
     } finally {
       setIsSubmitting(false);
     }
@@ -165,15 +159,15 @@ export default function TicketsMainDashboard({
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
-        showToast('Ticket deleted permanently.');
+        toast('Ticket deleted permanently.');
         if (activeTicketId === ticketId) setActiveTicketId(null);
         loadTickets();
       } else {
         const data = await res.json();
-        showToast(data.error || 'Failed to delete ticket.');
+        toast(data.error || 'Failed to delete ticket.');
       }
     } catch (err) {
-      showToast('Network error occurred while deleting ticket.');
+      toast('Network error occurred while deleting ticket.');
     }
   };
 
@@ -484,14 +478,6 @@ export default function TicketsMainDashboard({
 
   return (
     <div className="flex h-full w-full bg-velum-900 overflow-hidden relative">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-velum-800 border border-white/10 shadow-2xl rounded-full px-5 py-2.5 flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
-          <Info className="w-4 h-4 text-accent" />
-          <span className="text-xs font-semibold text-text-primary">{toastMessage}</span>
-        </div>
-      )}
-
       {renderTicketList()}
       {renderActiveTicket()}
     </div>

@@ -19,9 +19,9 @@ friendRouter.get('/requests', async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
     const list = await db.select().from(relationships).where(
-      or(
-        eq(relationships.userId, currentUserId),
-        eq(relationships.friendId, currentUserId)
+      and(
+        eq(relationships.friendId, currentUserId),
+        eq(relationships.status, 'pending')
       )
     );
 
@@ -148,7 +148,7 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
         status: 'accepted',
         last_seen_at: lastSeen,
         active_lounge: null,
-        dm_room_id: `dm_${peerId}`,
+        dm_room_id: peerId === 999 ? `dm_velum_${currentUserId}` : `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`,
         unread_count: unreadList.length,
         last_message: lastMessage
       };

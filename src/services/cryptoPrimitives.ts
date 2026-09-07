@@ -109,6 +109,12 @@ export function verifyEd25519(signature: Uint8Array, message: Uint8Array, public
 const INFO_ROOT = utf8ToBytes('VelumDoubleRatchetRootKDF');
 const INFO_CHAIN = utf8ToBytes('VelumDoubleRatchetChainKDF');
 const INFO_MESSAGE = utf8ToBytes('VelumDoubleRatchetMessageKey');
+const INFO_CONVERSATION = utf8ToBytes('VelumConversationKeyV2');
+const SALT_CONVERSATION = utf8ToBytes('velum-dm-e2ee-salt-v2');
+
+export function deriveConversationKey(dhSharedSecret: Uint8Array): Uint8Array {
+  return hkdf(sha256, dhSharedSecret, SALT_CONVERSATION, INFO_CONVERSATION, 32);
+}
 
 export function kdfRoot(rootKey: Uint8Array, dhSharedSecret: Uint8Array): { nextRootKey: Uint8Array; chainKey: Uint8Array } {
   // 64-byte derivation: first 32 bytes = next rootKey, last 32 bytes = chainKey

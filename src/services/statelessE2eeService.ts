@@ -2,6 +2,7 @@ import {
   generateX25519KeyPair,
   deriveX25519KeyPairFromSeed,
   calculateX25519SharedSecret,
+  deriveConversationKey,
   generateEd25519KeyPair,
   deriveEd25519KeyPairFromSeed,
   signEd25519,
@@ -92,11 +93,13 @@ class StatelessE2eeService {
       const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
       await saveSignedPrekey(uid, 1, spk, spkSignature);
     } else {
-      // Without seedMaterial, check if keys can be restored from storage
+      // Without seedMaterial, restore from storage or generate high-entropy keypair
       identity = await loadLocalIdentityKeys(uid);
       if (!identity) {
-        console.warn('[StatelessE2EE] Identity keys absent and no seed provided. Waiting for authenticated credentials.');
-        return;
+        const edIdentity = generateEd25519KeyPair();
+        const dhIdentity = generateX25519KeyPair();
+        await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
+        identity = { signing: edIdentity, dh: dhIdentity };
       }
     }
 
@@ -168,10 +171,14 @@ class StatelessE2eeService {
   }
 
   /**
-   * Encrypts a direct message using Dual-Recipient Ephemeral ECDH + AES-256-GCM.
-   * Wire format: e2ee:v2:<ephPubKeyHex>:<senderKeyTuple>:<recipientKeyTuple>:<ivHex>:<tagHex>:<cipherPayloadHex>
+   * Encrypts a direct message using pairwise static Diffie-Hellman: X25519(myPriv, peerPub) + HKDF + AES-256-GCM.
+   * Wire format: e2ee:v3:<senderId>:<ivHex>:<tagHex>:<cipherPayloadHex>
    */
   public async encryptDirectMessage(plaintext: string, peerUserId: number): Promise<string> {
+    if (peerUserId === 999) {
+      return plaintext;
+    }
+
     const uid = this.getLocalUserId();
     let localKeys = uid ? await loadLocalIdentityKeys(uid) : null;
     if (!localKeys || !localKeys.dh) {
@@ -179,44 +186,35 @@ class StatelessE2eeService {
       localKeys = uid ? await loadLocalIdentityKeys(uid) : null;
     }
 
+    if (!localKeys || !localKeys.dh) {
+      throw new Error('[StatelessE2EE] Local identity key unavailable');
+    }
+
     const peerPubKeyHex = await this.fetchPeerPublicKey(peerUserId);
     const peerPubKeyBytes = fromHex(peerPubKeyHex);
 
-    // 1. Generate fresh one-time ephemeral keypair
-    const ephKeyPair = generateX25519KeyPair();
-    const ephPubKeyHex = toHex(ephKeyPair.publicKey);
+    // 1. Calculate pairwise shared secret between sender and peer
+    const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, peerPubKeyBytes);
 
-    // 2. Generate random 256-bit symmetric payload key
-    const payloadKey = getRandomBytes(32);
+    // 2. Derive deterministic conversation key
+    const convKey = deriveConversationKey(sharedSecret);
 
-    // 3. Encrypt payloadKey for Recipient (Peer)
-    const sharedRecipient = calculateX25519SharedSecret(ephKeyPair.privateKey, peerPubKeyBytes);
-    const ivRecipient = getRandomBytes(12);
-    const { ciphertext: encKeyRecipient, tag: tagRecipient } = await encryptAesGcm(sharedRecipient, payloadKey, ivRecipient);
-    const recipientKeyTuple = `${toHex(ivRecipient)}.${toHex(tagRecipient)}.${toHex(encKeyRecipient)}`;
-
-    // 4. Encrypt payloadKey for Sender (Self) if local identity keys exist
-    let senderKeyTuple = '';
-    if (localKeys?.dh) {
-      const sharedSender = calculateX25519SharedSecret(ephKeyPair.privateKey, localKeys.dh.publicKey);
-      const ivSender = getRandomBytes(12);
-      const { ciphertext: encKeySender, tag: tagSender } = await encryptAesGcm(sharedSender, payloadKey, ivSender);
-      senderKeyTuple = `${toHex(ivSender)}.${toHex(tagSender)}.${toHex(encKeySender)}`;
-    }
-
-    // 5. Encrypt actual plaintext with the payloadKey
+    // 3. Encrypt plaintext with fresh 12-byte IV via AES-256-GCM
     const ivPayload = getRandomBytes(12);
     const plaintextBytes = utf8ToBytes(plaintext);
-    const { ciphertext: payloadCipher, tag: payloadTag } = await encryptAesGcm(payloadKey, plaintextBytes, ivPayload);
+    const { ciphertext: payloadCipher, tag: payloadTag } = await encryptAesGcm(convKey, plaintextBytes, ivPayload);
 
-    return `e2ee:v2:${ephPubKeyHex}:${senderKeyTuple}:${recipientKeyTuple}:${toHex(ivPayload)}:${toHex(payloadTag)}:${toHex(payloadCipher)}`;
+    return `e2ee:v3:${uid || 0}:${toHex(ivPayload)}:${toHex(payloadTag)}:${toHex(payloadCipher)}`;
   }
 
   /**
-   * Decrypts a stateless e2ee message using local private key and sender's ephemeral public key
-   * Supports both e2ee:v2 (dual-recipient) and e2ee:v1 (legacy).
+   * Decrypts a direct message envelope.
+   * Supports:
+   * - e2ee:v3 (Static Diffie-Hellman pairwise)
+   * - e2ee:v2 (Legacy dual-recipient envelope)
+   * - e2ee:v1 (Legacy ephemeral envelope)
    */
-  public async decryptDirectMessage(envelope: string): Promise<string> {
+  public async decryptDirectMessage(envelope: string, contextPeerUserId?: number): Promise<string> {
     const uid = this.getLocalUserId();
     if (!uid) {
       throw new Error('[StatelessE2EE] Local user ID not initialized');
@@ -232,7 +230,39 @@ class StatelessE2eeService {
       throw new Error('[StatelessE2EE] Local identity key not found in storage');
     }
 
-    // Handle v2 Dual-Recipient Envelope
+    // 1. Handle v3 Static Diffie-Hellman Pairwise Envelope
+    if (envelope.startsWith('e2ee:v3:')) {
+      const parts = envelope.split(':');
+      if (parts.length !== 6) {
+        throw new Error('[StatelessE2EE] Invalid v3 envelope format');
+      }
+
+      const [, , senderIdStr, ivPayloadHex, tagPayloadHex, cipherPayloadHex] = parts;
+      const senderId = parseInt(senderIdStr, 10);
+      const targetPeerId = (senderId === uid && contextPeerUserId)
+        ? contextPeerUserId
+        : (senderId !== uid && !isNaN(senderId) && senderId > 0 ? senderId : contextPeerUserId);
+
+      if (!targetPeerId) {
+        throw new Error('[StatelessE2EE] Missing peer user ID for conversation key derivation');
+      }
+
+      const peerPubKeyHex = await this.fetchPeerPublicKey(targetPeerId);
+      const peerPubKeyBytes = fromHex(peerPubKeyHex);
+
+      const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, peerPubKeyBytes);
+      const convKey = deriveConversationKey(sharedSecret);
+
+      const decryptedBytes = await decryptAesGcm(
+        convKey,
+        fromHex(cipherPayloadHex),
+        fromHex(tagPayloadHex),
+        fromHex(ivPayloadHex)
+      );
+      return bytesToUtf8(decryptedBytes);
+    }
+
+    // 2. Handle Legacy v2 Dual-Recipient Envelope Fallback
     if (envelope.startsWith('e2ee:v2:')) {
       const parts = envelope.split(':');
       if (parts.length !== 8) {
@@ -273,7 +303,7 @@ class StatelessE2eeService {
       return bytesToUtf8(decryptedBytes);
     }
 
-    // Handle v1 Legacy Envelope
+    // 3. Handle Legacy v1 Envelope Fallback
     if (envelope.startsWith('e2ee:v1:')) {
       const parts = envelope.split(':');
       if (parts.length !== 6) {

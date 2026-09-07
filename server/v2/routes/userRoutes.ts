@@ -11,6 +11,8 @@ import { users, supportAdminNominations } from '../db/schema/users.js';
 import { userPrekeys } from '../db/schema/keys.js';
 import { relationships } from '../db/schema/relationships.js';
 import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema/lounges.js';
+import { dms, dmClears } from '../db/schema/dms.js';
+import { getPeerIdFromDmRoom } from '../../websocket/unreadManager.js';
 import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { SystemBot } from '../services/systemBot.js';
@@ -465,7 +467,33 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
           const roomId = key.split(':')[2];
           const count = await redis.get(key);
           if (count && typeof count === 'string') {
-            counts[roomId] = parseInt(count, 10);
+            const numCount = parseInt(count, 10);
+            if (roomId.startsWith('dm_')) {
+              const peerId = getPeerIdFromDmRoom(roomId, userId);
+              if (peerId) {
+                const [unreadRow] = await db
+                  .select({ count: sql<number>`count(*)::int` })
+                  .from(dms)
+                  .where(
+                    and(
+                      eq(dms.sender, peerId),
+                      eq(dms.peer, userId),
+                      sql`${dms.readAt} IS NULL`
+                    )
+                  );
+                const actualCount = unreadRow?.count || 0;
+                if (actualCount === 0) {
+                  await redis.del(key);
+                  continue;
+                } else {
+                  counts[roomId] = actualCount;
+                  continue;
+                }
+              }
+            }
+            if (numCount > 0) {
+              counts[roomId] = numCount;
+            }
           }
         }
       }
@@ -489,6 +517,27 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
           const key = `unread:${userId}:${roomId}`;
           await redis.set(key, String(row.unreadCount));
           await redis.expire(key, 86400); // 24 hours cache TTL
+        }
+      }
+
+      // Recover DM unread counts from dms table
+      const unreadDms = await db
+        .select({
+          sender: dms.sender,
+          count: sql<number>`count(*)::int`
+        })
+        .from(dms)
+        .where(
+          and(
+            eq(dms.peer, userId),
+            sql`${dms.readAt} IS NULL`
+          )
+        )
+        .groupBy(dms.sender);
+
+      for (const row of unreadDms) {
+        if (row.count > 0) {
+          counts[`dm_${row.sender}`] = row.count;
         }
       }
     }

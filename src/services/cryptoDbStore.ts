@@ -8,9 +8,6 @@ import {
 export const DB_VERSION = 3;
 export const STORE_IDENTITY = 'identity_keys';
 export const STORE_SIGNED_PREKEY = 'signed_prekeys';
-export const STORE_ONE_TIME_PREKEYS = 'one_time_prekeys';
-export const STORE_SESSIONS = 'sessions';
-export const STORE_SKIPPED_KEYS = 'skipped_message_keys';
 export const STORE_VAULT_METADATA = 'vault_metadata';
 export const STORE_MESSAGES = 'messages';
 export const STORE_MEDIA = 'media_blobs';
@@ -25,36 +22,6 @@ export function getDatabaseName(userId: number): string {
   return `v_${uid}`;
 }
 
-async function migrateLegacyDatabases(targetUserId: number, targetDb: IDBPDatabase): Promise<void> {
-  if (typeof window === 'undefined' || !window.indexedDB) return;
-  const legacyNames = [`velum_db_${targetUserId}`, `velum_db_user_${targetUserId}`];
-  for (const oldName of legacyNames) {
-    try {
-      const oldDb = await openDB(oldName, DB_VERSION).catch(() => null);
-      if (!oldDb) continue;
-
-      const storeNames: string[] = Array.from(oldDb.objectStoreNames);
-      for (const rawStoreName of storeNames) {
-        const storeName = String(rawStoreName);
-        if (!targetDb.objectStoreNames.contains(storeName)) continue;
-        try {
-          const items = await oldDb.getAll(storeName);
-          if (items && items.length > 0) {
-            const tx = targetDb.transaction(storeName as any, 'readwrite');
-            for (const item of items) {
-              await tx.store.put(item);
-            }
-            await tx.done;
-          }
-        } catch (copyErr) {
-          console.warn(`[CryptoDB Migration] Failed copying store ${storeName} from ${oldName}:`, copyErr);
-        }
-      }
-      oldDb.close();
-      await deleteDB(oldName).catch(() => {});
-    } catch (_) {}
-  }
-}
 
 export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDatabase> {
   const targetUserId = (userId && !isNaN(userId)) ? userId : 0;
@@ -74,19 +41,6 @@ export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDataba
     upgrade(db) {
       if (!db.objectStoreNames.contains(STORE_IDENTITY)) {
         db.createObjectStore(STORE_IDENTITY, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORE_SIGNED_PREKEY)) {
-        db.createObjectStore(STORE_SIGNED_PREKEY, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORE_ONE_TIME_PREKEYS)) {
-        db.createObjectStore(STORE_ONE_TIME_PREKEYS, { keyPath: 'keyId' });
-      }
-      if (!db.objectStoreNames.contains(STORE_SESSIONS)) {
-        db.createObjectStore(STORE_SESSIONS, { keyPath: 'peerUserId' });
-      }
-      if (!db.objectStoreNames.contains(STORE_SKIPPED_KEYS)) {
-        const skippedStore = db.createObjectStore(STORE_SKIPPED_KEYS, { keyPath: 'id' });
-        skippedStore.createIndex('by_peer', 'peerUserId', { unique: false });
       }
       if (!db.objectStoreNames.contains(STORE_VAULT_METADATA)) {
         db.createObjectStore(STORE_VAULT_METADATA, { keyPath: 'id' });
@@ -119,7 +73,6 @@ export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDataba
       dbPromises.delete(targetUserId);
     }
   }).then(async (db) => {
-    await migrateLegacyDatabases(targetUserId, db);
     dbInstances.set(targetUserId, db);
     dbPromises.delete(targetUserId);
     return db;
@@ -173,6 +126,8 @@ export interface LocalIdentityKeys {
   dh: KeyPairBytes;      // X25519
 }
 
+const memoryIdentityCache = new Map<number, any>();
+
 export async function saveLocalIdentityKeys(userId: number, keys: LocalIdentityKeys): Promise<void> {
   const payload = {
     id: 'local_identity',
@@ -183,6 +138,8 @@ export async function saveLocalIdentityKeys(userId: number, keys: LocalIdentityK
     createdAt: Date.now()
   };
 
+  memoryIdentityCache.set(userId, payload);
+
   try {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(`velum_identity_keys_${userId}`, JSON.stringify(payload));
@@ -190,8 +147,10 @@ export async function saveLocalIdentityKeys(userId: number, keys: LocalIdentityK
   } catch {}
 
   try {
-    const db = await openCryptoDatabase(userId);
-    await db.put(STORE_IDENTITY, payload);
+    if (typeof window !== 'undefined' && window.indexedDB) {
+      const db = await openCryptoDatabase(userId);
+      await db.put(STORE_IDENTITY, payload);
+    }
   } catch (err) {
     console.warn('[CryptoDB] Failed saving identity keys to IndexedDB:', err);
   }
@@ -201,8 +160,10 @@ export async function loadLocalIdentityKeys(userId: number): Promise<LocalIdenti
   let record: any = null;
 
   try {
-    const db = await openCryptoDatabase(userId);
-    record = await db.get(STORE_IDENTITY, 'local_identity');
+    if (typeof window !== 'undefined' && window.indexedDB) {
+      const db = await openCryptoDatabase(userId);
+      record = await db.get(STORE_IDENTITY, 'local_identity');
+    }
   } catch (err) {
     console.warn('[CryptoDB] Error loading identity keys from IndexedDB:', err);
   }
@@ -216,6 +177,10 @@ export async function loadLocalIdentityKeys(userId: number): Promise<LocalIdenti
         }
       }
     } catch {}
+  }
+
+  if (!record || !record.signingPrivateKeyHex || !record.dhPrivateKeyHex) {
+    record = memoryIdentityCache.get(userId);
   }
 
   if (!record || !record.signingPrivateKeyHex || !record.dhPrivateKeyHex) return null;
@@ -271,133 +236,6 @@ export async function loadSignedPrekey(userId: number): Promise<{
   };
 }
 
-// ---------------------------------------------------------------------------
-// One-Time Prekey Storage
-// ---------------------------------------------------------------------------
-
-export async function saveOneTimePrekeys(
-  userId: number,
-  prekeys: Array<{ keyId: number; keyPair: KeyPairBytes }>
-): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  const tx = db.transaction(STORE_ONE_TIME_PREKEYS, 'readwrite');
-  for (const item of prekeys) {
-    await tx.store.put({
-      keyId: item.keyId,
-      privateKeyHex: toHex(item.keyPair.privateKey),
-      publicKeyHex: toHex(item.keyPair.publicKey),
-      used: false,
-      createdAt: Date.now()
-    });
-  }
-  await tx.done;
-}
-
-export async function loadOneTimePrekey(userId: number, keyId: number): Promise<KeyPairBytes | null> {
-  const db = await openCryptoDatabase(userId);
-  const record = await db.get(STORE_ONE_TIME_PREKEYS, keyId);
-  if (!record || !record.privateKeyHex || !record.publicKeyHex) return null;
-  return {
-    privateKey: fromHex(record.privateKeyHex),
-    publicKey: fromHex(record.publicKeyHex)
-  };
-}
-
-export async function markOneTimePrekeyUsed(userId: number, keyId: number): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  const record = await db.get(STORE_ONE_TIME_PREKEYS, keyId);
-  if (record) {
-    record.used = true;
-    record.usedAt = Date.now();
-    await db.put(STORE_ONE_TIME_PREKEYS, record);
-  }
-}
-
-export async function countUnusedOneTimePrekeys(userId: number): Promise<number> {
-  const db = await openCryptoDatabase(userId);
-  const records = await db.getAll(STORE_ONE_TIME_PREKEYS);
-  return records.filter(r => !r.used).length;
-}
-
-// ---------------------------------------------------------------------------
-// Peer Double Ratchet Session Storage
-// ---------------------------------------------------------------------------
-
-export async function saveSessionState(userId: number, peerUserId: number, state: any): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  await db.put(STORE_SESSIONS, {
-    peerUserId,
-    state,
-    updatedAt: Date.now()
-  });
-}
-
-export async function loadSessionState(userId: number, peerUserId: number): Promise<any | null> {
-  const db = await openCryptoDatabase(userId);
-  const record = await db.get(STORE_SESSIONS, peerUserId);
-  return record ? record.state : null;
-}
-
-export async function deleteSessionState(userId: number, peerUserId: number): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  await db.delete(STORE_SESSIONS, peerUserId);
-  await clearSkippedKeysForPeer(userId, peerUserId);
-}
-
-// ---------------------------------------------------------------------------
-// Skipped Message Keys Storage
-// ---------------------------------------------------------------------------
-
-export function getSkippedKeyId(peerUserId: number, chainGen: number, messageIndex: number): string {
-  return `${peerUserId}:${chainGen}:${messageIndex}`;
-}
-
-export async function saveSkippedKey(
-  userId: number,
-  peerUserId: number,
-  chainGen: number,
-  messageIndex: number,
-  messageKey: Uint8Array
-): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  const id = getSkippedKeyId(peerUserId, chainGen, messageIndex);
-  await db.put(STORE_SKIPPED_KEYS, {
-    id,
-    peerUserId,
-    chainGen,
-    messageIndex,
-    messageKeyHex: toHex(messageKey),
-    createdAt: Date.now()
-  });
-}
-
-export async function consumeSkippedKey(
-  userId: number,
-  peerUserId: number,
-  chainGen: number,
-  messageIndex: number
-): Promise<Uint8Array | null> {
-  const db = await openCryptoDatabase(userId);
-  const id = getSkippedKeyId(peerUserId, chainGen, messageIndex);
-  const record = await db.get(STORE_SKIPPED_KEYS, id);
-  if (!record || !record.messageKeyHex) return null;
-
-  // Single-use guarantee: purge immediately upon retrieval
-  await db.delete(STORE_SKIPPED_KEYS, id);
-  return fromHex(record.messageKeyHex);
-}
-
-export async function clearSkippedKeysForPeer(userId: number, peerUserId: number): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  const tx = db.transaction(STORE_SKIPPED_KEYS, 'readwrite');
-  const index = tx.store.index('by_peer');
-  let cursor = await index.openCursor(IDBKeyRange.only(peerUserId));
-  while (cursor) {
-    await cursor.delete();
-    cursor = await cursor.continue();
-  }
-  await tx.done;
-}
 
 // ---------------------------------------------------------------------------
 // Local Vault Encryption Key Storage (for local message storage)

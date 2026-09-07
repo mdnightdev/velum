@@ -7,6 +7,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 import LoadingFallback from './components/LoadingFallback';
 import { initAppearance } from './utils/appearance';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { dismissDeliveredNotification } from './utils/notifications';
 import { registerPushNotifications } from './utils/pushNotifications';
 import { checkOtaUpdate, applyOtaUpdate } from './utils/otaUpdater';
 
@@ -40,7 +41,7 @@ function AppContent() {
         id: 'velum_messages',
         name: 'Messages',
         description: 'Direct messages and lounge notifications',
-        importance: 5,
+        importance: 4,
         visibility: 1,
         vibration: true,
       }).catch(() => {});
@@ -49,7 +50,7 @@ function AppContent() {
         id: 'velum_default',
         name: 'General Alerts',
         description: 'General system notifications',
-        importance: 5,
+        importance: 3,
         visibility: 1,
         vibration: true,
       }).catch(() => {});
@@ -64,6 +65,13 @@ function AppContent() {
       }).catch(() => {});
     }).catch(() => {});
   }, []);
+
+  // Dismiss delivered notification when room is active
+  useEffect(() => {
+    if (activeRoomId) {
+      dismissDeliveredNotification(activeRoomId).catch(() => {});
+    }
+  }, [activeRoomId]);
 
   // Check for OTA updates silently on startup
   useEffect(() => {
@@ -353,7 +361,20 @@ export default function App() {
       <ErrorBoundary>
         <AuthProvider>
           <CartProvider>
-            <Toaster position="top-center" />
+            <Toaster
+              position="top-center"
+              toastOptions={{
+                duration: 2500,
+                style: {
+                  background: 'var(--theme-velum-800)',
+                  color: 'var(--theme-text-primary)',
+                  boxShadow: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                },
+              }}
+            />
             <MaintenanceBanner />
             <Suspense fallback={<LoadingFallback />}>
               <AppContent />
