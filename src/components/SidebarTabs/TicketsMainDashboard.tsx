@@ -3,7 +3,6 @@ import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, 
 import toast from 'react-hot-toast';
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
-import { useResponsiveLayout } from '../../hooks/useResponsive';
 import { getSessionId } from '../../utils/auth';
 
 interface TicketsMainDashboardProps {
@@ -16,8 +15,7 @@ export default function TicketsMainDashboard({
   isDark = true
 }: TicketsMainDashboardProps) {
   const { t } = useLanguage();
-  const { isMobile: _isMobile, isTablet } = useResponsiveLayout();
-  const isMobile = _isMobile || isTablet;
+  const isMobile = true;
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);

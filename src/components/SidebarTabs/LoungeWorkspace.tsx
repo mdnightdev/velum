@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import ChatArea from '../ChatArea';
-import { useResponsive } from '../../hooks/useResponsive';
 import { ChevronLeft, ChevronRight, Plus, Settings, Menu } from 'lucide-react';
 import ProfileCard from '../ProfileCard';
 import { LoungeWorkspaceProps } from '../Lounge/types';
@@ -15,9 +14,6 @@ import PrivateSubloungeBanner from '../Lounge/PrivateSubloungeBanner';
 import { getSessionId } from '../../utils/auth';
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
-  const { isMobile: _isMobile, isTablet } = useResponsive();
-  const isMobile = _isMobile || isTablet;
-  const [isSubloungeCollapsed, setIsSubloungeCollapsed] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'rooms' | 'members' | 'about'>('rooms');
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
   const [showLoungeProfile, setShowLoungeProfile] = useState(false);
@@ -28,7 +24,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     currentUserId: props.currentUserId,
     currentUserRole: props.currentUserRole,
     activeRoomId: props.activeRoomId,
-    isMobile,
+    isMobile: true,
     onRoomSelect: props.onRoomSelect,
   });
 
@@ -305,343 +301,6 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     props.onMarkAllAsRead?.(roomId);
   };
 
-  // Desktop Split View
-  if (!isMobile) {
-    if (loungeData.isLoadingLounge && loungeData.rooms.length === 0) {
-      return (
-        <div className="flex-1 flex w-full h-full items-center justify-center bg-transparent">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-            <div className="text-text-secondary font-mono text-xs uppercase tracking-widest">
-              Initializing Lounge Workspace...
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <>
-        <div className="flex-1 flex w-full h-full overflow-hidden min-h-0 bg-transparent text-text-primary">
-          {/* Persistent Sidebar Directory Column */}
-          <div className={`flex-shrink-0 flex flex-col h-full min-h-0 border-r border-velum-600 bg-velum-850 transition-all duration-300 ${
-            isSubloungeCollapsed ? 'w-12 min-w-[48px]' : 'w-60 min-w-[240px]'
-          }`}>
-            <div className="flex-1 flex flex-col h-full min-h-0 bg-transparent overflow-hidden">
-              <div className="p-2.5 border-b border-velum-600 flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <button
-                    onClick={props.onBackToDirectory}
-                    className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-velum-750 transition-colors cursor-pointer shrink-0"
-                    title="Back to Directory"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  {!isSubloungeCollapsed && (
-                    <div 
-                      onClick={() => setShowLoungeProfile(true)}
-                      className="flex items-center gap-2 min-w-0 cursor-pointer group"
-                    >
-                      <div className="w-5 h-5 rounded-md bg-velum-750 border border-velum-600 flex items-center justify-center overflow-hidden shrink-0">
-                        {loungeAvatar ? (
-                          <img src={loungeAvatar} alt={props.loungeName} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-[9px] font-bold text-accent font-mono">
-                            {(effectiveLoungeName || 'L').slice(0, 2).toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs font-semibold text-text-primary truncate group-hover:underline">
-                        {props.loungeName}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  {!isSubloungeCollapsed && loungeData.isParentAdmin && (
-                    <button
-                      onClick={() => loungeData.setShowManageModal(true)}
-                      className="p-1.5 rounded-lg hover:bg-velum-750 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-                      title="Manage Lounge"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {!isSubloungeCollapsed && canCreateSublounge && (
-                    <button
-                      onClick={() => {
-                        loungeData.setStatusMessage('');
-                        loungeData.setShowCreateModal(true);
-                      }}
-                      className="p-1.5 rounded-lg hover:bg-velum-750 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-                      title="Create Room"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setIsSubloungeCollapsed(prev => !prev)}
-                    className="p-1.5 rounded-lg hover:bg-velum-750 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-                    title={isSubloungeCollapsed ? "Expand Directory" : "Collapse Directory"}
-                  >
-                    {isSubloungeCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              {!isSubloungeCollapsed && (
-                <div className="flex-1 overflow-y-auto">
-                  <RoomsList
-                    publicRooms={publicRooms}
-                    privateRooms={privateRooms}
-                    activeRoomId={props.activeRoomId}
-                    isDark={props.isDark}
-                    isMasterLounge={isMasterLounge}
-                    currentUserId={props.currentUserId}
-                    unreadCounts={props.unreadCounts}
-                    lastMessages={props.lastMessages}
-                    typingRooms={loungeData.typingRooms}
-                    isParentAdmin={loungeData.isParentAdmin}
-                    onRoomSelect={props.onRoomSelect}
-                    onDeleteRoom={loungeData.handleDeleteRoom}
-                  />
-                </div>
-              )}
-
-              {!isSubloungeCollapsed && isLoungeCreator && loungeData.loungeDetails?.invite_code && (
-                <div className="p-3 border-t border-velum-600 bg-transparent">
-                  <div className="p-2.5 bg-velum-800 border border-velum-600 rounded-xl flex flex-col gap-1 shadow-sm">
-                    <div className="text-[10px] font-medium text-text-secondary select-none">Lounge Invite</div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs font-bold text-accent tracking-wider select-all truncate">{loungeData.loungeDetails.invite_code}</span>
-                      <button
-                        onClick={handleCopyInvite}
-                        className="px-2 py-0.5 text-[10px] font-semibold bg-accent/15 hover:bg-accent/25 text-accent rounded transition cursor-pointer shrink-0"
-                      >
-                        {copiedInvite ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Content Panel (Chat Area) */}
-          <div className="flex-1 min-w-0 relative min-h-0 flex flex-col h-full bg-velum-800 overflow-hidden">
-            <PrivateSubloungeBanner
-              activeRoom={activeRoom}
-              isPrivateSublounge={isPrivateSublounge}
-              isSubloungeCreator={isSubloungeCreator}
-              isLoungeOwnerNotCreator={isLoungeCreator && !isSubloungeCreator}
-            />
-            {props.activeRoomId ? (
-              <ChatArea
-                currentUserId={props.currentUserId}
-                currentUsername={props.currentUsername}
-                currentUserRole={props.currentUserRole}
-                roomId={props.activeRoomId}
-                roomAccessLevel={loungeData.rooms.find(r => r.id === props.activeRoomId)?.accessLevel || 'ALL'}
-                wsConnected={props.wsConnected}
-                messages={props.messages}
-                onSendMessage={props.onSendMessage || (() => {})}
-                onSendTyping={props.onSendTyping || (() => {})}
-                onRoomKick={props.onRoomKick || (() => {})}
-                onRoomMute={props.onRoomMute || (() => {})}
-                onSendReaction={props.onSendReaction}
-                onEditMessage={props.onEditMessage}
-                onDeleteMessage={props.onDeleteMessage}
-                onPinMessage={props.onPinMessage}
-                onMarkAsRead={handleMarkAsRead}
-                onMarkAllAsRead={handleMarkAllAsRead}
-                isDark={props.isDark}
-                isMobile={false}
-                onToggleSidebar={props.onToggleSidebar}
-                roomName={activeRoomName}
-                isPrivateSublounge={isPrivateSublounge}
-                isMember={isMember}
-                onJoinLounge={handleJoinLounge}
-                avatarUrl={loungeAvatar}
-              />
-            ) : (
-              <LoungeOverview
-                loungeId={props.loungeId}
-                loungeName={effectiveLoungeName}
-                loungeDetails={loungeData.loungeDetails}
-                memberCount={loungeData.members.length}
-                isDark={props.isDark}
-                isMember={isMember}
-                isLoungeCreator={isLoungeCreator}
-                handleCopyInvite={handleCopyInvite}
-                copiedInvite={copiedInvite}
-                handleCopyInviteLink={handleCopyInviteLink}
-                copiedInviteLink={copiedInviteLink}
-                onJoinLounge={handleJoinLounge}
-                onApplyLounge={handleApplyLounge}
-                isJoining={isJoiningLounge}
-                isApplying={isApplyingLounge}
-                appliedSuccess={appliedSuccess}
-              />
-            )}
-          </div>
-          
-          {/* Members Sidebar (Desktop) */}
-          <div className="w-56 flex-shrink-0 flex flex-col min-h-0 border-l border-velum-600 bg-velum-850 overflow-y-auto hidden lg:flex select-none">
-            <div className="p-3 border-b border-velum-600">
-              <h3 className="text-xs font-semibold text-text-secondary">Members ({loungeData.members.length})</h3>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-3">
-              {['owner', 'admin', 'moderator', 'member'].map(role => {
-                const roleMembers = loungeData.members.filter(m => m.role === role);
-                if (roleMembers.length === 0) return null;
-                return (
-                  <div key={role} className="space-y-1">
-                    <div className="px-2 text-[10px] font-semibold text-text-secondary/70 capitalize">
-                      {role} — {roleMembers.length}
-                    </div>
-                    {roleMembers.map((m: any) => (
-                      <div 
-                        key={m.user_id} 
-                        className="flex items-center gap-2 p-1.5 rounded-lg transition-colors cursor-pointer hover:bg-velum-750 text-text-primary"
-                        onClick={() => setSelectedMember(m)}
-                      >
-                        <div className="relative shrink-0">
-                          {m.avatar ? (
-                            <img src={m.avatar} alt={m.username} className="w-7 h-7 rounded-lg object-cover border border-velum-600" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-7 h-7 rounded-lg bg-velum-800 border border-velum-600 flex items-center justify-center text-xs font-bold uppercase text-accent font-mono">
-                              {m.username.replace('@', '').charAt(0)}
-                            </div>
-                          )}
-                          <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-velum-850 ${
-                            m.status === 'online' ? 'bg-status-online' :
-                            m.status === 'away' ? 'bg-status-away' :
-                            m.status === 'dnd' ? 'bg-status-dnd' : 'bg-status-invisible'
-                          }`} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-medium truncate">
-                            {m.displayName || m.username.replace('@', '')}
-                          </div>
-                          {m.status_text && (
-                            <div className="text-[10px] text-text-secondary truncate">
-                              {m.status_text}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <CreateRoomModal
-          show={loungeData.showCreateModal}
-          isDark={props.isDark}
-          newRoomName={loungeData.newRoomName}
-          setNewRoomName={loungeData.setNewRoomName}
-          newRoomLocked={loungeData.newRoomLocked}
-          setNewRoomLocked={loungeData.setNewRoomLocked}
-          statusMessage={loungeData.statusMessage}
-          isCreatingRoom={loungeData.isCreatingRoom}
-          onClose={() => loungeData.setShowCreateModal(false)}
-          onCreateRoom={loungeData.handleCreateRoom}
-        />
-
-        <ManageLoungeModal
-          show={loungeData.showManageModal}
-          isDark={props.isDark}
-          loungeName={props.loungeName}
-          loungeId={props.loungeId}
-          manageTab={loungeData.manageTab}
-          setManageTab={loungeData.setManageTab}
-          manageRequests={loungeData.manageRequests}
-          manageInvites={loungeData.manageInvites}
-          members={loungeData.members}
-          currentUserId={props.currentUserId}
-          editName={loungeData.editName}
-          setEditName={loungeData.setEditName}
-          editDescription={loungeData.editDescription}
-          setEditDescription={loungeData.setEditDescription}
-          editIconUrl={loungeData.editIconUrl}
-          setEditIconUrl={loungeData.setEditIconUrl}
-          settingsError={loungeData.settingsError}
-          settingsSuccess={loungeData.settingsSuccess}
-          directAddUsername={loungeData.directAddUsername}
-          setDirectAddUsername={loungeData.setDirectAddUsername}
-          directAddError={loungeData.directAddError}
-          directAddSuccess={loungeData.directAddSuccess}
-          onClose={() => {
-            loungeData.setShowManageModal(false);
-            loungeData.setDirectAddError('');
-            loungeData.setDirectAddSuccess('');
-          }}
-          onSaveSettings={loungeData.handleSaveSettings}
-          onUpdateRole={loungeData.handleUpdateRole}
-          onSanctionClick={(userId, type) => {
-            loungeData.setActiveSanctionUserId(userId);
-            loungeData.setShowSanctionDialog(type);
-          }}
-          onReviewRequest={loungeData.handleReviewRequest}
-          onDirectAddMember={loungeData.handleDirectAddMember}
-          onCreateInviteCode={loungeData.handleCreateInviteCode}
-          onRevokeInviteCode={loungeData.handleRevokeInviteCode}
-          onDeleteLounge={loungeData.handleDeleteLounge}
-        />
-
-        <SanctionDialog
-          showSanctionDialog={loungeData.showSanctionDialog}
-          activeSanctionUserId={loungeData.activeSanctionUserId}
-          isDark={props.isDark}
-          sanctionReason={loungeData.sanctionReason}
-          setSanctionReason={loungeData.setSanctionReason}
-          onCancel={() => {
-            loungeData.setShowSanctionDialog(null);
-            loungeData.setActiveSanctionUserId(null);
-            loungeData.setSanctionReason('');
-          }}
-          onConfirm={loungeData.handleApplySanction}
-        />
-
-        {/* Selected Member Profile Card Overlay */}
-        {selectedMember && (
-          <ProfileCard
-            type={selectedMember.role === 'LOGIN_ADMIN' || selectedMember.role === 'SUPPORT_OPERATOR' ? 'admin' : 'user'}
-            user={{
-              userId: selectedMember.user_id,
-              username: selectedMember.username,
-              displayName: selectedMember.displayName || selectedMember.username.replace('@', ''),
-              bio: selectedMember.bio || 'Velum Member.',
-              location: selectedMember.location || 'Unknown location',
-              joinedDate: selectedMember.created_at ? new Date(selectedMember.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'May 2026',
-              status: selectedMember.status || 'offline',
-              role: selectedMember.role,
-              avatarUrl: selectedMember.avatar,
-              isMuted: !!selectedMember.isMuted,
-              isBlocked: !!selectedMember.isBlocked,
-              stats: selectedMember.stats || {
-                loungesCount: 4,
-                connectionsCount: 18
-              }
-            }}
-            variant={isMobile ? 'mobile' : 'popover'}
-            onClose={() => setSelectedMember(null)}
-            onMessage={() => handleProfileMessage(selectedMember)}
-            onMute={() => handleProfileMute(selectedMember)}
-            onBlock={() => handleProfileBlock(selectedMember)}
-            onDeleteChat={() => handleProfileDeleteChat(selectedMember)}
-            onReport={() => handleProfileReport(selectedMember)}
-          />
-        )}
-      </>
-    );
-  }
-
-  // Mobile View
   if (loungeData.isLoadingLounge && !props.activeRoomId) {
     return (
       <div className="flex items-center justify-center h-full text-text-secondary font-mono text-xs animate-pulse">
@@ -917,7 +576,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                   connectionsCount: 18
                 }
               }}
-              variant={isMobile ? 'mobile' : 'popover'}
+              variant="mobile"
               onClose={() => setSelectedMember(null)}
               onMessage={() => handleProfileMessage(selectedMember)}
               onMute={() => handleProfileMute(selectedMember)}
@@ -949,7 +608,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                 createdAt: 'May 2026',
                 isPrivate: !!loungeData.loungeDetails?.is_private,
               }}
-              variant={isMobile ? 'mobile' : 'expanded'}
+              variant="mobile"
               onClose={() => setShowLoungeProfile(false)}
               onLoungeSettings={loungeData.isParentAdmin ? () => {
                 setShowLoungeProfile(false);

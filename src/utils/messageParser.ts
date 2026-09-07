@@ -22,15 +22,15 @@ export function parseAttachment(content: string): AttachmentPayload[] {
     let rawVal = match[5] ? match[5].trim() : '';
     if (rawVal.endsWith(']')) rawVal = rawVal.slice(0, -1).trim();
 
-    if (match[4] === 'data' && !rawVal.startsWith('data:') && !rawVal.startsWith('http')) {
-      rawVal = 'data:' + rawVal;
+    if (match[4] === 'data' || rawVal.startsWith('data:')) {
+      continue;
     }
 
     let parsedType = match[3].trim();
     const parsedName = match[1].trim();
     const ext = parsedName.toLowerCase().split('.').pop() || '';
     if (!parsedType || !parsedType.startsWith('image/')) {
-      if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || rawVal.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(rawVal)) {
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || /\.(jpg|jpeg|png|webp|gif)$/i.test(rawVal)) {
         parsedType = 'image/' + (ext || 'jpeg');
       }
     }
@@ -59,19 +59,11 @@ export function parseVoiceNote(content: string): VoiceNotePayload | null {
   }
 
   const urlMatch = content.match(/url:([^\s\]]+)/);
-  const dataMatch = content.match(/data:([^\s\]]+)/);
-
   if (urlMatch) {
     url = urlMatch[1];
-  } else if (dataMatch) {
-    const rawData = dataMatch[1].trim();
-    if (rawData.startsWith('data:')) {
-      url = rawData;
-    } else if (rawData.startsWith('audio/') || rawData.startsWith('video/') || rawData.startsWith('image/')) {
-      url = `data:${rawData}`;
-    } else {
-      url = `data:audio/webm;base64,${rawData}`;
-    }
+  } else {
+    // Enforce URL storage only, reject inline base64 data payloads
+    return null;
   }
 
   return { duration, url };

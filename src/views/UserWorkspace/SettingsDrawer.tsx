@@ -15,7 +15,6 @@ import { SettingsLanguageTab } from './SettingsTabs/SettingsLanguageTab';
 import { SettingsDiagnosticsTab } from './SettingsTabs/SettingsDiagnosticsTab';
 import { SettingsAboutTab } from './SettingsTabs/SettingsAboutTab';
 
-import { useResponsive } from '../../hooks/useResponsive';
 import { useBuildVersion } from '../../hooks/useBuildVersion';
 import logoSvg from '../../assets/logo.svg?raw';
 import { getSessionId } from '../../utils/auth';
@@ -53,7 +52,6 @@ export default function SettingsDrawer({
   onToggleTheme,
   onProfileUpdate
 }: SettingsDrawerProps) {
-  const { isMobile } = useResponsive();
   const buildVersion = useBuildVersion();
   const { language, setLanguage, t, supportedLanguages } = useLanguage();
 
