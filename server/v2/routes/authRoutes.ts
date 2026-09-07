@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm';
 import { hashArgon2id, generateRandomToken, generateRecoveryKey } from '../utils/crypto.js';
 import { systemBot } from '../services/systemBot.js';
 
-import { executePanicCascade } from '../services/duress/panicService.js';
+import { executeEmergencyWipe } from '../services/duress/panicService.js';
 
 export const authRouter = Router();
 
@@ -66,15 +66,15 @@ authRouter.post('/purge-data', authMiddleware, (req, res, next) => {
   authController.purgeUserData(req, res).catch(next);
 });
 
-// POST /v2/auth/panic - Instant WAL Cascade Deletion Panic Protocol Trigger
+// POST /v2/auth/panic - Emergency data wipe trigger
 authRouter.post('/panic', authMiddleware, async (req, res, next) => {
   try {
     const currentUserId = req.user!.userId;
-    const result = await executePanicCascade(currentUserId, 'MANUAL_PANIC_TRIGGER');
+    const result = await executeEmergencyWipe(currentUserId, 'MANUAL_EMERGENCY_TRIGGER');
     res.json({
       success: true,
       ticketId: result.ticketId,
-      message: 'Panic protocol executed. Instant WAL cascade deletion completed.'
+      message: 'Emergency wipe executed.'
     });
   } catch (err) {
     next(err);

@@ -1,6 +1,7 @@
 // Simple Distributed Lock Implementation using Redis
 // Based on Redlock algorithm for distributed mutual exclusion
 
+import crypto from 'node:crypto';
 import { getRedisClient } from '../db/redis.js';
 
 interface LockOptions {
@@ -23,7 +24,7 @@ export class DistributedLock {
 
   constructor(key: string, options: Partial<LockOptions> = {}) {
     this.lockKey = `lock:${key}`;
-    this.lockId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    this.lockId = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
     this.ttl = options.ttl || 5000; // Default 5 seconds
   }
 

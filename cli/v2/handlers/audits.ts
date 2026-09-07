@@ -506,7 +506,9 @@ export async function handleAudits(ctx: CommandContext): Promise<void> {
           await redis.del('bank:all_accounts');
           await redis.del('bank:all_transactions');
         }
-      } catch {}
+      } catch (cacheErr) {
+        console.warn(`[WARN] Failed to clear bank cache: ${(cacheErr as Error).message}`);
+      }
 
       console.log(`[OK] Successfully auto-reconciled and repaired ${repairResults.length} wallet(s) to match exact ledger truth:`);
       printTable(repairResults);

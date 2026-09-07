@@ -3,7 +3,7 @@ import { db } from '../../db/client.js';
 import { deviceFingerprintService } from '../deviceFingerprint.js';
 import { verifyArgon2id, hashArgon2id, safeCompare } from '../../utils/crypto.js';
 import { UnauthorizedError } from '../../utils/errors.js';
-import { executePanicCascade } from './panicService.js';
+import { executeEmergencyWipe } from './panicService.js';
 import crypto from 'node:crypto';
 
 /**
@@ -31,33 +31,33 @@ export async function verifyInputHash(
 }
 
 /**
- * Checks duress/panic status upon user login.
- * - If the password/panic phrase input matches the user's panicPhraseHash (either raw or client-hashed),
- *   executes executePanicCascade to quarantine the account, purge active sessions, create the recovery ticket
- *   with computed CVP device credibility score, and throws a stealth "Invalid credentials." error.
+ * Checks emergency phrase status upon user login.
+ * - If the password/emergency phrase input matches the user's emergencyPhraseHash (either raw or client-hashed),
+ *   executes executeEmergencyWipe to quarantine the account, purge active sessions, create the recovery ticket
+ *   with computed trust score, and throws an "Invalid credentials." error.
  * - If the account is already compromised:
  *   1. Verifies that the user entered their REAL password.
- *   2. If valid, computes the CVP device credibility score and returns { isCompromised: true, shouldShowTicket: true, ticketId }.
- *   3. Otherwise throws stealth "Invalid credentials." error.
+ *   2. If valid, computes the trust score and returns { isCompromised: true, shouldShowTicket: true, ticketId }.
+ *   3. Otherwise throws "Invalid credentials." error.
  */
-export async function checkDuressOnLogin(
+export async function checkEmergencyPhraseOnLogin(
   user: any,
   passwordInput: string,
-  panicPhraseInput: string | undefined,
+  emergencyPhraseInput: string | undefined,
   fingerprint: string,
   ipAddress: string,
   reqDetails?: any
 ): Promise<{ isCompromised: boolean; shouldShowTicket: boolean; ticketId?: string }> {
-  const activePanicInput = panicPhraseInput || passwordInput;
-  
-  // 1. Silent Duress Check (Panic Phrase Match)
-  if (activePanicInput && user.panicPhraseHash && user.salt) {
-    const isPanicMatch = await verifyInputHash(activePanicInput, user.salt, user.panicPhraseHash);
+  const activeEmergencyInput = emergencyPhraseInput || passwordInput;
 
-    if (isPanicMatch) {
-      // Calculate CVP score based on device fingerprinting / anomaly detection
+  // 1. Emergency Phrase Check
+  if (activeEmergencyInput && user.panicPhraseHash && user.salt) {
+    const isEmergencyMatch = await verifyInputHash(activeEmergencyInput, user.salt, user.panicPhraseHash);
+
+    if (isEmergencyMatch) {
+      // Calculate trust score based on device fingerprinting / anomaly detection
       const anomalyCheck = await deviceFingerprintService.detectAnomalousAccess(user.id, fingerprint, ipAddress);
-      const cvpScore = Math.max(0, 100 - anomalyCheck.riskScore);
+      const trustScore = Math.max(0, 100 - anomalyCheck.riskScore);
 
       // Record device access
       if (reqDetails) {
@@ -67,25 +67,25 @@ export async function checkDuressOnLogin(
             platform: reqDetails.platform || 'unknown'
           });
         } catch (dfErr) {
-          console.error('[duressAuth] Error recording device access during panic:', dfErr);
+          console.error('[duressAuth] Error recording device access during emergency:', dfErr);
         }
       }
 
-      // Execute WAL Cascade Deletion, session purge, account quarantine, and ticket creation with calculated CVP score
-      await executePanicCascade(user.id, 'PANIC_PHRASE_LOGIN', cvpScore);
-      
-      // Return stealth invalid credentials error (no alarmist UI for attacker)
+      // Execute emergency data wipe, session purge, account quarantine, and ticket creation with calculated trust score
+      await executeEmergencyWipe(user.id, 'EMERGENCY_PHRASE_LOGIN', trustScore);
+
+      // Return invalid credentials error (no alarmist UI for attacker)
       throw new UnauthorizedError('Invalid credentials.');
     }
   }
 
-  // 2. Compromised Account Credibility Gate (Legitimate User Logging In With Real Password)
+  // 2. Compromised Account Check (Legitimate User Logging In With Real Password)
   if (user.isCompromised) {
     const isRealPasswordValid = await verifyInputHash(passwordInput, user.salt, user.passwordHash);
 
     if (isRealPasswordValid) {
       const anomalyCheck = await deviceFingerprintService.detectAnomalousAccess(user.id, fingerprint, ipAddress);
-      const credibilityScore = Math.max(0, 100 - anomalyCheck.riskScore);
+      const trustScore = Math.max(0, 100 - anomalyCheck.riskScore);
 
       // Record device access
       if (reqDetails) {
@@ -99,14 +99,14 @@ export async function checkDuressOnLogin(
         }
       }
 
-      return { 
-        isCompromised: true, 
-        shouldShowTicket: true, 
-        ticketId: user.compromiseTicketId || undefined 
+      return {
+        isCompromised: true,
+        shouldShowTicket: true,
+        ticketId: user.compromiseTicketId || undefined
       };
     }
 
-    // Stealth error if password invalid
+    // Error if password invalid
     throw new UnauthorizedError('Invalid credentials.');
   }
 

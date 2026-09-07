@@ -120,9 +120,9 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
 
     if (!target || (target !== 'c' && target !== 't' && target !== 'e')) {
       console.log('Usage: fund <c|t|e> <cents> [description]');
-      console.log('  fund c <cents> [desc] - Funds VELUM CENTRAL BANK directly');
-      console.log('  fund t <cents> [desc] - Funds SENTRY BANK (deducted from Central Bank)');
-      console.log('  fund e <cents> [desc] - Funds VELUM TRADING ACCOUNT (deducted from Central Bank)');
+      console.log('  fund c <cents> [desc] - Funds Main Account directly');
+      console.log('  fund t <cents> [desc] - Funds Reserve Account (deducted from Main Account)');
+      console.log('  fund e <cents> [desc] - Funds Trading Account (deducted from Main Account)');
       return;
     }
 
@@ -132,50 +132,50 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       return;
     }
 
-    // 1. fund c: Directly funds VELUM CENTRAL BANK
+    // 1. fund c: Directly funds Main Account
     if (target === 'c') {
       try {
-        const updated = await reserveRepository.updateBalance('VELUM CENTRAL BANK', cents);
-        console.log(`[OK] Funded $${(cents / 100).toFixed(2)} (${cents} cents) to VELUM CENTRAL BANK (${description}). New Balance: $${(((updated?.balanceCents || 0)) / 100).toFixed(2)}.`);
-        await logAudit('/bank/fund', 'VELUM CENTRAL BANK', `Directly funded ${cents} cents (${description})`);
+        const updated = await reserveRepository.updateBalance('Main Account', cents);
+        console.log(`Funded $${(cents / 100).toFixed(2)} to Main Account (${description}). New Balance: $${(((updated?.balanceCents || 0)) / 100).toFixed(2)}.`);
+        await logAudit('/bank/fund', 'Main Account', `Directly funded ${cents} cents (${description})`);
       } catch (err) {
-        console.log(`[ERROR] Central Bank funding failed: ${(err as Error).message}`);
+        console.log(`Central Bank funding failed: ${(err as Error).message}`);
       }
       return;
     }
 
-    // Check Central Bank liquidity for transfers to SENTRY BANK (t) or VELUM TRADING ACCOUNT (e)
-    const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+    // Check Main Account liquidity for transfers to Reserve Account (t) or Trading Account (e)
+    const vcb = await reserveRepository.getReserve('Main Account');
     const availableCents = vcb?.balanceCents || 0;
     if (availableCents < cents) {
-      console.log(`[FAILED] Insufficient funds in VELUM CENTRAL BANK. Available: $${(availableCents / 100).toFixed(2)} (${availableCents} cents), Required: $${(cents / 100).toFixed(2)}.`);
+      console.log(`Insufficient funds in Main Account. Available: $${(availableCents / 100).toFixed(2)}, Required: $${(cents / 100).toFixed(2)}.`);
       return;
     }
 
-    // 2. fund t: Funds SENTRY BANK from VELUM CENTRAL BANK
+    // 2. fund t: Funds Reserve Account from Main Account
     if (target === 't') {
       try {
-        const updatedVcb = await reserveRepository.updateBalance('VELUM CENTRAL BANK', -cents);
-        const updatedSb = await reserveRepository.updateBalance('SENTRY BANK', cents);
-        console.log(`[OK] Transferred $${(cents / 100).toFixed(2)} from VELUM CENTRAL BANK to SENTRY BANK (${description}).`);
-        console.log(`     SENTRY BANK Balance: $${(((updatedSb?.balanceCents || 0)) / 100).toFixed(2)} | VELUM CENTRAL BANK Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
-        await logAudit('/bank/fund', 'SENTRY BANK', `Transferred ${cents} cents from VELUM CENTRAL BANK (${description})`);
+        const updatedVcb = await reserveRepository.updateBalance('Main Account', -cents);
+        const updatedSb = await reserveRepository.updateBalance('Reserve Account', cents);
+        console.log(`Transferred $${(cents / 100).toFixed(2)} from Main Account to Reserve Account (${description}).`);
+        console.log(`Reserve Account Balance: $${(((updatedSb?.balanceCents || 0)) / 100).toFixed(2)} | Main Account Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
+        await logAudit('/bank/fund', 'Reserve Account', `Transferred ${cents} cents from Main Account (${description})`);
       } catch (err) {
-        console.log(`[ERROR] Sentry Bank funding failed: ${(err as Error).message}`);
+        console.log(`Reserve Account funding failed: ${(err as Error).message}`);
       }
       return;
     }
 
-    // 3. fund e: Funds VELUM TRADING ACCOUNT from VELUM CENTRAL BANK
+    // 3. fund e: Funds Trading Account from Main Account
     if (target === 'e') {
       try {
-        const updatedVcb = await reserveRepository.updateBalance('VELUM CENTRAL BANK', -cents);
-        const updatedTrading = await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', cents);
-        console.log(`[OK] Transferred $${(cents / 100).toFixed(2)} from VELUM CENTRAL BANK to VELUM TRADING ACCOUNT (${description}).`);
-        console.log(`     VELUM TRADING ACCOUNT Balance: $${(((updatedTrading?.balanceCents || 0)) / 100).toFixed(2)} | VELUM CENTRAL BANK Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
-        await logAudit('/bank/fund', 'VELUM TRADING ACCOUNT', `Transferred ${cents} cents from VELUM CENTRAL BANK (${description})`);
+        const updatedVcb = await reserveRepository.updateBalance('Main Account', -cents);
+        const updatedTrading = await reserveRepository.updateBalance('Trading Account', cents);
+        console.log(`Transferred $${(cents / 100).toFixed(2)} from Main Account to Trading Account (${description}).`);
+        console.log(`Trading Account Balance: $${(((updatedTrading?.balanceCents || 0)) / 100).toFixed(2)} | Main Account Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
+        await logAudit('/bank/fund', 'Trading Account', `Transferred ${cents} cents from Main Account (${description})`);
       } catch (err) {
-        console.log(`[ERROR] Trading Account funding failed: ${(err as Error).message}`);
+        console.log(`Trading Account funding failed: ${(err as Error).message}`);
       }
       return;
     }
@@ -280,9 +280,11 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
           await redis.del('bank:all_accounts');
           await redis.del('bank:all_transactions');
         }
-      } catch {}
+      } catch (cacheErr) {
+        console.warn(`Failed to clear bank cache: ${(cacheErr as Error).message}`);
+      }
 
-      console.log(`[OK] Successfully executed atomic grant for ${results.length} recipient(s):`);
+      console.log(`Grant completed for ${results.length} recipients:`);
       printTable(results.map(r => ({
         Recipient: r.username,
         Granted: `+${r.amount.toFixed(2)} USDT`,
@@ -292,7 +294,7 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
 
       await logAudit('/bank/grant', `${results.length} recipients`, `Granted funds (${reason})`);
     } catch (err) {
-      console.log(`[ERROR] Batch grant transaction failed: ${(err as Error).message}`);
+      console.log(`Batch grant transaction failed: ${(err as Error).message}`);
     }
     return;
   }
@@ -378,9 +380,11 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
           await redis.del('bank:all_accounts');
           await redis.del('bank:all_transactions');
         }
-      } catch {}
+      } catch (cacheErr) {
+        console.warn(`Failed to clear bank cache: ${(cacheErr as Error).message}`);
+      }
 
-      console.log(`[OK] Refund of ${amt.toFixed(2)} USDT issued to ${user.username} (Ref: ${refCode}).`);
+      console.log(`Refund of ${amt.toFixed(2)} USDT issued to ${user.username} (Ref: ${refCode}).`);
       await logAudit('/bank/reverse', user.username, `Issued refund of ${amt} USDT (${reason})`);
       return;
     }
@@ -456,9 +460,11 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
           await redis.del('bank:all_accounts');
           await redis.del('bank:all_transactions');
         }
-      } catch {}
+      } catch (cacheErr) {
+        console.warn(`Failed to clear bank cache: ${(cacheErr as Error).message}`);
+      }
 
-      console.log(`[OK] Rolled back ${amt.toFixed(2)} USDT from ${fromUser.username} to ${toUser.username} (Ref: ${refCode}).`);
+      console.log(`Rolled back ${amt.toFixed(2)} USDT from ${fromUser.username} to ${toUser.username} (Ref: ${refCode}).`);
       await logAudit('/bank/reverse', `${fromUser.username}->${toUser.username}`, `Rolled back ${amt} USDT (${reason})`);
       return;
     }

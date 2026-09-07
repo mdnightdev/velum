@@ -3,7 +3,7 @@ import {
   User, Lock, X, Check, Upload, Bell, Volume2, 
   Type, ShieldCheck, CheckCircle, AlertTriangle, Palette, 
   Laptop, Monitor, Trash2, Camera, Mic, Image as ImageIcon, 
-  Sparkles, Globe, Clock, Shield, Zap, Play, LogOut, Info, ChevronRight, Activity
+  Sparkles, Globe, Clock, Shield, Zap, Play, Info, ChevronRight, Activity
 } from 'lucide-react';
 import PasswordInput from '../../components/PasswordInput';
 import { SettingsPrivacyTab } from './SettingsTabs/SettingsPrivacyTab';

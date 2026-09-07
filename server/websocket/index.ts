@@ -126,7 +126,9 @@ export function setupWebSocketServer(httpServer: Server) {
           const [id, conn] = userConns[i];
           try {
             conn.ws.close(1000, 'Session superseded by newer connection');
-          } catch (e) {}
+          } catch (e) {
+            console.debug('[WS] Error closing superseded socket:', (e as Error).message);
+          }
           connectedClients.delete(id);
         }
       }

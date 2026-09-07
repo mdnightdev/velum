@@ -63,7 +63,7 @@ marketRouter.post('/escrows/:transactionId/revert', authMiddleware, (req, res, n
   marketController.processEscrowAction(req, res).catch(next);
 });
 
-marketRouter.get('/listings/:id/discussions', (req, res) => {
+marketRouter.get('/listings/:id/discussions', authMiddleware, (req, res) => {
   res.json({ discussions: [] });
 });
 
@@ -71,7 +71,7 @@ marketRouter.post('/listings/:id/discussions', authMiddleware, (req, res) => {
   res.status(201).json({ success: true });
 });
 
-marketRouter.get('/listings/:id/reviews', (req, res) => {
+marketRouter.get('/listings/:id/reviews', authMiddleware, (req, res) => {
   res.json({ reviews: [] });
 });
 
@@ -79,7 +79,7 @@ marketRouter.post('/listings/:id/reviews', authMiddleware, (req, res) => {
   res.status(201).json({ success: true });
 });
 
-marketRouter.get('/listings/:id/media', (req, res) => {
+marketRouter.get('/listings/:id/media', authMiddleware, (req, res) => {
   res.json({ media: [] });
 });
 

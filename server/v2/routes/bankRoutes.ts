@@ -16,7 +16,7 @@ bankRouter.post('/transfer', authMiddleware, (req, res, next) => {
   bankController.transfer(req, res).catch(next);
 });
 
-bankRouter.get('/limits', authMiddleware, (req, res, next) => {
+bankRouter.get('/limits', authMiddleware, requireAdminRole(), (req, res, next) => {
   bankController.getLimits(req, res).catch(next);
 });
 

@@ -75,91 +75,91 @@ export async function ensureReservesSeeded() {
       // 1. Check for legacy reserve rows to migrate and clean up
       const legacyClearing = await reserveRepository.getReserve('CLEARING');
       if (legacyClearing) {
-        console.log(`[AdminSeeder] Migrating balance from legacy CLEARING (${legacyClearing.balanceCents} cents) to VELUM CENTRAL BANK...`);
-        const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+        console.log(`[AdminSeeder] Migrating balance from legacy CLEARING (${legacyClearing.balanceCents} cents) to Main Account...`);
+        const vcb = await reserveRepository.getReserve('Main Account');
         if (vcb) {
-          await db.update(reserves).set({ balanceCents: legacyClearing.balanceCents }).where(eq(reserves.reserveType, 'VELUM CENTRAL BANK'));
+          await db.update(reserves).set({ balanceCents: legacyClearing.balanceCents }).where(eq(reserves.reserveType, 'Main Account'));
         } else {
-          await reserveRepository.updateBalance('VELUM CENTRAL BANK', legacyClearing.balanceCents);
+          await reserveRepository.updateBalance('Main Account', legacyClearing.balanceCents);
         }
         await db.delete(reserves).where(eq(reserves.reserveType, 'CLEARING'));
       }
 
       const legacyVcbUnderscore = await reserveRepository.getReserve('VELUM_CENTRAL_BANK');
       if (legacyVcbUnderscore) {
-        console.log(`[AdminSeeder] Migrating balance from legacy VELUM_CENTRAL_BANK (${legacyVcbUnderscore.balanceCents} cents) to VELUM CENTRAL BANK...`);
-        const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+        console.log(`[AdminSeeder] Migrating balance from legacy VELUM_CENTRAL_BANK (${legacyVcbUnderscore.balanceCents} cents) to Main Account...`);
+        const vcb = await reserveRepository.getReserve('Main Account');
         if (vcb) {
-          await db.update(reserves).set({ balanceCents: legacyVcbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'VELUM CENTRAL BANK'));
+          await db.update(reserves).set({ balanceCents: legacyVcbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'Main Account'));
         } else {
-          await reserveRepository.updateBalance('VELUM CENTRAL BANK', legacyVcbUnderscore.balanceCents);
+          await reserveRepository.updateBalance('Main Account', legacyVcbUnderscore.balanceCents);
         }
         await db.delete(reserves).where(eq(reserves.reserveType, 'VELUM_CENTRAL_BANK'));
       }
 
       const legacyTreasury = await reserveRepository.getReserve('TREASURY');
       if (legacyTreasury) {
-        console.log(`[AdminSeeder] Migrating balance from legacy TREASURY (${legacyTreasury.balanceCents} cents) to SENTRY BANK...`);
-        const sb = await reserveRepository.getReserve('SENTRY BANK');
+        console.log(`[AdminSeeder] Migrating balance from legacy TREASURY (${legacyTreasury.balanceCents} cents) to Reserve Account...`);
+        const sb = await reserveRepository.getReserve('Reserve Account');
         if (sb) {
-          await db.update(reserves).set({ balanceCents: legacyTreasury.balanceCents }).where(eq(reserves.reserveType, 'SENTRY BANK'));
+          await db.update(reserves).set({ balanceCents: legacyTreasury.balanceCents }).where(eq(reserves.reserveType, 'Reserve Account'));
         } else {
-          await reserveRepository.updateBalance('SENTRY BANK', legacyTreasury.balanceCents);
+          await reserveRepository.updateBalance('Reserve Account', legacyTreasury.balanceCents);
         }
         await db.delete(reserves).where(eq(reserves.reserveType, 'TREASURY'));
       }
 
       const legacySbUnderscore = await reserveRepository.getReserve('SENTRY_BANK');
       if (legacySbUnderscore) {
-        console.log(`[AdminSeeder] Migrating balance from legacy SENTRY_BANK (${legacySbUnderscore.balanceCents} cents) to SENTRY BANK...`);
-        const sb = await reserveRepository.getReserve('SENTRY BANK');
+        console.log(`[AdminSeeder] Migrating balance from legacy SENTRY_BANK (${legacySbUnderscore.balanceCents} cents) to Reserve Account...`);
+        const sb = await reserveRepository.getReserve('Reserve Account');
         if (sb) {
-          await db.update(reserves).set({ balanceCents: legacySbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'SENTRY BANK'));
+          await db.update(reserves).set({ balanceCents: legacySbUnderscore.balanceCents }).where(eq(reserves.reserveType, 'Reserve Account'));
         } else {
-          await reserveRepository.updateBalance('SENTRY BANK', legacySbUnderscore.balanceCents);
+          await reserveRepository.updateBalance('Reserve Account', legacySbUnderscore.balanceCents);
         }
         await db.delete(reserves).where(eq(reserves.reserveType, 'SENTRY_BANK'));
       }
 
       const legacyEscrow = await reserveRepository.getReserve('ESCROW');
       if (legacyEscrow) {
-        console.log(`[AdminSeeder] Migrating balance from legacy ESCROW (${legacyEscrow.balanceCents} cents) to VELUM TRADING ACCOUNT...`);
-        const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
+        console.log(`[AdminSeeder] Migrating balance from legacy ESCROW (${legacyEscrow.balanceCents} cents) to Trading Account...`);
+        const escrow = await reserveRepository.getReserve('Trading Account');
         if (escrow) {
-          await db.update(reserves).set({ balanceCents: legacyEscrow.balanceCents }).where(eq(reserves.reserveType, 'VELUM TRADING ACCOUNT'));
+          await db.update(reserves).set({ balanceCents: legacyEscrow.balanceCents }).where(eq(reserves.reserveType, 'Trading Account'));
         } else {
-          await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', legacyEscrow.balanceCents);
+          await reserveRepository.updateBalance('Trading Account', legacyEscrow.balanceCents);
         }
         await db.delete(reserves).where(eq(reserves.reserveType, 'ESCROW'));
       }
 
       const legacyEscrowUnderscore = await reserveRepository.getReserve('VELUM_TRADING_ACCOUNT');
       if (legacyEscrowUnderscore) {
-        console.log(`[AdminSeeder] Migrating balance from legacy VELUM_TRADING_ACCOUNT (${legacyEscrowUnderscore.balanceCents} cents) to VELUM TRADING ACCOUNT...`);
-        const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
+        console.log(`[AdminSeeder] Migrating balance from legacy VELUM_TRADING_ACCOUNT (${legacyEscrowUnderscore.balanceCents} cents) to Trading Account...`);
+        const escrow = await reserveRepository.getReserve('Trading Account');
         if (escrow) {
-          await db.update(reserves).set({ balanceCents: legacyEscrowUnderscore.balanceCents }).where(eq(reserves.reserveType, 'VELUM TRADING ACCOUNT'));
+          await db.update(reserves).set({ balanceCents: legacyEscrowUnderscore.balanceCents }).where(eq(reserves.reserveType, 'Trading Account'));
         } else {
-          await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', legacyEscrowUnderscore.balanceCents);
+          await reserveRepository.updateBalance('Trading Account', legacyEscrowUnderscore.balanceCents);
         }
         await db.delete(reserves).where(eq(reserves.reserveType, 'VELUM_TRADING_ACCOUNT'));
       }
 
       // 2. Ensure standard V2 reserve rows exist with default balances if not migrated
-      const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+      const vcb = await reserveRepository.getReserve('Main Account');
       if (!vcb) {
-        await reserveRepository.updateBalance('VELUM CENTRAL BANK', 0); 
-        console.log('[AdminSeeder] Seeded default central bank reserve: VELUM CENTRAL BANK ($0.00)');
+        await reserveRepository.updateBalance('Main Account', 0);
+        console.log('[AdminSeeder] Seeded default central bank reserve: Main Account ($0.00)');
       }
-      const sb = await reserveRepository.getReserve('SENTRY BANK');
+      const sb = await reserveRepository.getReserve('Reserve Account');
       if (!sb) {
-        await reserveRepository.updateBalance('SENTRY BANK', 0); 
-        console.log('[AdminSeeder] Seeded default sentry bank reserve: SENTRY BANK ($0.00)');
+        await reserveRepository.updateBalance('Reserve Account', 0);
+        console.log('[AdminSeeder] Seeded default sentry bank reserve: Reserve Account ($0.00)');
       }
-      const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
+      const escrow = await reserveRepository.getReserve('Trading Account');
       if (!escrow) {
-        await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', 0);
-        console.log('[AdminSeeder] Seeded default escrow reserve: VELUM TRADING ACCOUNT ($0.00)');
+        await reserveRepository.updateBalance('Trading Account', 0);
+        console.log('[AdminSeeder] Seeded default escrow reserve: Trading Account ($0.00)');
       }
     });
   } catch (err) {

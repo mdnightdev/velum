@@ -136,7 +136,14 @@ export default function PeopleMainDashboard({
 
   let displayData: any[] = [];
   if (activeTab === 'all') {
-    displayData = activeFriends.filter(f => !userSearchTerm || f.username.toLowerCase().includes(userSearchTerm.toLowerCase()));
+    const term = userSearchTerm.trim().toLowerCase();
+    if (term) {
+      const matchingActive = activeFriends.filter(f => f.username.toLowerCase().includes(term) || (f.displayName && f.displayName.toLowerCase().includes(term)));
+      const matchingBlocked = blockedUsers.filter(f => f.username.toLowerCase().includes(term) || (f.displayName && f.displayName.toLowerCase().includes(term)));
+      displayData = [...matchingActive, ...matchingBlocked];
+    } else {
+      displayData = activeFriends;
+    }
   } else if (activeTab === 'online') {
     displayData = onlineFriends.filter(f => !userSearchTerm || f.username.toLowerCase().includes(userSearchTerm.toLowerCase()));
   } else if (activeTab === 'pending') {
@@ -228,7 +235,7 @@ export default function PeopleMainDashboard({
           <div className="space-y-2 max-w-4xl mx-auto">
             {displayData.map((item, idx) => {
               const isPending = activeTab === 'pending';
-              const isBlocked = activeTab === 'blocked';
+              const isBlocked = activeTab === 'blocked' || item.status === 'blocked';
               
               const username = isPending ? item.sender_name : item.username;
               const displayName = isPending ? (item.sender_display_name || item.sender_name) : (item.displayName || item.username);
@@ -263,8 +270,13 @@ export default function PeopleMainDashboard({
                             {handle}
                           </span>
                         )}
+                        {isBlocked && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-status-dnd/15 text-status-dnd border border-status-dnd/30 font-medium">
+                            Blocked
+                          </span>
+                        )}
                       </div>
-                      {!isPending && getStatusNode(lastSeen, activeLounge)}
+                      {!isPending && !isBlocked && getStatusNode(lastSeen, activeLounge)}
                       {isPending && (
                         <div className="text-[10px] text-text-secondary mt-0.5">Incoming Request</div>
                       )}

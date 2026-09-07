@@ -158,10 +158,6 @@ export class BankController {
   async getAllAccounts(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
 
-    if (req.user.role !== 'CLI_ADMIN' && req.user.role !== 'LOGIN_ADMIN' && req.user.role !== 'SUPPORT_ADMIN') {
-      throw new BadRequestError('Unauthorized access.');
-    }
-
     const allWallets = await db.select({
       id: wallets.id,
       balance: wallets.balance,
@@ -188,10 +184,6 @@ export class BankController {
   async getAllTransactions(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
 
-    if (req.user.role !== 'CLI_ADMIN' && req.user.role !== 'LOGIN_ADMIN' && req.user.role !== 'SUPPORT_ADMIN') {
-      throw new BadRequestError('Unauthorized access.');
-    }
-
     const allTxs = await db.select().from(transactions).orderBy(desc(transactions.createdAt)).limit(100);
 
     const formatted = allTxs.map(t => {
@@ -217,10 +209,6 @@ export class BankController {
 
   async getWithdrawalQueue(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
-
-    if (req.user.role !== 'CLI_ADMIN' && req.user.role !== 'LOGIN_ADMIN' && req.user.role !== 'SUPPORT_ADMIN') {
-      throw new BadRequestError('Unauthorized access.');
-    }
 
     const withdrawals = await db.select({
       id: transactions.id,
@@ -250,10 +238,6 @@ export class BankController {
   async getLimits(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
 
-    if (req.user.role !== 'CLI_ADMIN' && req.user.role !== 'LOGIN_ADMIN' && req.user.role !== 'SUPPORT_ADMIN') {
-      throw new BadRequestError('Unauthorized access.');
-    }
-
     const allUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(100);
 
     const formatted = allUsers.map(u => ({
@@ -270,10 +254,6 @@ export class BankController {
   async getIssuedCards(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
 
-    if (req.user.role !== 'CLI_ADMIN' && req.user.role !== 'LOGIN_ADMIN' && req.user.role !== 'SUPPORT_ADMIN') {
-      throw new BadRequestError('Unauthorized access.');
-    }
-
     const cardsList = await cardRepository.getAllCards(100);
 
     const formatted = cardsList.map(card => ({
@@ -289,9 +269,6 @@ export class BankController {
 
   async freezeAccount(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
-    if (req.user.role !== 'CLI_ADMIN' && req.user.role !== 'LOGIN_ADMIN' && req.user.role !== 'SUPPORT_ADMIN') {
-      throw new BadRequestError('Unauthorized access.');
-    }
     const { accountId } = req.params;
     res.status(200).json({ success: true, message: `Account ${accountId} status updated.` });
   }

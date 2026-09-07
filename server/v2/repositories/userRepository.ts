@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { db, executeWithRetry } from '../db/client.js';
 import { users, sessions, type User, type NewUser, type Session, type NewSession } from '../db/schema/index.js';
+import { logger } from '../utils/logger.js';
 
 export class UserRepository {
   async findById(id: number): Promise<User | null> {
@@ -167,7 +168,9 @@ export class UserRepository {
           if (fs.existsSync(userAvatarDir)) {
             await fs.promises.rm(userAvatarDir, { recursive: true, force: true }).catch(() => {});
           }
-        } catch (e) {}
+        } catch (e) {
+          logger.warn(`[User Purge] Failed to clean avatar directory for user ${userId}: ${(e as Error).message}`);
+        }
 
         // 3. Marketplace, Escrows, Cards
         await tx.delete(escrows).where(or(eq(escrows.buyerId, userId), eq(escrows.sellerId, userId)));

@@ -300,12 +300,12 @@ export async function handleUsers(ctx: CommandContext): Promise<void> {
       }
       
       const adminUsername = `Sa-${targetUser.username}`;
-      const adminPassword = `Sa-Vel-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+      const adminPassword = `Sa-Vel-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
       const adminSalt = crypto.randomBytes(16).toString('hex');
       const adminPasswordHash = await hashArgon2id(adminPassword, Buffer.from(adminSalt, 'hex'));
-      const adminRecoveryKey = `Sa-Vel-Sup-${Math.floor(10000 + Math.random() * 90000)}`;
+      const adminRecoveryKey = `Sa-Vel-Sup-${crypto.randomInt(10000, 100000)}`;
       const adminRecoveryKeyHash = await hashArgon2id(adminRecoveryKey, Buffer.from(adminSalt, 'hex'));
-      const adminPanicPhrase = `Sa-P-${Math.floor(100000 + Math.random() * 900000)}`;
+      const adminPanicPhrase = `Sa-P-${crypto.randomInt(100000, 1000000)}`;
       const adminPanicPhraseHash = await hashArgon2id(adminPanicPhrase, Buffer.from(adminSalt, 'hex'));
       
       const [newAdmin] = await db.insert(users).values({
