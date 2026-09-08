@@ -64,4 +64,63 @@ describe('V2 Auth Endpoints Integration Tests', () => {
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Logged out successfully.');
   });
+
+  it('POST /v2/auth/login - should intercept scheduled deletion and allow cancellation', async () => {
+    // 1. Log back in to get active session
+    const loginRes = await request(app)
+      .post('/v2/auth/login')
+      .send({
+        username: testUsername,
+        password: testPassword
+      });
+    expect(loginRes.status).toBe(200);
+    const activeToken = loginRes.body.token;
+
+    // 2. Request account deactivation / deletion
+    const deactRes = await request(app)
+      .post('/v2/user/delete')
+      .set('Authorization', `Bearer ${activeToken}`)
+      .send({ reason: 'Testing deletion flow' });
+    expect(deactRes.status).toBe(200);
+    expect(deactRes.body.success).toBe(true);
+
+    // 3. Attempt login - must be intercepted with scheduledDeletion info and NO session token
+    const interceptRes = await request(app)
+      .post('/v2/auth/login')
+      .send({
+        username: testUsername,
+        password: testPassword
+      });
+    expect(interceptRes.status).toBe(200);
+    expect(interceptRes.body.scheduledDeletion).toBe(true);
+    expect(interceptRes.body.cancelToken).toBeDefined();
+    expect(interceptRes.body.timeRemainingMs).toBeGreaterThan(0);
+    expect(interceptRes.body.token).toBeUndefined();
+
+    const cancelToken = interceptRes.body.cancelToken;
+
+    // 4. Cancel deletion using cancelToken
+    const cancelRes = await request(app)
+      .post('/v2/auth/cancel-deletion')
+      .send({
+        username: testUsername,
+        cancelToken
+      });
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.success).toBe(true);
+    expect(cancelRes.body.token).toBeDefined();
+    expect(cancelRes.body.user.role).toBe('USER');
+
+    // 5. Normal login should now succeed again
+    const normalLoginRes = await request(app)
+      .post('/v2/auth/login')
+      .send({
+        username: testUsername,
+        password: testPassword
+      });
+    expect(normalLoginRes.status).toBe(200);
+    expect(normalLoginRes.body.token).toBeDefined();
+    expect(normalLoginRes.body.scheduledDeletion).toBeUndefined();
+  });
 });
+

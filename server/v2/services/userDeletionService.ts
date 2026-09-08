@@ -64,6 +64,22 @@ export class UserDeletionService {
   }
 
   /**
+   * Cancel Deactivation & Restore Account
+   */
+  static async cancelUserDeactivation(userId: number): Promise<void> {
+    await db.update(users).set({
+      role: 'USER',
+      status: 'Active',
+      scheduledDeletionAt: null,
+      deletionReason: null,
+      deletionInitiatedBy: null,
+      updatedAt: new Date()
+    }).where(eq(users.id, userId));
+
+    logger.info(`[DELETION CANCELLED] User ${userId} cancelled scheduled deletion and restored account.`);
+  }
+
+  /**
    * 3. Instant CLI Admin Purge (Instant 0 Days)
    * Releases assets and atomically wipes the account across all database tables.
    */

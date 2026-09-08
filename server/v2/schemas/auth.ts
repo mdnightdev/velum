@@ -54,8 +54,17 @@ export const updateProfileSchema = z.object({
   location: z.string().max(128).optional()
 });
 
+export const cancelDeletionSchema = z.object({
+  username: z.string().min(1, 'Username is required'),
+  password: z.string().optional(),
+  cancelToken: z.string().optional()
+}).refine((data) => data.password || data.cancelToken, {
+  message: 'Either password or cancelToken is required'
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type VerifyPasscodeInput = z.infer<typeof verifyPasscodeSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type CancelDeletionInput = z.infer<typeof cancelDeletionSchema>;

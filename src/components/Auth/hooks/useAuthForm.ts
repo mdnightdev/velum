@@ -47,6 +47,14 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
   const [redeemNewPassword, setRedeemNewPassword] = useState('');
   const [deviceFingerprint, setDeviceFingerprint] = useState('');
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
+  const [isScheduledForDeletion, setIsScheduledForDeletion] = useState(false);
+  const [scheduledDeletionDetails, setScheduledDeletionDetails] = useState<{
+    scheduledDeletionAt: string;
+    timeRemainingMs: number;
+    cancelToken: string;
+    username: string;
+  } | null>(null);
+  const [isCancellingDeletion, setIsCancellingDeletion] = useState(false);
 
   // Security: Wipe unsubmitted credentials if user switches apps or minimizes the tab
   useEffect(() => {
@@ -66,6 +74,8 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         setRedeemCode('');
         setRedeemNewPassword('');
         setAuthError(null);
+        setIsScheduledForDeletion(false);
+        setScheduledDeletionDetails(null);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -222,6 +232,16 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
       const data = await res.json();
 
       if (res.ok) {
+        if (data.scheduledDeletion) {
+          setScheduledDeletionDetails({
+            scheduledDeletionAt: data.scheduledDeletionAt,
+            timeRemainingMs: data.timeRemainingMs,
+            cancelToken: data.cancelToken,
+            username: data.username || username.trim()
+          });
+          setIsScheduledForDeletion(true);
+          return;
+        }
         if (data.showCompromisedFlow) {
           setShowCompromisedFlow(true);
           setCompromiseTicketId(data.compromiseTicketId || '');
@@ -264,7 +284,9 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
 
         onLoginSuccess(data.user, sessionToken, deviceId, destination);
       } else {
-        if (data.compromisedPortalActive && data.ticket) {
+        if (data.deletionExpired) {
+          setAuthError(data.error || 'Account deletion period has expired.');
+        } else if (data.compromisedPortalActive && data.ticket) {
           setAuthError(data.error);
           setActiveTicket(data.ticket);
           setShowRecoveryOptions(true);
@@ -553,6 +575,60 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     setActiveTicket(null);
   };
 
+  const handleCancelDeletion = async () => {
+    if (!scheduledDeletionDetails) return;
+    setIsCancellingDeletion(true);
+    setAuthError(null);
+    try {
+      const res = await fetch('/v2/auth/cancel-deletion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: scheduledDeletionDetails.username,
+          cancelToken: scheduledDeletionDetails.cancelToken,
+          password: password || undefined
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        let destination = 'chat';
+        if (data.user?.role === 'CLI_ADMIN') destination = 'cli';
+        else if (data.user?.role === 'LOGIN_ADMIN' || data.user?.role === 'SUPPORT_ADMIN' || data.user?.role === 'ADMIN') destination = 'admin';
+
+        const deviceId = (await collectDeviceFingerprint()).deviceId;
+        const sessionToken = data.token || data.sessionId;
+
+        if (data.user?.userId && password) {
+          try {
+            await statelessE2eeService.initLocalIdentityKeys(data.user.userId, password, data.user.salt);
+          } catch (e) {
+            console.error('[StatelessE2EE] Key derivation failed:', e);
+          }
+        }
+
+        if (Capacitor.isNativePlatform() && sessionToken && data.user) {
+          saveBiometricSession(data.user, sessionToken, deviceId);
+        }
+
+        setIsScheduledForDeletion(false);
+        setScheduledDeletionDetails(null);
+        onLoginSuccess(data.user, sessionToken, deviceId, destination);
+      } else {
+        setAuthError(data.error || 'Failed to cancel deletion request.');
+      }
+    } catch {
+      setAuthError('Connection failure while cancelling deletion.');
+    } finally {
+      setIsCancellingDeletion(false);
+    }
+  };
+
+  const handleDismissDeletionNotice = () => {
+    setIsScheduledForDeletion(false);
+    setScheduledDeletionDetails(null);
+    setPassword('');
+  };
+
   return {
     authTab,
     setAuthTab,
@@ -608,6 +684,11 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     setRedeemNewPassword,
     activeLegalDoc,
     setActiveLegalDoc,
+    isScheduledForDeletion,
+    scheduledDeletionDetails,
+    isCancellingDeletion,
+    handleCancelDeletion,
+    handleDismissDeletionNotice,
     handleLoginSubmit,
     handlePasskeyLogin,
     handleRegisterSubmit,
@@ -619,3 +700,4 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     resetRecoveryState,
   };
 }
+

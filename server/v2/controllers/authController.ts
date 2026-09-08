@@ -6,7 +6,7 @@ import { db } from '../db/client.js';
 import { tickets } from '../db/schema/tickets.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, ForbiddenError } from '../utils/errors.js';
-import type { RegisterInput, LoginInput, UpdateProfileInput } from '../schemas/auth.js';
+import type { RegisterInput, LoginInput, UpdateProfileInput, CancelDeletionInput } from '../schemas/auth.js';
 import { deviceFingerprintService } from '../services/deviceFingerprint.js';
 import { ensureAdminSeeded } from '../services/adminSeeder.js';
 import { systemBot } from '../services/systemBot.js';
@@ -205,6 +205,76 @@ export class AuthController {
     await userRepository.deleteAllSessionsForUser(user.id);
     res.status(200).json({ success: true, message: 'Account restored. You can now log in.' });
   }
+
+  async cancelDeletion(req: Request<{}, {}, CancelDeletionInput>, res: Response): Promise<void> {
+    const { username, password, cancelToken } = req.body;
+    const user = await userRepository.findByUsername(username);
+    if (!user) {
+      throw new NotFoundError('User not found.');
+    }
+
+    if (!user.scheduledDeletionAt) {
+      throw new BadRequestError('Account is not scheduled for deletion.');
+    }
+
+    if (user.scheduledDeletionAt <= new Date()) {
+      throw new ForbiddenError('Account deletion period has expired.');
+    }
+
+    let isAuthorized = false;
+
+    if (cancelToken) {
+      const expectedToken = crypto.createHmac('sha256', process.env.JWT_SECRET || 'velum-secret')
+        .update(`${user.id}:${user.scheduledDeletionAt.toISOString()}:${user.salt}`)
+        .digest('hex');
+      if (safeCompare(cancelToken, expectedToken)) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized && password) {
+      const isPasswordValid = await verifyArgon2id(password, user.salt, user.passwordHash);
+      if (isPasswordValid) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new UnauthorizedError('Invalid authorization credentials to cancel deletion.');
+    }
+
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+    await UserDeletionService.cancelUserDeactivation(user.id);
+
+    const token = generateRandomToken(32);
+    const tokenHash = hashSessionToken(token);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const ipAddress = getClientIp(req);
+    const userAgent = (req.headers['user-agent'] as string) || 'unknown-device';
+
+    await userRepository.createSession({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+      ipAddress,
+      userAgent
+    });
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        userId: user.id,
+        username: user.username,
+        role: 'USER',
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        salt: user.salt
+      },
+      message: 'Account deletion cancelled successfully.'
+    });
+  }
+
   async register(req: Request<{}, {}, RegisterInput>, res: Response): Promise<void> {
     const { username, password, hashedPassword, passcode, emergencyPhrase, deviceId, deviceFingerprint } = req.body as any;
 
@@ -360,6 +430,32 @@ export class AuthController {
         });
         return;
       }
+    }
+
+    // Check if account is scheduled for deletion
+    if (user.scheduledDeletionAt) {
+      const now = new Date();
+      if (user.scheduledDeletionAt <= now) {
+        res.status(403).json({
+          error: 'Account deletion period has expired. Account has been deactivated.',
+          deletionExpired: true
+        });
+        return;
+      }
+      const timeRemainingMs = Math.max(0, user.scheduledDeletionAt.getTime() - now.getTime());
+      const cancelToken = crypto.createHmac('sha256', process.env.JWT_SECRET || 'velum-secret')
+        .update(`${user.id}:${user.scheduledDeletionAt.toISOString()}:${user.salt}`)
+        .digest('hex');
+
+      res.status(200).json({
+        scheduledDeletion: true,
+        scheduledDeletionAt: user.scheduledDeletionAt.toISOString(),
+        timeRemainingMs,
+        username: user.username,
+        cancelToken,
+        message: 'This account is scheduled for deletion.'
+      });
+      return;
     }
 
     // Check if account is deactivated or restricted

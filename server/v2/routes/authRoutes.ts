@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authController } from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
-import { registerSchema, loginSchema, updateProfileSchema } from '../schemas/auth.js';
+import { registerSchema, loginSchema, updateProfileSchema, cancelDeletionSchema } from '../schemas/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
@@ -88,6 +88,10 @@ authRouter.post('/register', validate({ body: registerSchema }), (req, res, next
 
 authRouter.post('/login', validate({ body: loginSchema }), (req, res, next) => {
   authController.login(req, res).catch(next);
+});
+
+authRouter.post('/cancel-deletion', validate({ body: cancelDeletionSchema }), (req, res, next) => {
+  authController.cancelDeletion(req, res).catch(next);
 });
 
 authRouter.post('/logout', authMiddleware, (req, res, next) => {

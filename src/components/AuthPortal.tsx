@@ -8,6 +8,7 @@ import LoginForm from './Auth/LoginForm';
 import RegisterForm from './Auth/RegisterForm';
 import CompromisedNotice from './Auth/CompromisedNotice';
 import AccountRecovery from './Auth/AccountRecovery';
+import ScheduledDeletionModal from './Auth/ScheduledDeletionModal';
 
 interface AuthPortalProps {
   isDark: boolean;
@@ -189,6 +190,18 @@ export default function AuthPortal({ onLoginSuccess, onMigrationRequired }: Auth
       </main>
 
       <footer className="w-full max-w-md mx-auto text-center pt-4" />
+
+      {auth.isScheduledForDeletion && auth.scheduledDeletionDetails && (
+        <ScheduledDeletionModal
+          isOpen={auth.isScheduledForDeletion}
+          username={auth.scheduledDeletionDetails.username}
+          scheduledDeletionAt={auth.scheduledDeletionDetails.scheduledDeletionAt}
+          initialTimeRemainingMs={auth.scheduledDeletionDetails.timeRemainingMs}
+          isCancelling={auth.isCancellingDeletion}
+          onCancelDeletion={auth.handleCancelDeletion}
+          onDismiss={auth.handleDismissDeletionNotice}
+        />
+      )}
 
       <LegalDocModal docType={auth.activeLegalDoc} onClose={() => auth.setActiveLegalDoc(null)} />
     </div>
