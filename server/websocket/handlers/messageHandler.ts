@@ -8,7 +8,8 @@ import {
   resetUnread,
   incrementUnread,
   markAllMessagesRead,
-  getPeerIdFromDmRoom
+  getPeerIdFromDmRoom,
+  getDmRoomAliases
 } from '../unreadManager.js';
 import { db, executeWithRetry } from '../../v2/db/client.js';
 import { users, messageReactions, dms, dmReactions } from '../../v2/db/schema/index.js';
@@ -409,6 +410,25 @@ export async function handlePinMessage(client: ClientConnection, message: any) {
     const pin = !!message.pin;
     if (isNaN(messageId) || !roomId) return;
 
+    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+    if (peerId !== null && peerId > 0) {
+      await executeWithRetry(() =>
+        db.update(dms).set({ isPinned: pin }).where(eq(dms.id, messageId))
+      );
+
+      const payload = {
+        type: 'message_pinned',
+        message_id: String(messageId),
+        room_id: roomId,
+        is_pinned: pin
+      };
+      const aliases = getDmRoomAliases(peerId, client.userId);
+      for (const alias of aliases) {
+        broadcastToRoom(alias, { ...payload, room_id: alias });
+      }
+      return;
+    }
+
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (!loungeId) return;
 
@@ -462,7 +482,8 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
         is_encrypted: !!d.encrypted,
         reply_to: d.replyTo || null,
         timestamp: d.created ? d.created.toISOString() : new Date().toISOString(),
-        status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
+        status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent'),
+        is_pinned: !!d.isPinned
       }));
 
       const maxId = dmMessages.length > 0 ? Math.max(...dmMessages.map(d => d.id)) : 0;

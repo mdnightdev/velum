@@ -17,7 +17,8 @@ import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
 import { getLocalKV, setLocalKV, flushLoungeCache, purgeDmMessages } from '../utils/indexedDb';
 import { velumToast } from '../utils/toast';
-import { mergeLastMessagesMap } from '../utils/roomUtils';
+import { mergeLastMessagesMap, getPrimaryDmRoomId } from '../utils/roomUtils';
+import { stripAt } from '../types';
 
 interface DashboardLayoutProps {
   user: any;
@@ -82,6 +83,7 @@ export default function DashboardLayout({
 
   // Dynamic navigation category
   const [activeCategory, setActiveCategory] = useState<string>('direct');
+  const [pendingForwardContent, setPendingForwardContent] = useState<string | null>(null);
   
   // Handshake & peer networks
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
@@ -433,7 +435,17 @@ export default function DashboardLayout({
                 handleRespondFriendRequest={handleRespondFriendRequest}
                 handleSendFriendRequest={handleSendFriendRequest}
                 loadAndShowProfileCard={handleLoadProfileCard}
+                forwardMode={Boolean(pendingForwardContent)}
+                onCancelForward={() => setPendingForwardContent(null)}
                 onSelectPeer={(peer) => {
+                  if (pendingForwardContent) {
+                    const uid = user?.userId || 0;
+                    const dest = getPrimaryDmRoomId(peer.userId, uid);
+                    const isEnc = peer.userId !== 999;
+                    onSendMessage(pendingForwardContent, null, isEnc, dest);
+                    setPendingForwardContent(null);
+                    velumToast.success(`Forwarded to ${stripAt(peer.username)}`);
+                  }
                   if (onSelectPeer) onSelectPeer(peer);
                   setActiveCategory('direct');
                 }}
@@ -491,6 +503,14 @@ export default function DashboardLayout({
                   onPinMessage={onPinMessage}
                   onMarkAsRead={onMarkAsRead}
                   onMarkAllAsRead={onMarkAllAsRead}
+                  onRequestForward={(content) => {
+                    setPendingForwardContent(content);
+                    onRoomSelect('');
+                    if (onClearChatPeer) onClearChatPeer();
+                    setActiveLoungeId('');
+                    setActiveLoungeName('');
+                    setActiveCategory('people');
+                  }}
                 />
               ) : (
                 <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col">
@@ -572,6 +592,12 @@ export default function DashboardLayout({
                 } else {
                   setActiveCategory('direct');
                 }
+              }}
+              onRequestForward={(content) => {
+                setPendingForwardContent(content);
+                onRoomSelect('');
+                if (onClearChatPeer) onClearChatPeer();
+                setActiveCategory('people');
               }}
             />
           )}

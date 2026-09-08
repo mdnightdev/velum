@@ -271,26 +271,26 @@ export default function LoungeMainDashboard({
     }
   };
   return (
-    <div className={`flex-1 flex flex-col w-full h-full select-none font-sans relative ${isDark ? 'bg-transparent' : 'bg-transparent'}`}>
+    <div className="flex-1 flex flex-col w-full h-full select-none font-sans relative bg-transparent text-text-primary">
       
       {/* Search Header Bar */}
-      <div className="p-2.5 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2">
-        <div className="relative flex-1 flex items-center">
+      <div className="px-3 py-3 border-b border-velum-600 bg-transparent flex-shrink-0 flex items-center gap-2">
+        <div className="relative flex-1 flex items-center h-10 px-3.5 rounded-full border border-velum-600 bg-velum-750 focus-within:border-accent/40">
+          <span className="text-text-secondary shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.603 10.603Z" /></svg>
+          </span>
           <input
             type="text"
             placeholder={t('lounge.search', 'Search lounges...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-velum-600 bg-velum-750 text-text-primary placeholder:text-text-disabled outline-none focus:border-accent/40 transition-all"
+            className="w-full ml-2.5 bg-transparent border-none outline-none text-sm text-text-primary placeholder:text-text-disabled"
           />
-          <span className="absolute left-2.5 text-text-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.603 10.603Z" /></svg>
-          </span>
         </div>
       </div>
 
       {/* Main Flat List Area */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto py-1">
         {(() => {
           const loungesList = Array.isArray(lounges) ? lounges : [];
           const q = searchQuery.trim().toLowerCase();
@@ -315,12 +315,14 @@ export default function LoungeMainDashboard({
             });
           if (filtered.length === 0) {
             return (
-              <div className="p-8 text-center text-xs text-text-secondary">
+              <div className="px-4 py-16 text-center text-xs text-text-secondary">
                 {t('lounge.no_lounges', 'No lounges found')}
               </div>
             );
           }
-          return filtered.map((lounge) => {
+          return (
+            <div className="space-y-0.5">
+              {filtered.map((lounge) => {
             const loungeKey = lounge.slug || lounge.lounge_id;
             const loungeLast = lastMessages ? (lastMessages[loungeKey] || lastMessages[lounge.lounge_id]) : null;
             let lastPreviewNode: React.ReactNode = null;
@@ -392,19 +394,19 @@ export default function LoungeMainDashboard({
               <div
                 key={lounge.lounge_id}
                 onClick={() => onLoungeSelect(lounge.lounge_id, lounge.name)}
-                className="p-3 rounded-xl border border-velum-600 bg-velum-800 hover:border-accent/40 cursor-pointer transition-colors flex items-center gap-3 group"
+                className="w-full px-3 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-velum-750 active:bg-velum-700 transition group"
               >
                 {loungeAvatar ? (
-                  <img src={loungeAvatar} alt={lounge.name} className="w-9 h-9 rounded-lg object-cover shrink-0 border border-velum-600" />
+                  <img src={loungeAvatar} alt={lounge.name} className="w-12 h-12 rounded-xl object-cover shrink-0 border border-velum-600" />
                 ) : (
-                  <div className="w-9 h-9 rounded-lg bg-velum-750 border border-velum-600 text-accent flex items-center justify-center shrink-0 font-semibold text-xs">
+                  <div className="w-12 h-12 rounded-xl bg-velum-750 border border-velum-600 text-accent flex items-center justify-center shrink-0 font-semibold text-sm">
                     {lounge.name ? lounge.name.slice(0, 2).toUpperCase() : 'L'}
                   </div>
                 )}
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 pt-0.5">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-xs text-text-primary group-hover:text-accent truncate transition-colors">{lounge.name}</div>
-                    {lastTimeStr && <div className="text-xs text-text-secondary shrink-0">{lastTimeStr}</div>}
+                    <div className="font-semibold text-sm text-text-primary truncate">{lounge.name}</div>
+                    {lastTimeStr && <div className="text-[10px] text-text-secondary shrink-0">{lastTimeStr}</div>}
                   </div>
                   {lastPreviewNode && (
                     <div className="mt-0.5 min-w-0">
@@ -413,13 +415,15 @@ export default function LoungeMainDashboard({
                   )}
                 </div>
                 {unread > 0 && (
-                  <span className="px-1.5 py-0.2 min-w-[18px] text-xs font-bold rounded-full bg-accent text-black flex items-center justify-center shrink-0">
+                  <span className="mt-1 px-1.5 py-0.2 min-w-[18px] text-xs font-bold rounded-full bg-accent text-black flex items-center justify-center shrink-0">
                     {unread}
                   </span>
                 )}
               </div>
             );
-          });
+              })}
+            </div>
+          );
         })()}
       </div>
 

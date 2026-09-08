@@ -1134,6 +1134,10 @@ export function useWebSocket({
   };
 
   const pinMessage = (messageId: string, roomId: string, pin: boolean) => {
+    updateMessage(
+      (m) => String(m.message_id) === String(messageId) || String(m.db_message_id) === String(messageId) || String(m.id) === String(messageId),
+      (m) => ({ ...m, is_pinned: pin })
+    );
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'pin_message',

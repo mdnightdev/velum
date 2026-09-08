@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Search, X, Reply, Pencil, Forward, Pin, Trash2, ShieldAlert, Copy } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  ChevronLeft, X, Reply, Copy, Forward, Pin, Pencil, MoreVertical,
+} from 'lucide-react';
 import { Message } from '../../types';
 import { formatLastSeen } from '../../utils/datetime';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
-import { getCleanPreview } from '../../utils/messageParser';
+import { stripAttachmentTokens } from '../../utils/messageParser';
 
 interface ChatHeaderProps {
   wsConnected: boolean;
@@ -13,181 +15,211 @@ interface ChatHeaderProps {
   chatTitle: string;
   peerPresence: string;
   conversationMessages: Message[];
-  onSearchToggle?: () => void;
-  onForceRekey?: () => void;
   onViewProfile?: () => void;
-  // Selection Mode Props
+  currentUserId?: number;
+  avatarUrl?: string;
   selectedMessage?: Message | null;
   getDecryptedText?: (msg: Message) => string;
   onClearSelection?: () => void;
   onReplySelected?: (msg: Message) => void;
   onCopySelected?: (msg: Message) => void;
-  onEditSelected?: (msg: Message) => void;
   onForwardSelected?: (msg: Message) => void;
   onPinSelected?: (msg: Message) => void;
+  onEditSelected?: (msg: Message) => void;
   onDeleteSelected?: (msg: Message) => void;
   onReportSelected?: (msg: Message) => void;
-  currentUserId?: number;
-  avatarUrl?: string;
+  onSearch?: () => void;
+}
+
+function isVelumBotMessage(msg: Message): boolean {
+  return Number(msg.user_id) === 999;
+}
+
+function isMediaOnlyMessage(text: string): boolean {
+  const t = (text || '').trim();
+  if (!t) return false;
+  if (t.startsWith('[Voice Note')) return true;
+  if (t.includes('[Attachment:')) {
+    return !stripAttachmentTokens(t).trim();
+  }
+  return false;
 }
 
 export function ChatHeader({
   wsConnected,
-  isMobile,
   onBackToDeck,
   activeChatPeer,
   chatTitle,
   peerPresence,
-  conversationMessages,
-  onSearchToggle,
-  onForceRekey,
   onViewProfile,
+  avatarUrl,
   selectedMessage,
   getDecryptedText,
   onClearSelection,
   onReplySelected,
   onCopySelected,
-  onEditSelected,
   onForwardSelected,
   onPinSelected,
+  onEditSelected,
   onDeleteSelected,
   onReportSelected,
+  onSearch,
   currentUserId,
-  avatarUrl
 }: ChatHeaderProps) {
-  const [avatarErr, setAvatarErr] = useState(false);
+  const [avatarErr, setAvatarErr] = React.useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     setAvatarErr(false);
   }, [activeChatPeer?.avatar, avatarUrl]);
-  const initials = (activeChatPeer?.displayName || activeChatPeer?.username || chatTitle || '?').slice(0, 2).toUpperCase();
-  const isOwnSelectedMessage = Boolean(selectedMessage && currentUserId && selectedMessage.user_id === currentUserId);
-  const canEdit = Boolean(isOwnSelectedMessage && !selectedMessage?.deleted && (Date.now() - new Date(selectedMessage?.created_at || Date.now()).getTime() < 15 * 60 * 1000));
-  const canDelete = Boolean(isOwnSelectedMessage);
 
-  // Render Selection Mode Action Header when a message is selected
+  React.useEffect(() => {
+    setMoreOpen(false);
+  }, [selectedMessage]);
+
+  const initials = (activeChatPeer?.displayName || activeChatPeer?.username || chatTitle || '?').slice(0, 2).toUpperCase();
+  const headerAvatar = activeChatPeer?.avatar || avatarUrl;
+
   if (selectedMessage) {
-    let rawText = getDecryptedText ? getDecryptedText(selectedMessage) : selectedMessage.content;
-    if (!rawText || rawText.includes('VEL_E2EE') || rawText.includes('d%/dr/') || rawText.startsWith('m.')) {
-      rawText = selectedMessage.content && !selectedMessage.content.includes('VEL_E2EE') ? selectedMessage.content : 'Encrypted Message';
-    }
-    const cleanDisplay = getCleanPreview(rawText);
+    const isBot = isVelumBotMessage(selectedMessage);
+    const isOwn = Boolean(currentUserId && selectedMessage.user_id === currentUserId);
+    const canEdit =
+      !isBot &&
+      isOwn &&
+      !selectedMessage.deleted &&
+      Date.now() - new Date(selectedMessage.created_at || selectedMessage.timestamp || Date.now()).getTime() <
+        15 * 60 * 1000;
+    const rawText = getDecryptedText
+      ? getDecryptedText(selectedMessage)
+      : selectedMessage.content || '';
+    const canCopy = !isMediaOnlyMessage(rawText);
+
     return (
-      <div className="px-3 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] pb-1.5 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div
+        data-chat-selection-header="true"
+        className="px-3 pt-[calc(env(safe-area-inset-top,0px)+0.875rem)] pb-3 border-b flex items-center justify-between flex-shrink-0 bg-black/40 border-white-5 select-none z-20 relative min-h-[3.75rem]"
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             type="button"
             onClick={onClearSelection}
-            className="w-8 h-8 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
-            title="Cancel selection"
+            className="w-11 h-11 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            title="Cancel"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
-          <div className="flex flex-col min-w-0">
-            <span className="text-[11px] font-semibold text-accent uppercase tracking-wider">1 selected</span>
-            <span className="text-[10px] text-text-secondary truncate max-w-xs sm:max-w-md">
-              {cleanDisplay}
-            </span>
-          </div>
+          <span className="text-sm font-semibold text-accent tabular-nums">1</span>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
-          {onReplySelected && (
-            <button
-              type="button"
-              onClick={() => onReplySelected(selectedMessage)}
-              className="p-1.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
-              title="Reply to message"
-            >
-              <Reply className="w-4 h-4" />
-            </button>
+        <div className="flex items-center gap-2.5 shrink-0">
+          {!isBot && onForwardSelected && (
+            <HeaderIconBtn title="Forward" onClick={() => onForwardSelected(selectedMessage)}>
+              <Forward className="w-5 h-5" />
+            </HeaderIconBtn>
           )}
-          {canEdit && onEditSelected && (
-            <button
-              type="button"
-              onClick={() => onEditSelected(selectedMessage)}
-              className="p-1.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
-              title="Edit message"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
+          {canCopy && onCopySelected && (
+            <HeaderIconBtn title="Copy" onClick={() => onCopySelected(selectedMessage)}>
+              <Copy className="w-5 h-5" />
+            </HeaderIconBtn>
           )}
-          {onPinSelected && (
-            <button
-              type="button"
+          {!isBot && onReplySelected && (
+            <HeaderIconBtn title="Reply" onClick={() => onReplySelected(selectedMessage)}>
+              <Reply className="w-5 h-5" />
+            </HeaderIconBtn>
+          )}
+          {!isBot && onPinSelected && (
+            <HeaderIconBtn
+              title={selectedMessage.is_pinned ? 'Unpin' : 'Pin'}
               onClick={() => onPinSelected(selectedMessage)}
-              className="p-1.5 rounded-full text-text-secondary hover:text-accent hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
-              title={selectedMessage.is_pinned ? "Unpin message" : "Pin message"}
+              active={Boolean(selectedMessage.is_pinned)}
             >
-              <Pin className={`w-4 h-4 ${selectedMessage.is_pinned ? 'text-accent fill-accent' : ''}`} />
-            </button>
+              <Pin className="w-5 h-5" />
+            </HeaderIconBtn>
           )}
-          {onReportSelected && !isOwnSelectedMessage && (
-            <button
-              type="button"
-              onClick={() => onReportSelected(selectedMessage)}
-              className="p-1.5 rounded-full text-text-secondary hover:text-alert-warning hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
-              title="Report message"
-            >
-              <ShieldAlert className="w-4 h-4" />
-            </button>
+          {!isBot && canEdit && onEditSelected && (
+            <HeaderIconBtn title="Edit" onClick={() => onEditSelected(selectedMessage)}>
+              <Pencil className="w-5 h-5" />
+            </HeaderIconBtn>
           )}
-          {canDelete && onDeleteSelected && (
-            <button
-              type="button"
-              onClick={() => onDeleteSelected(selectedMessage)}
-              className="p-1.5 rounded-full text-text-secondary hover:text-alert-error hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors"
-              title="Delete message"
-            >
-              <Trash2 className="w-4 h-4 text-alert-error" />
-            </button>
+          {!isBot && (
+            <div className="relative">
+              <HeaderIconBtn title="More" onClick={() => setMoreOpen((v) => !v)} active={moreOpen}>
+                <MoreVertical className="w-5 h-5" />
+              </HeaderIconBtn>
+              {moreOpen && (
+                <div className="absolute right-0 top-full mt-1 min-w-[8.5rem] border border-velum-600 bg-velum-850 shadow-2xl z-50 overflow-hidden rounded-[var(--radius-sm)] py-1">
+                  {onSearch && (
+                    <MoreTextBtn
+                      label="Search"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        onClearSelection?.();
+                        onSearch();
+                      }}
+                    />
+                  )}
+                  {onReportSelected && (
+                    <MoreTextBtn
+                      label="Report"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        onReportSelected(selectedMessage);
+                      }}
+                    />
+                  )}
+                  {onDeleteSelected && (
+                    <MoreTextBtn
+                      label="Delete"
+                      danger
+                      onClick={() => {
+                        setMoreOpen(false);
+                        onDeleteSelected(selectedMessage);
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
     );
   }
 
-  const headerAvatar = activeChatPeer?.avatar || avatarUrl;
-
-  // Standard Header Mode
   return (
-    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] pb-2 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20">
+    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-2.5 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20 min-h-[3.25rem]">
       <div className="flex items-center gap-2 min-w-0">
         {onBackToDeck && (
           <button
             type="button"
             onClick={onBackToDeck}
-            className="w-9 h-9 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
-            title="Back to directory"
+            className="w-10 h-10 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
+            title="Back"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
         )}
-        <div 
+        <div
           onClick={onViewProfile}
           className={`flex items-center gap-3 min-w-0 ${onViewProfile ? 'cursor-pointer active:opacity-80 transition' : ''}`}
-          title={onViewProfile ? "View Profile" : undefined}
+          title={onViewProfile ? 'View Profile' : undefined}
         >
-          {/* Avatar */}
           {headerAvatar && !avatarErr ? (
-            <div 
-              className="w-9 h-9 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0"
-            >
-              <img 
-                src={resolveMediaUrl(headerAvatar)} 
-                alt="" 
-                className="w-full h-full object-cover" 
-                referrerPolicy="no-referrer" 
+            <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent overflow-hidden shrink-0">
+              <img
+                src={resolveMediaUrl(headerAvatar)}
+                alt=""
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
                 onError={() => setAvatarErr(true)}
               />
             </div>
           ) : (
-            <div className="w-9 h-9 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
+            <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
               <span className="text-xs font-mono font-bold uppercase text-accent">{initials}</span>
             </div>
           )}
-          
-          {/* Title & Status */}
+
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-semibold text-white leading-tight truncate">{chatTitle}</span>
             {!wsConnected ? (
@@ -202,18 +234,53 @@ export function ChatHeader({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {onSearchToggle && (
-          <button
-            type="button"
-            onClick={onSearchToggle}
-            className="w-9 h-9 rounded-full text-text-secondary hover:text-white hover:bg-white-5 cursor-pointer flex items-center justify-center transition-colors shrink-0"
-            title="Search messages"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        )}
-      </div>
     </div>
+  );
+}
+
+function HeaderIconBtn({
+  children,
+  onClick,
+  title,
+  active,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`w-11 h-11 rounded-full cursor-pointer flex items-center justify-center transition-colors ${
+        active ? 'text-accent bg-white-5' : 'text-text-secondary hover:text-accent hover:bg-white-5'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MoreTextBtn({
+  label,
+  onClick,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full px-3.5 py-2.5 text-left text-[12px] font-medium cursor-pointer transition-colors hover:bg-white-5 ${
+        danger ? 'text-alert-error' : 'text-text-primary'
+      }`}
+    >
+      {label}
+    </button>
   );
 }

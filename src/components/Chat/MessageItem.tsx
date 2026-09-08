@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, Check, Copy, ShieldCheck, Download, Maximize2, Pause, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Pin, Check, Copy, Download, Maximize2, Pause, X } from 'lucide-react';
 import { Message, stripAt } from '../../types';
 import { AudioMessagePlayer } from '../AudioMessagePlayer';
 import { SecureImageCard } from '../SecureImageCard';
@@ -8,9 +9,11 @@ import { parseAttachment, getCleanPreview, stripAttachmentTokens } from '../../u
 import { getSessionId } from '../../utils/auth';
 import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
 import { LinkPreviewCard } from './LinkPreviewCard';
-import { ReactionPicker } from './ReactionPicker';
 import { resolveMediaUrl, getFormattedDownloadFilename } from '../../utils/mediaPipeline';
 import { getAlbumCellClass, getAlbumGridClass } from './albumLayout';
+import { getMessageKey } from './messageKey';
+import { ReactionPicker } from './ReactionPicker';
+import { velumToast } from '../../utils/toast';
 
 function formatVideoClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -104,11 +107,34 @@ function AlbumVideoThumb({
   );
 }
 
+async function saveMediaToDevice(src: string, ext: string, mimeFallback: string): Promise<void> {
+  const filename = getFormattedDownloadFilename(src, ext);
+  try {
+    const res = await fetch(src);
+    const blob = await res.blob();
+    const type = blob.type || mimeFallback;
+    const file = new File([blob], filename, { type });
+    const nav = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+    if (nav.share && nav.canShare?.({ files: [file] })) {
+      await nav.share({ files: [file], title: filename });
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  // PWA cannot write to the system gallery; Android native path later.
+  velumToast.info('Gallery save needs the Android app.');
+}
+
 function VideoFullscreen({ src, onClose }: { src: string; onClose: () => void }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showChrome, setShowChrome] = useState(true);
+  const [saving, setSaving] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hideChromeTimerRef = useRef<number | null>(null);
 
@@ -127,12 +153,30 @@ function VideoFullscreen({ src, onClose }: { src: string; onClose: () => void })
     }, 2500);
   };
 
+  const close = (e?: React.SyntheticEvent | Event) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    onClose();
+  };
+
   useEffect(() => {
     bumpChrome();
     const el = videoRef.current;
     if (!el) return;
     el.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-    return () => clearHideChromeTimer();
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') close(ev);
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      clearHideChromeTimer();
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, []);
 
   const togglePlay = () => {
@@ -149,44 +193,62 @@ function VideoFullscreen({ src, onClose }: { src: string; onClose: () => void })
     }
   };
 
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = src;
-    link.download = getFormattedDownloadFilename(src, 'mp4');
-    link.click();
+  const handleSave = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (saving) return;
+    setSaving(true);
+    try {
+      await saveMediaToDevice(src, 'mp4', 'video/mp4');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-black select-none" onClick={onClose}>
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      data-video-lightbox="true"
+      className="fixed inset-0 z-[100000] flex flex-col bg-black select-none"
+      onClick={close}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      {/* Always interactive — not gated by showChrome fade */}
       <div
-        className={`absolute top-0 inset-x-0 z-20 flex items-center justify-end gap-2 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 bg-gradient-to-b from-black/80 to-transparent transition-opacity ${
-          showChrome ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
+        className="absolute top-0 inset-x-0 z-30 flex items-center justify-end gap-2 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 bg-gradient-to-b from-black/80 to-transparent"
         onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
       >
         <button
           type="button"
-          onClick={handleDownload}
-          className="p-2.5 bg-white/10 border border-white/15 rounded-full text-white hover:bg-white/15 transition cursor-pointer"
-          title="Download"
+          onClick={handleSave}
+          disabled={saving}
+          className="p-2.5 bg-white/10 border border-white/15 rounded-full text-white hover:bg-white/15 transition cursor-pointer touch-manipulation disabled:opacity-50"
+          title="Save"
+          aria-label="Save"
         >
-          <Download className="w-5 h-5" />
+          <Download className="w-5 h-5 pointer-events-none" />
         </button>
         <button
           type="button"
-          onClick={onClose}
-          className="p-2.5 bg-white/10 border border-white/15 rounded-full text-white hover:bg-white/15 transition cursor-pointer"
+          onPointerDown={close}
+          onClick={close}
+          className="p-2.5 bg-white/10 border border-white/15 rounded-full text-white hover:bg-white/15 transition cursor-pointer touch-manipulation"
           title="Close"
+          aria-label="Close"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5 pointer-events-none" />
         </button>
       </div>
+
       <div
-        className="relative flex-1 min-h-0 flex items-center justify-center"
+        className="relative flex-1 min-h-0 flex items-center justify-center z-10"
         onClick={(e) => {
           e.stopPropagation();
           togglePlay();
         }}
+        onTouchStart={(e) => e.stopPropagation()}
       >
         <video
           ref={videoRef}
@@ -225,6 +287,7 @@ function VideoFullscreen({ src, onClose }: { src: string; onClose: () => void })
           </div>
         )}
       </div>
+
       <div
         className={`absolute bottom-0 inset-x-0 z-20 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-8 bg-gradient-to-t from-black/85 to-transparent transition-opacity ${
           showChrome ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -250,7 +313,8 @@ function VideoFullscreen({ src, onClose }: { src: string; onClose: () => void })
           aria-label="Seek"
         />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -313,15 +377,12 @@ function VideoCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              const link = document.createElement('a');
-              link.href = src;
-              link.download = getFormattedDownloadFilename(src, 'mp4');
-              link.click();
+              void saveMediaToDevice(src, 'mp4', 'video/mp4');
             }}
             className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
-            title="Download"
+            title="Save"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5 pointer-events-none" />
           </button>
           <button
             type="button"
@@ -332,7 +393,7 @@ function VideoCard({
             className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
             title="Fullscreen"
           >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <Maximize2 className="w-3.5 h-3.5 pointer-events-none" />
           </button>
         </div>
       </div>
@@ -366,11 +427,36 @@ export function getSenderIdentity(msg: Message, fallbackUsername?: string) {
   if (SYSTEM_ROLES[msg.user_id]) {
     return { cleanName: SYSTEM_ROLES[msg.user_id].name, isSpecialTheme: true, customBubbleClass: SYSTEM_ROLES[msg.user_id].style };
   }
-  let name = msg.username || (msg as any).sender_name || fallbackUsername || '';
+  let name = msg.username || (msg as any).sender_name || (msg as any).display_name || fallbackUsername || '';
   if (name === 'Client' || name === 'client' || name.toLowerCase() === 'you') {
     name = fallbackUsername || msg.username || '';
   }
   return { cleanName: stripAt(name), isSpecialTheme: false, customBubbleClass: '' };
+}
+
+/** Prefer contact/display name over bare numeric ids. */
+export function resolveContactDisplayName(
+  msg: Message,
+  opts: {
+    currentUserId: number;
+    currentUsername?: string;
+    peer?: { userId: number; username: string; displayName?: string } | null;
+  }
+): string {
+  if (SYSTEM_ROLES[msg.user_id]) return SYSTEM_ROLES[msg.user_id].name;
+  if (Number(msg.user_id) === Number(opts.currentUserId)) {
+    return stripAt(opts.currentUsername || msg.username || 'You') || 'You';
+  }
+  if (opts.peer && Number(msg.user_id) === Number(opts.peer.userId)) {
+    const peerName = stripAt(opts.peer.displayName || opts.peer.username || '');
+    if (peerName && !/^\d+$/.test(peerName)) return peerName;
+  }
+  const fromMsg = getSenderIdentity(msg).cleanName;
+  if (fromMsg && !/^\d+$/.test(fromMsg) && !/^user\s*#?\d+$/i.test(fromMsg)) return fromMsg;
+  if (opts.peer && Number(msg.user_id) === Number(opts.peer.userId)) {
+    return stripAt(opts.peer.username) || 'Contact';
+  }
+  return fromMsg || 'Contact';
 }
 
 export interface MessageItemProps {
@@ -378,33 +464,21 @@ export interface MessageItemProps {
   index: number;
   currentUserId: number;
   currentUsername?: string;
-  currentUserRole: string;
   roomId: string;
   conversationMessages: Message[];
   decryptedMap: Record<string, string>;
   getDecryptedText: (msg: Message) => string;
-  longPressedMsgId: string | null;
-  showEmojisForMsg: string | null;
-  setShowEmojisForMsg: (id: string | null) => void;
   copiedMessageId: string | null;
   setCopiedMessageId: (id: string | null) => void;
-  setReplyingToMessage: (msg: Message) => void;
-  setForwardingMessage: (msg: Message) => void;
   handleTouchStart: (msg: Message) => void;
   handleTouchEnd: () => void;
-  handleStartEdit: (msg: Message) => void;
   onSendReaction?: (messageId: string, roomId: string, emoji: string) => void;
-  onEditMessage?: (messageId: string, roomId: string, content: string) => void;
-  onDeleteMessage?: (messageId: string, roomId: string) => void;
-  onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
-  onSendMessage: (content: string, burnSeconds: number | null, isEncrypted: boolean) => void;
   onRetryMessage?: (clientMsgId: string) => void;
   onScrollToMessage: (messageId: string) => void;
-  popoverPeer: any;
-  setPopoverPeer: React.Dispatch<React.SetStateAction<any>>;
-  onBackToDeck?: () => void;
-  onRoomKick?: (targetUserId: number) => void;
-  onRoomMute?: (targetUserId: number, mute: boolean) => void;
+  /** When set, show reaction picker on this bubble. */
+  showReactionsForKey?: string | null;
+  onReactSelect?: (msg: Message, emoji: string) => void;
+  activeChatPeer?: { userId: number; username: string; displayName?: string } | null;
 }
 
 export function MessageItem({
@@ -412,33 +486,20 @@ export function MessageItem({
   index,
   currentUserId,
   currentUsername,
-  currentUserRole,
   roomId,
   conversationMessages,
   decryptedMap,
   getDecryptedText,
-  longPressedMsgId,
-  showEmojisForMsg,
-  setShowEmojisForMsg,
   copiedMessageId,
   setCopiedMessageId,
-  setReplyingToMessage,
-  setForwardingMessage,
   handleTouchStart,
   handleTouchEnd,
-  handleStartEdit,
   onSendReaction,
-  onEditMessage,
-  onDeleteMessage,
-  onPinMessage,
-  onSendMessage,
   onRetryMessage,
   onScrollToMessage,
-  popoverPeer,
-  setPopoverPeer,
-  onBackToDeck,
-  onRoomKick,
-  onRoomMute,
+  showReactionsForKey,
+  onReactSelect,
+  activeChatPeer,
 }: MessageItemProps) {
   const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
   const isDm = Boolean(roomId && roomId.startsWith('dm_'));
@@ -478,8 +539,6 @@ export function MessageItem({
               const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
               if (onRetryMessage) {
                 onRetryMessage(targetId);
-              } else {
-                onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
               }
             }
           }}
@@ -512,12 +571,6 @@ export function MessageItem({
       data-message-id={String(msg.id || msg.client_msg_id || msg.message_id)}
       style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       onTouchStart={() => handleTouchStart(msg)}
-      onClick={(e) => {
-        // Toggle selection mode on desktop double-click or direct tap
-        if (e.detail === 2) {
-          handleTouchStart(msg);
-        }
-      }}
       onTouchEnd={handleTouchEnd}
       onTouchMove={handleTouchEnd}
       onContextMenu={(e) => e.preventDefault()}
@@ -535,6 +588,15 @@ export function MessageItem({
                     : 'chat-bubble-peer'
               } ${msg.deleted ? 'italic opacity-60 font-mono text-[10px]' : ''}`
         }>
+          {showReactionsForKey && showReactionsForKey === getMessageKey(msg) && (
+            <ReactionPicker
+              isMe={isMe}
+              onSelectReaction={(reaction) => {
+                if (onReactSelect) onReactSelect(msg, reaction);
+                else if (onSendReaction) onSendReaction(getMessageKey(msg), msg.room_id || roomId, reaction);
+              }}
+            />
+          )}
           {msg.deleted ? (
             'Message deleted'
           ) : (
@@ -546,11 +608,21 @@ export function MessageItem({
                 let replyName = '';
                 let replyText = '';
                 if (repliedMsg) {
-                  replyName = getSenderIdentity(repliedMsg).cleanName;
+                  replyName = resolveContactDisplayName(repliedMsg, {
+                    currentUserId,
+                    currentUsername,
+                    peer: activeChatPeer,
+                  });
                   const raw = repliedMsg.plaintext || (repliedMsg as any).client_plaintext || getDecryptedText(repliedMsg);
                   replyText = getCleanPreview(raw);
                 } else if (msg.reply_preview) {
-                  replyName = stripAt(msg.reply_preview.username || '');
+                  const previewName = stripAt(msg.reply_preview.username || '');
+                  replyName =
+                    previewName && !/^\d+$/.test(previewName) && !/^user\s*#?\d+$/i.test(previewName)
+                      ? previewName
+                      : activeChatPeer
+                        ? stripAt(activeChatPeer.displayName || activeChatPeer.username || '') || 'Contact'
+                        : 'Contact';
                   replyText = getCleanPreview(msg.reply_preview.content);
                 }
                 return (
@@ -701,7 +773,7 @@ export function MessageItem({
                   })()}
                   {parsedMsgContent && (
                     <div>
-                      <p className="whitespace-pre-wrap message-content-wrap selectable-text">
+                      <p className="whitespace-pre-wrap message-content-wrap">
                         {parsedMsgContent}
                         {msg.is_edited && (
                           <span className="text-[10px] opacity-45 ml-1.5 select-none font-sans lowercase" title={msg.edited_at ? `Edited at ${safeFormatTimeOnly(msg.edited_at)}` : 'Edited'}>
@@ -772,11 +844,9 @@ export function MessageItem({
                   onRetry={() => {
                     if (msg.status === 'failed') {
                       const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
-                      if (onRetryMessage) {
-                        onRetryMessage(targetId);
-                      } else {
-                        onSendMessage(activeContent, null, !!(msg.is_encrypted || (msg as any).isEncrypted));
-                      }
+              if (onRetryMessage) {
+                onRetryMessage(targetId);
+              }
                     }
                   }}
                 />
@@ -792,7 +862,7 @@ export function MessageItem({
                   <button
                     key={emoji}
                     type="button"
-                    onClick={() => onSendReaction?.(String(msg.id || msg.message_id), msg.room_id || roomId, emoji)}
+                    onClick={() => onSendReaction?.(getMessageKey(msg), msg.room_id || roomId, emoji)}
                     className="bg-text-primary/5 border border-white-5 hover:bg-text-primary/10 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-mono transition cursor-pointer"
                     title={users.join(', ')}
                   >
@@ -803,47 +873,15 @@ export function MessageItem({
               ))}
             </div>
           )}
-
-
-
-          {/* Animated Emoji Reaction Drawer overlays */}
-          {showEmojisForMsg === String(msg.id || msg.message_id) && (
-            <ReactionPicker
-              isMe={isMe}
-              onSelectReaction={(reaction) => {
-                if (onSendReaction) onSendReaction(String(msg.id || msg.message_id), msg.room_id || roomId, reaction);
-                setShowEmojisForMsg(null);
-              }}
-            />
-          )}
         </div>
 
         {/* Message Meta (Below Bubble - Pins & Admin actions) */}
-        {(msg.is_pinned || (!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN'))) && (
+        {msg.is_pinned && (
           <div className={`flex items-center gap-1 mt-0.5 mb-1 text-[10px] font-medium text-text-secondary ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
             {msg.is_pinned && (
               <span title="Pinned message" className="flex items-center">
                 <Pin className="w-2.5 h-2.5 text-accent shrink-0" />
               </span>
-            )}
-
-            {!isMe && (currentUserRole === 'LOGIN_ADMIN' || currentUserRole === 'SUPPORT_ADMIN') && (
-              <div className="hidden group-hover:flex items-center gap-1 ml-2">
-                <button
-                  type="button"
-                  onClick={() => onRoomMute?.(msg.user_id, true)}
-                  className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
-                >
-                  Mute
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRoomKick?.(msg.user_id)}
-                  className="text-alert-error hover:text-alert-error px-1 hover:underline text-[9px] cursor-pointer"
-                >
-                  Kick
-                </button>
-              </div>
             )}
           </div>
         )}

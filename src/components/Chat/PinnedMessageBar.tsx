@@ -55,7 +55,7 @@ export function PinnedMessageBar({
             type="button"
             onClick={() =>
               onPinMessage(
-                activePinnedMsg.db_message_id ? String(activePinnedMsg.db_message_id) : activePinnedMsg.message_id,
+                String(activePinnedMsg.db_message_id ?? activePinnedMsg.id ?? activePinnedMsg.message_id),
                 activePinnedMsg.room_id || roomId,
                 false
               )

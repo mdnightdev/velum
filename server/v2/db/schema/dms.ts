@@ -17,6 +17,7 @@ export const dms = pgTable('dms', {
   replyTo: integer('reply_to'),
   readAt: timestamp('read_at', { withTimezone: true, mode: 'date' }),
   deliveredAt: timestamp('delivered_at', { withTimezone: true, mode: 'date' }),
+  isPinned: boolean('is_pinned').default(false).notNull(),
   created: timestamp('created', { withTimezone: true, mode: 'date' })
     .defaultNow()
     .notNull()

@@ -20,6 +20,9 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
+  /* Chat reaction pickers — space-separated quoted glyphs. Read via src/utils/reactions.ts */
+  --velum-reaction-quick: "👍" "❤️" "🔥" "😂" "😮" "👏" "🙏" "🎉" "💯" "💩";
+  --velum-reaction-extended: "🥳" "😍" "😭" "🤯" "😎" "🫡" "🤔" "🥺" "🤩" "😴" "👀" "🚀" "⚡" "✨" "💎" "🥂" "🤝" "💪" "🧠" "👑" "👻" "🤡" "🖤" "💔" "💯" "🎯" "🔥" "🏆" "⭐" "🍀";
 }
 
 html.light,
@@ -625,14 +628,23 @@ body:has(input:focus, textarea:focus) .bottom-nav {
   user-select: none;
 }
 
-/* Retain text selection specifically inside chat message content, input fields, and textareas */
-.selectable-text, 
-.selectable-text *, 
-input, 
-textarea, 
+/* Retain text selection only for inputs — chat copy uses the header Copy action */
+input,
+textarea,
 [contenteditable="true"] {
   -webkit-user-select: text !important;
   user-select: text !important;
+}
+
+.chat-wallpaper,
+.chat-wallpaper *,
+.message-bubble-container,
+.message-bubble-container *,
+.chat-bubble,
+.chat-bubble * {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 @keyframes slide-up {

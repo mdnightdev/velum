@@ -25,6 +25,8 @@ interface PeopleMainDashboardProps {
   onSelectPeer: (peer: { userId: number; username: string; avatar?: string }) => void;
   onSectionView: (view: string) => void;
   loadAndShowProfileCard?: (user: any) => void;
+  forwardMode?: boolean;
+  onCancelForward?: () => void;
 }
 
 export default function PeopleMainDashboard({
@@ -37,6 +39,8 @@ export default function PeopleMainDashboard({
   onSelectPeer,
   onSectionView,
   loadAndShowProfileCard,
+  forwardMode = false,
+  onCancelForward,
 }: PeopleMainDashboardProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all');
@@ -264,6 +268,20 @@ export default function PeopleMainDashboard({
 
   return (
     <div className="flex-1 flex flex-col w-full h-full font-sans overflow-hidden bg-transparent text-text-primary select-none">
+      {forwardMode && (
+        <div className="px-3 py-2.5 flex items-center justify-between gap-2 border-b border-velum-600 shrink-0 bg-black/20">
+          <span className="text-sm font-semibold text-white">Forward to</span>
+          {onCancelForward && (
+            <button
+              type="button"
+              onClick={onCancelForward}
+              className="text-xs font-medium text-text-secondary hover:text-white cursor-pointer px-2 py-1"
+            >
+              Close
+            </button>
+          )}
+        </div>
+      )}
       <div className="px-3 py-3 flex items-center justify-between gap-2 border-b border-velum-600 shrink-0">
         <div className="relative flex items-center flex-1 h-10 px-3.5 rounded-full border border-velum-600 bg-velum-750 focus-within:border-accent/40">
           <Search className="w-4 h-4 flex-shrink-0 text-text-secondary" />

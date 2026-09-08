@@ -156,6 +156,7 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
 
     res.json({ relationships: mapped });
   } catch (err) {
+    console.error('[friends/relationships]', err);
     res.status(500).json({ error: 'Failed to fetch relationships.' });
   }
 });

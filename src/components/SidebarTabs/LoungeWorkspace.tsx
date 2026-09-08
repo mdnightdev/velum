@@ -346,6 +346,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           isMember={isMember}
           onJoinLounge={handleJoinLounge}
           avatarUrl={loungeAvatar}
+          onRequestForward={props.onRequestForward}
         />
       </div>
     );

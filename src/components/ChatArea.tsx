@@ -9,15 +9,15 @@ import { useSupportNomination } from './Chat/hooks/useSupportNomination';
 import { useAttachmentActions, dataUriToBlob, uploadComposeItems, shouldOpenChatImageCropper } from './Chat/hooks/useAttachmentActions';
 import { useMessageDecryption } from './Chat/hooks/useMessageDecryption';
 import { useTypingStatus } from './Chat/hooks/useTypingStatus';
-import { useMessageSearch } from './Chat/hooks/useMessageSearch';
-import { useForwardingFriends } from './Chat/hooks/useForwardingFriends';
 import { usePeerPresence } from './Chat/hooks/usePeerPresence';
 import { ChatHeader } from './Chat/ChatHeader';
 import { ChatInput } from './Chat/ChatInput';
 import { MediaComposeModal, ComposeMediaItem } from './Chat/MediaComposeModal';
-import { SearchDrawer } from './Chat/SearchDrawer';
 import { PinnedMessageBar } from './Chat/PinnedMessageBar';
 import { MessageList } from './Chat/MessageList';
+import { SearchDrawer } from './Chat/SearchDrawer';
+import { getMessageKey } from './Chat/messageKey';
+import { resolveContactDisplayName } from './Chat/MessageItem';
 import { velumToast } from '../utils/toast';
 import { ImageCropperModal } from './ImageCropperModal';
 import { streamFileDirectToCloudStorage, generateAnonymousFilename, sanitizeMediaExtension } from '../utils/mediaPipeline';
@@ -26,6 +26,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { requestNotificationPermission, dismissDeliveredNotification } from '../utils/notifications';
 import { createLogger } from '../utils/logger';
 import { getSessionId } from '../utils/auth';
+import { useMessageSearch } from './Chat/hooks/useMessageSearch';
 
 const log = createLogger('ChatArea');
 
@@ -60,6 +61,8 @@ export interface ChatAreaProps {
   isMember?: boolean;
   onJoinLounge?: () => void;
   avatarUrl?: string;
+  /** Opens the shared contacts list to pick a forward target. */
+  onRequestForward?: (content: string) => void;
 }
 
 export default function ChatArea({
@@ -91,6 +94,7 @@ export default function ChatArea({
   onJoinLounge,
   avatarUrl,
   onSelectProfileUser,
+  onRequestForward,
 }: ChatAreaProps) {
   const { t } = useLanguage();
 
@@ -106,16 +110,13 @@ export default function ChatArea({
   const {
     editingMessageId,
     setEditingMessageId,
-    longPressedMsgId,
-    selectedMessage,
-    setSelectedMessage,
-    showEmojisForMsg,
-    setShowEmojisForMsg,
+    actionMessage,
+    clearActionMessage,
     copiedMessageId,
     setCopiedMessageId,
     replyingToMessage,
     setReplyingToMessage,
-    forwardingMessage,
+    forwardingMessage: _forwardingMessage,
     setForwardingMessage,
     handleTouchStart,
     handleTouchEnd,
@@ -150,11 +151,6 @@ export default function ChatArea({
 
   const [activePinIndex, setActivePinIndex] = useState<number>(0);
 
-  const { friendsList, isLoadingFriends } = useForwardingFriends({
-    forwardingMessage,
-    currentUserId
-  });
-
   // Audio recording hook
   const {
     isRecording,
@@ -169,21 +165,6 @@ export default function ChatArea({
     cancelRecording,
     setMicError
   } = useAudioRecorder();
-
-  const [popoverPeer, setPopoverPeer] = useState<{
-    userId: number;
-    username: string;
-    messageId: string;
-    displayName?: string;
-    bio?: string;
-    location?: string;
-    joinedDate?: string;
-    status?: string;
-    isMuted?: boolean;
-    isBlocked?: boolean;
-    avatar?: string;
-    stats?: { loungesCount: number; connectionsCount: number };
-  } | null>(null);
 
   const markedMessageIdsRef = useRef<Set<string>>(new Set());
 
@@ -253,17 +234,15 @@ export default function ChatArea({
     searchQuery,
     setSearchQuery,
     searchResults,
-    setSearchResults,
     isSearching,
     searchIndex,
-    setSearchIndex,
     handleSearch,
-    handleNavigateSearch
+    handleNavigateSearch,
   } = useMessageSearch({
     roomId,
     conversationMessages,
     decryptedMap,
-    handleScrollToMessage
+    handleScrollToMessage,
   });
 
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -329,12 +308,6 @@ export default function ChatArea({
         }
       });
     }
-  };
-
-  const handleStartEdit = (msg: Message) => {
-    const isCipher = msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('VEL_E2EE[');
-    const activeContent = (msg.message_id && decryptedMap[msg.message_id]) || (isCipher ? '···' : (msg.content || ''));
-    actionStartEdit(msg, activeContent, setInputText);
   };
 
   const handleCancelEdit = () => {
@@ -496,48 +469,60 @@ export default function ChatArea({
             });
           }
         }}
-        onSearchToggle={() => setShowSearch(!showSearch)}
-        selectedMessage={selectedMessage}
+        currentUserId={currentUserId}
+        selectedMessage={actionMessage}
         getDecryptedText={getDecryptedText}
-        onClearSelection={() => setSelectedMessage(null)}
+        onClearSelection={clearActionMessage}
         onReplySelected={(msg) => {
           setReplyingToMessage(msg);
-          setSelectedMessage(null);
+          clearActionMessage();
         }}
         onCopySelected={(msg) => {
           const plainText = getDecryptedText(msg);
           const textToCopy = stripAttachmentTokens(plainText) || getCleanPreview(plainText);
           navigator.clipboard.writeText(textToCopy);
-          setCopiedMessageId(msg.message_id);
+          const key = getMessageKey(msg);
+          setCopiedMessageId(key);
           setTimeout(() => setCopiedMessageId(null), 2000);
-          setSelectedMessage(null);
+          velumToast.success('Copied');
+          clearActionMessage();
+        }}
+        onForwardSelected={(msg) => {
+          const plain = getDecryptedText(msg);
+          // Preserve attachment / voice tokens so media actually forwards.
+          const payload = plain?.trim() ? plain : (msg.content || '');
+          if (onRequestForward) {
+            onRequestForward(payload);
+            clearActionMessage();
+            return;
+          }
+          setForwardingMessage(msg);
+        }}
+        onPinSelected={(msg) => {
+          const rawId = msg.db_message_id ?? msg.id;
+          const numericId = typeof rawId === 'number' ? rawId : parseInt(String(rawId || ''), 10);
+          if (!Number.isFinite(numericId)) {
+            velumToast.error('Cannot pin until the message is saved.');
+            return;
+          }
+          const targetRoom = msg.room_id || roomId;
+          if (onPinMessage) onPinMessage(String(numericId), targetRoom, !msg.is_pinned);
+          clearActionMessage();
         }}
         onEditSelected={(msg) => {
           const activeText = getDecryptedText(msg);
           actionStartEdit(msg, activeText, setInputText);
-          setSelectedMessage(null);
-        }}
-        onForwardSelected={(msg) => {
-          setForwardingMessage(msg);
-          setSelectedMessage(null);
-        }}
-        onPinSelected={(msg) => {
-          if (onPinMessage) {
-            onPinMessage(msg.message_id, roomId, !msg.is_pinned);
-          }
-          setSelectedMessage(null);
+          clearActionMessage();
         }}
         onDeleteSelected={(msg) => {
-          if (onDeleteMessage) {
-            onDeleteMessage(msg.message_id, roomId);
-          }
-          setSelectedMessage(null);
+          if (onDeleteMessage) onDeleteMessage(getMessageKey(msg), roomId);
+          clearActionMessage();
         }}
         onReportSelected={async (msg) => {
-          const reason = prompt("Enter the reason for reporting :");
+          const reason = prompt('Why are you reporting this message?');
           if (reason === null) return;
           if (!reason.trim()) {
-            velumToast.error("Reason is required.");
+            velumToast.error('Reason is required.');
             return;
           }
           try {
@@ -550,18 +535,17 @@ export default function ChatArea({
               },
               body: JSON.stringify({ targetUserId: msg.user_id, reason: reason.trim() })
             });
-            if (res.ok) {
-              velumToast.success("Report submitted.");
-            } else {
+            if (res.ok) velumToast.success('Report submitted.');
+            else {
               const errData = await res.json();
-              velumToast.error(errData.error || "Failed to submit report.");
+              velumToast.error(errData.error || 'Failed to submit report.');
             }
           } catch {
-            velumToast.error("Network error reporting message.");
+            velumToast.error('Network error reporting message.');
           }
-          setSelectedMessage(null);
+          clearActionMessage();
         }}
-        currentUserId={currentUserId}
+        onSearch={() => setShowSearch(true)}
       />
       <SearchDrawer
         showSearch={showSearch}
@@ -575,8 +559,6 @@ export default function ChatArea({
         onCloseSearch={() => {
           setShowSearch(false);
           setSearchQuery('');
-          setSearchResults([]);
-          setSearchIndex(-1);
         }}
       />
       <PinnedMessageBar
@@ -595,33 +577,23 @@ export default function ChatArea({
         conversationMessages={conversationMessages}
         currentUserId={currentUserId}
         currentUsername={currentUsername}
-        currentUserRole={currentUserRole}
         roomId={roomId}
         decryptedMap={decryptedMap}
         getDecryptedText={getDecryptedText}
-        longPressedMsgId={longPressedMsgId}
-        showEmojisForMsg={showEmojisForMsg}
-        setShowEmojisForMsg={setShowEmojisForMsg}
         copiedMessageId={copiedMessageId}
         setCopiedMessageId={setCopiedMessageId}
-        setReplyingToMessage={setReplyingToMessage}
-        setForwardingMessage={setForwardingMessage}
         handleTouchStart={handleTouchStart}
         handleTouchEnd={handleTouchEnd}
-        handleStartEdit={handleStartEdit}
         onSendReaction={onSendReaction}
-        onEditMessage={onEditMessage}
-        onDeleteMessage={onDeleteMessage}
-        onPinMessage={onPinMessage}
-        onSendMessage={onSendMessage}
         onRetryMessage={onRetryMessage}
         onScrollToMessage={handleScrollToMessage}
-        popoverPeer={popoverPeer}
-        setPopoverPeer={setPopoverPeer}
-        onBackToDeck={onBackToDeck}
-        onRoomKick={onRoomKick}
-        onRoomMute={onRoomMute}
         typingPeer={typingPeer}
+        showReactionsForKey={actionMessage ? getMessageKey(actionMessage) : null}
+        onReactSelect={(msg, emoji) => {
+          if (onSendReaction) onSendReaction(getMessageKey(msg), msg.room_id || roomId, emoji);
+          clearActionMessage();
+        }}
+        activeChatPeer={activeChatPeer}
       />
 
       <input
@@ -800,6 +772,15 @@ export default function ChatArea({
         replyingToMessage={replyingToMessage}
         onCancelReply={() => setReplyingToMessage(null)}
         getDecryptedText={getDecryptedText}
+        replyAuthorName={
+          replyingToMessage
+            ? resolveContactDisplayName(replyingToMessage, {
+                currentUserId,
+                currentUsername,
+                peer: activeChatPeer,
+              })
+            : undefined
+        }
         roomAccessLevel={roomAccessLevel}
         currentUserRole={currentUserRole}
         chatTitle={chatTitle}

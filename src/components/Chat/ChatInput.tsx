@@ -4,10 +4,9 @@ import {
   Pause,
   Trash2,
   X,
-  Reply,
   Pencil
 } from 'lucide-react';
-import { Message, stripAt } from '../../types';
+import { Message } from '../../types';
 import { Attachment } from './hooks/useMessageInput';
 import { getDraftAudioBlob } from '../../utils/mediaPipeline';
 import { getCleanPreview } from '../../utils/messageParser';
@@ -53,6 +52,7 @@ export interface ChatInputProps {
   replyingToMessage: Message | null;
   onCancelReply: () => void;
   getDecryptedText: (msg: Message) => string;
+  replyAuthorName?: string;
 
   // Channel access & send
   roomAccessLevel?: string;
@@ -99,10 +99,11 @@ export function ChatInput({
   isSubmittingNominationAction,
   onNominationAction,
   editingMessageId,
-  onCancelEdit,
+  onCancelEdit: _onCancelEdit,
   replyingToMessage,
-  onCancelReply,
+  onCancelReply: _onCancelReply,
   getDecryptedText,
+  replyAuthorName,
   roomAccessLevel,
   currentUserRole = 'USER',
   chatTitle,
@@ -430,36 +431,18 @@ export function ChatInput({
           </div>
         ) : (
           <>
-            {editingMessageId && (
-              <div className="w-full bg-velum-800 border border-white-5 rounded-xl px-4 py-2.5 mb-2.5 flex justify-between items-center text-[10px] text-text-secondary select-none font-mono tracking-wider">
-                <div className="flex items-center gap-2">
-  
-                </div>
-                <button
-                  type="button"
-                  onClick={onCancelEdit}
-                  className="text-status-dnd hover:text-status-dnd/80 font-bold uppercase text-[9px] cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
             {replyingToMessage && (
-              <div className="flex items-center justify-between py-2 px-4 bg-accent/10 border-b border-accent/20 text-[10px] font-mono font-bold text-accent tracking-wider uppercase">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <Reply className="w-3.5 h-3.5 text-accent shrink-0" />
-                  <span className="text-[9px] text-text-secondary uppercase">Replying to {stripAt(replyingToMessage.username || 'User')}:</span>
-                  <span className="text-white normal-case truncate max-w-xs font-medium font-sans">
+              <div className="w-full mb-2 px-1 flex justify-start">
+                <div className="chat-bubble chat-bubble-peer max-w-[85%] text-[13px] leading-snug">
+                  {replyAuthorName ? (
+                    <div className="text-[10px] font-semibold text-accent mb-0.5 truncate">
+                      {replyAuthorName}
+                    </div>
+                  ) : null}
+                  <p className="whitespace-pre-wrap break-words line-clamp-4">
                     {getCleanPreview(getDecryptedText(replyingToMessage))}
-                  </span>
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={onCancelReply}
-                  className="text-status-dnd hover:text-status-dnd/80 font-bold uppercase text-[9px] cursor-pointer shrink-0 ml-2"
-                >
-                  Cancel
-                </button>
               </div>
             )}
             {roomAccessLevel === 'ANNOUNCE' && !['SUPPORT_ADMIN', 'LOGIN_ADMIN', 'CLI_ADMIN'].includes(currentUserRole) ? (
@@ -616,7 +599,13 @@ export function ChatInput({
                       if (!isSending) onSend(e);
                     }
                   }}
-                  placeholder={selectedAttachment ? 'Add a caption...' : undefined}
+                  placeholder={
+                    editingMessageId
+                      ? 'Edit message...'
+                      : selectedAttachment
+                        ? 'Add a caption...'
+                        : undefined
+                  }
                   className="flex-1 bg-velum-800 border border-white-5 focus:border-accent/40 rounded-2xl px-4 py-2 text-[15px] text-white outline-none resize-none max-h-32 min-h-[42px] leading-relaxed placeholder:text-text-disabled font-sans"
                 />
 
