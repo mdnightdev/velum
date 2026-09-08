@@ -1,4 +1,5 @@
-import { openDB, IDBPDatabase, deleteDB } from 'idb';
+import Dexie from 'dexie';
+import { getDexieDb } from './dexieDb.js';
 import {
   KeyPairBytes,
   toHex,
@@ -14,115 +15,36 @@ export const STORE_MEDIA = 'media_blobs';
 export const STORE_OUTBOX = 'outbox_messages';
 export const STORE_USER_KV = 'user_kv';
 
-const dbInstances = new Map<number, IDBPDatabase>();
-const dbPromises = new Map<number, Promise<IDBPDatabase>>();
-
 export function getDatabaseName(userId: number): string {
   const uid = (userId && !isNaN(userId)) ? userId : 0;
   return `v_${uid}`;
 }
 
-
-export async function openCryptoDatabase(userId: number = 0): Promise<IDBPDatabase> {
-  const targetUserId = (userId && !isNaN(userId)) ? userId : 0;
-
-  const existingInstance = dbInstances.get(targetUserId);
-  if (existingInstance) {
-    return existingInstance;
-  }
-
-  const existingPromise = dbPromises.get(targetUserId);
-  if (existingPromise) {
-    return existingPromise;
-  }
-
-  const dbName = getDatabaseName(targetUserId);
-  const promise = openDB(dbName, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains(STORE_IDENTITY)) {
-        db.createObjectStore(STORE_IDENTITY, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORE_SIGNED_PREKEY)) {
-        db.createObjectStore(STORE_SIGNED_PREKEY, { keyPath: 'id' });
-      }
-	  if (!db.objectStoreNames.contains(STORE_VAULT_METADATA)) {
-        db.createObjectStore(STORE_VAULT_METADATA, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
-        const msgStore = db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
-        msgStore.createIndex('loungeId', 'loungeId', { unique: false });
-        msgStore.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORE_MEDIA)) {
-        db.createObjectStore(STORE_MEDIA);
-      }
-      if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
-        db.createObjectStore(STORE_OUTBOX, { keyPath: 'client_msg_id' });
-      }
-      if (!db.objectStoreNames.contains(STORE_USER_KV)) {
-        db.createObjectStore(STORE_USER_KV, { keyPath: 'key' });
-      }
-    },
-    blocking() {
-      const db = dbInstances.get(targetUserId);
-      if (db) {
-        db.close();
-        dbInstances.delete(targetUserId);
-        dbPromises.delete(targetUserId);
-      }
-    },
-    terminated() {
-      dbInstances.delete(targetUserId);
-      dbPromises.delete(targetUserId);
-    }
-  }).then(async (db) => {
-    dbInstances.set(targetUserId, db);
-    dbPromises.delete(targetUserId);
-    return db;
-  }).catch((err) => {
-    dbPromises.delete(targetUserId);
-    throw err;
-  });
-
-  dbPromises.set(targetUserId, promise);
-  return promise;
+export async function openCryptoDatabase(userId: number = 0): Promise<any> {
+  return getDexieDb(userId);
 }
 
-export async function closeCryptoDatabase(userId?: number): Promise<void> {
+export async function closeCryptoDatabase(userId?: number | string): Promise<void> {
   if (userId !== undefined) {
-    const targetUserId = (userId && !isNaN(userId)) ? userId : 0;
-    const db = dbInstances.get(targetUserId);
-    if (db) {
-      db.close();
-      dbInstances.delete(targetUserId);
-      dbPromises.delete(targetUserId);
-    }
-  } else {
-    for (const [, db] of dbInstances.entries()) {
-      db.close();
-    }
-    dbInstances.clear();
-    dbPromises.clear();
+    const uid = typeof userId === 'string' ? parseInt(userId, 10) || 0 : userId;
+    getDexieDb(uid).close();
   }
 }
 
 export async function purgeCryptoDatabase(userId?: number | string): Promise<void> {
   if (userId !== undefined) {
     const uid = typeof userId === 'string' ? parseInt(userId, 10) || 0 : userId;
-    await closeCryptoDatabase(uid);
-    const dbName = getDatabaseName(uid);
-    await deleteDB(dbName);
+    const db = getDexieDb(uid);
+    db.close();
+    await Dexie.delete(`v_${uid}`);
   } else {
-    for (const uid of Array.from(dbInstances.keys())) {
-      await closeCryptoDatabase(uid);
-      await deleteDB(getDatabaseName(uid));
-    }
+    const db = getDexieDb(0);
+    db.close();
+    await Dexie.delete('v_0');
   }
 }
 
-// ---------------------------------------------------------------------------
 // Identity Key Storage
-// ---------------------------------------------------------------------------
 
 export interface LocalIdentityKeys {
   signing: KeyPairBytes; // Ed25519
@@ -151,8 +73,8 @@ export async function saveLocalIdentityKeys(userId: number, keys: LocalIdentityK
 
   try {
     if (typeof window !== 'undefined' && window.indexedDB) {
-      const db = await openCryptoDatabase(userId);
-      await db.put(STORE_IDENTITY, payload);
+      const db = getDexieDb(userId);
+      await db.identity_keys.put(payload);
     }
   } catch (err) {
     console.warn('[CryptoDB] Failed saving identity keys to IndexedDB:', err);
@@ -164,8 +86,8 @@ export async function loadLocalIdentityKeys(userId: number): Promise<LocalIdenti
 
   try {
     if (typeof window !== 'undefined' && window.indexedDB) {
-      const db = await openCryptoDatabase(userId);
-      record = await db.get(STORE_IDENTITY, 'local_identity');
+      const db = getDexieDb(userId);
+      record = await db.identity_keys.get('local_identity');
     }
   } catch (err) {
     console.warn('[CryptoDB] Error loading identity keys from IndexedDB:', err);
@@ -200,9 +122,7 @@ export async function loadLocalIdentityKeys(userId: number): Promise<LocalIdenti
   };
 }
 
-// ---------------------------------------------------------------------------
 // Signed Prekey Storage
-// ---------------------------------------------------------------------------
 
 export async function saveSignedPrekey(
   userId: number,
@@ -210,8 +130,8 @@ export async function saveSignedPrekey(
   keyPair: KeyPairBytes,
   signature: Uint8Array
 ): Promise<void> {
-  const db = await openCryptoDatabase(userId);
-  await db.put(STORE_SIGNED_PREKEY, {
+  const db = getDexieDb(userId);
+  await db.signed_prekeys.put({
     id: 'current_signed_prekey',
     keyId,
     privateKeyHex: toHex(keyPair.privateKey),
@@ -226,8 +146,8 @@ export async function loadSignedPrekey(userId: number): Promise<{
   keyPair: KeyPairBytes;
   signature: Uint8Array;
 } | null> {
-  const db = await openCryptoDatabase(userId);
-  const record = await db.get(STORE_SIGNED_PREKEY, 'current_signed_prekey');
+  const db = getDexieDb(userId);
+  const record = await db.signed_prekeys.get('current_signed_prekey');
   if (!record || !record.privateKeyHex || !record.publicKeyHex || !record.signatureHex) return null;
   return {
     keyId: record.keyId,
@@ -239,15 +159,12 @@ export async function loadSignedPrekey(userId: number): Promise<{
   };
 }
 
-
-// ---------------------------------------------------------------------------
 // Local Vault Encryption Key Storage (for local message storage)
-// ---------------------------------------------------------------------------
 
 export async function saveLocalVaultKeyToDb(key: CryptoKey, saltHex: string, userId: number = 0): Promise<void> {
-  const db = await openCryptoDatabase(userId);
+  const db = getDexieDb(userId);
   const exported = await window.crypto.subtle.exportKey('jwk', key);
-  await db.put(STORE_VAULT_METADATA, {
+  await db.vault_metadata.put({
     id: 'local_vault_aes_key',
     keyJwk: JSON.stringify(exported),
     saltHex,
@@ -256,8 +173,8 @@ export async function saveLocalVaultKeyToDb(key: CryptoKey, saltHex: string, use
 }
 
 export async function loadLocalVaultKeyFromDb(userId: number = 0): Promise<{ key: CryptoKey; saltHex: string } | null> {
-  const db = await openCryptoDatabase(userId);
-  const record = await db.get(STORE_VAULT_METADATA, 'local_vault_aes_key');
+  const db = getDexieDb(userId);
+  const record = await db.vault_metadata.get('local_vault_aes_key');
   if (!record || !record.keyJwk || !record.saltHex) return null;
   const jwk = JSON.parse(record.keyJwk);
   const key = await window.crypto.subtle.importKey(

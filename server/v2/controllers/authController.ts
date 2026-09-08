@@ -537,7 +537,7 @@ export class AuthController {
       const tokenHash = hashSessionToken(req.sessionId);
       await userRepository.deleteSessionByTokenHash(tokenHash);
     }
-    res.status(200).json({ message: 'Logged out.' });
+    res.status(200).json({ message: 'Logged out successfully.' });
   }
 
   async me(req: Request, res: Response): Promise<void> {

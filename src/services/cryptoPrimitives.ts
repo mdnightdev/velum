@@ -8,9 +8,7 @@ export interface KeyPairBytes {
   publicKey: Uint8Array;
 }
 
-// ---------------------------------------------------------------------------
 // Byte & Encoding Helpers
-// ---------------------------------------------------------------------------
 
 export function toHex(bytes: Uint8Array): string {
   let hex = '';
@@ -60,9 +58,7 @@ export function getRandomBytes(length: number): Uint8Array {
   return bytes;
 }
 
-// ---------------------------------------------------------------------------
 // Asymmetric Key Operations: X25519 (Diffie-Hellman) & Ed25519 (Signatures)
-// ---------------------------------------------------------------------------
 
 export function generateX25519KeyPair(): KeyPairBytes {
   const { secretKey, publicKey } = x25519.keygen();
@@ -102,9 +98,7 @@ export function verifyEd25519(signature: Uint8Array, message: Uint8Array, public
   }
 }
 
-// ---------------------------------------------------------------------------
 // Symmetric Key Derivation: HKDF-SHA256
-// ---------------------------------------------------------------------------
 
 const INFO_ROOT = utf8ToBytes('VelumDoubleRatchetRootKDF');
 const INFO_CHAIN = utf8ToBytes('VelumDoubleRatchetChainKDF');
@@ -146,9 +140,7 @@ export function deriveX3DHRKey(dhOutputs: Uint8Array[]): Uint8Array {
   return hkdf(sha256, combined, salt, utf8ToBytes('VelumX3DHInitialRootKey'), 32);
 }
 
-// ---------------------------------------------------------------------------
 // Symmetric Authenticated Encryption: AES-256-GCM (WebCrypto + Noble fallback)
-// ---------------------------------------------------------------------------
 
 export async function encryptAesGcm(
   keyBytes: Uint8Array,

@@ -15,9 +15,7 @@ import { logger } from '../utils/logger.js';
 
 export const mediaRouter = Router();
 
-// ---------------------------------------------------------------------------
 // Upload validation helpers
-// ---------------------------------------------------------------------------
 
 const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'webm', 'mp4', 'pdf', 'txt', 'csv', 'json', 'doc', 'docx', 'xls', 'xlsx']);
 
@@ -76,9 +74,7 @@ function sanitizeStorageFolder(rawFolder: string | undefined): string {
   return parts.join('/') || 'chat';
 }
 
-// ---------------------------------------------------------------------------
 // POST /v2/media/presigned-upload & /api/v2/media/presigned-upload
-// ---------------------------------------------------------------------------
 
 const handlePresignedUpload = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -138,9 +134,7 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
 mediaRouter.post('/media/presigned-upload', auth, handlePresignedUpload);
 mediaRouter.post('/storage/upload-token', auth, handlePresignedUpload);
 
-// ---------------------------------------------------------------------------
 // PUT/POST /v2/media/upload - Direct binary stream upload with SHA-256 check
-// ---------------------------------------------------------------------------
 
 const handleDirectUpload = async (req: Request, res: Response, next: NextFunction) => {
   const correlationId = (req as any).correlationId || 'NO-CORR-ID';

@@ -132,9 +132,7 @@ utilityRouter.post('/payments/convert', (req, res) => {
 utilityRouter.get('/payments/balances', (req, res) => res.json({ balances: [] }));
 utilityRouter.get('/payments/methods', (req, res) => res.json({ methods: [] }));
 
-// ---------------------------------------------------------------------------
 // Self-Hosted OTA Live Update Endpoints
-// ---------------------------------------------------------------------------
 utilityRouter.get('/ota/manifest', (req, res) => {
   const manifestPath = path.join(process.cwd(), 'public', 'ota', 'manifest.json');
   if (fs.existsSync(manifestPath)) {

@@ -1,4 +1,4 @@
-import { openCryptoDatabase, STORE_OUTBOX } from './cryptoDbStore';
+import { getDexieDb } from './dexieDb.js';
 
 export interface OutboxPayload {
   client_msg_id: string;
@@ -18,8 +18,8 @@ let isDraining = false;
  */
 export async function enqueueOutboxMessage(payload: OutboxPayload, userId?: number): Promise<void> {
   try {
-    const db = await openCryptoDatabase(userId || 0);
-    await db.put(STORE_OUTBOX, payload);
+    const db = getDexieDb(userId || 0);
+    await db.outbox_messages.put(payload);
   } catch (err) {
     console.warn('[OUTBOX] Failed to enqueue message:', err);
   }
@@ -30,8 +30,8 @@ export async function enqueueOutboxMessage(payload: OutboxPayload, userId?: numb
  */
 export async function getQueuedOutboxMessages(userId?: number): Promise<OutboxPayload[]> {
   try {
-    const db = await openCryptoDatabase(userId || 0);
-    const items: OutboxPayload[] = await db.getAll(STORE_OUTBOX);
+    const db = getDexieDb(userId || 0);
+    const items: OutboxPayload[] = await db.outbox_messages.toArray();
     items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     return items;
   } catch (err) {
@@ -45,8 +45,8 @@ export async function getQueuedOutboxMessages(userId?: number): Promise<OutboxPa
  */
 export async function removeOutboxMessage(clientMsgId: string, userId?: number): Promise<void> {
   try {
-    const db = await openCryptoDatabase(userId || 0);
-    await db.delete(STORE_OUTBOX, clientMsgId);
+    const db = getDexieDb(userId || 0);
+    await db.outbox_messages.delete(clientMsgId);
   } catch (err) {
     console.warn('[OUTBOX] Failed to remove outbox message:', err);
   }
@@ -76,7 +76,6 @@ export async function drainOutboxQueue(
       const currentRetries = (item.retryCount || 0) + 1;
 
       if (itemAge > MAX_STALE_MS || currentRetries > MAX_RETRIES) {
-        // Drop permanently failed outbox item and notify UI
         await removeOutboxMessage(item.client_msg_id, userId);
         if (onPermanentFailure) {
           onPermanentFailure(item.client_msg_id);
@@ -84,17 +83,16 @@ export async function drainOutboxQueue(
         continue;
       }
 
-      // Record retry attempt
       try {
-        const db = await openCryptoDatabase(userId || 0);
-        await db.put(STORE_OUTBOX, { ...item, retryCount: currentRetries });
+        const db = getDexieDb(userId || 0);
+        await db.outbox_messages.put({ ...item, retryCount: currentRetries });
       } catch {}
 
       const success = sendWebSocketFrame(item);
       if (success) {
         drainedCount++;
       } else {
-        break; // Socket unable to send, stop draining
+        break;
       }
     }
 

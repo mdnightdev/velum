@@ -169,7 +169,6 @@ export default function TicketsMainDashboard({
     }
   };
 
-  // --- RENDERING ---
 
   const renderTicketList = () => (
     <div className={`flex flex-col h-full bg-velum-850 border-r border-white/5 ${isMobile && (activeTicketId || isCreating) ? 'hidden' : 'w-full md:w-80 flex-shrink-0'}`}>
