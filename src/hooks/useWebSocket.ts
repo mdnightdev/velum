@@ -174,13 +174,14 @@ export function useWebSocket({
   const reconnectAttemptsRef = useRef<number>(0);
 
   const fetchConversationsSummary = async () => {
+    const sessionToken = storage.getItem('velum-sessionId');
+    const headers: Record<string, string> = {};
+    if (sessionToken) {
+      headers['x-session-token'] = sessionToken;
+      headers['Authorization'] = `Bearer ${sessionToken}`;
+    }
+
     try {
-      const sessionToken = storage.getItem('velum-sessionId');
-      const headers: Record<string, string> = {};
-      if (sessionToken) {
-        headers['x-session-token'] = sessionToken;
-        headers['Authorization'] = `Bearer ${sessionToken}`;
-      }
       const res = await fetch('/v2/lounges/conversations/summary', { headers });
       if (res.ok) {
         const data = await res.json();
@@ -197,12 +198,6 @@ export function useWebSocket({
 
     // Fetch Redis-based unread counts
     try {
-      const sessionToken = storage.getItem('velum-sessionId');
-      const headers: Record<string, string> = {};
-      if (sessionToken) {
-        headers['x-session-token'] = sessionToken;
-        headers['Authorization'] = `Bearer ${sessionToken}`;
-      }
       const res = await fetch('/v2/user/unread-counts', { headers });
       if (res.ok) {
         const data = await res.json();
@@ -269,7 +264,7 @@ export function useWebSocket({
       oldWs.close();
     }
 
-    const currentSessionId = storage.getItem('velum-sessionId') || storage.getItem('velum_sessionId') || sessionId;
+    const currentSessionId = storage.getItem('velum-sessionId') || sessionId;
     const configuredWsBase = import.meta.env.VITE_WS_URL;
     let wsUrl: string;
 
