@@ -15,7 +15,6 @@ const STORAGE_POLICIES: Record<string, StoragePolicy> = {
   // Authentication - localStorage for persistence across app switches and restarts
   'session_token': { storageType: 'local' },
   'velum-sessionId': { storageType: 'local' },
-  'velum_sessionId': { storageType: 'local' },
   'velum-user': { storageType: 'local' },
   'velum_user': { storageType: 'local' },
   'velum-deviceId': { storageType: 'local' },
@@ -285,7 +284,6 @@ export const storage = {
   clearSession: () => {
     storageService.removeItem('session_token');
     storageService.removeItem('velum-sessionId');
-    storageService.removeItem('velum_sessionId');
     storageService.removeItem('velum-user');
     storageService.removeItem('velum_user');
     storageService.removeItem('velum-deviceId');
