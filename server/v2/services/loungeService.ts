@@ -1,6 +1,6 @@
 import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
-import { dms } from '../db/schema/dms.js';
+import { dms, dmClears } from '../db/schema/dms.js';
 import { loungeMuteSettings } from '../db/schema/lounge_mutes.js';
 import { userReadCursors } from '../db/schema/read_cursors.js';
 import { userChatClears } from '../db/schema/chat_clears.js';
@@ -201,13 +201,23 @@ export async function getConversationsSummary(currentUserId?: number) {
   }
 
   if (currentUserId) {
+    const [clearRec] = await db
+      .select({ lastId: dmClears.lastId })
+      .from(dmClears)
+      .where(and(eq(dmClears.userId, currentUserId), eq(dmClears.peer, 999)))
+      .limit(1);
+    const cutoffId = clearRec?.lastId || 0;
+
     const [velumDm] = await db
       .select()
       .from(dms)
       .where(
-        or(
-          and(eq(dms.sender, currentUserId), eq(dms.peer, 999)),
-          and(eq(dms.sender, 999), eq(dms.peer, currentUserId))
+        and(
+          or(
+            and(eq(dms.sender, currentUserId), eq(dms.peer, 999)),
+            and(eq(dms.sender, 999), eq(dms.peer, currentUserId))
+          ),
+          gt(dms.id, cutoffId)
         )
       )
       .orderBy(desc(dms.id))

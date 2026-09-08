@@ -10,9 +10,81 @@ interface StoragePolicy {
   encrypted?: boolean;
 }
 
+const AUTH_STORAGE_KEYS = new Set([
+  'session_token',
+  'velum-sessionId',
+  'velum-user',
+  'velum_user',
+  'velum-deviceId',
+  'auth_state'
+]);
+
+const SESSION_SCOPE_KEY = 'velum_session_scope';
+
+function isNativePlatform(): boolean {
+  return typeof window !== 'undefined' && !!((window as any).Capacitor?.isNativePlatform?.());
+}
+
+/**
+ * Remove shared localStorage auth so this tab cannot accidentally read a
+ * device-wide session. Does not clear sessionStorage (this tab's own auth).
+ */
+export function scrubSharedAuthFromLocalStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    for (const key of AUTH_STORAGE_KEYS) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
+
+/**
+ * Tab-isolated auth: each browser tab holds an independent session.
+ * - Web (non-Capacitor): enabled by default (sticky per tab).
+ * - Explicit: ?sessionScope=tab | ?devUser=...
+ * - Escape hatch (cross-tab single account): ?sessionScope=shared
+ * - Native Capacitor: shared localStorage unless explicitly tab-scoped.
+ */
+export function isTabSessionScope(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get('sessionScope') === 'shared') {
+      sessionStorage.setItem(SESSION_SCOPE_KEY, 'shared');
+      return false;
+    }
+
+    if (params.get('sessionScope') === 'tab' || params.has('devUser')) {
+      const wasTab = sessionStorage.getItem(SESSION_SCOPE_KEY) === 'tab';
+      sessionStorage.setItem(SESSION_SCOPE_KEY, 'tab');
+      if (!wasTab) scrubSharedAuthFromLocalStorage();
+      return true;
+    }
+
+    const sticky = sessionStorage.getItem(SESSION_SCOPE_KEY);
+    if (sticky === 'shared') return false;
+    if (sticky === 'tab') return true;
+
+    // Default web: isolate per tab so multi-account testing works without query params
+    if (!isNativePlatform()) {
+      sessionStorage.setItem(SESSION_SCOPE_KEY, 'tab');
+      scrubSharedAuthFromLocalStorage();
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Storage policies for different data types
 const STORAGE_POLICIES: Record<string, StoragePolicy> = {
   // Authentication - localStorage for persistence across app switches and restarts
+  // (overridden to sessionStorage when isTabSessionScope() is active)
   'session_token': { storageType: 'local' },
   'velum-sessionId': { storageType: 'local' },
   'velum-user': { storageType: 'local' },
@@ -54,19 +126,29 @@ class StorageService {
 
   private getPolicyForKey(key: string): StoragePolicy {
     // Check for exact match
-    if (STORAGE_POLICIES[key]) {
-      return STORAGE_POLICIES[key];
-    }
+    let policy: StoragePolicy | undefined = STORAGE_POLICIES[key];
     
     // Check for prefix matches
-    for (const [pattern, policy] of Object.entries(STORAGE_POLICIES)) {
-      if (pattern.endsWith('_') && key.startsWith(pattern)) {
-        return policy;
+    if (!policy) {
+      for (const [pattern, p] of Object.entries(STORAGE_POLICIES)) {
+        if (pattern.endsWith('_') && key.startsWith(pattern)) {
+          policy = p;
+          break;
+        }
       }
     }
     
     // Default: localStorage for unknown keys (safer default)
-    return { storageType: 'local' };
+    if (!policy) {
+      policy = { storageType: 'local' };
+    }
+
+    // Multi-account tab testing: keep auth credentials tab-local
+    if (isTabSessionScope() && AUTH_STORAGE_KEYS.has(key)) {
+      return { ...policy, storageType: 'session' };
+    }
+
+    return policy;
   }
 
   setItem(key: string, value: any, options?: { storageType?: StorageType; ttl?: number }): void {
@@ -88,6 +170,10 @@ class StorageService {
     
     try {
       storage.setItem(key, JSON.stringify(item));
+      // Tab-scoped auth must not leave a twin copy in shared localStorage
+      if (isTabSessionScope() && AUTH_STORAGE_KEYS.has(key) && policy.storageType === 'session') {
+        try { localStorage.removeItem(key); } catch {}
+      }
     } catch (error) {
       console.error(`Storage set failed for key: ${key}`, error);
       // Handle quota exceeded
@@ -96,6 +182,9 @@ class StorageService {
         // Retry once
         try {
           storage.setItem(key, JSON.stringify(item));
+          if (isTabSessionScope() && AUTH_STORAGE_KEYS.has(key) && policy.storageType === 'session') {
+            try { localStorage.removeItem(key); } catch {}
+          }
         } catch (retryError) {
           console.error('Storage retry failed', retryError);
         }
@@ -138,6 +227,11 @@ class StorageService {
     const policy = this.getPolicyForKey(key);
     const storage = this.getStorage(policy);
     storage.removeItem(key);
+    // Auth keys: scrub both backends so tab-scope cannot leak into shared localStorage reads
+    if (AUTH_STORAGE_KEYS.has(key)) {
+      try { localStorage.removeItem(key); } catch {}
+      try { sessionStorage.removeItem(key); } catch {}
+    }
   }
 
   clear(storageType?: StorageType): void {
@@ -288,6 +382,10 @@ export const storage = {
     storageService.removeItem('velum_user');
     storageService.removeItem('velum-deviceId');
   },
+
+  /** Whether this tab uses isolated sessionStorage auth (default on web). */
+  isTabSessionScope: () => isTabSessionScope(),
+  scrubSharedAuthFromLocalStorage: () => scrubSharedAuthFromLocalStorage(),
   
   // User preferences (localStorage)
   setPreferences: (prefs: any) => storageService.setItem('user_preferences', prefs),

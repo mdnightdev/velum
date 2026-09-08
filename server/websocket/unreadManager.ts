@@ -8,6 +8,7 @@ import { dmService } from '../v2/services/dmService.js';
 export function getPeerIdFromDmRoom(roomId: string, currentUserId: number): number | null {
   if (!roomId || !roomId.startsWith('dm_')) return null;
   if (roomId.startsWith('dm_velum_')) return 999;
+  if (roomId === 'dm_999') return 999;
   const parts = roomId.replace('dm_', '').split('_').map(Number).filter(n => !isNaN(n));
   if (parts.length === 1) {
     return parts[0];
@@ -16,6 +17,22 @@ export function getPeerIdFromDmRoom(roomId: string, currentUserId: number): numb
     return parts[0] === currentUserId ? parts[1] : parts[0];
   }
   return null;
+}
+
+/** Room-id aliases for a DM peer (must stay aligned with client roomUtils). */
+export function getDmRoomAliases(peerId: number, currentUserId: number): string[] {
+  if (!Number.isFinite(peerId)) return [];
+  if (peerId === 999) {
+    return [`dm_velum_${currentUserId}`, 'dm_999'];
+  }
+  const a = Math.min(currentUserId, peerId);
+  const b = Math.max(currentUserId, peerId);
+  return Array.from(new Set([
+    `dm_${peerId}`,
+    `dm_${a}_${b}`,
+    `dm_${currentUserId}_${peerId}`,
+    `dm_${peerId}_${currentUserId}`
+  ]));
 }
 
 export async function getLoungeIdFromRoomId(roomId: string): Promise<number | null> {
@@ -93,10 +110,9 @@ export async function resetUnread(userId: number, roomId: string) {
       if (roomId.startsWith('dm_')) {
         const peerId = getPeerIdFromDmRoom(roomId, userId);
         if (peerId) {
-          await redis.del(`unread:${userId}:dm_${peerId}`);
-          await redis.del(`unread:${userId}:dm_${Math.min(userId, peerId)}_${Math.max(userId, peerId)}`);
-          await redis.del(`unread:${userId}:dm_${userId}_${peerId}`);
-          await redis.del(`unread:${userId}:dm_${peerId}_${userId}`);
+          for (const alias of getDmRoomAliases(peerId, userId)) {
+            await redis.del(`unread:${userId}:${alias}`);
+          }
         }
       }
     }

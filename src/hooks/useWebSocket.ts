@@ -6,10 +6,11 @@ import { flushLoungeCache, deleteLocalMessage, purgeDmMessages, getLocalMessages
 import { LocalVaultEncryption } from '../services/localVaultEncryption';
 import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../services/outboxEngine';
 import { storage } from '../services/storageService';
+import { getSessionId } from '../utils/auth';
 import { handleInboundMessageNotification, updateAppBadge, dismissDeliveredNotification } from '../utils/notifications';
 import { useChatStore } from '../stores/chatStore';
 import { velumToast } from '../utils/toast';
-import { parseDmPeerId } from '../utils/roomUtils';
+import { parseDmPeerId, getDmRoomAliases, getPrimaryDmRoomId, isActiveDmRoom, reconcileUnreadCounts, expandDmUnreadAliases } from '../utils/roomUtils';
 import { globalDecryptionCache, cachePlaintext } from '../components/Chat/hooks/useMessageDecryption';
 
 interface UseWebSocketParams {
@@ -174,7 +175,7 @@ export function useWebSocket({
   const reconnectAttemptsRef = useRef<number>(0);
 
   const fetchConversationsSummary = async () => {
-    const sessionToken = storage.getItem('velum-sessionId');
+    const sessionToken = getSessionId() || storage.getItem('velum-sessionId');
     const headers: Record<string, string> = {};
     if (sessionToken) {
       headers['x-session-token'] = sessionToken;
@@ -196,13 +197,16 @@ export function useWebSocket({
       // Silently handle transient network fetch errors during initialization
     }
 
-    // Fetch Redis-based unread counts
+    // Fetch Redis-based unread counts (authoritative reconcile for DM keys)
     try {
       const res = await fetch('/v2/user/unread-counts', { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.unreadCounts) {
-          setUnreadCounts(prev => ({ ...prev, ...data.unreadCounts }));
+          const expanded = userId
+            ? expandDmUnreadAliases(data.unreadCounts, userId)
+            : data.unreadCounts;
+          setUnreadCounts(prev => reconcileUnreadCounts(prev, expanded));
         }
       }
     } catch (err) {
@@ -224,6 +228,7 @@ export function useWebSocket({
 
     const handleSilentRevalidate = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
+        fetchConversationsSummary();
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING) {
           connectWebSocket(userId);
         } else if (wsRef.current.readyState === WebSocket.OPEN) {
@@ -251,6 +256,15 @@ export function useWebSocket({
     };
   }, [userId, isAuthenticated]);
 
+  // Adaptive conversation summary poll (faster when socket is down)
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return;
+    fetchConversationsSummary();
+    const ms = wsConnected ? 30000 : 12000;
+    const interval = setInterval(fetchConversationsSummary, ms);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, userId, wsConnected]);
+
   const connectWebSocket = (uid: number) => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -264,7 +278,7 @@ export function useWebSocket({
       oldWs.close();
     }
 
-    const currentSessionId = storage.getItem('velum-sessionId') || sessionId;
+    const currentSessionId = getSessionId() || sessionId || '';
     const configuredWsBase = import.meta.env.VITE_WS_URL;
     let wsUrl: string;
 
@@ -294,6 +308,7 @@ export function useWebSocket({
     wsRef.current = ws;
 
     let pingInterval: any = null;
+    let reconnectScheduled = false;
 
     ws.onopen = () => {
       console.log('Central Socket Live.');
@@ -302,6 +317,9 @@ export function useWebSocket({
       if (window.velumDebug) {
         window.velumDebug.wsConnected = true;
       }
+
+      fetchConversationsSummary();
+      window.dispatchEvent(new CustomEvent('velum-social-update', { detail: { source: 'ws_open' } }));
       
       ws.send(JSON.stringify({ type: 'join_room', room_id: `dm_velum_${uid}` }));
       
@@ -488,15 +506,20 @@ export function useWebSocket({
           );
         } else if (data.type === 'dm') {
           const isFromMe = uid && String(data.from) === String(uid);
-          const peerId = isFromMe ? data.to : data.from;
-          const dmRoomId = `dm_${peerId}`;
+          const peerId = Number(isFromMe ? data.to : data.from);
+          const aliases = uid && Number.isFinite(peerId)
+            ? getDmRoomAliases(peerId, uid)
+            : [`dm_${peerId}`];
+          const dmRoomId = uid && Number.isFinite(peerId)
+            ? getPrimaryDmRoomId(peerId, uid)
+            : `dm_${peerId}`;
           const canonicalId = data.id || data.db_message_id || data.message_id;
           const clientMsgId = data.client_msg_id || data.nonce;
-          if (dmRoomId) {
-            const seq = typeof canonicalId === 'number' ? canonicalId : 0;
-            if (seq) {
-              const cur = roomMaxSeqRef.current.get(dmRoomId) || 0;
-              if (seq > cur) roomMaxSeqRef.current.set(dmRoomId, seq);
+          const seq = typeof canonicalId === 'number' ? canonicalId : 0;
+          if (seq) {
+            for (const alias of aliases) {
+              const cur = roomMaxSeqRef.current.get(alias) || 0;
+              if (seq > cur) roomMaxSeqRef.current.set(alias, seq);
             }
           }
           const cachedPt = data.body && globalDecryptionCache.has(data.body) ? globalDecryptionCache.get(data.body) : undefined;
@@ -516,6 +539,10 @@ export function useWebSocket({
             timestamp: data.created,
             status: 'sent'
           };
+
+          const viewing = uid && Number.isFinite(peerId)
+            ? isActiveDmRoom(activeRoomIdRef.current, peerId, uid)
+            : activeRoomIdRef.current === dmRoomId;
 
           if (!isFromMe) {
             const senderName = (data.sender_username || dmMsg.username || `User #${data.from}`).replace(/^@/, '');
@@ -545,16 +572,23 @@ export function useWebSocket({
               notifyDm(dmMsg.content);
             }
 
-            if (dmRoomId !== activeRoomIdRef.current) {
-              setUnreadCounts(prev => ({
-                ...prev,
-                [dmRoomId]: (prev[dmRoomId] || 0) + 1
-              }));
+            if (!viewing) {
+              setUnreadCounts(prev => {
+                const current = Math.max(0, ...aliases.map((k) => prev[k] || 0));
+                const nextVal = current + 1;
+                const next = { ...prev };
+                for (const k of aliases) next[k] = nextVal;
+                return next;
+              });
             }
           }
 
-          setLastMessage(dmRoomId, dmMsg);
-          appendMessage(dmMsg);
+          for (const alias of aliases) {
+            setLastMessage(alias, { ...dmMsg, room_id: alias, lounge_id: alias });
+          }
+          if (viewing) {
+            appendMessage({ ...dmMsg, to: peerId } as any);
+          }
           window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
         } else if (data.type === 'sync_response') {
           if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
@@ -651,20 +685,33 @@ export function useWebSocket({
           );
         } else if (data.type === 'lounge_cleaned' || data.type === 'room_cleared' || data.type === 'chat_cleared') {
           const targetRoom = data.roomId || data.room_id || data.loungeId;
-          if (targetRoom) {
-            clearRoomMessages(targetRoom);
-            flushLoungeCache(targetRoom, userId || undefined);
-            if (targetRoom.startsWith('dm_') && !targetRoom.startsWith('dm_velum_')) {
-              const peerId = parseDmPeerId(targetRoom, userId);
-              if (peerId !== null && peerId > 0) {
-                purgeDmMessages(peerId, userId || undefined);
-              }
-            }
-            setLastMessages(prev => {
-              const next = { ...prev };
-              delete next[targetRoom];
-              return next;
-            });
+          const peerFromEvent = data.peer_id != null ? Number(data.peer_id) : null;
+          const peerId = (peerFromEvent != null && Number.isFinite(peerFromEvent))
+            ? peerFromEvent
+            : (targetRoom && userId ? parseDmPeerId(String(targetRoom), userId) : null);
+          const aliases = (peerId != null && userId)
+            ? getDmRoomAliases(peerId, userId)
+            : (targetRoom ? [String(targetRoom)] : []);
+
+          for (const alias of aliases) {
+            clearRoomMessages(alias);
+            flushLoungeCache(alias, userId || undefined);
+          }
+          if (peerId != null && peerId > 0) {
+            purgeDmMessages(peerId, userId || undefined);
+          }
+          setLastMessages(prev => {
+            const next = { ...prev };
+            for (const alias of aliases) delete next[alias];
+            return next;
+          });
+          setUnreadCounts(prev => {
+            const next = { ...prev };
+            for (const alias of aliases) next[alias] = 0;
+            return next;
+          });
+          if (peerId != null) {
+            window.dispatchEvent(new CustomEvent('velum-dm-cleared', { detail: { peerId, aliases } }));
           }
         } else if (data.type === 'history') {
           const rawHistory: Message[] = data.messages || [];
@@ -780,41 +827,41 @@ export function useWebSocket({
       }
     };
 
-    const handleCloseOrError = () => {
+    const scheduleReconnect = () => {
       setWsConnected(false);
       if (window.velumDebug) {
         window.velumDebug.wsConnected = false;
       }
       if (pingInterval) clearInterval(pingInterval);
 
-      if (isAuthenticatedRef.current) {
-        reconnectAttemptsRef.current += 1;
-        if (window.velumDebug) {
-          window.velumDebug.reconnectCount = reconnectAttemptsRef.current;
-        }
-        // Full random jitter backoff: t = min(max_backoff, base * 1.5^attempt + jitter)
-        const base = 1000;
-        const max = 15000;
-        const jitter = Math.random() * 1000;
-        const delay = Math.min(max, base * Math.pow(1.5, reconnectAttemptsRef.current) + jitter);
+      if (!isAuthenticatedRef.current || reconnectScheduled) return;
+      reconnectScheduled = true;
 
-        console.log(`Socket closed or errored. Reconnecting in ${Math.round(delay)}ms... (Attempt ${reconnectAttemptsRef.current}, jitter: ${Math.round(jitter)}ms)`);
-        
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connectWebSocket(uid);
-        }, delay);
+      reconnectAttemptsRef.current += 1;
+      if (window.velumDebug) {
+        window.velumDebug.reconnectCount = reconnectAttemptsRef.current;
       }
+      const base = 1000;
+      const max = 15000;
+      const jitter = Math.random() * 1000;
+      const delay = Math.min(max, base * Math.pow(1.5, reconnectAttemptsRef.current) + jitter);
+
+      console.log(`Socket closed. Reconnecting in ${Math.round(delay)}ms... (Attempt ${reconnectAttemptsRef.current})`);
+
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = setTimeout(() => {
+        connectWebSocket(uid);
+      }, delay);
     };
 
     ws.onclose = (event) => {
       console.log('Socket closed. Code: ', event.code, 'Reason: ', event.reason);
-      handleCloseOrError();
+      scheduleReconnect();
     };
 
+    // Reconnect only from onclose — onerror+onclose both firing caused double backoff
     ws.onerror = () => {
       console.log('Socket error.');
-      handleCloseOrError();
     };
   };
 
@@ -1096,18 +1143,39 @@ export function useWebSocket({
     }));
   };
 
+  const clearDmUnreadAliases = (roomId: string) => {
+    if (!roomId?.startsWith('dm_') || !userId) {
+      setUnreadCounts(prev => {
+        if (!Object.prototype.hasOwnProperty.call(prev, roomId)) return prev;
+        return { ...prev, [roomId]: 0 };
+      });
+      return;
+    }
+    const peerId = parseDmPeerId(roomId, userId);
+    const aliases = peerId != null ? getDmRoomAliases(peerId, userId) : [roomId];
+    setUnreadCounts(prev => {
+      const next = { ...prev };
+      for (const k of aliases) next[k] = 0;
+      return next;
+    });
+  };
+
   const markAsRead = (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => {
     if (!roomId) return;
-    setUnreadCounts(prev => {
-      const current = prev[roomId] || 0;
-      if (current <= 1) {
-        if (!prev[roomId]) return prev;
-        const next = { ...prev };
-        delete next[roomId];
-        return next;
-      }
-      return { ...prev, [roomId]: current - 1 };
-    });
+    if (roomId.startsWith('dm_')) {
+      clearDmUnreadAliases(roomId);
+    } else {
+      setUnreadCounts(prev => {
+        const current = prev[roomId] || 0;
+        if (current <= 1) {
+          if (!prev[roomId]) return prev;
+          const next = { ...prev };
+          delete next[roomId];
+          return next;
+        }
+        return { ...prev, [roomId]: current - 1 };
+      });
+    }
     dismissDeliveredNotification(roomId).catch(() => {});
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
@@ -1121,12 +1189,16 @@ export function useWebSocket({
 
   const markAllAsRead = (roomId: string) => {
     if (!roomId) return;
-    setUnreadCounts(prev => {
-      if (!prev[roomId]) return prev;
-      const next = { ...prev };
-      delete next[roomId];
-      return next;
-    });
+    if (roomId.startsWith('dm_')) {
+      clearDmUnreadAliases(roomId);
+    } else {
+      setUnreadCounts(prev => {
+        if (!prev[roomId]) return prev;
+        const next = { ...prev };
+        delete next[roomId];
+        return next;
+      });
+    }
     dismissDeliveredNotification(roomId).catch(() => {});
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
@@ -1151,7 +1223,17 @@ export function useWebSocket({
     wsRef.current.send(JSON.stringify({ type: 'join_room', room_id: roomId, invite_code: inviteCode }));
 
     // Reset unread counter when joining a room and dismiss its delivered notifications
-    setUnreadCounts(prev => ({ ...prev, [roomId]: 0 }));
+    if (roomId.startsWith('dm_') && userId) {
+      const peerId = parseDmPeerId(roomId, userId);
+      const aliases = peerId != null ? getDmRoomAliases(peerId, userId) : [roomId];
+      setUnreadCounts(prev => {
+        const next = { ...prev };
+        for (const k of aliases) next[k] = 0;
+        return next;
+      });
+    } else {
+      setUnreadCounts(prev => ({ ...prev, [roomId]: 0 }));
+    }
     dismissDeliveredNotification(roomId).catch(() => {});
   };
 

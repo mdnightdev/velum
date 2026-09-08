@@ -12,7 +12,7 @@ import { userPrekeys } from '../db/schema/keys.js';
 import { relationships } from '../db/schema/relationships.js';
 import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema/lounges.js';
 import { dms, dmClears } from '../db/schema/dms.js';
-import { getPeerIdFromDmRoom } from '../../websocket/unreadManager.js';
+import { getPeerIdFromDmRoom, getDmRoomAliases } from '../../websocket/unreadManager.js';
 import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { SystemBot } from '../services/systemBot.js';
@@ -239,11 +239,15 @@ userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Respons
 
     try {
       const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
-      broadcastToUserDevices(currentUserId, {
-        type: 'room_cleared',
-        room_id: `dm_${targetUserId}`,
-        cleared_till_id: lastId
-      });
+      const aliases = getDmRoomAliases(targetUserId, currentUserId);
+      for (const room_id of aliases) {
+        broadcastToUserDevices(currentUserId, {
+          type: 'room_cleared',
+          room_id,
+          peer_id: targetUserId,
+          cleared_till_id: lastId
+        });
+      }
     } catch (wsErr) {
       console.warn('[WS Clear Broadcast Error]:', wsErr);
     }
@@ -489,6 +493,10 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
                   continue;
                 } else {
                   counts[roomId] = actualCount;
+                  if (peerId === 999) {
+                    counts[`dm_velum_${userId}`] = actualCount;
+                    counts['dm_999'] = actualCount;
+                  }
                   continue;
                 }
               }
@@ -539,7 +547,12 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
 
       for (const row of unreadDms) {
         if (row.count > 0) {
-          counts[`dm_${row.sender}`] = row.count;
+          if (row.sender === 999) {
+            counts[`dm_velum_${userId}`] = row.count;
+            counts['dm_999'] = row.count;
+          } else {
+            counts[`dm_${row.sender}`] = row.count;
+          }
         }
       }
     }

@@ -1,6 +1,26 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
 import { Message } from '../types';
+import { isTabSessionScope } from '../services/storageService';
+
+/** Tab-scoped chat persist so multi-account tabs do not share lastMessages/unreads. */
+const tabAwareChatStorage: StateStorage = {
+  getItem: (name) => {
+    const key = isTabSessionScope() ? `${name}__tab` : name;
+    const backend = isTabSessionScope() ? sessionStorage : localStorage;
+    return backend.getItem(key);
+  },
+  setItem: (name, value) => {
+    const key = isTabSessionScope() ? `${name}__tab` : name;
+    const backend = isTabSessionScope() ? sessionStorage : localStorage;
+    backend.setItem(key, value);
+  },
+  removeItem: (name) => {
+    const key = isTabSessionScope() ? `${name}__tab` : name;
+    const backend = isTabSessionScope() ? sessionStorage : localStorage;
+    backend.removeItem(key);
+  }
+};
 
 export interface ChatStoreState {
   activeRoomId: string;
@@ -241,7 +261,7 @@ export const useChatStore = create<ChatStoreState>()(
     }),
     {
       name: 'velum_chat_state',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tabAwareChatStorage),
       partialize: (state) => ({
         activeCategory: state.activeCategory,
         lastMessages: state.lastMessages,

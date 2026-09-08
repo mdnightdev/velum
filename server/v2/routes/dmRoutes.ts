@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 import { dmService } from '../services/dmService.js';
 import { logger } from '../utils/logger.js';
+import { getDmRoomAliases, resetUnread } from '../../websocket/unreadManager.js';
 import type { Request, Response } from 'express';
 
 export const dmRouter = Router();
@@ -20,8 +21,12 @@ dmRouter.get('/:peer', async (req: Request, res: Response) => {
 
     const messages = await dmService.getConversation(userId, peerId);
     
-    // Automatically mark incoming messages as read
-    dmService.markAsRead(userId, peerId).catch(err => {
+    // Automatically mark incoming messages as read and clear Redis unread aliases
+    const primaryRoom = peerId === 999 ? `dm_velum_${userId}` : `dm_${peerId}`;
+    Promise.all([
+      dmService.markAsRead(userId, peerId),
+      resetUnread(userId, primaryRoom)
+    ]).catch(err => {
       logger.debug('Failed to mark DMs as read', { error: (err as Error).message });
     });
 
@@ -76,11 +81,15 @@ dmRouter.delete('/:peer', async (req: Request, res: Response) => {
 
     try {
       const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
-      broadcastToUserDevices(userId, {
-        type: 'room_cleared',
-        room_id: `dm_${peerId}`,
-        cleared_till_id: lastId
-      });
+      const aliases = getDmRoomAliases(peerId, userId);
+      for (const room_id of aliases) {
+        broadcastToUserDevices(userId, {
+          type: 'room_cleared',
+          room_id,
+          peer_id: peerId,
+          cleared_till_id: lastId
+        });
+      }
     } catch (wsErr) {
       logger.warn('Failed to broadcast room_cleared event', { error: (wsErr as Error).message });
     }

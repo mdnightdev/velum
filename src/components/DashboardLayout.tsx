@@ -17,6 +17,7 @@ import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
 import { getLocalKV, setLocalKV, flushLoungeCache, purgeDmMessages } from '../utils/indexedDb';
 import { velumToast } from '../utils/toast';
+import { mergeLastMessagesMap } from '../utils/roomUtils';
 
 interface DashboardLayoutProps {
   user: any;
@@ -194,13 +195,13 @@ export default function DashboardLayout({
   };
 
   useEffect(() => {
-    if (user?.userId) {
-      statelessE2eeService.setLocalUserId(Number(user.userId));
-      loadPeopleAndRequests();
-      const interval = setInterval(loadPeopleAndRequests, 45000);
-      return () => clearInterval(interval);
-    }
-  }, [user]);
+    if (!user?.userId) return;
+    statelessE2eeService.setLocalUserId(Number(user.userId));
+    loadPeopleAndRequests();
+    const ms = wsConnected ? 30000 : 8000;
+    const interval = setInterval(loadPeopleAndRequests, ms);
+    return () => clearInterval(interval);
+  }, [user?.userId, wsConnected]);
 
   // Silent background revalidation on visibility change, online event, and socket reconnection
   useEffect(() => {
@@ -321,46 +322,36 @@ export default function DashboardLayout({
     return { ...(externalUnreadCounts || {}) };
   }, [externalUnreadCounts]);
 
-  // Compute last message preview per room (DMs and lounges)
+  // Compute last message preview per room (DMs and lounges) — newer wins
   const computedLastMessages = React.useMemo(() => {
-    const map: Record<string, any> = { ...(externalLastMessages || {}) };
-    const msgs = (messages || []).slice();
-    // sort by timestamp/created_at if present
-    msgs.sort((a: any, b: any) => {
-      const ta = a.timestamp || a.created_at || 0;
-      const tb = b.timestamp || b.created_at || 0;
-      return (ta > tb) ? -1 : (ta < tb ? 1 : 0);
-    });
-    msgs.forEach((m: any) => {
-      const rId = m.room_id || m.lounge_id;
-      if (!rId) return;
-      if (!map[rId]) {
-        map[rId] = m;
-      }
-    });
-    return map;
+    return mergeLastMessagesMap(externalLastMessages, messages);
   }, [messages, externalLastMessages]);
 
   const totalDmUnread = React.useMemo(() => {
     let sum = 0;
-    const validDmRooms = new Set<string>();
-    const myUid = Number(user?.userId || 0);
-    if (myUid) {
-      validDmRooms.add(`dm_velum_${myUid}`);
-    }
+    const countedPeers = new Set<number>();
+    const myUid = Number(user?.userId);
+    if (!Number.isFinite(myUid)) return 0;
+
+    countedPeers.add(999);
+    sum += Math.max(0, Number(computedUnreadCounts[`dm_velum_${myUid}`]) || 0);
+
     const rels = Array.isArray(friendRelationships) ? friendRelationships : ((friendRelationships as any)?.relationships || []);
     rels.forEach((r: any) => {
       const fid = Number(r.friendId || r.id || r.userId);
-      if (fid && myUid) {
-        validDmRooms.add(`dm_${Math.min(myUid, fid)}_${Math.max(myUid, fid)}`);
+      if (!Number.isFinite(fid) || countedPeers.has(fid)) return;
+      countedPeers.add(fid);
+      const peerKey = `dm_${fid}`;
+      const canonical = `dm_${Math.min(myUid, fid)}_${Math.max(myUid, fid)}`;
+      if (typeof computedUnreadCounts[peerKey] === 'number') {
+        sum += Math.max(0, computedUnreadCounts[peerKey]);
+      } else if (typeof computedUnreadCounts[canonical] === 'number') {
+        sum += Math.max(0, computedUnreadCounts[canonical]);
+      } else if (typeof r.unread_count === 'number') {
+        sum += Math.max(0, r.unread_count);
       }
     });
 
-    Object.entries(computedUnreadCounts || {}).forEach(([key, val]) => {
-      if (validDmRooms.has(key)) {
-        sum += Math.max(0, Number(val) || 0);
-      }
-    });
     return sum;
   }, [computedUnreadCounts, friendRelationships, user?.userId]);
 
@@ -650,29 +641,30 @@ export default function DashboardLayout({
               }}
               onDeleteChat={async () => {
                 const targetId = profileCardUser.userId;
-                const dmRoomId = targetId === 999 
-                  ? `dm_velum_${user.userId}`
-                  : `dm_${Math.min(user.userId, targetId)}_${Math.max(user.userId, targetId)}`;
+                const aliases = targetId === 999
+                  ? [`dm_velum_${user.userId}`, 'dm_999']
+                  : [
+                      `dm_${targetId}`,
+                      `dm_${Math.min(user.userId, targetId)}_${Math.max(user.userId, targetId)}`,
+                      `dm_${user.userId}_${targetId}`,
+                      `dm_${targetId}_${user.userId}`
+                    ];
 
                 try {
                   const sId = fetchSessionId();
-                  // 1. Hard purge from server database
                   await fetch(`/v2/user/${targetId}/chat`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
 
-                  // 2. Wipe local device cache for this DM room
                   await purgeDmMessages(targetId, user.userId);
-                  await flushLoungeCache(dmRoomId, user.userId);
+                  for (const alias of aliases) {
+                    await flushLoungeCache(alias, user.userId);
+                  }
 
-                  // 3. Mark deletion timestamp in localStorage
-                  try {
-                    const saved = localStorage.getItem(`velum_deleted_dms_${user.userId}`);
-                    const map = saved ? JSON.parse(saved) : {};
-                    map[targetId] = Date.now();
-                    localStorage.setItem(`velum_deleted_dms_${user.userId}`, JSON.stringify(map));
-                  } catch {}
+                  window.dispatchEvent(new CustomEvent('velum-dm-cleared', {
+                    detail: { peerId: targetId, aliases }
+                  }));
 
                   if (onRoomSelect) onRoomSelect('');
                   if (onClearChatPeer) onClearChatPeer();

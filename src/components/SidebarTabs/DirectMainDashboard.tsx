@@ -9,6 +9,104 @@ import { formatMessageTimestamp } from '../../utils/time';
 import { getLocalMessages, flushLoungeCache, purgeDmMessages } from '../../utils/indexedDb';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
 import { getSessionId } from '../../utils/auth';
+import { getDmRoomAliases, resolveDmUnreadCount, selectLatestDmMessage, messageTimestamp, shouldHideDeletedDm, getPrimaryDmRoomId } from '../../utils/roomUtils';
+import { useChatStore } from '../../stores/chatStore';
+
+const AVATAR_COLOR_CLASSES: Record<string, string> = {
+  blue: 'bg-theme-blue-avatar-bg text-theme-blue-avatar border-theme-blue-avatar-border',
+  emerald: 'bg-theme-emerald-avatar-bg text-theme-emerald-avatar border-theme-emerald-avatar-border',
+  amber: 'bg-theme-amber-avatar-bg text-theme-amber-avatar border-theme-amber-avatar-border',
+  purple: 'bg-theme-purple-avatar-bg text-theme-purple-avatar border-theme-purple-avatar-border',
+  charcoal: 'bg-velum-800 text-text-secondary border-velum-600'
+};
+
+function isAvatarImageSrc(avatar?: string | null): boolean {
+  if (!avatar) return false;
+  const v = avatar.trim();
+  if (!v) return false;
+  if (AVATAR_COLOR_CLASSES[v]) return false;
+  return (
+    v.startsWith('http://') ||
+    v.startsWith('https://') ||
+    v.startsWith('/') ||
+    v.startsWith('data:') ||
+    v.startsWith('blob:') ||
+    v.includes('/')
+  );
+}
+
+function dedupeRelationshipsByPeerId(raw: any[]): any[] {
+  const SYSTEM_IDS = new Set([1, 2, 999]);
+  const byPeer = new Map<number, any>();
+
+  for (const r of raw) {
+    const fId = Number(r.friendId || r.userId || r.user_id || r.id);
+    if (!Number.isFinite(fId) || SYSTEM_IDS.has(fId)) continue;
+    const uname = (r.username || r.displayName || '').toLowerCase();
+    if (uname === 'velum') continue;
+
+    const existing = byPeer.get(fId);
+    if (!existing) {
+      byPeer.set(fId, r);
+      continue;
+    }
+    const newerLast =
+      messageTimestamp(r.last_message) >= messageTimestamp(existing.last_message)
+        ? r.last_message
+        : existing.last_message;
+    byPeer.set(fId, {
+      ...existing,
+      ...r,
+      friendId: fId,
+      avatarUrl: r.avatarUrl || r.avatar || existing.avatarUrl || existing.avatar || null,
+      unread_count: Math.max(
+        typeof existing.unread_count === 'number' ? existing.unread_count : 0,
+        typeof r.unread_count === 'number' ? r.unread_count : 0
+      ),
+      last_message: newerLast || existing.last_message || r.last_message || null
+    });
+  }
+
+  return Array.from(byPeer.values());
+}
+
+function ContactAvatar({
+  name,
+  avatar,
+  className = 'w-10 h-10 rounded-xl'
+}: {
+  name: string;
+  avatar?: string | null;
+  className?: string;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const initials = ((name || '?').trim().charAt(0) || '?').toUpperCase();
+  const colorKey = avatar && AVATAR_COLOR_CLASSES[avatar.trim()] ? avatar.trim() : null;
+  const showImage = isAvatarImageSrc(avatar) && !imgFailed;
+
+  React.useEffect(() => {
+    setImgFailed(false);
+  }, [avatar]);
+
+  return (
+    <div
+      className={`${className} border flex items-center justify-center font-bold text-xs overflow-hidden flex-shrink-0 relative ${
+        colorKey ? AVATAR_COLOR_CLASSES[colorKey] : 'bg-velum-750 border-velum-600 text-text-secondary'
+      }`}
+    >
+      {showImage ? (
+        <img
+          src={resolveMediaUrl(avatar)}
+          alt={name}
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span className="uppercase text-sm font-semibold text-text-primary">{initials}</span>
+      )}
+    </div>
+  );
+}
 
 function renderPreviewWithIcons(content: string) {
   if (!content) return null;
@@ -144,12 +242,7 @@ export default function DirectMainDashboard({
     } else if (friendRelationships && typeof friendRelationships === 'object' && 'relationships' in friendRelationships) {
       raw = (friendRelationships as any).relationships || [];
     }
-    const SYSTEM_IDS = new Set([1, 2, 999]);
-    return raw.filter((r: any) => {
-      const fId = r.friendId || r.userId || r.user_id;
-      const uname = (r.username || r.displayName || '').toLowerCase();
-      return !SYSTEM_IDS.has(fId) && uname !== 'velum';
-    });
+    return dedupeRelationshipsByPeerId(raw);
   })();
   const [searchQuery, setSearchQuery] = useState('');
   const [decryptedPreviews, setDecryptedPreviews] = useState<Record<number, string>>({});
@@ -176,7 +269,34 @@ export default function DirectMainDashboard({
   const [contextPeer, setContextPeer] = useState<{ userId: number; username: string; dmRoomId: string; isArchived: boolean } | null>(null);
   const [isNewChatPickerOpen, setIsNewChatPickerOpen] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState('');
-  const [quickAvatarPeer, setQuickAvatarPeer] = useState<{ userId: number; username: string; displayName?: string; avatarUrl?: string; bio?: string } | null>(null);
+  const [quickAvatarPeer, setQuickAvatarPeer] = useState<{
+    userId: number;
+    username: string;
+    displayName?: string;
+    avatarUrl?: string;
+    bio?: string;
+    anchor: { top: number; left: number };
+  } | null>(null);
+
+  const openQuickAvatar = (
+    e: React.MouseEvent,
+    peer: { userId: number; username: string; displayName?: string; avatarUrl?: string; bio?: string }
+  ) => {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const cardW = 288; // w-72
+    const cardH = 280;
+    const gap = 8;
+    const left = Math.min(
+      Math.max(12, rect.left),
+      window.innerWidth - cardW - 12
+    );
+    let top = rect.bottom + gap;
+    if (top + cardH > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - cardH - gap);
+    }
+    setQuickAvatarPeer({ ...peer, anchor: { top, left } });
+  };
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef<HTMLDivElement>(null);
 
@@ -215,18 +335,11 @@ export default function DirectMainDashboard({
 
     for (const [peerIdStr, delTime] of Object.entries(deletedDms)) {
       const peerId = parseInt(peerIdStr, 10);
-      const dmRoomId = `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`;
-      const candidateKeys = [dmRoomId, `dm_${peerId}`, `dm_${currentUserId}_${peerId}`, `dm_${peerId}_${currentUserId}`];
-      let last: any = null;
-      for (const k of candidateKeys) {
-        if (k && lastMessages[k]) { last = lastMessages[k]; break; }
-      }
-      if (last) {
-        const msgTime = last.createdAt ? new Date(last.createdAt).getTime() : last.created_at ? new Date(last.created_at).getTime() : (last.timestamp ? new Date(last.timestamp).getTime() : 0);
-        if (msgTime > delTime) {
-          delete nextMap[peerId];
-          changed = true;
-        }
+      if (!Number.isFinite(peerId)) continue;
+      const last = selectLatestDmMessage(peerId, currentUserId, lastMessages);
+      if (last && messageTimestamp(last) > delTime) {
+        delete nextMap[peerId];
+        changed = true;
       }
     }
 
@@ -237,6 +350,44 @@ export default function DirectMainDashboard({
       } catch {}
     }
   }, [lastMessages, currentUserId, deletedDms]);
+
+  // Profile/clear path updates localStorage without React state — sync via events
+  useEffect(() => {
+    const applyDeleted = (peerId: number, deletedAt: number) => {
+      setDeletedDms(prev => {
+        const next = { ...prev, [peerId]: deletedAt };
+        try {
+          localStorage.setItem(`velum_deleted_dms_${currentUserId}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    };
+
+    const onDeleted = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      const peerId = Number(detail.peerId);
+      if (!Number.isFinite(peerId)) return;
+      applyDeleted(peerId, Number(detail.deletedAt) || Date.now());
+    };
+
+    const onCleared = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      const peerId = Number(detail.peerId);
+      if (!Number.isFinite(peerId)) return;
+      setDecryptedPreviews(prev => {
+        const copy = { ...prev };
+        delete copy[peerId];
+        return copy;
+      });
+    };
+
+    window.addEventListener('velum-dm-deleted', onDeleted);
+    window.addEventListener('velum-dm-cleared', onCleared);
+    return () => {
+      window.removeEventListener('velum-dm-deleted', onDeleted);
+      window.removeEventListener('velum-dm-cleared', onCleared);
+    };
+  }, [currentUserId]);
 
   const touchTimerRef = useRef<any>(null);
   const isLongPressRef = useRef(false);
@@ -273,6 +424,8 @@ export default function DirectMainDashboard({
   const handleDeleteConversation = async (peerId: number, peerName: string, dmRoomId: string) => {
     try {
       const now = Date.now();
+      const aliases = getDmRoomAliases(peerId, currentUserId);
+
       setDeletedDms(prev => {
         const next = { ...prev, [peerId]: now };
         try {
@@ -281,11 +434,26 @@ export default function DirectMainDashboard({
         return next;
       });
 
-      // 1. Wipe local cache for this DM room across all aliases
       await purgeDmMessages(peerId, currentUserId);
-      await flushLoungeCache(dmRoomId, currentUserId);
+      for (const alias of aliases) {
+        await flushLoungeCache(alias, currentUserId);
+      }
 
-      // 2. Call server to record monotonic clear cutoff
+      const store = useChatStore.getState();
+      store.setLastMessages(prev => {
+        const next = { ...prev };
+        for (const alias of aliases) delete next[alias];
+        return next;
+      });
+      store.setUnreadCounts(prev => {
+        const next = { ...prev };
+        for (const alias of aliases) next[alias] = 0;
+        return next;
+      });
+      for (const alias of aliases) {
+        store.clearRoomMessages(alias);
+      }
+
       try {
         const sId = getSessionId();
         await fetch(`/v2/dm/${peerId}`, {
@@ -296,12 +464,12 @@ export default function DirectMainDashboard({
         console.warn('Server chat deletion call failed:', err);
       }
 
-      // 3. Clear preview cache
       setDecryptedPreviews(prev => {
         const copy = { ...prev };
         delete copy[peerId];
         return copy;
       });
+      window.dispatchEvent(new CustomEvent('velum-dm-deleted', { detail: { peerId, deletedAt: now } }));
       setContextPeer(null);
     } catch (e) {
       console.warn('Failed to delete conversation:', e);
@@ -313,47 +481,79 @@ export default function DirectMainDashboard({
     const processPreviews = async () => {
       for (const r of relationshipsArray) {
         const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
-        if (!friendId) continue;
-        const dmRoomId = `dm_${friendId}`;
-        const lm = lastMessages || {};
-        const candidateKeys = [dmRoomId, `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`, `dm_${currentUserId}_${friendId}`, `dm_${friendId}_${currentUserId}`];
-        let last = r.last_message || null;
-        for (const k of candidateKeys) {
-          if (k && lm[k]) { last = lm[k]; break; }
+        if (!Number.isFinite(friendId)) continue;
+        const candidateKeys = getDmRoomAliases(friendId, currentUserId);
+        const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message);
+        if (!last) continue;
+
+        const raw = last.content || last.message || last.body || last.text || '';
+        const isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
+        const knownPlain =
+          last.plaintext ||
+          last.client_plaintext ||
+          '';
+
+        if (knownPlain && !isStatelessDmEnvelope(knownPlain)) {
+          if (isMounted) {
+            setDecryptedPreviews(prev => ({ ...prev, [friendId]: knownPlain }));
+          }
+          continue;
         }
-        if (last) {
-          const raw = last.content || last.message || last.body || last.text || '';
-          const isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-          if (isMe && isStatelessDmEnvelope(raw)) {
-            let known = last.plaintext || last.client_plaintext || '';
-            if (!known) {
-              const localStore = await getLocalMessages(dmRoomId, 10, currentUserId).catch(() => []);
-              const match = localStore.find((lm: any) => lm.plaintext && (lm.content === raw || lm.id === last.message_id || lm.message_id === last.message_id));
+
+        if (isMe && isStatelessDmEnvelope(raw)) {
+          let known = knownPlain;
+          if (!known) {
+            for (const roomKey of candidateKeys) {
+              const localStore = await getLocalMessages(roomKey, 10, currentUserId).catch(() => []);
+              const match = localStore.find((m: any) =>
+                m.plaintext && (m.content === raw || m.id === last.message_id || m.message_id === last.message_id)
+              );
               if (match?.plaintext) {
                 known = match.plaintext;
+                break;
               }
             }
-            if (isMounted && known) {
-              setDecryptedPreviews(prev => ({ ...prev, [friendId]: known }));
-            }
-            continue;
           }
-          if (raw) {
-            try {
-              let decrypted = isStatelessDmEnvelope(raw)
-                ? await decryptMessage(raw, { type: 'direct', peerUserId: friendId })
-                : decryptMessageSync(raw, dmRoomId, !!(last.is_encrypted || last.isEncrypted));
-              if (!decrypted || decrypted === '[Encrypted Message]') {
-                const localStore = await getLocalMessages(dmRoomId, 10, currentUserId).catch(() => []);
-                const match = localStore.find((lm: any) => lm.plaintext && (lm.content === raw || lm.id === last.message_id || lm.message_id === last.message_id));
+          if (isMounted) {
+            setDecryptedPreviews(prev => ({
+              ...prev,
+              [friendId]: known || 'Message sent'
+            }));
+          }
+          continue;
+        }
+
+        if (raw) {
+          try {
+            let decrypted = isStatelessDmEnvelope(raw)
+              ? await decryptMessage(raw, { type: 'direct', peerUserId: friendId })
+              : decryptMessageSync(raw, candidateKeys[0], !!(last.is_encrypted || last.isEncrypted));
+
+            if (!decrypted || decrypted === '[Encrypted Message]' || isStatelessDmEnvelope(decrypted)) {
+              for (const roomKey of candidateKeys) {
+                const localStore = await getLocalMessages(roomKey, 10, currentUserId).catch(() => []);
+                const match = localStore.find((m: any) =>
+                  m.plaintext && (m.content === raw || m.id === last.message_id || m.message_id === last.message_id)
+                );
                 if (match?.plaintext) {
                   decrypted = match.plaintext;
+                  break;
                 }
               }
-              if (isMounted && decrypted) {
-                setDecryptedPreviews(prev => ({ ...prev, [friendId]: decrypted }));
-              }
-            } catch (e) {}
+            }
+
+            if (isMounted) {
+              setDecryptedPreviews(prev => ({
+                ...prev,
+                [friendId]: decrypted && !isStatelessDmEnvelope(decrypted)
+                  ? decrypted
+                  : (isStatelessDmEnvelope(raw) ? 'Encrypted Message' : (raw || ''))
+              }));
+            }
+          } catch {
+            if (isMounted && isStatelessDmEnvelope(raw)) {
+              setDecryptedPreviews(prev => ({ ...prev, [friendId]: 'Encrypted Message' }));
+            }
           }
         }
       }
@@ -588,21 +788,40 @@ export default function DirectMainDashboard({
       {/* Directory List */}
       <div className="flex-1 overflow-y-auto w-full flex flex-col relative">
         {/* Default Secure VELUM System Contact (only in active tab) */}
-        {filterTab === 'active' && !deletedDms[999] && (
+        {filterTab === 'active' && !shouldHideDeletedDm(deletedDms[999], selectLatestDmMessage(999, currentUserId, lastMessages)) && (
           <div
             onClick={() => {
+              if (contextPeer?.userId === 999) return;
               unDeleteContact(999);
               if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
               if (onSectionView) onSectionView('chat');
               if (onMarkAsRead) onMarkAsRead('', velumRoomId);
             }}
-            className="w-full px-4 py-3 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer hover:bg-velum-750 transition-colors"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextPeer({
+                userId: 999,
+                username: 'VELUM',
+                dmRoomId: getPrimaryDmRoomId(999, currentUserId),
+                isArchived: archivedUserIds.includes(999)
+              });
+            }}
+            onTouchStart={() => startLongPress({
+              userId: 999,
+              username: 'VELUM',
+              dmRoomId: getPrimaryDmRoomId(999, currentUserId),
+              isArchived: archivedUserIds.includes(999)
+            })}
+            onTouchEnd={cancelLongPress}
+            onTouchMove={cancelLongPress}
+            className={`w-full px-4 py-3 border-b border-velum-600 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+              contextPeer?.userId === 999 ? 'bg-accent/10' : 'hover:bg-velum-750'
+            }`}
           >
             <div className="min-w-0 flex items-center gap-3 flex-1">
               <div 
                 onClick={(e) => {
-                  e.stopPropagation();
-                  setQuickAvatarPeer({
+                  openQuickAvatar(e, {
                     userId: 999,
                     username: 'VELUM',
                     displayName: 'Velum',
@@ -648,21 +867,11 @@ export default function DirectMainDashboard({
         {filteredFriends
           .filter(r => {
             const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
-            if (!friendId) return false;
+            if (!Number.isFinite(friendId)) return false;
             const delTime = deletedDms[friendId];
             if (delTime) {
-              const dmRoomId = `dm_${friendId}`;
-              const candidateKeys = [dmRoomId, `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`, `dm_${currentUserId}_${friendId}`, `dm_${friendId}_${currentUserId}`];
-              let last: any = null;
-              const lm = lastMessages || {};
-              for (const k of candidateKeys) {
-                if (k && lm[k]) { last = lm[k]; break; }
-              }
-              if (!last && r.last_message) {
-                last = r.last_message;
-              }
-              const msgTime = last ? (last.createdAt ? new Date(last.createdAt).getTime() : last.created_at ? new Date(last.created_at).getTime() : (last.timestamp ? new Date(last.timestamp).getTime() : 0)) : 0;
-              if (delTime && msgTime && msgTime <= delTime) return false;
+              const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message);
+              if (shouldHideDeletedDm(delTime, last)) return false;
             }
             const isArchived = archivedUserIds.includes(friendId);
             return filterTab === 'archived' ? isArchived : !isArchived;
@@ -670,44 +879,26 @@ export default function DirectMainDashboard({
           .sort((a, b) => {
             const idA = Number(a.friendId || a.userId || a.user_id || a.id);
             const idB = Number(b.friendId || b.userId || b.user_id || b.id);
-            const dmA = `dm_${idA}`;
-            const dmB = `dm_${idB}`;
-            const lm = lastMessages || {};
-            const lastA = lm[dmA] || a.last_message;
-            const lastB = lm[dmB] || b.last_message;
-            
-            const timeA = lastA ? new Date(lastA.createdAt || lastA.created_at || lastA.timestamp || 0).getTime() : 0;
-            const timeB = lastB ? new Date(lastB.createdAt || lastB.created_at || lastB.timestamp || 0).getTime() : 0;
-            
-            return timeB - timeA;
+            const lastA = selectLatestDmMessage(idA, currentUserId, lastMessages, a.last_message);
+            const lastB = selectLatestDmMessage(idB, currentUserId, lastMessages, b.last_message);
+            return messageTimestamp(lastB) - messageTimestamp(lastA);
           })
           .map(r => {
             const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
-            if (!friendId) return null;
-            const friendName = stripAt(r.username || r.displayName);
-            const friendAvatar = r.avatarUrl;
+            if (!Number.isFinite(friendId)) return null;
+            const friendName = stripAt(r.username || r.displayName || `User #${friendId}`);
+            const friendAvatar = r.avatarUrl || r.avatar || r.avatar_url || null;
             const dmRoomId = `dm_${friendId}`;
             const isArchived = archivedUserIds.includes(friendId);
-            const candidateKeys = [
-              dmRoomId,
-              `dm_${Math.min(currentUserId, friendId)}_${Math.max(currentUserId, friendId)}`,
-              `dm_${currentUserId}_${friendId}`,
-              `dm_${friendId}_${currentUserId}`
-            ];
 
-            let unread = typeof r.unread_count === 'number' ? r.unread_count : 0;
-            for (const k of candidateKeys) {
-              if (k && unreadCounts && typeof unreadCounts[k] === 'number') {
-                unread = unreadCounts[k];
-                break;
-              }
-            }
+            const unread = resolveDmUnreadCount(
+              friendId,
+              currentUserId,
+              unreadCounts,
+              typeof r.unread_count === 'number' ? r.unread_count : 0
+            );
 
-            const lm = lastMessages || {};
-            let last = r.last_message || null as any;
-            for (const k of candidateKeys) {
-              if (k && lm[k]) { last = lm[k]; break; }
-            }
+            const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message);
 
             let lastTxt = '';
             let lastTimeStr = '';
@@ -720,18 +911,22 @@ export default function DirectMainDashboard({
               const raw = last.content || last.message || last.body || last.text || '';
               const isEnc = !!(last.is_encrypted || last.isEncrypted);
               const actualRoomId = last.room_id || dmRoomId;
-              const displayTxt = decryptedPreviews[friendId] || (function() {
+              const cachedPreview = decryptedPreviews[friendId];
+              const displayTxt = cachedPreview || (function() {
+                if (last.plaintext || last.client_plaintext) {
+                  return last.plaintext || last.client_plaintext;
+                }
                 if (isStatelessDmEnvelope(raw)) {
-                  if (isMe) return last.plaintext || last.client_plaintext || 'Message sent';
-                  return '';
+                  if (isMe) return 'Message sent';
+                  return 'Encrypted Message';
                 }
                 try {
                   return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
-                } catch (e) {
+                } catch {
                   return raw || '';
                 }
               })();
-              lastTxt = getCleanPreview(displayTxt);
+              lastTxt = getCleanPreview(displayTxt) || (isStatelessDmEnvelope(raw) ? 'Encrypted Message' : '');
               if (last.status === 'failed' || last.delivery_status === 'failed') {
                 isFailed = true;
               } else if (isMe) {
@@ -788,30 +983,18 @@ export default function DirectMainDashboard({
                 <div className="min-w-0 flex items-center gap-3 flex-1">
                   <div 
                     onClick={(e) => {
-                      e.stopPropagation();
-                      setQuickAvatarPeer({
+                      openQuickAvatar(e, {
                         userId: friendId,
                         username: friendName,
                         displayName: friendName,
-                        avatarUrl: friendAvatar,
+                        avatarUrl: friendAvatar || undefined,
                         bio: r.bio
                       });
                     }}
-                    className="w-10 h-10 rounded-xl bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden flex-shrink-0 relative cursor-pointer active:scale-95 transition-transform"
+                    className="cursor-pointer active:scale-95 transition-transform"
                     title="View Photo"
                   >
-                    {friendAvatar ? (
-                      <img 
-                        src={resolveMediaUrl(friendAvatar)} 
-                        alt={friendName} 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <span className="uppercase text-xs font-semibold text-text-primary">{friendName.slice(0, 2)}</span>
-                    )}
+                    <ContactAvatar name={friendName} avatar={friendAvatar} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
@@ -839,11 +1022,13 @@ export default function DirectMainDashboard({
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-0.5">
-                      <p className={`text-xs flex items-center gap-1 truncate ${unread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
+                      <p className={`text-xs flex items-center gap-1 min-w-0 flex-1 truncate ${unread > 0 ? 'font-medium text-text-primary' : 'text-text-secondary'}`}>
                         {isMe && !isFailed && lastMsgStatus === 'sent' && <Check className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                         {isMe && !isFailed && lastMsgStatus === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-text-secondary shrink-0" />}
                         {isMe && !isFailed && lastMsgStatus === 'read' && <CheckCheck className="w-3.5 h-3.5 text-accent shrink-0" />}
-                        {lastTxt && renderPreviewWithIcons(lastTxt)}
+                        <span className="truncate min-w-0">
+                          {lastTxt ? renderPreviewWithIcons(lastTxt) : ''}
+                        </span>
                       </p>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {isFailed ? (
@@ -949,9 +1134,9 @@ export default function DirectMainDashboard({
                 })
                 .map(r => {
                   const fId = Number(r.friendId || r.userId || r.user_id || r.id);
-                  if (!fId) return null;
-                  const fName = stripAt(r.username || r.displayName || '');
-                  const fAvatar = r.avatarUrl;
+                  if (!Number.isFinite(fId)) return null;
+                  const fName = stripAt(r.username || r.displayName || `User #${fId}`);
+                  const fAvatar = r.avatarUrl || r.avatar || r.avatar_url || null;
                   const dmSlug = `dm_${fId}`;
 
                   return (
@@ -960,22 +1145,16 @@ export default function DirectMainDashboard({
                       onClick={() => {
                         // Un-delete this user so conversation card appears
                         unDeleteContact(fId);
-                        if (onSelectPeer) onSelectPeer({ userId: fId, username: fName, avatar: fAvatar });
+                        if (onSelectPeer) onSelectPeer({ userId: fId, username: fName, avatar: fAvatar || undefined });
                         if (onMarkAsRead) onMarkAsRead(undefined, dmSlug);
                         setIsNewChatPickerOpen(false);
                       }}
                       className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-velum-750 active:bg-velum-700 transition"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-velum-750 border border-velum-600 flex items-center justify-center font-bold text-xs text-text-secondary overflow-hidden shrink-0">
-                        {fAvatar ? (
-                          <img src={resolveMediaUrl(fAvatar)} alt={fName} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="uppercase text-xs font-semibold text-text-primary">{fName.slice(0, 2)}</span>
-                        )}
-                      </div>
+                      <ContactAvatar name={fName} avatar={fAvatar} />
                       <div className="flex flex-col min-w-0">
                         <span className="text-xs font-semibold text-text-primary truncate">{fName}</span>
-                        <span className="text-[11px] text-text-secondary">Tap to start encrypted conversation</span>
+                        <span className="text-[11px] text-text-secondary">Tap to start conversation</span>
                       </div>
                     </div>
                   );
@@ -985,14 +1164,15 @@ export default function DirectMainDashboard({
         </div>
       )}
 
-      {/* Quick Avatar Preview Modal */}
+      {/* Quick Avatar Preview — popover anchored to the clicked avatar */}
       {quickAvatarPeer && (
         <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center modal-backdrop bg-black/75 p-4 animate-in fade-in duration-150 select-none"
+          className="fixed inset-0 z-[99999] bg-black/40 animate-in fade-in duration-100 select-none"
           onClick={() => setQuickAvatarPeer(null)}
         >
           <div
-            className="w-72 max-w-[85vw] bg-velum-850 border border-velum-600 rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 text-text-primary flex flex-col"
+            className="fixed w-72 max-w-[calc(100vw-1.5rem)] bg-velum-850 border border-velum-600 rounded-2xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100 text-text-primary flex flex-col"
+            style={{ top: quickAvatarPeer.anchor.top, left: quickAvatarPeer.anchor.left }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Bar with Name */}
@@ -1000,21 +1180,34 @@ export default function DirectMainDashboard({
               <span className="text-sm font-bold text-white truncate">{quickAvatarPeer.displayName || quickAvatarPeer.username}</span>
             </div>
 
-            {/* Large Square Image Preview */}
-            <div className="w-full aspect-square bg-velum-900 flex items-center justify-center overflow-hidden relative">
-              {quickAvatarPeer.avatarUrl ? (
+            {/* Large avatar preview — fixed height, full-bleed (no floating center circle) */}
+            <div className="w-full h-48 min-h-[12rem] bg-velum-900 overflow-hidden relative shrink-0">
+              {quickAvatarPeer.userId === 999 && !quickAvatarPeer.avatarUrl ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-20 h-20 [&>svg]:w-full [&>svg]:h-full text-accent opacity-90" dangerouslySetInnerHTML={{ __html: logoSvg }} />
+                </div>
+              ) : isAvatarImageSrc(quickAvatarPeer.avatarUrl) ? (
                 <img
                   src={resolveMediaUrl(quickAvatarPeer.avatarUrl)}
                   alt={quickAvatarPeer.username}
-                  className="w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    img.style.display = 'none';
+                    const fallback = img.nextElementSibling as HTMLElement | null;
+                    if (fallback) fallback.classList.remove('hidden');
+                  }}
                 />
-              ) : quickAvatarPeer.userId === 999 ? (
-                <div className="w-24 h-24 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-              ) : (
-                <div className="w-24 h-24 rounded-full bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-3xl text-accent uppercase">
-                  {(quickAvatarPeer.username || 'U').slice(0, 2)}
-                </div>
-              )}
+              ) : null}
+              <div
+                className={`absolute inset-0 flex items-end p-4 bg-velum-800 ${
+                  isAvatarImageSrc(quickAvatarPeer.avatarUrl) ? 'hidden' : ''
+                } ${quickAvatarPeer.userId === 999 && !quickAvatarPeer.avatarUrl ? 'hidden' : ''}`}
+              >
+                <span className="text-5xl font-bold text-accent/80 uppercase leading-none">
+                  {(quickAvatarPeer.displayName || quickAvatarPeer.username || 'U').trim().slice(0, 1).toUpperCase() || 'U'}
+                </span>
+              </div>
             </div>
 
             {/* Bottom Action Bar */}
