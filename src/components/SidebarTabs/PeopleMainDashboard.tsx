@@ -12,7 +12,6 @@ interface PeopleMainDashboardProps {
   setUserSearchTerm: (v: string) => void;
   handleRespondFriendRequest: (requestId: string, action: 'accepted' | 'declined') => void;
   handleSendFriendRequest: (username: string) => void;
-  loadAndShowProfileCard: (user: any) => void;
   onSelectPeer: (peer: { userId: number; username: string; avatar?: string }) => void;
   onSectionView: (view: string) => void;
   getCountryOnly: (loc: string | null) => string;
@@ -31,7 +30,6 @@ export default function PeopleMainDashboard({
   setUserSearchTerm,
   handleRespondFriendRequest,
   handleSendFriendRequest,
-  loadAndShowProfileCard,
   onSelectPeer,
   onSectionView,
   getCountryOnly

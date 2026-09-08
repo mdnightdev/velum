@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Ban, MessageSquare, ShieldCheck, Activity } from 'lucide-react';
 import { stripAt } from '../types';
-import ProfileCard from './ProfileCard';
+import ProfileCard, { toUserProfileData } from './ProfileCard';
 import { getSessionId } from '../utils/auth';
 import { velumToast } from '../utils/toast';
 
@@ -477,21 +477,11 @@ export default function AdminUsersView({
           <div onClick={e => e.stopPropagation()} className="relative">
             <ProfileCard
               type={selectedUser.role === 'LOGIN_ADMIN' || selectedUser.role === 'SUPPORT_OPERATOR' ? 'admin' : 'user'}
-              user={{
+              user={toUserProfileData({
+                ...selectedUser,
                 userId: selectedUser.user_id || selectedUser.userId,
-                username: selectedUser.username,
-                displayName: selectedUser.displayName || selectedUser.username.replace('@', ''),
-                bio: selectedUser.bio || '',
-                location: selectedUser.location || '',
-                joinedDate: selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '',
-                status: selectedUser.status || 'offline',
-                role: selectedUser.role,
-                avatarUrl: selectedUser.avatar,
-                stats: {
-                  loungesCount: 4,
-                  connectionsCount: 18
-                }
-              }}
+                stats: { loungesCount: 4, connectionsCount: 18 },
+              })}
               variant="popover"
               onClose={() => setSelectedUser(null)}
               onMute={() => handleProfileMute(selectedUser)}

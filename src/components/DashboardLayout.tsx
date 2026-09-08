@@ -10,7 +10,7 @@ import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import DirectMainDashboard from './SidebarTabs/DirectMainDashboard';
 import WalletMainDashboard from './SidebarTabs/WalletMainDashboard';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
-import ProfileCard from './ProfileCard';
+import ProfileCard, { toUserProfileData } from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
 import { MessageSquare, Globe, ShoppingBag, Bell, Menu, Users } from 'lucide-react';
 import { statelessE2eeService } from '../services/statelessE2eeService';
@@ -433,7 +433,6 @@ export default function DashboardLayout({
                 setUserSearchTerm={setUserSearchTerm}
                 handleRespondFriendRequest={handleRespondFriendRequest}
                 handleSendFriendRequest={handleSendFriendRequest}
-                loadAndShowProfileCard={handleLoadProfileCard}
                 onSelectPeer={(peer) => {
                   if (onSelectPeer) onSelectPeer(peer);
                   setActiveCategory('direct');
@@ -581,25 +580,20 @@ export default function DashboardLayout({
 
           {profileCardUser && (
             <ProfileCard
-                      user={{
-          userId: profileCardUser.userId,
-          username: profileCardUser.username || '',
-          displayName: profileCardUser.displayName || profileCardUser.username || '',
-          avatarUrl: profileCardUser.avatar,
-          bio: profileCardUser.bio || '',
-          location: profileCardUser.location || '',
-          joinedDate: profileCardUser.created_at 
-            ? new Date(profileCardUser.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) 
-            : 'Recently',
-          status: profileCardUser.status || 'Offline',
-          isMuted: !!profileCardUser.isMuted,
-          isBlocked: !!profileCardUser.isBlocked,
-          stats: {
-            loungesCount: profileCardUser.loungesCount ?? 0,
-            connectionsCount: profileCardUser.connectionsCount ?? 0,
-          },
-        }}
+              user={toUserProfileData({
+                ...profileCardUser,
+                status: profileCardUser.status || 'Offline',
+                joinedDate:
+                  profileCardUser.joinedDate ||
+                  (profileCardUser.created_at
+                    ? new Date(profileCardUser.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        year: 'numeric',
+                      })
+                    : 'Recently'),
+              })}
               variant={isMobile ? 'mobile' : 'expanded'}
+              currentUserId={user?.userId || user?.id}
               onClose={() => setProfileCardUser(null)}
               onMessage={() => {
                 const targetUid = profileCardUser.userId || profileCardUser.id || profileCardUser.user_id;

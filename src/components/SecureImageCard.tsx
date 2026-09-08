@@ -34,7 +34,7 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
 
   return (
     <>
-      <div className={`relative rounded-2xl overflow-hidden shadow-md bg-velum-800/80 group ${containerClass || 'w-full max-w-[280px] min-h-[180px] aspect-[4/3]'}`}>
+      <div className={`relative overflow-hidden bg-black/80 group ${containerClass || 'w-full max-w-[280px] min-h-[180px] aspect-[4/3] rounded-2xl border border-accent/25'}`}>
         {/* Image */}
         <img
           src={src}
@@ -62,17 +62,17 @@ export const SecureImageCard: React.FC<SecureImageCardProps> = ({
           </button>
         </div>
 
-        {/* Floating Time & Status overlay in bottom-right corneri*/}
+        {/* Floating Time & Status overlay in bottom-right */}
         {children && (
-          <div className="absolute bottom-2.5 right-2.5 bg-black/45 backdrop-blur-[var(--blur-backdrop-sm)] px-2 py-0.5 rounded-full flex items-center gap-1 text-[9px] font-mono text-white select-none z-10 border border-white/5">
+          <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-[var(--blur-backdrop-sm)] px-2 py-0.5 rounded-full flex items-center gap-1 text-[9.5px] font-sans text-white select-none z-10 border border-white/5">
             {children}
           </div>
         )}
       </div>
 
-      {/* Caption text underneath the image inside the parent bubble (no card borders) */}
+      {/* Caption text underneath the image */}
       {caption && (
-        <div className="p-3 text-xs text-text-primary whitespace-pre-wrap break-words">
+        <div className="px-2.5 py-2 text-[13px] text-white whitespace-pre-wrap break-words">
           {caption}
         </div>
       )}

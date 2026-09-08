@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, Globe, Plus, X, Link } from 'lucide-react';
-import ProfileCard from '../ProfileCard';
 import { useLanguage } from '../../i18n/LanguageContext';
 import logoSvg from '../../assets/logo.svg?raw';
 import { formatMessageTimestamp } from '../../utils/time';
@@ -38,7 +37,6 @@ export default function LoungeMainDashboard({
     return [];
   });
   const [roomsMap, setRoomsMap] = useState<Record<string, any[]>>({});
-  const [selectedLounge, setSelectedLounge] = useState<any>(null);
   
   // Create Room State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -454,32 +452,6 @@ export default function LoungeMainDashboard({
         </button>
       </div>
 
-      {/* Glassmorphic Modals */}
-      {selectedLounge && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center p-4 modal-backdrop" onClick={() => setSelectedLounge(null)}>
-            <div onClick={e => e.stopPropagation()}>
-                <ProfileCard 
-                    type="lounge"
-                    lounge={{
-                        loungeId: selectedLounge.lounge_id,
-                        name: selectedLounge.name,
-                        description: selectedLounge.description,
-                        ownerId: Number(selectedLounge.owner_id),
-                        ownerUsername: 'Lounge Owner',
-                        memberCount: 0,
-                        avatarUrl: selectedLounge.avatar_url,
-                        createdAt: new Date(selectedLounge.created_at).toLocaleDateString(),
-                        isPrivate: selectedLounge.is_private === 1,
-                        visibility: selectedLounge.is_private === 1 ? 'private' : 'public',
-                        status: selectedLounge.status
-                    }}
-                    variant="popover"
-                    onClose={() => setSelectedLounge(null)}
-                />
-            </div>
-        </div>
-      )}
-      
       {/* Create Lounge Right-Anchored Drawer */}
       {showCreateLoungeModal && (
         <div className="fixed inset-0 z-50 flex justify-end modal-backdrop animate-fade-in" onClick={() => { setShowCreateLoungeModal(false); setLoungeError(''); }}>

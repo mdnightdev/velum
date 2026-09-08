@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ChatArea from '../ChatArea';
 import { ChevronLeft, ChevronRight, Plus, Settings, Menu } from 'lucide-react';
-import ProfileCard from '../ProfileCard';
+import ProfileCard, { toUserProfileData } from '../ProfileCard';
 import { LoungeWorkspaceProps } from '../Lounge/types';
 import LoungeOverview from '../Lounge/LoungeOverview';
 import { useLoungeData } from '../Lounge/hooks/useLoungeData';
@@ -17,7 +17,6 @@ import { velumToast } from '../../utils/toast';
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const [mobileTab, setMobileTab] = useState<'rooms' | 'members' | 'about'>('rooms');
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
-  const [showLoungeProfile, setShowLoungeProfile] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
 
   const loungeData = useLoungeData({
@@ -376,10 +375,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <div 
-                onClick={() => setShowLoungeProfile(true)}
-                className="flex items-center gap-2 min-w-0 cursor-pointer group"
-              >
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="w-5 h-5 rounded-md bg-velum-750 border border-velum-600 flex items-center justify-center overflow-hidden shrink-0">
                   {loungeAvatar ? (
                     <img src={loungeAvatar} alt={props.loungeName} className="w-full h-full object-cover" />
@@ -389,7 +385,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
                     </span>
                   )}
                 </div>
-                <h1 className="text-xs font-bold uppercase tracking-wider text-text-primary truncate group-hover:underline">
+                <h1 className="text-xs font-bold uppercase tracking-wider text-text-primary truncate">
                   {effectiveLoungeName}
                 </h1>
               </div>
@@ -560,23 +556,16 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           <div onClick={e => e.stopPropagation()} className="relative">
             <ProfileCard
               type={selectedMember.role === 'LOGIN_ADMIN' || selectedMember.role === 'SUPPORT_OPERATOR' ? 'admin' : 'user'}
-              user={{
+              user={toUserProfileData({
+                ...selectedMember,
                 userId: selectedMember.user_id,
-                username: selectedMember.username,
-                displayName: selectedMember.displayName || selectedMember.username.replace('@', ''),
                 bio: selectedMember.bio || 'Velum Member.',
                 location: selectedMember.location || 'Unknown location',
-                joinedDate: selectedMember.created_at ? new Date(selectedMember.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'May 2026',
-                status: selectedMember.status || 'offline',
-                role: selectedMember.role,
-                avatarUrl: selectedMember.avatar,
-                isMuted: !!selectedMember.isMuted,
-                isBlocked: !!selectedMember.isBlocked,
-                stats: selectedMember.stats || {
-                  loungesCount: 4,
-                  connectionsCount: 18
-                }
-              }}
+                joinedDate: selectedMember.created_at
+                  ? new Date(selectedMember.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                  : 'May 2026',
+                stats: selectedMember.stats || { loungesCount: 4, connectionsCount: 18 },
+              })}
               variant="mobile"
               onClose={() => setSelectedMember(null)}
               onMessage={() => handleProfileMessage(selectedMember)}
@@ -584,38 +573,6 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
               onBlock={() => handleProfileBlock(selectedMember)}
               onDeleteChat={() => handleProfileDeleteChat(selectedMember)}
               onReport={() => handleProfileReport(selectedMember)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Lounge Profile Card Overlay */}
-      {showLoungeProfile && (
-        <div 
-          className="fixed inset-0 z-[9999] flex items-center justify-center modal-backdrop p-4"
-          onClick={() => setShowLoungeProfile(false)}
-        >
-          <div onClick={e => e.stopPropagation()} className="relative">
-            <ProfileCard
-              type="lounge"
-              lounge={{
-                loungeId: loungeData.loungeDetails?.lounge_id || props.loungeId,
-                name: effectiveLoungeName,
-                description: loungeData.loungeDetails?.description || 'Operational hub and workspace.',
-                ownerId: Number(loungeData.loungeDetails?.owner_id || 999),
-                ownerUsername: loungeData.loungeDetails?.owner_username || 'velum',
-                memberCount: loungeData.members.length || 1,
-                avatarUrl: loungeData.loungeDetails?.icon_url || '',
-                createdAt: 'May 2026',
-                isPrivate: !!loungeData.loungeDetails?.is_private,
-              }}
-              variant="mobile"
-              onClose={() => setShowLoungeProfile(false)}
-              onLoungeSettings={loungeData.isParentAdmin ? () => {
-                setShowLoungeProfile(false);
-                loungeData.setShowManageModal(true);
-                loungeData.setManageTab('settings');
-              } : undefined}
             />
           </div>
         </div>

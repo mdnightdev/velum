@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Bot, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search, Info, Wallet, Settings, LogOut, Bookmark } from 'lucide-react';
+import { MessageSquare, Bot, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search, Info, LogOut } from 'lucide-react';
 import { decryptMessage, decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
@@ -194,7 +194,7 @@ interface DirectMainDashboardProps {
 
 
 
-export default function DirectMainDashboard({
+function DirectMainDashboard({
   friendRequests,
   friendRelationships,
   currentUserId,
@@ -652,81 +652,82 @@ export default function DirectMainDashboard({
           </div>
         </div>
       ) : (
-        <div className="p-3 pt-[calc(env(safe-area-inset-top,0px)+0.875rem)] px-4 border-b border-velum-600 bg-velum-850 flex-shrink-0 flex items-center gap-2.5">
-          <div className="relative flex-1 flex items-center h-9 px-3 rounded-xl border border-velum-600 bg-velum-750 focus-within:border-accent/40">
+        <div className="pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] px-4 pb-3 border-b border-velum-600 bg-velum-850 flex-shrink-0 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-xl font-semibold text-text-primary tracking-tight">Chats</h1>
+            <div className="relative shrink-0" ref={headerMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsHeaderMenuOpen(prev => !prev)}
+                className="p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
+                title="More options"
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
+              {isHeaderMenuOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-44 bg-velum-850 border border-velum-600 rounded-xl shadow-lg py-1.5 z-50 flex flex-col animate-in fade-in duration-100">
+                  {onOpenWallet && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderMenuOpen(false);
+                        onOpenWallet();
+                      }}
+                      className="w-full px-3.5 py-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
+                    >
+                      Wallet
+                    </button>
+                  )}
+                  {onOpenSaved && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderMenuOpen(false);
+                        onOpenSaved();
+                      }}
+                      className="w-full px-3.5 py-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
+                    >
+                      Saved
+                    </button>
+                  )}
+                  {onOpenSettings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderMenuOpen(false);
+                        onOpenSettings();
+                      }}
+                      className="w-full px-3.5 py-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
+                    >
+                      Settings
+                    </button>
+                  )}
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderMenuOpen(false);
+                        onLogout();
+                      }}
+                      className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-alert-error hover:bg-alert-error/10 text-left transition cursor-pointer border-t border-velum-600/50 mt-1 pt-2"
+                    >
+                      <LogOut className="w-4 h-4 text-alert-error" />
+                      <span>Log Out</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="relative flex items-center h-11 px-3.5 rounded-full border border-velum-600 bg-velum-750 focus-within:border-accent/40">
+            <Search className="w-4 h-4 text-text-secondary mr-2.5 shrink-0" />
             <input
               type="text"
-              placeholder={t('chats.search', 'Search messages...')}
+              placeholder={t('chats.search', 'Search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-transparent border-none outline-none text-xs text-text-primary placeholder-text-disabled"
+              className="w-full bg-transparent border-none outline-none text-sm text-text-primary placeholder-text-disabled"
             />
-          </div>
-          <div className="relative shrink-0" ref={headerMenuRef}>
-            <button
-              type="button"
-              onClick={() => setIsHeaderMenuOpen(prev => !prev)}
-              className="p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
-              title="More options"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
-            {isHeaderMenuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-44 bg-velum-850 border border-velum-600 rounded-lg shadow-none py-1.5 z-50 flex flex-col animate-in fade-in duration-100">
-                {onOpenWallet && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsHeaderMenuOpen(false);
-                      onOpenWallet();
-                    }}
-                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
-                  >
-                    <Wallet className="w-4 h-4 text-accent" />
-                    <span>Wallet</span>
-                  </button>
-                )}
-                {onOpenSaved && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsHeaderMenuOpen(false);
-                      onOpenSaved();
-                    }}
-                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
-                  >
-                    <Bookmark className="w-4 h-4 text-accent" />
-                    <span>Saved</span>
-                  </button>
-                )}
-                {onOpenSettings && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsHeaderMenuOpen(false);
-                      onOpenSettings();
-                    }}
-                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-text-primary hover:bg-white-5 text-left transition cursor-pointer"
-                  >
-                    <Settings className="w-4 h-4 text-text-secondary" />
-                    <span>Settings</span>
-                  </button>
-                )}
-                {onLogout && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsHeaderMenuOpen(false);
-                      onLogout();
-                    }}
-                    className="w-full px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-alert-error hover:bg-alert-error/10 text-left transition cursor-pointer border-t border-velum-600/50 mt-1 pt-2"
-                  >
-                    <LogOut className="w-4 h-4 text-alert-error" />
-                    <span>Log Out</span>
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -1034,11 +1035,11 @@ export default function DirectMainDashboard({
           setNewChatSearch('');
           setIsNewChatPickerOpen(true);
         }}
-        className="fixed bottom-8 right-6 z-30 w-15 h-15 rounded-2xl bg-accent hover:bg-accent-hover active:scale-95 text-velum-900 shadow-none flex items-center justify-center cursor-pointer transition-all group"
+        className="fixed bottom-[calc(1.75rem+env(safe-area-inset-bottom,0px))] right-5 z-30 w-14 h-14 rounded-2xl bg-accent hover:bg-accent-hover active:scale-95 text-velum-900 flex items-center justify-center cursor-pointer transition-all group shadow-lg shadow-accent/20"
         title="Start new conversation"
         aria-label="Start new conversation"
       >
-        <MessageSquarePlus className="w-7 h-7 text-velum-900 group-hover:scale-110 transition-transform" />
+        <MessageSquarePlus className="w-7 h-7 text-velum-900 group-hover:scale-105 transition-transform" />
       </button>
 
       {/* New Conversation Contact Selector Bottom Sheet */}
@@ -1067,14 +1068,14 @@ export default function DirectMainDashboard({
             </div>
 
             {/* Search contacts input */}
-            <div className="relative flex items-center h-10 px-3 rounded-xl border border-velum-600 bg-velum-750 focus-within:border-accent/40 shrink-0">
-              <Search className="w-4 h-4 text-text-secondary mr-2 shrink-0" />
+            <div className="relative flex items-center h-11 px-3.5 rounded-full border border-velum-600 bg-velum-750 focus-within:border-accent/40 shrink-0">
+              <Search className="w-4 h-4 text-text-secondary mr-2.5 shrink-0" />
               <input
                 type="text"
                 placeholder="Search contacts by name..."
                 value={newChatSearch}
                 onChange={(e) => setNewChatSearch(e.target.value)}
-                className="w-full bg-transparent border-none outline-none text-xs text-text-primary placeholder-text-disabled"
+                className="w-full bg-transparent border-none outline-none text-sm text-text-primary placeholder-text-disabled"
                 autoFocus
               />
             </div>
@@ -1234,3 +1235,5 @@ export default function DirectMainDashboard({
     </div>
   );
 }
+
+export default DirectMainDashboard;
