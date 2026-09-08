@@ -426,13 +426,13 @@ export default function DashboardLayout({
 
               <PeopleMainDashboard
                 friendRequests={friendRequests}
-                registeredUsers={registeredUsers}
                 currentUserId={user?.userId || 0}
                 isDark={isDark}
                 userSearchTerm={userSearchTerm}
                 setUserSearchTerm={setUserSearchTerm}
                 handleRespondFriendRequest={handleRespondFriendRequest}
                 handleSendFriendRequest={handleSendFriendRequest}
+                loadAndShowProfileCard={handleLoadProfileCard}
                 onSelectPeer={(peer) => {
                   if (onSelectPeer) onSelectPeer(peer);
                   setActiveCategory('direct');
@@ -441,11 +441,6 @@ export default function DashboardLayout({
                   if (view === 'chat') {
                     setActiveCategory('direct');
                   }
-                }}
-                getCountryOnly={(loc) => {
-                  if (!loc) return 'Poland';
-                  const parts = loc.split(',');
-                  return parts[parts.length - 1].trim();
                 }}
               />
             </div>
@@ -532,6 +527,11 @@ export default function DashboardLayout({
                   if (!loc) return '';
                   const parts = loc.split(',');
                   return parts[parts.length - 1].trim();
+                }}
+                onOpenContacts={() => {
+                  setActiveCategory('people');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
                 }}
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 onOpenWallet={() => setActiveCategory('wallet')}

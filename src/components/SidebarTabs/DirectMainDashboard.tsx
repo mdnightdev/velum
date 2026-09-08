@@ -186,6 +186,7 @@ interface DirectMainDashboardProps {
   lastMessages?: Record<string, any>;
   loadAndShowProfileCard: (user: any) => void;
   getCountryOnly: (location: string) => string;
+  onOpenContacts?: () => void;
   onOpenSettings?: () => void;
   onOpenWallet?: () => void;
   onOpenSaved?: () => void;
@@ -206,6 +207,7 @@ function DirectMainDashboard({
   lastMessages = {},
   loadAndShowProfileCard,
   getCountryOnly,
+  onOpenContacts,
   onOpenSettings,
   onOpenWallet,
   onOpenSaved,
@@ -245,8 +247,6 @@ function DirectMainDashboard({
     } catch { return {}; }
   });
   const [contextPeer, setContextPeer] = useState<{ userId: number; username: string; dmRoomId: string; isArchived: boolean } | null>(null);
-  const [isNewChatPickerOpen, setIsNewChatPickerOpen] = useState(false);
-  const [newChatSearch, setNewChatSearch] = useState('');
   const [quickAvatarPeer, setQuickAvatarPeer] = useState<{
     userId: number;
     username: string;
@@ -1028,120 +1028,18 @@ function DirectMainDashboard({
           })}
       </div>
 
-      {/* Floating Action Button (New Chat) */}
+      {/* Floating Action Button → Contacts */}
       <button
         type="button"
         onClick={() => {
-          setNewChatSearch('');
-          setIsNewChatPickerOpen(true);
+          if (onOpenContacts) onOpenContacts();
         }}
         className="fixed bottom-[calc(1.75rem+env(safe-area-inset-bottom,0px))] right-5 z-30 w-14 h-14 rounded-2xl bg-accent hover:bg-accent-hover active:scale-95 text-velum-900 flex items-center justify-center cursor-pointer transition-all group shadow-lg shadow-accent/20"
-        title="Start new conversation"
-        aria-label="Start new conversation"
+        title="Contacts"
+        aria-label="Open contacts"
       >
         <MessageSquarePlus className="w-7 h-7 text-velum-900 group-hover:scale-105 transition-transform" />
       </button>
-
-      {/* New Conversation Contact Selector Bottom Sheet */}
-      {isNewChatPickerOpen && (
-        <div
-          className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center modal-backdrop bg-black/75 p-0 sm:p-4 animate-in fade-in duration-150"
-          onClick={() => setIsNewChatPickerOpen(false)}
-        >
-          <div
-            className="w-full max-w-md bg-velum-850 border-t sm:border border-velum-600 rounded-t-3xl sm:rounded-2xl p-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] space-y-4 shadow-2xl animate-in slide-in-from-bottom duration-200 text-text-primary max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto sm:hidden -mt-1" />
-            <div className="flex items-center justify-between pb-2 border-b border-velum-600 shrink-0">
-              <div className="flex flex-col">
-                <span className="text-base font-bold text-text-primary">New Conversation</span>
-                <span className="text-xs text-text-secondary">Select a contact to message</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsNewChatPickerOpen(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-velum-750 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Search contacts input */}
-            <div className="relative flex items-center h-11 px-3.5 rounded-full border border-velum-600 bg-velum-750 focus-within:border-accent/40 shrink-0">
-              <Search className="w-4 h-4 text-text-secondary mr-2.5 shrink-0" />
-              <input
-                type="text"
-                placeholder="Search contacts by name..."
-                value={newChatSearch}
-                onChange={(e) => setNewChatSearch(e.target.value)}
-                className="w-full bg-transparent border-none outline-none text-sm text-text-primary placeholder-text-disabled"
-                autoFocus
-              />
-            </div>
-
-            {/* Contacts list */}
-            <div className="flex-1 overflow-y-auto space-y-1 min-h-[160px] max-h-[50vh] pr-1">
-              {/* Velum system contact */}
-              {(!newChatSearch || 'velum'.includes(newChatSearch.toLowerCase())) && (
-                <div
-                  onClick={() => {
-                    unDeleteContact(999);
-                    if (onSelectPeer) onSelectPeer({ userId: 999, username: 'VELUM', avatar: undefined });
-                    if (onMarkAsRead) onMarkAsRead('', velumRoomId);
-                    setIsNewChatPickerOpen(false);
-                  }}
-                  className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-velum-750 active:bg-velum-700 transition"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-velum-800 border border-accent/20 flex items-center justify-center font-bold text-xs text-accent overflow-hidden shrink-0">
-                    <div className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
-                      Velum <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-accent/15 text-accent">System</span>
-                    </span>
-                    <span className="text-[11px] text-text-secondary">Official System Bot</span>
-                  </div>
-                </div>
-              )}
-
-              {/* All contacts */}
-              {relationshipsArray
-                .filter(r => {
-                  const name = stripAt(r.username || r.displayName || '');
-                  return !newChatSearch || name.toLowerCase().includes(newChatSearch.toLowerCase());
-                })
-                .map(r => {
-                  const fId = Number(r.friendId || r.userId || r.user_id || r.id);
-                  if (!Number.isFinite(fId)) return null;
-                  const fName = stripAt(r.username || r.displayName || `User #${fId}`);
-                  const fAvatar = r.avatarUrl || r.avatar || r.avatar_url || null;
-                  const dmSlug = `dm_${fId}`;
-
-                  return (
-                    <div
-                      key={fId}
-                      onClick={() => {
-                        // Un-delete this user so conversation card appears
-                        unDeleteContact(fId);
-                        if (onSelectPeer) onSelectPeer({ userId: fId, username: fName, avatar: fAvatar || undefined });
-                        if (onMarkAsRead) onMarkAsRead(undefined, dmSlug);
-                        setIsNewChatPickerOpen(false);
-                      }}
-                      className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-velum-750 active:bg-velum-700 transition"
-                    >
-                      <ContactAvatar name={fName} avatar={fAvatar} />
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-semibold text-text-primary truncate">{fName}</span>
-                        <span className="text-[11px] text-text-secondary">Tap to start conversation</span>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Quick Avatar Preview — popover anchored to the clicked avatar */}
       {quickAvatarPeer && (
