@@ -105,6 +105,24 @@ const INFO_CHAIN = utf8ToBytes('VelumDoubleRatchetChainKDF');
 const INFO_MESSAGE = utf8ToBytes('VelumDoubleRatchetMessageKey');
 const INFO_CONVERSATION = utf8ToBytes('VelumConversationKeyV2');
 const SALT_CONVERSATION = utf8ToBytes('velum-dm-e2ee-salt-v2');
+const INFO_IDENTITY_ED25519 = utf8ToBytes('velum-ed25519');
+const INFO_IDENTITY_X25519 = utf8ToBytes('velum-x25519');
+
+/**
+ * Domain-separate a master seed into independent Ed25519 and X25519 identity seeds via HKDF-SHA256,
+ * then derive both key pairs. Prevents signing/DH key material reuse from identical raw bytes.
+ */
+export function deriveIdentityKeyPairsFromMasterSeed(masterSeed: Uint8Array): {
+  signing: KeyPairBytes;
+  dh: KeyPairBytes;
+} {
+  const edSeed = hkdf(sha256, masterSeed, undefined, INFO_IDENTITY_ED25519, 32);
+  const xSeed = hkdf(sha256, masterSeed, undefined, INFO_IDENTITY_X25519, 32);
+  return {
+    signing: deriveEd25519KeyPairFromSeed(edSeed),
+    dh: deriveX25519KeyPairFromSeed(xSeed)
+  };
+}
 
 export function deriveConversationKey(dhSharedSecret: Uint8Array): Uint8Array {
   return hkdf(sha256, dhSharedSecret, SALT_CONVERSATION, INFO_CONVERSATION, 32);

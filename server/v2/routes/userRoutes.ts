@@ -66,6 +66,7 @@ userRouter.get('/:id/prekey-bundle', authMiddleware, async (req: Request, res: R
       registrationId: bundle.registrationId,
       deviceId: bundle.deviceId,
       identityKey: bundle.identityKey,
+      signingIdentityKey: bundle.signingIdentityKey,
       signedPrekeyId: bundle.signedPrekeyId,
       signedPrekey: bundle.signedPrekey,
       signedPrekeySignature: bundle.signedPrekeySignature,

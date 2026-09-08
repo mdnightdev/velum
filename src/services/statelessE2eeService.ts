@@ -1,11 +1,10 @@
 import {
   generateX25519KeyPair,
-  deriveX25519KeyPairFromSeed,
   calculateX25519SharedSecret,
   deriveConversationKey,
-  generateEd25519KeyPair,
-  deriveEd25519KeyPairFromSeed,
+  deriveIdentityKeyPairsFromMasterSeed,
   signEd25519,
+  verifyEd25519,
   encryptAesGcm,
   decryptAesGcm,
   getRandomBytes,
@@ -26,9 +25,66 @@ import { storage } from './storageService';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 
+function buildV3Aad(senderId: number, recipientId: number): Uint8Array {
+  return utf8ToBytes(`velum-e2ee-v3:${senderId}:${recipientId}`);
+}
+
+/** User IDs are non-negative integers; 0 is a valid ID (do not use truthiness). */
+function isResolvedUserId(id: number | null | undefined): id is number {
+  return typeof id === 'number' && Number.isInteger(id) && id >= 0 && !Number.isNaN(id);
+}
+
+/**
+ * Resolve the peer whose public DH key is needed for v3 ECDH.
+ * - Own-sent history (senderId === localUid): use contextPeerUserId.
+ * - Received message (senderId !== localUid): use envelope senderId (including 0).
+ * - Invalid/missing senderId: fall back to contextPeerUserId.
+ */
+function resolveV3TargetPeerId(
+  senderId: number,
+  localUid: number,
+  contextPeerUserId?: number
+): number | undefined {
+  if (isResolvedUserId(senderId) && senderId === localUid) {
+    return isResolvedUserId(contextPeerUserId) ? contextPeerUserId : undefined;
+  }
+  if (isResolvedUserId(senderId) && senderId !== localUid) {
+    return senderId;
+  }
+  return isResolvedUserId(contextPeerUserId) ? contextPeerUserId : undefined;
+}
+
+export type PeerPrekeyBundle = {
+  identityKeyHex: string;
+  signingIdentityKeyHex: string;
+  signedPrekeyHex: string;
+  signedPrekeySignatureHex: string;
+};
+
+/** Verifies SPK was signed by the peer's Ed25519 identity key. */
+export function verifyPeerSignedPrekey(bundle: PeerPrekeyBundle): boolean {
+  if (
+    !bundle.identityKeyHex ||
+    !bundle.signingIdentityKeyHex ||
+    !bundle.signedPrekeyHex ||
+    !bundle.signedPrekeySignatureHex
+  ) {
+    return false;
+  }
+  try {
+    return verifyEd25519(
+      fromHex(bundle.signedPrekeySignatureHex),
+      fromHex(bundle.signedPrekeyHex),
+      fromHex(bundle.signingIdentityKeyHex)
+    );
+  } catch {
+    return false;
+  }
+}
+
 class StatelessE2eeService {
   private localUserId: number | null = null;
-  private peerKeyCache = new Map<number, { keyHex: string; timestamp: number }>();
+  private peerKeyCache = new Map<number, PeerPrekeyBundle & { timestamp: number }>();
   private readonly CACHE_TTL_MS = 60 * 1000; // 1 minute fresh cache
 
     public setLocalUserId(userId: number | null): void {
@@ -84,8 +140,7 @@ class StatelessE2eeService {
       }
 
       const seedBytes = pbkdf2(sha512, seedMaterial, saltBytes, { c: 10000, dkLen: 32 });
-      const edIdentity = deriveEd25519KeyPairFromSeed(seedBytes);
-      const dhIdentity = deriveX25519KeyPairFromSeed(seedBytes);
+      const { signing: edIdentity, dh: dhIdentity } = deriveIdentityKeyPairsFromMasterSeed(seedBytes);
 
       await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
       identity = { signing: edIdentity, dh: dhIdentity };
@@ -126,6 +181,7 @@ class StatelessE2eeService {
         },
         body: JSON.stringify({
           identityKey: toHex(identity.dh.publicKey),
+          signingIdentityKey: toHex(identity.signing.publicKey),
           signedPrekey: toHex(signedPrekey.keyPair.publicKey),
           signedPrekeyId: signedPrekey.keyId,
           signedPrekeySignature: toHex(signedPrekey.signature),
@@ -141,12 +197,17 @@ class StatelessE2eeService {
   }
 
   /**
-   * Fetches peer's public DH identity key
+   * Fetches peer's public DH identity key after verifying their signed prekey
+   * against the published Ed25519 identity key (server response and cache).
    */
   public async fetchPeerPublicKey(peerUserId: number): Promise<string> {
     const cached = this.peerKeyCache.get(peerUserId);
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
-      return cached.keyHex;
+      if (!verifyPeerSignedPrekey(cached)) {
+        this.peerKeyCache.delete(peerUserId);
+        throw new Error(`[StatelessE2EE] Cached signed prekey verification failed for peer ${peerUserId}`);
+      }
+      return cached.identityKeyHex;
     }
 
     const sid = getSessionId() || '';
@@ -162,15 +223,36 @@ class StatelessE2eeService {
     }
 
     const data = await res.json();
-    const bundle = data.bundle || data;
-    const pubKeyHex = bundle.identityKey || bundle.identityKeyHex || bundle.dhIdentityKeyHex;
+    const raw = data.bundle || data;
+    const identityKeyHex = raw.identityKey || raw.identityKeyHex || raw.dhIdentityKeyHex;
+    const signingIdentityKeyHex =
+      raw.signingIdentityKey || raw.signingIdentityKeyHex || raw.ed25519IdentityKeyHex;
+    const signedPrekeyHex =
+      typeof raw.signedPrekey === 'object' && raw.signedPrekey !== null
+        ? raw.signedPrekey.publicKey
+        : raw.signedPrekey || raw.signedPrekeyHex;
+    const signedPrekeySignatureHex =
+      typeof raw.signedPrekey === 'object' && raw.signedPrekey !== null
+        ? raw.signedPrekey.signature
+        : raw.signedPrekeySignature || raw.signedPrekeySignatureHex;
 
-    if (!pubKeyHex) {
+    if (!identityKeyHex) {
       throw new Error(`[StatelessE2EE] No public DH identity key found for peer ${peerUserId}`);
     }
 
-    this.peerKeyCache.set(peerUserId, { keyHex: pubKeyHex, timestamp: Date.now() });
-    return pubKeyHex;
+    const bundle: PeerPrekeyBundle = {
+      identityKeyHex: String(identityKeyHex),
+      signingIdentityKeyHex: String(signingIdentityKeyHex || ''),
+      signedPrekeyHex: String(signedPrekeyHex || ''),
+      signedPrekeySignatureHex: String(signedPrekeySignatureHex || '')
+    };
+
+    if (!verifyPeerSignedPrekey(bundle)) {
+      throw new Error(`[StatelessE2EE] Invalid or tampered signed prekey for peer ${peerUserId}`);
+    }
+
+    this.peerKeyCache.set(peerUserId, { ...bundle, timestamp: Date.now() });
+    return bundle.identityKeyHex;
   }
 
   /**
@@ -183,14 +265,14 @@ class StatelessE2eeService {
     }
 
     const uid = this.getLocalUserId();
-    let localKeys = uid ? await loadLocalIdentityKeys(uid) : null;
+    let localKeys = isResolvedUserId(uid) ? await loadLocalIdentityKeys(uid) : null;
     
     if (!localKeys || !localKeys.dh) {
       throw new Error('[StatelessE2EE] Local identity key unavailable');
     }
 
     let peerPubKeyBytes: Uint8Array;
-    if (uid && peerUserId === uid) {
+    if (isResolvedUserId(uid) && peerUserId === uid) {
       peerPubKeyBytes = localKeys.dh.publicKey;
     } else {
       const peerPubKeyHex = await this.fetchPeerPublicKey(peerUserId);
@@ -203,12 +285,19 @@ class StatelessE2eeService {
     // 2. Derive deterministic conversation key
     const convKey = deriveConversationKey(sharedSecret);
 
-    // 3. Encrypt plaintext with fresh 12-byte IV via AES-256-GCM
+    // 3. Encrypt plaintext with fresh 12-byte IV via AES-256-GCM + AAD(senderId, recipientId)
+    const senderId = isResolvedUserId(uid) ? uid : 0;
     const ivPayload = getRandomBytes(12);
     const plaintextBytes = utf8ToBytes(plaintext);
-    const { ciphertext: payloadCipher, tag: payloadTag } = await encryptAesGcm(convKey, plaintextBytes, ivPayload);
+    const aad = buildV3Aad(senderId, peerUserId);
+    const { ciphertext: payloadCipher, tag: payloadTag } = await encryptAesGcm(
+      convKey,
+      plaintextBytes,
+      ivPayload,
+      aad
+    );
 
-    return `e2ee:v3:${uid || 0}:${toHex(ivPayload)}:${toHex(payloadTag)}:${toHex(payloadCipher)}`;
+    return `e2ee:v3:${senderId}:${toHex(ivPayload)}:${toHex(payloadTag)}:${toHex(payloadCipher)}`;
   }
 
   /**
@@ -220,7 +309,7 @@ class StatelessE2eeService {
    */
   public async decryptDirectMessage(envelope: string, contextPeerUserId?: number): Promise<string> {
     const uid = this.getLocalUserId();
-    if (!uid) {
+    if (!isResolvedUserId(uid)) {
       throw new Error('[StatelessE2EE] Local user ID not initialized');
     }
 
@@ -242,11 +331,9 @@ class StatelessE2eeService {
 
       const [, , senderIdStr, ivPayloadHex, tagPayloadHex, cipherPayloadHex] = parts;
       const senderId = parseInt(senderIdStr, 10);
-      const targetPeerId = (senderId === uid && contextPeerUserId)
-        ? contextPeerUserId
-        : (senderId !== uid && !isNaN(senderId) && senderId > 0 ? senderId : contextPeerUserId);
+      const targetPeerId = resolveV3TargetPeerId(senderId, uid, contextPeerUserId);
 
-      if (!targetPeerId) {
+      if (targetPeerId === undefined) {
         const fallback = await getPlaintextByCiphertext(envelope, uid);
         if (fallback) return fallback;
         throw new Error('[StatelessE2EE] Missing peer user ID for conversation key derivation');
@@ -264,13 +351,22 @@ class StatelessE2eeService {
         const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, peerPubKeyBytes);
         const convKey = deriveConversationKey(sharedSecret);
 
-        const decryptedBytes = await decryptAesGcm(
-          convKey,
-          fromHex(cipherPayloadHex),
-          fromHex(tagPayloadHex),
-          fromHex(ivPayloadHex)
-        );
-        return bytesToUtf8(decryptedBytes);
+        const ciphertext = fromHex(cipherPayloadHex);
+        const tag = fromHex(tagPayloadHex);
+        const iv = fromHex(ivPayloadHex);
+
+        // recipientId: local user when receiving; context peer when reading own sent history
+        const recipientId = senderId === uid ? targetPeerId : uid;
+        const aad = buildV3Aad(senderId, recipientId);
+
+        try {
+          const decryptedBytes = await decryptAesGcm(convKey, ciphertext, tag, iv, aad);
+          return bytesToUtf8(decryptedBytes);
+        } catch {
+          // Option A: legacy v3 envelopes sealed without AAD
+          const decryptedBytes = await decryptAesGcm(convKey, ciphertext, tag, iv);
+          return bytesToUtf8(decryptedBytes);
+        }
       } catch (err) {
         const fallback = await getPlaintextByCiphertext(envelope, uid);
         if (fallback) return fallback;

@@ -1,12 +1,13 @@
-import Dexie from 'dexie';
-import { getDexieDb } from './dexieDb.js';
+import { getDexieDb, getDexieDatabaseName, deleteDexieDb, DEXIE_DB_VERSION } from './dexieDb.js';
 import {
   KeyPairBytes,
   toHex,
   fromHex
 } from './cryptoPrimitives.js';
 
-export const DB_VERSION = 4;
+/** @deprecated Use DEXIE_DB_VERSION — kept as alias so callers stay aligned with Dexie verno. */
+export const DB_VERSION = DEXIE_DB_VERSION;
+export { DEXIE_DB_VERSION };
 export const STORE_IDENTITY = 'identity_keys';
 export const STORE_SIGNED_PREKEY = 'signed_prekeys';
 export const STORE_VAULT_METADATA = 'vault_metadata';
@@ -16,8 +17,7 @@ export const STORE_OUTBOX = 'outbox_messages';
 export const STORE_USER_KV = 'user_kv';
 
 export function getDatabaseName(userId: number): string {
-  const uid = (userId && !isNaN(userId)) ? userId : 0;
-  return `v_${uid}`;
+  return getDexieDatabaseName(userId);
 }
 
 export async function openCryptoDatabase(userId: number = 0): Promise<any> {
@@ -26,22 +26,28 @@ export async function openCryptoDatabase(userId: number = 0): Promise<any> {
 
 export async function closeCryptoDatabase(userId?: number | string): Promise<void> {
   if (userId !== undefined) {
-    const uid = typeof userId === 'string' ? parseInt(userId, 10) || 0 : userId;
+    const uid =
+      typeof userId === 'string'
+        ? (() => {
+            const parsed = parseInt(userId, 10);
+            return Number.isFinite(parsed) ? parsed : 0;
+          })()
+        : userId;
     getDexieDb(uid).close();
   }
 }
 
 export async function purgeCryptoDatabase(userId?: number | string): Promise<void> {
-  if (userId !== undefined) {
-    const uid = typeof userId === 'string' ? parseInt(userId, 10) || 0 : userId;
-    const db = getDexieDb(uid);
-    db.close();
-    await Dexie.delete(`v_${uid}`);
-  } else {
-    const db = getDexieDb(0);
-    db.close();
-    await Dexie.delete('v_0');
-  }
+  const uid =
+    userId === undefined
+      ? 0
+      : typeof userId === 'string'
+        ? (() => {
+            const parsed = parseInt(userId, 10);
+            return Number.isFinite(parsed) ? parsed : 0;
+          })()
+        : userId;
+  await deleteDexieDb(uid);
 }
 
 // Identity Key Storage

@@ -8,6 +8,8 @@ import {
   encryptAesGcm,
   decryptAesGcm,
   deriveX25519KeyPairFromSeed,
+  deriveEd25519KeyPairFromSeed,
+  deriveIdentityKeyPairsFromMasterSeed,
   toHex,
   utf8ToBytes,
   bytesToUtf8,
@@ -15,6 +17,8 @@ import {
 } from './cryptoPrimitives';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha512 } from '@noble/hashes/sha2.js';
+import { hkdf } from '@noble/hashes/hkdf.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 describe('encryptionService tests', () => {
   beforeEach(() => {
@@ -90,24 +94,55 @@ describe('encryptionService tests', () => {
     const saltHex = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
     const saltBytes = utf8ToBytes(saltHex);
 
-    // Device 1 (e.g. Phone) derives identity keys
+    // Device 1 (e.g. Phone) derives identity keys with domain separation
     const seedDevice1 = pbkdf2(sha512, password, saltBytes, { c: 10000, dkLen: 32 });
-    const keysDevice1 = deriveX25519KeyPairFromSeed(seedDevice1);
+    const keysDevice1 = deriveIdentityKeyPairsFromMasterSeed(seedDevice1);
 
     // Device 2 (e.g. Laptop) derives identity keys
     const seedDevice2 = pbkdf2(sha512, password, saltBytes, { c: 10000, dkLen: 32 });
-    const keysDevice2 = deriveX25519KeyPairFromSeed(seedDevice2);
+    const keysDevice2 = deriveIdentityKeyPairsFromMasterSeed(seedDevice2);
 
-    // Both devices derive identical public and private keys
-    expect(toHex(keysDevice1.privateKey)).toBe(toHex(keysDevice2.privateKey));
-    expect(toHex(keysDevice1.publicKey)).toBe(toHex(keysDevice2.publicKey));
+    // Both devices derive identical signing and DH keys
+    expect(toHex(keysDevice1.dh.privateKey)).toBe(toHex(keysDevice2.dh.privateKey));
+    expect(toHex(keysDevice1.dh.publicKey)).toBe(toHex(keysDevice2.dh.publicKey));
+    expect(toHex(keysDevice1.signing.privateKey)).toBe(toHex(keysDevice2.signing.privateKey));
+    expect(toHex(keysDevice1.signing.publicKey)).toBe(toHex(keysDevice2.signing.publicKey));
 
     // Device 2 can compute conversation key with peer (Bob) and decrypt Device 1's messages
     const bobKeys = generateX25519KeyPair();
-    const convKeyDevice1 = deriveConversationKey(calculateX25519SharedSecret(keysDevice1.privateKey, bobKeys.publicKey));
-    const convKeyDevice2 = deriveConversationKey(calculateX25519SharedSecret(keysDevice2.privateKey, bobKeys.publicKey));
+    const convKeyDevice1 = deriveConversationKey(calculateX25519SharedSecret(keysDevice1.dh.privateKey, bobKeys.publicKey));
+    const convKeyDevice2 = deriveConversationKey(calculateX25519SharedSecret(keysDevice2.dh.privateKey, bobKeys.publicKey));
 
     expect(toHex(convKeyDevice1)).toBe(toHex(convKeyDevice2));
+  });
+
+  it('derives Ed25519 and X25519 identity keys deterministically and independently', () => {
+    const masterSeed = pbkdf2(sha512, 'domain-sep-pass', utf8ToBytes('salt'), { c: 10000, dkLen: 32 });
+
+    const first = deriveIdentityKeyPairsFromMasterSeed(masterSeed);
+    const second = deriveIdentityKeyPairsFromMasterSeed(masterSeed);
+
+    // Deterministic re-derivation
+    expect(toHex(first.signing.privateKey)).toBe(toHex(second.signing.privateKey));
+    expect(toHex(first.dh.privateKey)).toBe(toHex(second.dh.privateKey));
+
+    // Domain separation: signing and DH private keys must not be identical raw bytes
+    expect(toHex(first.signing.privateKey)).not.toBe(toHex(first.dh.privateKey));
+    expect(toHex(first.signing.publicKey)).not.toBe(toHex(first.dh.publicKey));
+
+    // Explicit HKDF info strings produce the independent seeds used by each curve
+    const edSeed = hkdf(sha256, masterSeed, undefined, utf8ToBytes('velum-ed25519'), 32);
+    const xSeed = hkdf(sha256, masterSeed, undefined, utf8ToBytes('velum-x25519'), 32);
+    expect(toHex(edSeed)).not.toBe(toHex(xSeed));
+    expect(toHex(deriveEd25519KeyPairFromSeed(edSeed).privateKey)).toBe(toHex(first.signing.privateKey));
+    expect(toHex(deriveX25519KeyPairFromSeed(xSeed).privateKey)).toBe(toHex(first.dh.privateKey));
+
+    // Seeding both curves from the raw master seed (pre-fix path) collides — must not match domain-separated keys
+    const reusedEd = deriveEd25519KeyPairFromSeed(masterSeed);
+    const reusedX = deriveX25519KeyPairFromSeed(masterSeed);
+    expect(toHex(reusedEd.privateKey)).toBe(toHex(reusedX.privateKey));
+    expect(toHex(first.signing.privateKey)).not.toBe(toHex(reusedEd.privateKey));
+    expect(toHex(first.dh.privateKey)).not.toBe(toHex(reusedX.privateKey));
   });
 
   it('should prevent unauthorized third party (Charlie) from decrypting', async () => {
@@ -178,5 +213,65 @@ describe('encryptionService tests', () => {
     // Bob decrypts message received from Alice
     const bobDecrypted = await statelessE2eeService.decryptDirectMessage(envelope, aliceId);
     expect(bobDecrypted).toBe(plain);
+  });
+
+  it('should bind v3 AES-GCM AAD to senderId and recipientId', async () => {
+    const aliceId = 201;
+    const bobId = 202;
+    const charlieId = 203;
+    const aliceKeys = generateX25519KeyPair();
+    const bobKeys = generateX25519KeyPair();
+
+    const convKey = deriveConversationKey(
+      calculateX25519SharedSecret(aliceKeys.privateKey, bobKeys.publicKey)
+    );
+    const plaintext = 'AAD-bound payload';
+    const iv = getRandomBytes(12);
+    const aad = utf8ToBytes(`velum-e2ee-v3:${aliceId}:${bobId}`);
+    const { ciphertext, tag } = await encryptAesGcm(convKey, utf8ToBytes(plaintext), iv, aad);
+
+    const ok = await decryptAesGcm(convKey, ciphertext, tag, iv, aad);
+    expect(bytesToUtf8(ok)).toBe(plaintext);
+
+    const wrongPeerAad = utf8ToBytes(`velum-e2ee-v3:${aliceId}:${charlieId}`);
+    await expect(decryptAesGcm(convKey, ciphertext, tag, iv, wrongPeerAad)).rejects.toThrow();
+
+    await expect(decryptAesGcm(convKey, ciphertext, tag, iv)).rejects.toThrow();
+  });
+
+  it('should decrypt legacy v3 envelopes sealed without AAD (option A fallback)', async () => {
+    const aliceId = 301;
+    const bobId = 302;
+    const aliceKeys = generateX25519KeyPair();
+    const bobKeys = generateX25519KeyPair();
+
+    const pubKeyMap: Record<number, string> = {
+      [aliceId]: toHex(aliceKeys.publicKey),
+      [bobId]: toHex(bobKeys.publicKey)
+    };
+
+    vi.spyOn(statelessE2eeService as any, 'fetchPeerPublicKey').mockImplementation(async (peerId: number) => {
+      const hex = pubKeyMap[peerId];
+      if (!hex) throw new Error('Key not found');
+      return hex;
+    });
+
+    const { saveLocalIdentityKeys } = await import('./cryptoDbStore');
+    await saveLocalIdentityKeys(bobId, {
+      signing: { privateKey: new Uint8Array(32), publicKey: new Uint8Array(32) },
+      dh: bobKeys
+    });
+
+    const convKey = deriveConversationKey(
+      calculateX25519SharedSecret(aliceKeys.privateKey, bobKeys.publicKey)
+    );
+    const plain = 'Legacy v3 without AAD';
+    const iv = getRandomBytes(12);
+    const { ciphertext, tag } = await encryptAesGcm(convKey, utf8ToBytes(plain), iv);
+    const envelope = `e2ee:v3:${aliceId}:${toHex(iv)}:${toHex(tag)}:${toHex(ciphertext)}`;
+
+    vi.spyOn(statelessE2eeService, 'getLocalUserId').mockReturnValue(bobId);
+    const decrypted = await statelessE2eeService.decryptDirectMessage(envelope, aliceId);
+    expect(decrypted).toBe(plain);
   });
 });

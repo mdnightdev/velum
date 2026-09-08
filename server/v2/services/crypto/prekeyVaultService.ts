@@ -12,6 +12,8 @@ export interface PrekeyBundlePayload {
   registrationId?: number;
   deviceId?: number;
   identityKey: string;
+  /** Ed25519 identity public key used to verify signedPrekeySignature */
+  signingIdentityKey?: string;
   signedPrekeyId?: number;
   signedPrekey: string | { keyId: number; publicKey: string; signature: string };
   signedPrekeySignature?: string;
@@ -23,6 +25,7 @@ export interface SignalPrekeyBundleDTO {
   registrationId: number;
   deviceId: number;
   identityKey: string;
+  signingIdentityKey: string | null;
   signedPrekeyId: number;
   signedPrekey: string;
   signedPrekeySignature: string;
@@ -31,6 +34,22 @@ export interface SignalPrekeyBundleDTO {
     publicKey: string;
   } | null;
   oneTimePrekeysLeft: number;
+}
+
+/** Persist DH + optional Ed25519 identity without a schema migration. */
+export function packIdentityKeyColumn(dhHex: string, signingIdentityKeyHex?: string): string {
+  if (signingIdentityKeyHex && signingIdentityKeyHex.length > 0) {
+    return `${dhHex}|${signingIdentityKeyHex}`;
+  }
+  return dhHex;
+}
+
+export function unpackIdentityKeyColumn(stored: string): { dh: string; ed: string | null } {
+  const idx = stored.indexOf('|');
+  if (idx === -1) {
+    return { dh: stored, ed: null };
+  }
+  return { dh: stored.slice(0, idx), ed: stored.slice(idx + 1) || null };
 }
 
 export async function publishPrekeyBundle(
@@ -57,6 +76,11 @@ export async function publishPrekeyBundle(
     ? bundle.oneTimePrekeys
     : JSON.stringify(bundle.oneTimePrekeys || []);
 
+  const packedIdentityKey = packIdentityKeyColumn(
+    String(bundle.identityKey),
+    bundle.signingIdentityKey ? String(bundle.signingIdentityKey) : undefined
+  );
+
   await executeWithRetry(async () => {
     const existing = await db.select({ id: userPrekeys.id })
       .from(userPrekeys)
@@ -68,7 +92,7 @@ export async function publishPrekeyBundle(
         userId,
         deviceId,
         registrationId,
-        identityKey: bundle.identityKey,
+        identityKey: packedIdentityKey,
         signedPrekeyId,
         signedPrekey: signedPrekeyPub,
         signedPrekeySignature: signedPrekeySig,
@@ -79,7 +103,7 @@ export async function publishPrekeyBundle(
       await db.update(userPrekeys)
         .set({
           registrationId,
-          identityKey: bundle.identityKey,
+          identityKey: packedIdentityKey,
           signedPrekeyId,
           signedPrekey: signedPrekeyPub,
           signedPrekeySignature: signedPrekeySig,
@@ -159,11 +183,14 @@ export async function fetchPrekeyBundle(
           .where(eq(userPrekeys.id, record.id));
       }
 
+      const { dh: identityKey, ed: signingIdentityKey } = unpackIdentityKeyColumn(record.identityKey);
+
       return {
         userId: record.userId,
         registrationId: record.registrationId,
         deviceId: record.deviceId,
-        identityKey: record.identityKey,
+        identityKey,
+        signingIdentityKey,
         signedPrekeyId: record.signedPrekeyId,
         signedPrekey: record.signedPrekey,
         signedPrekeySignature: record.signedPrekeySignature,
@@ -178,7 +205,10 @@ export async function fetchPrekeyBundle(
  * Generates a Signal-style Safety Number (6 5-digit decimal blocks) from two public identity keys.
  */
 export function generateSafetyNumber(identityKeyA: string, identityKeyB: string): string {
-  const sortedKeys = [identityKeyA, identityKeyB].sort();
+  const sortedKeys = [
+    unpackIdentityKeyColumn(identityKeyA).dh,
+    unpackIdentityKeyColumn(identityKeyB).dh
+  ].sort();
   const combined = sortedKeys.join('::');
   const hash = crypto.createHash('sha256').update(combined).digest();
 
