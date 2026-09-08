@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  ChevronLeft, X, Reply, Copy, Forward, Pin, Pencil, MoreVertical,
+  ChevronLeft, X, Reply, Copy, Forward, Pin, Pencil, MoreVertical, Trash2, ShieldAlert,
 } from 'lucide-react';
 import { Message } from '../../types';
 import { formatLastSeen } from '../../utils/datetime';
@@ -141,45 +141,15 @@ export function ChatHeader({
               <Pencil className="w-5 h-5" />
             </HeaderIconBtn>
           )}
-          {!isBot && (
-            <div className="relative">
-              <HeaderIconBtn title="More" onClick={() => setMoreOpen((v) => !v)} active={moreOpen}>
-                <MoreVertical className="w-5 h-5" />
-              </HeaderIconBtn>
-              {moreOpen && (
-                <div className="absolute right-0 top-full mt-1 min-w-[8.5rem] border border-velum-600 bg-velum-850 shadow-2xl z-50 overflow-hidden rounded-[var(--radius-sm)] py-1">
-                  {onSearch && (
-                    <MoreTextBtn
-                      label="Search"
-                      onClick={() => {
-                        setMoreOpen(false);
-                        onClearSelection?.();
-                        onSearch();
-                      }}
-                    />
-                  )}
-                  {onReportSelected && (
-                    <MoreTextBtn
-                      label="Report"
-                      onClick={() => {
-                        setMoreOpen(false);
-                        onReportSelected(selectedMessage);
-                      }}
-                    />
-                  )}
-                  {onDeleteSelected && (
-                    <MoreTextBtn
-                      label="Delete"
-                      danger
-                      onClick={() => {
-                        setMoreOpen(false);
-                        onDeleteSelected(selectedMessage);
-                      }}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
+          {!isBot && isOwn && onDeleteSelected && (
+            <HeaderIconBtn title="Delete" onClick={() => onDeleteSelected(selectedMessage)}>
+              <Trash2 className="w-5 h-5" />
+            </HeaderIconBtn>
+          )}
+          {!isBot && !isOwn && onReportSelected && (
+            <HeaderIconBtn title="Report" onClick={() => onReportSelected(selectedMessage)}>
+              <ShieldAlert className="w-5 h-5" />
+            </HeaderIconBtn>
           )}
         </div>
       </div>
@@ -187,8 +157,8 @@ export function ChatHeader({
   }
 
   return (
-    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-2.5 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20 min-h-[3.25rem]">
-      <div className="flex items-center gap-2 min-w-0">
+    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-2.5 border-b flex items-center justify-between flex-shrink-0 bg-black/10 border-white-5 select-none z-20 relative min-h-[3.25rem]">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
         {onBackToDeck && (
           <button
             type="button"
@@ -233,6 +203,37 @@ export function ChatHeader({
             ) : null}
           </div>
         </div>
+      </div>
+
+      <div className="relative shrink-0">
+        <HeaderIconBtn title="More" onClick={() => setMoreOpen((v) => !v)} active={moreOpen}>
+          <MoreVertical className="w-5 h-5" />
+        </HeaderIconBtn>
+        {moreOpen && (
+          <div
+            data-chat-selection-header="true"
+            className="absolute right-0 top-full mt-1 min-w-[8.5rem] border border-velum-600 bg-velum-850 shadow-2xl z-50 overflow-hidden rounded-[var(--radius-sm)] py-1"
+          >
+            {onSearch && (
+              <MoreTextBtn
+                label="Search"
+                onClick={() => {
+                  setMoreOpen(false);
+                  onSearch();
+                }}
+              />
+            )}
+            {onReportSelected && activeChatPeer && activeChatPeer.userId !== 999 && (
+              <MoreTextBtn
+                label="Report"
+                onClick={() => {
+                  setMoreOpen(false);
+                  onReportSelected({ user_id: activeChatPeer.userId } as Message);
+                }}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

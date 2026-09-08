@@ -423,6 +423,63 @@ const SYSTEM_ROLES: Record<number, { name: string; style: string }> = {
   999: { name: 'VELUM', style: 'bg-velum-800 border border-velum-600 text-text-primary rounded-2xl rounded-tl-none' },
 };
 
+function messageNeedsCollapse(text: string): boolean {
+  if (!text) return false;
+  const lines = text.split('\n').length;
+  return text.length > 280 || lines > 5;
+}
+
+/** Long-message collapse (WA/TG): clamp lines, expand in place via Read more. */
+function ExpandableMessageText({
+  text,
+  isEdited,
+  editedAt,
+  meta,
+}: {
+  text: string;
+  isEdited?: boolean;
+  editedAt?: string;
+  meta: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const needsCollapse = messageNeedsCollapse(text);
+
+  return (
+    <div>
+      <p
+        className={`whitespace-pre-wrap message-content-wrap ${
+          needsCollapse && !expanded ? 'line-clamp-5' : ''
+        }`}
+      >
+        {text}
+        {isEdited && (
+          <span
+            className="text-[10px] opacity-45 ml-1.5 select-none font-sans lowercase"
+            title={editedAt ? `Edited at ${safeFormatTimeOnly(editedAt)}` : 'Edited'}
+          >
+            (edited)
+          </span>
+        )}
+        <span className="msg-inline-meta inline-flex items-center gap-1 text-[9.5px] select-none opacity-60 font-sans leading-none whitespace-nowrap">
+          {meta}
+        </span>
+      </p>
+      {needsCollapse && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          className="mt-0.5 text-[12px] font-semibold text-accent hover:text-accent-hover cursor-pointer select-none"
+        >
+          {expanded ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function getSenderIdentity(msg: Message, fallbackUsername?: string) {
   if (SYSTEM_ROLES[msg.user_id]) {
     return { cleanName: SYSTEM_ROLES[msg.user_id].name, isSpecialTheme: true, customBubbleClass: SYSTEM_ROLES[msg.user_id].style };
@@ -519,7 +576,11 @@ export function MessageItem({
   const parsedAttachmentSize = firstAttachment?.size || '';
   const parsedAttachmentType = firstAttachment?.type || '';
   const parsedAttachmentData = firstAttachment?.data || '';
-  const parsedMsgContent = albumCaption || (firstAttachment ? (firstAttachment.caption || '') : activeContent);
+  const parsedMsgContent = albumCaption || (firstAttachment
+    ? (firstAttachment.caption || '')
+    : isAttachment
+      ? getCleanPreview(activeContent)
+      : activeContent);
 
   if (!msg.deleted && !activeContent && attachments.length === 0 && !msg.content && !msg.plaintext) {
     return null;
@@ -773,14 +834,33 @@ export function MessageItem({
                   })()}
                   {parsedMsgContent && (
                     <div>
-                      <p className="whitespace-pre-wrap message-content-wrap">
-                        {parsedMsgContent}
-                        {msg.is_edited && (
-                          <span className="text-[10px] opacity-45 ml-1.5 select-none font-sans lowercase" title={msg.edited_at ? `Edited at ${safeFormatTimeOnly(msg.edited_at)}` : 'Edited'}>
-                            (edited)
-                          </span>
-                        )}
-                      </p>
+                      <ExpandableMessageText
+                        text={parsedMsgContent}
+                        isEdited={Boolean(msg.is_edited)}
+                        editedAt={msg.edited_at}
+                        meta={
+                          <>
+                            <span>
+                              {safeFormatTimeOnly(
+                                msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now()
+                              )}
+                            </span>
+                            {isDm && (
+                              <MessageStatusTicks
+                                status={msg.status}
+                                isMe={isMe}
+                                onRetry={() => {
+                                  if (msg.status === 'failed') {
+                                    const targetId =
+                                      msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
+                                    if (onRetryMessage) onRetryMessage(targetId);
+                                  }
+                                }}
+                              />
+                            )}
+                          </>
+                        }
+                      />
                       {(() => {
                         const urlRegex = /(https?:\/\/[^\s]+)/g;
                         const matchedUrls = parsedMsgContent.match(urlRegex) || [];
@@ -833,20 +913,18 @@ export function MessageItem({
             </>
           )}
 
-          {/* Timestamp and Read Receipts inside bubble (hidden for image/video cards to prevent duplicate overlay time) */}
-          {!isImageCard && !isVideo && (
-            <div className={`flex items-center gap-1 mt-1 -mb-0.5 text-[9.5px] select-none opacity-60 font-sans ${isMe ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
+          {/* Timestamp for non-text bubbles (media/voice/doc without caption block) */}
+          {!isImageCard && !isVideo && !isSingleVideo && !isSingleImage && !isMediaAlbum && !parsedMsgContent && !msg.deleted && (
+            <div className="msg-inline-meta inline-flex items-center gap-1 text-[9.5px] select-none opacity-60 font-sans">
               <span>{safeFormatTimeOnly(msg.timestamp || msg.created_at || (msg as any).createdAt || Date.now())}</span>
               {isDm && (
-                <MessageStatusTicks 
-                  status={msg.status} 
-                  isMe={isMe} 
+                <MessageStatusTicks
+                  status={msg.status}
+                  isMe={isMe}
                   onRetry={() => {
                     if (msg.status === 'failed') {
                       const targetId = msg.client_msg_id || msg.nonce || msg.message_id || String(msg.id);
-              if (onRetryMessage) {
-                onRetryMessage(targetId);
-              }
+                      if (onRetryMessage) onRetryMessage(targetId);
                     }
                   }}
                 />

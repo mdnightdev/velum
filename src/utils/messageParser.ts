@@ -15,13 +15,16 @@ export function parseAttachment(content: string): AttachmentPayload[] {
   if (!content || !content.includes('[Attachment:')) return [];
 
   const results: AttachmentPayload[] = [];
-  const regex = /\[Attachment:\s*(.*?)\s+size:(.*?)\s+type:(.*?)\s+(data|url):(.*?)(?:\](?:\s*(.*?))?(?=\[Attachment:|$)|\])/g;
+  // size values may include spaces (e.g. "12 KB"); keep original tolerant capture.
+  const regex =
+    /\[Attachment:\s*(.*?)\s+size:(.*?)\s+type:(.*?)\s+(data|url):(.*?)(?:\](?:\s*(.*?))?(?=\[Attachment:|$)|\])/g;
 
   let match;
   while ((match = regex.exec(content)) !== null) {
     let rawVal = match[5] ? match[5].trim() : '';
     if (rawVal.endsWith(']')) rawVal = rawVal.slice(0, -1).trim();
 
+    // Skip inline base64 for rendering — storage URLs only.
     if (match[4] === 'data' || rawVal.startsWith('data:')) {
       continue;
     }
@@ -30,8 +33,13 @@ export function parseAttachment(content: string): AttachmentPayload[] {
     const parsedName = match[1].trim();
     const ext = parsedName.toLowerCase().split('.').pop() || '';
     if (!parsedType || !parsedType.startsWith('image/')) {
-      if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || /\.(jpg|jpeg|png|webp|gif)$/i.test(rawVal)) {
-        parsedType = 'image/' + (ext || 'jpeg');
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || /\.(jpg|jpeg|png|webp|gif)($|\?)/i.test(rawVal)) {
+        parsedType = 'image/' + (ext === 'jpg' ? 'jpeg' : ext || 'jpeg');
+      } else if (
+        ['mp4', 'webm', 'mov', 'mkv', 'm4v'].includes(ext) ||
+        /\.(mp4|webm|mov|mkv|m4v)($|\?)/i.test(rawVal)
+      ) {
+        parsedType = 'video/' + (ext || 'mp4');
       }
     }
 
@@ -40,7 +48,7 @@ export function parseAttachment(content: string): AttachmentPayload[] {
       size: match[2].trim(),
       type: parsedType,
       data: rawVal,
-      caption: match[6] ? match[6].trim() : ''
+      caption: match[6] ? match[6].trim() : '',
     });
   }
 
@@ -84,8 +92,8 @@ export function formatVoiceNotePreview(content: string): string {
 export function stripAttachmentTokens(content: string): string {
   if (!content) return '';
   return content
-    .replace(/\[Attachment:\s*.*?\]/g, '')
-    .replace(/\[Voice Note\s*.*?\]/g, '')
+    .replace(/\[Attachment:\s*[^\]]*\]/g, '')
+    .replace(/\[Voice Note[^\]]*\]/g, '')
     .trim();
 }
 
@@ -137,13 +145,62 @@ export function formatAttachmentAlbumPreview(
         !att.name.startsWith('aud_') &&
         !att.name.startsWith('vid_') &&
         !att.name.includes('-') &&
-        !att.name.startsWith('upload_');
+        !att.name.startsWith('upload_') &&
+        !/^https?:\/\//i.test(att.name) &&
+        !att.name.includes('/');
       label = hasCleanName ? att.name : 'Document';
     }
   }
 
-  const cap = caption.trim();
+  const cap = scrubPreviewNoise(caption);
   return cap ? `${label}: ${cap}` : label;
+}
+
+function looksLikeRawMediaPayload(text: string): boolean {
+  const t = (text || '').trim();
+  if (!t) return false;
+  return (
+    /\[Attachment:/i.test(t) ||
+    /\[Voice Note/i.test(t) ||
+    /https?:\/\/\S+/i.test(t) ||
+    /\/uploads\/media\//i.test(t) ||
+    /data:(image|video|audio)\//i.test(t)
+  );
+}
+
+function scrubPreviewNoise(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\[Attachment:\s*[^\]]*\]/gi, ' ')
+    .replace(/\[Voice Note[^\]]*\]/gi, ' ')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\/uploads\/media\/\S+/gi, ' ')
+    .replace(/data:(image|video|audio)\/[^\s]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function inferMediaLabelFromContent(content: string): string {
+  const t = content || '';
+  if (/\[Voice Note/i.test(t) || (/type:audio\//i.test(t) && /\[Attachment:/i.test(t))) {
+    return formatVoiceNotePreview(t);
+  }
+  if (/type:video\//i.test(t) || /\bvid_/i.test(t) || /\.(mp4|webm|mov|mkv|m4v)($|\?|\s|\])/i.test(t)) {
+    return 'Video';
+  }
+  if (
+    /type:image\//i.test(t) ||
+    /\bimg_/i.test(t) ||
+    /\.(jpg|jpeg|png|webp|gif|svg)($|\?|\s|\])/i.test(t) ||
+    /\/uploads\/media\//i.test(t) ||
+    /data:image\//i.test(t)
+  ) {
+    return 'Photo';
+  }
+  if (/\[Attachment:/i.test(t) || /https?:\/\//i.test(t) || /data:(video|audio)\//i.test(t)) {
+    return 'Attachment';
+  }
+  return 'Media';
 }
 
 export function getCleanPreview(content: string): string {
@@ -157,14 +214,18 @@ export function getCleanPreview(content: string): string {
   }
   if (trimmed.includes('[Attachment:')) {
     const attachments = parseAttachment(trimmed);
-    const textOutside = stripAttachmentTokens(trimmed);
+    const textOutside = scrubPreviewNoise(stripAttachmentTokens(trimmed));
     if (attachments.length > 0) {
       const caption = attachments.length === 1
-        ? (attachments[0].caption || textOutside)
+        ? scrubPreviewNoise(attachments[0].caption || textOutside)
         : textOutside;
       return formatAttachmentAlbumPreview(attachments, caption);
     }
-    return textOutside || 'Attachment';
+    return textOutside || inferMediaLabelFromContent(trimmed);
+  }
+  if (looksLikeRawMediaPayload(trimmed)) {
+    const cleaned = scrubPreviewNoise(trimmed);
+    return cleaned || inferMediaLabelFromContent(trimmed);
   }
   return trimmed;
 }
