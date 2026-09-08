@@ -1,4 +1,5 @@
 import { statelessE2eeService } from './statelessE2eeService.js';
+import { getPlaintextByCiphertext } from '../utils/indexedDb.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import {
@@ -113,6 +114,14 @@ export async function decryptMessage(content: string, context: EncryptionContext
     try {
       return await statelessE2eeService.decryptDirectMessage(content, context.peerUserId);
     } catch (err) {
+      try {
+        const uid = statelessE2eeService.getLocalUserId() || undefined;
+        const localPt = await getPlaintextByCiphertext(content, uid);
+        if (localPt) {
+          return localPt;
+        }
+      } catch {}
+
       console.error('[encryptionService] Stateless E2EE decryption error:', {
         error: err instanceof Error ? err.message : err,
         stack: err instanceof Error ? err.stack : undefined,

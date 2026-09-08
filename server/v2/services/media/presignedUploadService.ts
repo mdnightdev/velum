@@ -1,8 +1,11 @@
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getRedisClient } from '../../db/redis.js';
 import { logger } from '../../utils/logger.js';
+import { getS3Config } from './s3Client.js';
 
 export interface PresignedUploadRequest {
   filename: string;
@@ -148,17 +151,26 @@ export async function generatePresignedUpload(
 
   const relativePath = `/uploads/${folderPath}/${cleanFilename}`;
 
-  // Check if S3 / R2 env vars are present, or fallback to server direct upload endpoint
-  const s3Bucket = process.env.S3_BUCKET_NAME || process.env.R2_BUCKET_NAME;
-  const s3Endpoint = process.env.S3_ENDPOINT || process.env.R2_ENDPOINT;
+  // Check if Cloudflare R2 / S3 is configured, or fallback to server direct upload endpoint
+  const s3 = getS3Config();
 
   let uploadUrl = '';
   let fileUrl = '';
 
-  if (s3Bucket && s3Endpoint) {
-    // S3 / R2 Presigned PUT URL format
-    uploadUrl = `${s3Endpoint}/${s3Bucket}/${folderPath}/${cleanFilename}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&token=${randomToken}`;
-    fileUrl = `${process.env.CDN_BASE_URL || s3Endpoint}/${s3Bucket}/${folderPath}/${cleanFilename}`;
+  if (s3.isConfigured && s3.client && s3.bucket) {
+    const s3Key = `${folderPath}/${cleanFilename}`;
+    const command = new PutObjectCommand({
+      Bucket: s3.bucket,
+      Key: s3Key,
+      ContentType: params.mimeType,
+      Metadata: {
+        uploader: String(userId)
+      },
+      ...(params.sha256Checksum ? { ChecksumSHA256: params.sha256Checksum } : {})
+    });
+
+    uploadUrl = await getSignedUrl(s3.client, command, { expiresIn: 900 });
+    fileUrl = `${(s3.publicUrl || '').replace(/\/+$/, '')}/${s3Key}`;
   } else {
     // Local / direct server endpoint fallback
     const protocol = hostHeader.includes('localhost') || hostHeader.includes('127.0.0.1') ? 'http' : 'https';

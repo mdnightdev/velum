@@ -1,4 +1,5 @@
 import winston from 'winston';
+import DailyRotateFile from 'winston-daily-rotate-file';
 import { randomUUID } from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -99,7 +100,8 @@ export const logger = winston.createLogger({
  * Initializes production file transports dynamically when running under production environment.
  */
 async function addFileTransports() {
-  if (process.env.NODE_ENV === 'production') {
+  const shouldLogToFile = process.env.NODE_ENV === 'production' || process.env.ENABLE_FILE_LOGGING === 'true';
+  if (shouldLogToFile) {
     try {
       const { resolve } = await import('path');
       const fs = await import('fs');
@@ -110,8 +112,29 @@ async function addFileTransports() {
         fs.mkdirSync(logsDir, { recursive: true });
       }
       
-      // File transports will be added when winston-daily-rotate-file is properly configured
-      console.log('File logging ready for production in logs/ directory');
+      const appRotateTransport = new DailyRotateFile({
+        dirname: logsDir,
+        filename: 'app-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+        format: prodFormat
+      });
+
+      const errorRotateTransport = new DailyRotateFile({
+        dirname: logsDir,
+        filename: 'error-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '30d',
+        level: 'error',
+        format: prodFormat
+      });
+
+      logger.add(appRotateTransport);
+      logger.add(errorRotateTransport);
     } catch (err) {
       console.error('Failed to initialize file logging transports:', err);
     }

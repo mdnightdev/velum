@@ -9,6 +9,8 @@ import { storage } from '../services/storageService';
 import { handleInboundMessageNotification, updateAppBadge, dismissDeliveredNotification } from '../utils/notifications';
 import { useChatStore } from '../stores/chatStore';
 import { velumToast } from '../utils/toast';
+import { parseDmPeerId } from '../utils/roomUtils';
+import { globalDecryptionCache, cachePlaintext } from '../components/Chat/hooks/useMessageDecryption';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -74,6 +76,11 @@ export function useWebSocket({
     // Immediately hydrate local cached messages with existing plaintexts for instant render
     getLocalMessages(activeRoomId, 100, userId || 0).then((localMsgs) => {
       if (localMsgs && localMsgs.length > 0 && isCurrentRoom) {
+        for (const m of localMsgs) {
+          if (m.content && m.plaintext && m.plaintext !== '[Decryption Error]' && m.plaintext !== '[Encrypted Message]') {
+            cachePlaintext(m.content, m.plaintext);
+          }
+        }
         mergeMessages(localMsgs);
       }
     }).catch(() => {});
@@ -88,10 +95,7 @@ export function useWebSocket({
         if (isVelumDm) {
           url = `/v2/dm/999`;
         } else if (isDm) {
-          const parts = activeRoomId.replace('dm_', '').split('_');
-          const peerId = parts.length === 2
-            ? (Number(parts[0]) === userId ? parts[1] : parts[0])
-            : parts[0];
+          const peerId = parseDmPeerId(activeRoomId, userId);
           url = `/v2/dm/${peerId}`;
         }
 
@@ -105,21 +109,31 @@ export function useWebSocket({
         const data = await res.json();
 
         if (data.messages && Array.isArray(data.messages) && isCurrentRoom) {
-          const normalized: Message[] = isDm ? data.messages.map((d: any) => ({
-            id: d.id,
-            message_id: String(d.id),
-            db_message_id: d.id,
-            room_id: activeRoomId,
-            lounge_id: activeRoomId,
-            user_id: d.sender,
-            username: d.sender === userId ? 'You' : (d.sender === 999 ? 'Velum' : `User #${d.sender}`),
-            content: d.body,
-            sequence_id: d.id,
-            is_encrypted: !!d.encrypted,
-            reply_to: d.replyTo || null,
-            timestamp: d.created,
-            status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
-          })) : data.messages;
+          const normalized: Message[] = isDm ? data.messages.map((d: any) => {
+            const rawBody = d.body;
+            const cachedPt = rawBody && globalDecryptionCache.has(rawBody) ? globalDecryptionCache.get(rawBody) : undefined;
+            return {
+              id: d.id,
+              message_id: String(d.id),
+              db_message_id: d.id,
+              room_id: activeRoomId,
+              lounge_id: activeRoomId,
+              user_id: d.sender,
+              username: d.sender === userId ? 'You' : (d.sender === 999 ? 'Velum' : `User #${d.sender}`),
+              content: rawBody,
+              plaintext: cachedPt,
+              sequence_id: d.id,
+              is_encrypted: !!d.encrypted,
+              reply_to: d.replyTo || null,
+              timestamp: d.created,
+              status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
+            };
+          }) : data.messages.map((m: any) => {
+            if (!m.plaintext && m.content && globalDecryptionCache.has(m.content)) {
+              return { ...m, plaintext: globalDecryptionCache.get(m.content) };
+            }
+            return m;
+          });
 
           let maxSeq = roomMaxSeqRef.current.get(activeRoomId) || 0;
           normalized.forEach((m: any) => {
@@ -314,8 +328,8 @@ export function useWebSocket({
           if (ws.readyState === WebSocket.OPEN) {
             const isDm = item.room_id.startsWith('dm_') && !item.room_id.startsWith('dm_velum_');
             if (isDm) {
-              const peerId = parseInt(item.room_id.replace('dm_', ''), 10);
-              if (!isNaN(peerId)) {
+              const peerId = parseDmPeerId(item.room_id, userId);
+              if (peerId !== null) {
                 ws.send(JSON.stringify({
                   type: 'dm',
                   to: peerId,
@@ -490,6 +504,7 @@ export function useWebSocket({
               if (seq > cur) roomMaxSeqRef.current.set(dmRoomId, seq);
             }
           }
+          const cachedPt = data.body && globalDecryptionCache.has(data.body) ? globalDecryptionCache.get(data.body) : undefined;
           const dmMsg: Message = {
             id: canonicalId,
             client_msg_id: clientMsgId,
@@ -500,6 +515,7 @@ export function useWebSocket({
             user_id: data.from,
             username: data.sender_username || (isFromMe ? 'You' : `User #${data.from}`),
             content: data.body,
+            plaintext: cachedPt,
             is_encrypted: !!data.enc,
             reply_to: data.reply_to || null,
             timestamp: data.created,
@@ -522,7 +538,13 @@ export function useWebSocket({
 
             if (dmMsg.is_encrypted || (dmMsg.content && (dmMsg.content.startsWith('e2ee:') || dmMsg.content.startsWith('VEL_E2EE[')))) {
               decryptMessage(dmMsg.content, { type: 'direct', peerUserId: data.from })
-                .then(notifyDm)
+                .then((pt) => {
+                  if (pt && dmMsg.content) {
+                    cachePlaintext(dmMsg.content, pt);
+                    useChatStore.getState().updatePlaintexts({ [String(canonicalId)]: pt });
+                  }
+                  notifyDm(pt);
+                })
                 .catch(() => notifyDm('Sent a message'));
             } else {
               notifyDm(dmMsg.content);
@@ -541,7 +563,12 @@ export function useWebSocket({
           window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
         } else if (data.type === 'sync_response') {
           if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
-            const newMsgs = data.messages;
+            const newMsgs = data.messages.map((m: any) => {
+              if (!m.plaintext && m.content && globalDecryptionCache.has(m.content)) {
+                return { ...m, plaintext: globalDecryptionCache.get(m.content) };
+              }
+              return m;
+            });
             if (newMsgs.length > 0) {
               mergeMessages(newMsgs);
             }
@@ -633,11 +660,8 @@ export function useWebSocket({
             clearRoomMessages(targetRoom);
             flushLoungeCache(targetRoom, userId || undefined);
             if (targetRoom.startsWith('dm_') && !targetRoom.startsWith('dm_velum_')) {
-              const parts = targetRoom.replace('dm_', '').split('_');
-              const peerId = parts.length === 2
-                ? (Number(parts[0]) === userId ? Number(parts[1]) : Number(parts[0]))
-                : Number(parts[0]);
-              if (!isNaN(peerId) && peerId > 0) {
+              const peerId = parseDmPeerId(targetRoom, userId);
+              if (peerId !== null && peerId > 0) {
                 purgeDmMessages(peerId, userId || undefined);
               }
             }
@@ -648,7 +672,13 @@ export function useWebSocket({
             });
           }
         } else if (data.type === 'history') {
-          const historyMessages: Message[] = data.messages || [];
+          const rawHistory: Message[] = data.messages || [];
+          const historyMessages = rawHistory.map((m: any) => {
+            if (!m.plaintext && m.content && globalDecryptionCache.has(m.content)) {
+              return { ...m, plaintext: globalDecryptionCache.get(m.content) };
+            }
+            return m;
+          });
           if (data.room_id === activeRoomIdRef.current && historyMessages.length > 0) {
             mergeMessages(historyMessages);
           }
@@ -729,11 +759,13 @@ export function useWebSocket({
           if (data.room_id === activeRoomIdRef.current) {
             const canonicalId = data.id || data.db_message_id || data.message_id;
             const clientMsgId = data.client_msg_id || data.nonce;
+            const cachedPt = data.content && globalDecryptionCache.has(data.content) ? globalDecryptionCache.get(data.content) : undefined;
             const newMessage: Message = {
               ...data,
               id: canonicalId,
               client_msg_id: clientMsgId,
               message_id: String(canonicalId),
+              plaintext: cachedPt,
               db_message_id: typeof canonicalId === 'number' ? canonicalId : data.db_message_id
             };
 
@@ -799,8 +831,8 @@ export function useWebSocket({
     let shouldEncrypt = isEncrypted;
 
     if (isDm) {
-      const peerId = parseInt(destRoomId.replace('dm_', ''), 10);
-      if (!isAlreadyEncrypted && !isNaN(peerId)) {
+      const peerId = parseDmPeerId(destRoomId, userId);
+      if (!isAlreadyEncrypted && peerId !== null) {
         try {
           finalContent = await statelessE2eeService.encryptDirectMessage(text, peerId);
           shouldEncrypt = true;
@@ -829,6 +861,11 @@ export function useWebSocket({
         finalContent = await encryptMessage(text, context);
       }
     }
+
+    const rawPlaintext = clientPlaintext || text;
+    if (finalContent && rawPlaintext) {
+      cachePlaintext(finalContent, rawPlaintext);
+    }
     
     const clientMsgId = crypto.randomUUID();
     const optMessage: Message = {
@@ -840,7 +877,7 @@ export function useWebSocket({
       user_id: userId || 0,
       username: 'You',
       content: finalContent,
-      plaintext: clientPlaintext || text,
+      plaintext: rawPlaintext,
       is_encrypted: shouldEncrypt,
       status: 'sending',
       reply_to: replyTo ? String(replyTo) : null,
@@ -851,8 +888,8 @@ export function useWebSocket({
     let isDmMatch = false;
     let dmPeerId: number | undefined = undefined;
     if (isDm) {
-      dmPeerId = parseInt(destRoomId.replace('dm_', ''), 10);
-      if (!isNaN(dmPeerId) && userId) {
+      dmPeerId = parseDmPeerId(destRoomId, userId) || undefined;
+      if (dmPeerId && userId) {
         const pairwiseRoom = `dm_${Math.min(userId, dmPeerId)}_${Math.max(userId, dmPeerId)}`;
         isDmMatch = activeRoomId === destRoomId || activeRoomId === pairwiseRoom;
       }
@@ -886,15 +923,17 @@ export function useWebSocket({
     // If socket is open, send frame immediately
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       if (isDm) {
-        const peerId = parseInt(destRoomId.replace('dm_', ''), 10);
-        wsRef.current.send(JSON.stringify({
-          type: 'dm',
-          to: peerId,
-          body: finalContent,
-          enc: shouldEncrypt,
-          reply_to: replyTo || null,
-          client_msg_id: clientMsgId
-        }));
+        const peerId = parseDmPeerId(destRoomId, userId);
+        if (peerId !== null) {
+          wsRef.current.send(JSON.stringify({
+            type: 'dm',
+            to: peerId,
+            body: finalContent,
+            enc: shouldEncrypt,
+            reply_to: replyTo || null,
+            client_msg_id: clientMsgId
+          }));
+        }
       } else {
         wsRef.current.send(JSON.stringify({
           type: 'send_message',
@@ -960,8 +999,8 @@ export function useWebSocket({
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const isDm = destRoomId.startsWith('dm_') && !destRoomId.startsWith('dm_velum_');
       if (isDm) {
-        const peerId = parseInt(destRoomId.replace('dm_', ''), 10);
-        if (!isNaN(peerId)) {
+        const peerId = parseDmPeerId(destRoomId, userId);
+        if (peerId !== null) {
           wsRef.current.send(JSON.stringify({
             type: 'dm',
             to: peerId,

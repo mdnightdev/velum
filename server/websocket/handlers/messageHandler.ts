@@ -31,15 +31,21 @@ export async function handleAddReaction(client: ClientConnection, message: any) 
     const roomId = message.room_id;
     if (isNaN(messageId) || !emoji || !roomId || !client.userId) return;
 
-    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
-    const isDm = peerId !== null;
-
-    if (isDm) {
-      const [dmMsg] = await executeWithRetry(() =>
+    // Resolve target message from dms or dbMessages
+    let dmMsg = null;
+    const isDmRoom = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+    if (isDmRoom) {
+      [dmMsg] = await executeWithRetry(() =>
         db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
       );
-      if (!dmMsg) return;
+    }
+    if (!dmMsg) {
+      [dmMsg] = await executeWithRetry(() =>
+        db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+      );
+    }
 
+    if (dmMsg) {
       const [existing] = await executeWithRetry(() =>
         db.select()
           .from(dmReactions)
@@ -98,12 +104,26 @@ export async function handleAddReaction(client: ClientConnection, message: any) 
         room_id: roomId,
         reactions: reactionsMap
       });
-      broadcastToUserDevices(otherUser, {
-        type: 'reaction_update',
-        message_id: String(messageId),
-        room_id: `dm_${client.userId}`,
-        reactions: reactionsMap
-      });
+      if (otherUser !== client.userId) {
+        broadcastToUserDevices(otherUser, {
+          type: 'reaction_update',
+          message_id: String(messageId),
+          room_id: `dm_${client.userId}`,
+          reactions: reactionsMap
+        });
+      }
+      return;
+    }
+
+    // Message is not a direct message; verify lounge message existence before modifying messageReactions
+    const [loungeMsg] = await executeWithRetry(() =>
+      db.select({ id: dbMessages.id })
+        .from(dbMessages)
+        .where(eq(dbMessages.id, messageId))
+        .limit(1)
+    );
+    if (!loungeMsg) {
+      console.warn(`[WS] Reaction target message ${messageId} not found in dms or messages`);
       return;
     }
 

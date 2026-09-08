@@ -21,6 +21,7 @@ export interface ChatStoreState {
   appendMessage: (message: Message) => void;
   mergeMessages: (messages: Message[]) => void;
   updateMessage: (matcher: (m: Message) => boolean, updater: (m: Message) => Message) => void;
+  updatePlaintexts: (keyToPlaintext: Record<string, string>) => void;
   removeMessage: (idOrClientMsgId: string | number) => void;
   clearRoomMessages: (roomId: string) => void;
   setLastMessage: (roomId: string, message: Message) => void;
@@ -125,6 +126,26 @@ export const useChatStore = create<ChatStoreState>()(
         set((state) => ({
           messages: state.messages.map((m) => (matcher(m) ? updater(m) : m))
         }));
+      },
+
+      updatePlaintexts: (keyToPlaintext) => {
+        set((state) => {
+          let hasChange = false;
+          const nextList = state.messages.map((m) => {
+            const keys = [m.message_id, m.id, m.client_msg_id, m.nonce, (m as any).db_message_id]
+              .filter(Boolean)
+              .map(String);
+            for (const k of keys) {
+              const pt = keyToPlaintext[k];
+              if (pt && m.plaintext !== pt) {
+                hasChange = true;
+                return { ...m, plaintext: pt };
+              }
+            }
+            return m;
+          });
+          return hasChange ? { messages: nextList } : state;
+        });
       },
 
       removeMessage: (idOrClientMsgId) => {

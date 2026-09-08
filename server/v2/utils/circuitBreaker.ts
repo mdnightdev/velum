@@ -1,152 +1,78 @@
-// Simple Circuit Breaker Implementation
-// Based on the Circuit Breaker pattern for handling external service failures
+import Opossum from 'opossum';
 
-type CircuitState = 'closed' | 'open' | 'half-open';
+export type CircuitState = 'closed' | 'open' | 'half-open';
 
-interface CircuitBreakerOptions {
-  timeout: number; // Operation timeout in ms
-  errorThresholdPercentage: number; // Error percentage to trigger open state
-  resetTimeout: number; // Time in ms to wait before trying half-open state
-  rollingWindow: number; // Number of operations to consider for error rate
+export interface CircuitBreakerOptions {
+  timeout?: number;
+  errorThresholdPercentage?: number;
+  resetTimeout?: number;
+  rollingWindow?: number;
+  rollingCountTimeout?: number;
+  rollingCountBuckets?: number;
 }
 
-interface CircuitBreakerStats {
+export interface CircuitBreakerStats {
   failures: number;
   successes: number;
   total: number;
+  timeouts?: number;
+  rejects?: number;
 }
 
 export class CircuitBreaker {
-  private state: CircuitState = 'closed';
-  private stats: CircuitBreakerStats = { failures: 0, successes: 0, total: 0 };
-  private nextAttempt: number = 0;
-  private operationHistory: boolean[] = []; // true = success, false = failure
+  private breaker: Opossum;
 
   constructor(
-    private operation: (...args: any[]) => Promise<any>,
-    private options: CircuitBreakerOptions
+    operation: (...args: any[]) => Promise<any>,
+    options?: CircuitBreakerOptions
   ) {
-    this.validateOptions();
-  }
-
-  private validateOptions() {
-    if (this.options.errorThresholdPercentage < 0 || this.options.errorThresholdPercentage > 100) {
-      throw new Error('errorThresholdPercentage must be between 0 and 100');
-    }
-    if (this.options.rollingWindow < 1) {
-      throw new Error('rollingWindow must be at least 1');
-    }
-  }
-
-  private getErrorRate(): number {
-    if (this.stats.total === 0) return 0;
-    return (this.stats.failures / this.stats.total) * 100;
-  }
-
-  private shouldAttemptReset(): boolean {
-    return Date.now() >= this.nextAttempt;
-  }
-
-  private recordSuccess() {
-    this.stats.successes++;
-    this.stats.total++;
-    this.operationHistory.push(true);
-    
-    // Keep only recent operations
-    if (this.operationHistory.length > this.options.rollingWindow) {
-      const removed = this.operationHistory.shift();
-      if (removed === false) this.stats.failures--;
-      this.stats.total--;
-    }
-  }
-
-  private recordFailure() {
-    this.stats.failures++;
-    this.stats.total++;
-    this.operationHistory.push(false);
-    
-    // Keep only recent operations
-    if (this.operationHistory.length > this.options.rollingWindow) {
-      const removed = this.operationHistory.shift();
-      if (removed === true) this.stats.successes--;
-      this.stats.total--;
-    }
-  }
-
-  private openCircuit() {
-    this.state = 'open';
-    this.nextAttempt = Date.now() + this.options.resetTimeout;
-  }
-
-  private resetCircuit() {
-    this.state = 'closed';
-    this.stats = { failures: 0, successes: 0, total: 0 };
-    this.operationHistory = [];
+    const opts: Opossum.Options = {
+      timeout: options?.timeout ?? 10000,
+      errorThresholdPercentage: options?.errorThresholdPercentage ?? 50,
+      resetTimeout: options?.resetTimeout ?? 30000,
+      rollingCountTimeout: options?.rollingCountTimeout ?? 10000,
+      rollingCountBuckets: options?.rollingCountBuckets ?? 10,
+    };
+    this.breaker = new Opossum(operation, opts);
   }
 
   async execute(...args: any[]): Promise<any> {
-    if (this.state === 'open' && this.shouldAttemptReset()) {
-      this.state = 'half-open';
-    }
-
-    if (this.state === 'open') {
-      throw new Error('Circuit breaker is OPEN - service unavailable');
-    }
-
-    try {
-      const result = await Promise.race([
-        this.operation(...args),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Operation timeout')), this.options.timeout)
-        )
-      ]);
-
-      if (this.state === 'half-open') {
-        this.resetCircuit();
-      }
-      this.recordSuccess();
-      
-      return result;
-    } catch (error) {
-      this.recordFailure();
-      
-      if (this.getErrorRate() >= this.options.errorThresholdPercentage) {
-        this.openCircuit();
-      }
-      
-      throw error;
-    }
+    return this.breaker.fire(...args);
   }
 
   getState(): CircuitState {
-    return this.state;
+    if (this.breaker.opened) return 'open';
+    if (this.breaker.halfOpen) return 'half-open';
+    return 'closed';
   }
 
   getStats(): CircuitBreakerStats {
-    return { ...this.stats };
+    const s = this.breaker.stats;
+    return {
+      failures: s.failures,
+      successes: s.successes,
+      total: s.fires,
+      timeouts: s.timeouts,
+      rejects: s.rejects
+    };
   }
 
-  forceOpen() {
-    this.state = 'open';
-    this.nextAttempt = Date.now() + this.options.resetTimeout;
+  forceOpen(): void {
+    this.breaker.open();
   }
 
-  forceClose() {
-    this.resetCircuit();
+  forceClose(): void {
+    this.breaker.close();
+  }
+
+  get rawBreaker(): Opossum {
+    return this.breaker;
   }
 }
 
-// Factory function for creating circuit breakers
 export function createCircuitBreaker(
   operation: (...args: any[]) => Promise<any>,
-  options?: Partial<CircuitBreakerOptions>
+  options?: CircuitBreakerOptions
 ): CircuitBreaker {
-  const defaultOptions: CircuitBreakerOptions = {
-    timeout: 3000,
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    rollingWindow: 10
-  };
-
-  return new CircuitBreaker(operation, { ...defaultOptions, ...options });
+  return new CircuitBreaker(operation, options);
 }

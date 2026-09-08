@@ -5,6 +5,16 @@ import { statelessE2eeService } from '../../../services/statelessE2eeService';
 import { parseAttachment } from '../../../utils/messageParser';
 import { saveLocalMessages } from '../../../utils/indexedDb';
 import { useChatStore } from '../../../stores/chatStore';
+import { parseDmPeerId } from '../../../utils/roomUtils';
+
+// Global session plaintext cache keyed by ciphertext (content)
+export const globalDecryptionCache = new Map<string, string>();
+
+export function cachePlaintext(ciphertext: string, plaintext: string) {
+  if (ciphertext && plaintext) {
+    globalDecryptionCache.set(ciphertext, plaintext);
+  }
+}
 
 export function useMessageDecryption({
   messages,
@@ -47,6 +57,7 @@ export function useMessageDecryption({
         // 1. If not an encrypted payload, content is already plaintext
         if (!isEncryptedPayload) {
           m.plaintext = m.content;
+          globalDecryptionCache.set(m.content, m.content);
           for (const k of keys) {
             cacheRef.current[k] = { ciphertext: m.content, plaintext: m.content };
             syncDecrypted[k] = m.content;
@@ -56,6 +67,7 @@ export function useMessageDecryption({
 
         // 2. If plaintext already attached in memory, map to all key aliases immediately
         if (m.plaintext) {
+          globalDecryptionCache.set(m.content, m.plaintext);
           for (const k of keys) {
             cacheRef.current[k] = { ciphertext: m.content, plaintext: m.plaintext };
             syncDecrypted[k] = m.plaintext;
@@ -63,7 +75,18 @@ export function useMessageDecryption({
           continue;
         }
 
-        // 3. Check if cached under any alias
+        // 3. Check global session cache first
+        if (globalDecryptionCache.has(m.content)) {
+          const cached = globalDecryptionCache.get(m.content)!;
+          m.plaintext = cached;
+          for (const k of keys) {
+            cacheRef.current[k] = { ciphertext: m.content, plaintext: cached };
+            syncDecrypted[k] = cached;
+          }
+          continue;
+        }
+
+        // 4. Check component cache under any alias
         let cachedPlaintext: string | null = null;
         for (const k of keys) {
           const cached = cacheRef.current[k];
@@ -75,6 +98,7 @@ export function useMessageDecryption({
 
         if (cachedPlaintext) {
           m.plaintext = cachedPlaintext;
+          globalDecryptionCache.set(m.content, cachedPlaintext);
           for (const k of keys) {
             cacheRef.current[k] = { ciphertext: m.content, plaintext: cachedPlaintext };
             syncDecrypted[k] = cachedPlaintext;
@@ -87,10 +111,7 @@ export function useMessageDecryption({
         const isDmRoom = targetRoom.startsWith('dm_') && !targetRoom.startsWith('dm_velum_');
         let peerId = activeChatPeer?.userId;
         if (!peerId && isDmRoom) {
-          const parsed = parseInt(targetRoom.replace('dm_', ''), 10);
-          if (!isNaN(parsed) && parsed > 0) {
-            peerId = parsed;
-          }
+          peerId = parseDmPeerId(targetRoom, currentUserId) || undefined;
         }
         if (!peerId && !isOutgoing && m.user_id) {
           peerId = Number(m.user_id);
@@ -125,29 +146,40 @@ export function useMessageDecryption({
 
       if (pending.length === 0) return;
 
-      // Decrypt inbound messages sequentially to maintain Double Ratchet state ordering
+      // Parallel chunked decryption for high-throughput zero-lag rendering
+      const CHUNK_SIZE = 20;
       const batchMapEntries: Record<string, string> = {};
       const messagesToPersist: any[] = [];
       const store = useChatStore.getState();
 
-      for (const item of pending) {
+      for (let i = 0; i < pending.length; i += CHUNK_SIZE) {
         if (!isMounted) return;
+        const chunk = pending.slice(i, i + CHUNK_SIZE);
+        const results = await Promise.all(
+          chunk.map(async (item) => {
+            try {
+              const decrypted = await decryptMessage(item.ciphertext, item.context);
+              return { item, decrypted };
+            } catch (err) {
+              console.error('[useMessageDecryption] Batch item decryption failed:', {
+                error: err instanceof Error ? err.message : err,
+                stack: err instanceof Error ? err.stack : undefined,
+                keys: item.keys,
+                context: item.context,
+                ciphertext: item.ciphertext
+              });
+              return { item, decrypted: '[Decryption Error]' };
+            }
+          })
+        );
 
-        try {
-          const decrypted = await decryptMessage(item.ciphertext, item.context);
-
+        for (const { item, decrypted } of results) {
+          globalDecryptionCache.set(item.ciphertext, decrypted);
           for (const k of item.keys) {
             cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: decrypted };
             batchMapEntries[k] = decrypted;
           }
 
-          // Permanently store plaintext in Zustand memory
-          store.updateMessage(
-            (msg) => item.keys.some((k) => String(msg.id) === k || String(msg.client_msg_id) === k || String(msg.message_id) === k),
-            (msg) => ({ ...msg, plaintext: decrypted })
-          );
-
-          // Queue for single batch persistence to user device IndexedDB
           messagesToPersist.push({
             id: item.keys[0],
             message_id: item.keys[0],
@@ -157,22 +189,11 @@ export function useMessageDecryption({
             content: item.ciphertext,
             user_id: item.context.peerUserId
           });
-        } catch (err) {
-          console.error('[useMessageDecryption] Batch item decryption failed:', {
-            error: err instanceof Error ? err.message : err,
-            stack: err instanceof Error ? err.stack : undefined,
-            keys: item.keys,
-            context: item.context,
-            ciphertext: item.ciphertext
-          });
-          for (const k of item.keys) {
-            cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: '[Decryption Error]' };
-            batchMapEntries[k] = '[Decryption Error]';
-          }
         }
       }
 
       if (isMounted && Object.keys(batchMapEntries).length > 0) {
+        store.updatePlaintexts(batchMapEntries);
         setDecryptedMap((prev) => ({ ...prev, ...batchMapEntries }));
       }
 
@@ -190,6 +211,9 @@ export function useMessageDecryption({
 
   const getDecryptedText = (msg: Message): string => {
     if (msg.plaintext) return msg.plaintext;
+    if (msg.content && globalDecryptionCache.has(msg.content)) {
+      return globalDecryptionCache.get(msg.content)!;
+    }
     const keys = [msg.message_id, msg.id, msg.client_msg_id, msg.nonce, (msg as any).db_message_id]
       .filter(Boolean)
       .map(String);
@@ -208,7 +232,11 @@ export function useMessageDecryption({
     textToSend: string,
     context: EncryptionContext
   ): Promise<string> => {
-    return await encryptMessage(textToSend, context);
+    const cipher = await encryptMessage(textToSend, context);
+    if (cipher && textToSend) {
+      globalDecryptionCache.set(cipher, textToSend);
+    }
+    return cipher;
   };
 
   return {

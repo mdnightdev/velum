@@ -343,3 +343,18 @@ export async function getLocalKV<T = any>(key: string, userId?: number): Promise
     return null;
   }
 }
+
+/**
+ * Looks up local plaintext by ciphertext payload in isolated IndexedDB store.
+ */
+export async function getPlaintextByCiphertext(ciphertext: string, userId?: number): Promise<string | null> {
+  if (!ciphertext) return null;
+  try {
+    const db = await openCryptoDatabase(userId || 0);
+    const all: any[] = await db.getAll(STORE_MESSAGES);
+    const match = all.find((m) => m && m.content === ciphertext && m.plaintext && m.plaintext !== '[Decryption Error]' && m.plaintext !== '[Encrypted Message]');
+    return match ? match.plaintext : null;
+  } catch {
+    return null;
+  }
+}

@@ -20,6 +20,7 @@ import {
   saveSignedPrekey,
   loadSignedPrekey
 } from './cryptoDbStore.js';
+import { getPlaintextByCiphertext } from '../utils/indexedDb.js';
 import { getSessionId } from '../utils/auth.js';
 import { storage } from './storageService';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
@@ -188,8 +189,13 @@ class StatelessE2eeService {
       throw new Error('[StatelessE2EE] Local identity key unavailable');
     }
 
-    const peerPubKeyHex = await this.fetchPeerPublicKey(peerUserId);
-    const peerPubKeyBytes = fromHex(peerPubKeyHex);
+    let peerPubKeyBytes: Uint8Array;
+    if (uid && peerUserId === uid) {
+      peerPubKeyBytes = localKeys.dh.publicKey;
+    } else {
+      const peerPubKeyHex = await this.fetchPeerPublicKey(peerUserId);
+      peerPubKeyBytes = fromHex(peerPubKeyHex);
+    }
 
     // 1. Calculate pairwise shared secret between sender and peer
     const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, peerPubKeyBytes);
@@ -221,6 +227,9 @@ class StatelessE2eeService {
     let localKeys = await loadLocalIdentityKeys(uid);
     
     if (!localKeys || !localKeys.dh) {
+      // Check if local cache has already stored this envelope plaintext
+      const fallback = await getPlaintextByCiphertext(envelope, uid);
+      if (fallback) return fallback;
       throw new Error('[StatelessE2EE] Local identity key not found in storage');
     }
 
@@ -238,22 +247,35 @@ class StatelessE2eeService {
         : (senderId !== uid && !isNaN(senderId) && senderId > 0 ? senderId : contextPeerUserId);
 
       if (!targetPeerId) {
+        const fallback = await getPlaintextByCiphertext(envelope, uid);
+        if (fallback) return fallback;
         throw new Error('[StatelessE2EE] Missing peer user ID for conversation key derivation');
       }
 
-      const peerPubKeyHex = await this.fetchPeerPublicKey(targetPeerId);
-      const peerPubKeyBytes = fromHex(peerPubKeyHex);
+      try {
+        let peerPubKeyBytes: Uint8Array;
+        if (targetPeerId === uid) {
+          peerPubKeyBytes = localKeys.dh.publicKey;
+        } else {
+          const peerPubKeyHex = await this.fetchPeerPublicKey(targetPeerId);
+          peerPubKeyBytes = fromHex(peerPubKeyHex);
+        }
 
-      const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, peerPubKeyBytes);
-      const convKey = deriveConversationKey(sharedSecret);
+        const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, peerPubKeyBytes);
+        const convKey = deriveConversationKey(sharedSecret);
 
-      const decryptedBytes = await decryptAesGcm(
-        convKey,
-        fromHex(cipherPayloadHex),
-        fromHex(tagPayloadHex),
-        fromHex(ivPayloadHex)
-      );
-      return bytesToUtf8(decryptedBytes);
+        const decryptedBytes = await decryptAesGcm(
+          convKey,
+          fromHex(cipherPayloadHex),
+          fromHex(tagPayloadHex),
+          fromHex(ivPayloadHex)
+        );
+        return bytesToUtf8(decryptedBytes);
+      } catch (err) {
+        const fallback = await getPlaintextByCiphertext(envelope, uid);
+        if (fallback) return fallback;
+        throw err;
+      }
     }
 
     // 2. Handle Legacy v2 Dual-Recipient Envelope Fallback
@@ -279,7 +301,7 @@ class StatelessE2eeService {
         }
       }
 
-      // If not recipient, try decrypting sender key tuple (sender viewing their own history on any device!)
+      // If not recipient, try decrypting sender key tuple (sender viewing their own history on any device)
       if (!payloadKey && senderKeyTuple) {
         const [sIvHex, sTagHex, sCipherHex] = senderKeyTuple.split('.');
         if (sIvHex && sTagHex && sCipherHex) {
@@ -290,11 +312,21 @@ class StatelessE2eeService {
       }
 
       if (!payloadKey) {
+        const fallback = await getPlaintextByCiphertext(envelope, uid);
+        if (fallback) {
+          return fallback;
+        }
         throw new Error('[StatelessE2EE] Unable to decrypt payload key with local identity');
       }
 
-      const decryptedBytes = await decryptAesGcm(payloadKey, fromHex(cipherPayloadHex), fromHex(tagPayloadHex), fromHex(ivPayloadHex));
-      return bytesToUtf8(decryptedBytes);
+      try {
+        const decryptedBytes = await decryptAesGcm(payloadKey, fromHex(cipherPayloadHex), fromHex(tagPayloadHex), fromHex(ivPayloadHex));
+        return bytesToUtf8(decryptedBytes);
+      } catch (err) {
+        const fallback = await getPlaintextByCiphertext(envelope, uid);
+        if (fallback) return fallback;
+        throw err;
+      }
     }
 
     // 3. Handle Legacy v1 Envelope Fallback
@@ -310,9 +342,15 @@ class StatelessE2eeService {
       const tag = fromHex(tagHex);
       const ciphertext = fromHex(cipherHex);
 
-      const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, ephPubKeyBytes);
-      const decryptedBytes = await decryptAesGcm(sharedSecret, ciphertext, tag, iv);
-      return bytesToUtf8(decryptedBytes);
+      try {
+        const sharedSecret = calculateX25519SharedSecret(localKeys.dh.privateKey, ephPubKeyBytes);
+        const decryptedBytes = await decryptAesGcm(sharedSecret, ciphertext, tag, iv);
+        return bytesToUtf8(decryptedBytes);
+      } catch (err) {
+        const fallback = await getPlaintextByCiphertext(envelope, uid);
+        if (fallback) return fallback;
+        throw err;
+      }
     }
 
     throw new Error('[StatelessE2EE] Unrecognized envelope format');

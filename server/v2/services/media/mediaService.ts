@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { eq, sql } from 'drizzle-orm';
 import { db, executeWithRetry } from '../../db/client.js';
 import { mediaAssets, type MediaAsset, type NewMediaAsset } from '../../db/schema/media.js';
 import { logger } from '../../utils/logger.js';
+import { getS3Config } from './s3Client.js';
 
 export class MediaService {
   /**
@@ -40,7 +42,7 @@ export class MediaService {
    */
   async deleteAssetByPath(relativePath: string): Promise<boolean> {
     try {
-      // 1. Delete physical file from public/uploads
+      // 1. Delete physical file from public/uploads if stored locally
       const cleaned = relativePath.replace(/^\/+/, '');
       const fullPath = path.join(process.cwd(), 'public', cleaned);
       if (fs.existsSync(fullPath)) {
@@ -49,7 +51,19 @@ export class MediaService {
         });
       }
 
-      // 2. Remove DB record
+      // 2. Delete from Cloudflare R2 / S3 if configured
+      const s3 = getS3Config();
+      if (s3.isConfigured && s3.client && s3.bucket) {
+        const s3Key = relativePath.replace(/^\/?(?:uploads\/)?/, '');
+        await s3.client.send(new DeleteObjectCommand({
+          Bucket: s3.bucket,
+          Key: s3Key
+        })).catch(err => {
+          logger.warn('[MEDIA] Failed to remove object from S3/R2', { key: s3Key, error: (err as Error).message });
+        });
+      }
+
+      // 3. Remove DB record
       await executeWithRetry(async () => {
         await db.delete(mediaAssets).where(eq(mediaAssets.relativePath, relativePath));
       });
