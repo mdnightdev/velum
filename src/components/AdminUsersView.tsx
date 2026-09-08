@@ -3,6 +3,7 @@ import { Ban, MessageSquare, ShieldCheck, Activity } from 'lucide-react';
 import { stripAt } from '../types';
 import ProfileCard from './ProfileCard';
 import { getSessionId } from '../utils/auth';
+import { velumToast } from '../utils/toast';
 
 interface AdminUsersViewProps {
   adminRole: any;
@@ -396,13 +397,13 @@ export default function AdminUsersView({
                               });
                               const data = await res.json();
                               if (res.ok) {
-                                alert(`Enforcement credentials lifted matching ${stripAt(targetAccountName)}.`);
+                                velumToast.success(`Enforcement credentials lifted matching ${stripAt(targetAccountName)}.`);
                                 fetchData();
                               } else {
-                                alert(data.error || 'Failed to lift operational bounds.');
+                                velumToast.error(data.error || 'Failed to lift operational bounds.');
                               }
                             } catch {
-                              alert('Communication error.');
+                              velumToast.error('Communication error.');
                             }
                           }}
                           className="px-2.5 py-1 text-[9px] font-extrabold uppercase font-mono tracking-wider rounded-lg bg-status-online-bg hover:bg-status-online hover:text-text-primary text-status-online cursor-pointer transition whitespace-nowrap"
@@ -443,14 +444,14 @@ export default function AdminUsersView({
                                 method: 'POST'
                               });
                               if (res.ok) {
-                                alert(`Successfully restored ${u.username}.`);
+                                velumToast.success(`Successfully restored ${u.username}.`);
                                 fetchData();
                               } else {
                                 const errData = await res.json();
-                                alert(errData.error || 'Failed to restore user.');
+                                velumToast.error(errData.error || 'Failed to restore user.');
                               }
                             } catch {
-                              alert('Error restoring user.');
+                              velumToast.error('Error restoring user.');
                             }
                           }
                         }}

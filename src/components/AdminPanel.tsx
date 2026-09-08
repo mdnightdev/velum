@@ -23,6 +23,7 @@ import AdminProfile from './Admin/AdminProfile';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import SystemHealthTab from '../views/AdminControlDesk/SystemHealthTab';
 import { getSessionId } from '../utils/auth';
+import { velumToast } from '../utils/toast';
 
 import logoSvg from '../assets/logo.svg?raw';
 import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report, ClientDiagnosticLog } from '../types';
@@ -238,7 +239,7 @@ export default function AdminPanel({
         fetchData();
       }
     } catch {
-      alert('Failed to send reply.');
+      velumToast.error('Failed to send reply.');
     }
   };
 
@@ -283,14 +284,14 @@ export default function AdminPanel({
         if (action === 'approve') {
           setRestoreCode(data.tempCode);
         } else {
-          alert('Ticket denied.');
+          velumToast.info('Ticket denied.');
         }
         fetchData();
       } else {
-        alert(data.error || 'Operation denied.');
+        velumToast.error(data.error || 'Operation denied.');
       }
     } catch {
-      alert('Connection lost.');
+      velumToast.error('Connection lost.');
     }
   };
 

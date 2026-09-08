@@ -68,7 +68,7 @@ export class VelumV2Shell {
       await db.insert(auditLogs).values({
         logId: `al_${crypto.randomUUID().substring(0, 8)}_audit`,
         adminId: 1,
-        adminName: 'cli_admin',
+        adminName: 'Cli',
         action,
         targetId,
         reason
@@ -162,13 +162,13 @@ export class VelumV2Shell {
         return;
       }
 
-      const promptMsg = `${riskColor(risk)}[${risk} RISK ACTION]${theme.reset} Are you sure you want to execute "${ns}/${sub}"? (y/N): `;
+      const promptMsg = 'Ok to proceed? (y/n) ';
       this.rl.question(promptMsg, (answer) => {
         const confirmed = answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes';
         if (confirmed) {
           if (risk === 'CRITICAL') {
-            this.rl!.question(`${theme.boldAmber}Enter audit reason for CRITICAL override: ${theme.reset}`, (reason) => {
-              resolve({ confirmed: true, reason: reason.trim() || 'Manual CLI action' });
+            this.rl!.question(`${theme.boldAmber}Enter audit reason: ${theme.reset}`, (reason) => {
+              resolve({ confirmed: true, reason: reason.trim() || 'CLI action' });
             });
           } else {
             resolve({ confirmed: true, reason: 'CLI Override' });
@@ -357,7 +357,7 @@ export class VelumV2Shell {
       const { confirmed, reason } = await this.confirmAction(ns, sub, gateMeta.risk);
       if (!confirmed) return;
       if (reason) {
-        await this.logAudit(`${ns}/${sub}`, 'GATE_CONFIRMED', `Reason: ${reason}`);
+        await this.logAudit(`${ns}/${sub}`, 'CONFIRMED', `Reason: ${reason}`);
       }
     }
 
@@ -380,14 +380,14 @@ export class VelumV2Shell {
       return;
     }
 
-    console.log(`Command "${line}" not recognized in context "${this.currentPath}". Type "ls" or "help".`);
+    console.log(`Command "${line}"not recognized "${this.currentPath}". Type "ls" or "help".`);
   }
 
   private async handleUniversalCat(targetNs: string, targetId: string, flags: Record<string, string | boolean>): Promise<void> {
     const ns = targetNs === '/' ? '/users' : targetNs;
     const schema = SCHEMA_MAP[ns];
     if (!schema) {
-      console.log(`Namespace "${targetNs}" does not support entity inspection.`);
+      console.log(`Namespace "${targetNs}"not supported.`);
       return;
     }
 

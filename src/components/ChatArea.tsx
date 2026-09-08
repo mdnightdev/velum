@@ -391,7 +391,7 @@ export default function ChatArea({
           textToSend = `[Attachment: ${anonymousName} size:${selectedAttachment.size} type:${selectedAttachment.type || blob.type || 'image/webp'} url:${url}] ${inputText.trim()}`.trim();
         } catch (err) {
           log.error('Attachment upload failed', { error: (err as Error).message });
-          alert('Attachment upload failed. Please try again.');
+          velumToast.error('Attachment upload failed. Please try again.');
           return;
         }
       }
@@ -539,7 +539,7 @@ export default function ChatArea({
           const reason = prompt("Enter the reason for reporting :");
           if (reason === null) return;
           if (!reason.trim()) {
-            alert("reason is required.");
+            velumToast.error("Reason is required.");
             return;
           }
           try {
@@ -553,13 +553,13 @@ export default function ChatArea({
               body: JSON.stringify({ targetUserId: msg.user_id, reason: reason.trim() })
             });
             if (res.ok) {
-              alert(" reported submitted.");
+              velumToast.success("Report submitted.");
             } else {
               const errData = await res.json();
-              alert(errData.error || "Failed to submit report.");
+              velumToast.error(errData.error || "Failed to submit report.");
             }
           } catch {
-            alert("Network error reporting message.");
+            velumToast.error("Network error reporting message.");
           }
           setSelectedMessage(null);
         }}

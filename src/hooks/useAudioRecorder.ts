@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { initiateMicrophoneStream, terminateMicrophoneStream, cancelMicrophoneStream, pauseMicrophoneStream, resumeMicrophoneStream, getDraftAudioBlob } from '../utils/mediaPipeline';
+import { velumToast } from '../utils/toast';
 
 export function useAudioRecorder() {
   const [isRecording, setIsRecording] = useState(false);
@@ -90,7 +91,7 @@ export function useAudioRecorder() {
     try {
       const audioBlob = await terminateMicrophoneStream();
       if (audioBlob.size > 15 * 1024 * 1024) {
-        alert('Voice note exceeds 15MB limit. Please record a shorter message.');
+        velumToast.error('Voice note exceeds 15MB limit. Please record a shorter message.');
         return;
       }
       const seconds = secondsRef.current > 0 ? secondsRef.current : 1;

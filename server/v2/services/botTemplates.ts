@@ -97,28 +97,55 @@ export const BotTemplates = {
     ].join('\n');
   },
 
-  supportNominationApproved(username: string): string {
+  welcomeUser(username: string, recoveryKey: string): string {
     return [
-      `### Administrator Notice: Support Role Nomination Approved`,
-      `Hello ${username}, you have been approved for the Support Administrator role.`,
-      ``,
-      `**Next Steps:**`,
-      `1. Your credentials and recovery phrase have been generated.`,
-      `2. Please review and accept this role in your settings to activate access.`,
-      `3. If you decline, the credentials will be purged automatically.`
+      `Welcome to Velum, ${username}`,
+      `Your recovery key is: \`${recoveryKey}\``,
+      `Store this securely. It will not be shown again.`
     ].join('\n');
   },
 
-  supportNominationRevoked(username: string, reason: string): string {
+  supportNominationPending(): string {
     return [
-      `### Administrator Notice: Support Role Revoked`,
-      `Hello ${username}, your Support Administrator privileges have been revoked.`,
-      ``,
-      `**Details:**`,
-      `- **Reason:** ${reason}`,
-      `- **Status:** Returned to Standard User`,
-      ``,
-      `Your standard user account remains active.`
+      `You have been approved for the Support Admin role.`,
+      `To proceed, accept or decline this role.`
     ].join('\n');
+  },
+
+  supportNominationRejected(reason?: string): string {
+    return [
+      `Your Support Admin nomination was declined.`,
+      `Reason: ${reason || 'Standard operational review.'}`
+    ].join('\n');
+  },
+
+  supportNominationRevoked(reason?: string): string {
+    return [
+      `Your Support Admin privileges have been revoked.`,
+      `Reason: ${reason || 'Administrative action.'}`
+    ].join('\n');
+  },
+
+  supportCredentialsDelivered(creds: { username: string; password?: string; passcode?: string; recoveryKey: string; panicPhrase?: string }): string {
+    const lines = [
+      `Username: ${creds.username}`
+    ];
+    if (creds.password) lines.push(`Password: ${creds.password}`);
+    if (creds.passcode) lines.push(`Passcode: ${creds.passcode}`);
+    lines.push(`Recovery Key: \`${creds.recoveryKey}\``);
+    if (creds.panicPhrase) lines.push(`Panic Phrase: \`${creds.panicPhrase}\``);
+    return lines.join('\n');
+  },
+
+  supportNominationDeclinedUser(): string {
+    return `You have declined the Support Administrator role. Credentials have been purged.`;
+  },
+
+  supportNominationStatusToAdmin(username: string, userId: number, status: 'ACCEPTED' | 'DECLINED'): string {
+    return `Support role ${status}: @${username} (ID: ${userId})`;
+  },
+
+  emergencyPanicExecuted(): string {
+    return `Panic executed.`;
   }
 };

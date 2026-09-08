@@ -16,6 +16,7 @@ import { getPeerIdFromDmRoom } from '../../websocket/unreadManager.js';
 import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { SystemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
 import { clearUserChatHistory } from '../services/loungeService.js';
 import { dmService } from '../services/dmService.js';
 
@@ -605,21 +606,12 @@ userRouter.post('/nomination/accept', authMiddleware, async (req: Request, res: 
     const credentials = JSON.parse(nomination.credentials || '{}');
     
     // Deliver credentials via bot
-    await systemBot.sendToUser(userId,
-      `You have ACCEPTED the Velum Support Administrator role.\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `YOUR SUPPORT ADMIN CREDENTIALS:\n` +
-      `Username: ${credentials.username}\n` +
-      `Password: ${credentials.password}\n` +
-      `Recovery Key: ${credentials.recoveryKey}\n` +
-      `Panic Phrase: ${credentials.panicPhrase || 'N/A'}\n\n` +
-      `IMPORTANT:\n` +
-      `• This is a SEPARATE account from your regular user account\n` +
-      `• Use these credentials to access the Support Admin Panel\n` +
-      `• Your regular user account remains unchanged\n` +
-      `• Keep these credentials secure\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-    );
+    await systemBot.sendToUser(userId, BotTemplates.supportCredentialsDelivered({
+      username: credentials.username,
+      password: credentials.password,
+      recoveryKey: credentials.recoveryKey,
+      panicPhrase: credentials.panicPhrase
+    }));
     
     // Notify other admins
     const [userObj] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -630,12 +622,7 @@ userRouter.post('/nomination/accept', authMiddleware, async (req: Request, res: 
       )
     );
     for (const admin of admins) {
-      await systemBot.sendToUser(admin.id,
-        `Support Role ACCEPTED\n\n` +
-        `User: ${userObj?.username} (ID: ${userId})\n` +
-        `Status: Active support admin account initialized\n` +
-        `Time: ${new Date().toISOString()}`
-      );
+      await systemBot.sendToUser(admin.id, BotTemplates.supportNominationStatusToAdmin(userObj?.username || 'Unknown', userId, 'ACCEPTED'));
     }
     
     res.json({ success: true, message: 'Nomination accepted successfully.' });
@@ -677,11 +664,7 @@ userRouter.post('/nomination/decline', authMiddleware, async (req: Request, res:
     const systemBot = SystemBot.getInstance();
     
     // Notify user via bot
-    await systemBot.sendToUser(userId,
-      `You have DECLINED the Velum Support Administrator role.\n\n` +
-      `The support admin credentials have been purged from the system.\n\n` +
-      `Your regular user account remains unchanged and unaffected.`
-    );
+    await systemBot.sendToUser(userId, BotTemplates.supportNominationDeclinedUser());
     
     // Notify other admins
     const [userObj] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -692,12 +675,7 @@ userRouter.post('/nomination/decline', authMiddleware, async (req: Request, res:
       )
     );
     for (const admin of admins) {
-      await systemBot.sendToUser(admin.id,
-        `Support Role DECLINED\n\n` +
-        `User: ${userObj?.username} (ID: ${userId})\n` +
-        `Status: Nominated credentials purged\n` +
-        `Time: ${new Date().toISOString()}`
-      );
+      await systemBot.sendToUser(admin.id, BotTemplates.supportNominationStatusToAdmin(userObj?.username || 'Unknown', userId, 'DECLINED'));
     }
     
     res.json({ success: true, message: 'Nomination declined successfully.' });

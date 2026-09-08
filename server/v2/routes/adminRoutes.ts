@@ -10,6 +10,8 @@ import { getRedisClient } from '../db/redis.js';
 import type { Request, Response } from 'express';
 import { clientDiagnosticsList } from './ticketRoutes.js';
 import { SystemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
+import { SupportAdminNominationService } from '../services/supportAdminNominationService.js';
 import { getAuditLogs, recordAuditEvent } from '../services/auditService.js';
 import { hashArgon2id, generateRandomToken } from '../utils/crypto.js';
 import crypto from 'node:crypto';
@@ -302,76 +304,10 @@ adminRouter.post('/approve-nomination', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only CLI_ADMIN can approve nominations' });
     }
     
-    // Get nomination details
-    const [nomination] = await db.select().from(supportAdminNominations).where(eq(supportAdminNominations.id, nominationId)).limit(1);
-    if (!nomination) {
-      return res.status(404).json({ error: 'Nomination not found' });
+    const result = await SupportAdminNominationService.approveNomination(nominationId);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-    
-    if (nomination.status !== 'pending') {
-      return res.status(400).json({ error: 'Nomination is not in pending status' });
-    }
-    
-    // Get nominated user info
-    const [targetUser] = await db.select().from(users).where(eq(users.id, nomination.nominatedUserId)).limit(1);
-    if (!targetUser) {
-      return res.status(404).json({ error: 'Nominated user not found' });
-    }
-    
-    // Generate separate admin credentials (INACTIVE until user accepts)
-    const adminUsername = `Sa-${targetUser.username}`;
-    const adminPassword = `Sa-Vel-${generateSecurePassword()}`;
-    const adminSalt = crypto.randomBytes(16).toString('hex');
-    const adminPasswordHash = await hashArgon2id(adminPassword, Buffer.from(adminSalt, 'hex'));
-    const adminRecoveryKey = `Sa-Vel-Sup-${crypto.randomInt(10000, 99999)}`;
-    const adminRecoveryKeyHash = await hashArgon2id(adminRecoveryKey, Buffer.from(adminSalt, 'hex'));
-    const adminPanicPhrase = `Sa-P-${crypto.randomInt(100000, 999990)}`;
-    const adminPanicPhraseHash = await hashArgon2id(adminPanicPhrase, Buffer.from(adminSalt, 'hex'));
-    
-    // Create INACTIVE support admin account
-    const [newAdmin] = await db.insert(users).values({
-      username: adminUsername,
-      passwordHash: adminPasswordHash,
-      salt: adminSalt,
-      role: 'SUPPORT_ADMIN',
-      displayName: `${targetUser.displayName || targetUser.username} (Support)`,
-      recoveryKeyHash: adminRecoveryKeyHash,
-      panicPhraseHash: adminPanicPhraseHash,
-      duressActive: true // Mark as inactive/duress until accepted
-    }).returning();
-    
-    // Store credentials encrypted in nomination
-    const credentialsData = JSON.stringify({
-      username: adminUsername,
-      password: adminPassword,
-      recoveryKey: adminRecoveryKey,
-      panicPhrase: adminPanicPhrase
-    });
-    
-    // Update nomination with admin account and credentials
-    await db.update(supportAdminNominations)
-      .set({ 
-        status: 'approved',
-        adminAccountId: newAdmin.id,
-        credentials: credentialsData,
-        updatedAt: new Date()
-      })
-      .where(eq(supportAdminNominations.id, nominationId));
-    
-    // Send approval notification via Velum Bot (WITHOUT credentials yet)
-    const systemBot = SystemBot.getInstance();
-    await systemBot.sendToUser(nomination.nominatedUserId,
-      `You have been nominated and APPROVED for the Velum Support Administrator role.\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `NEXT STEPS:\n` +
-      `• Your support admin credentials have been generated\n` +
-      `• You must ACCEPT this role to activate your credentials\n` +
-      `• If you DECLINE, the credentials will be purged\n\n` +
-      `To ACCEPT or DECLINE this role, please respond to this message with:\n` +
-      `"!accept-support" or "!decline-support"\n\n` +
-      `This nomination will expire in 7 days if no action is taken.\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-    );
     
     res.json({ 
       success: true, 
@@ -388,36 +324,14 @@ adminRouter.post('/reject-nomination', async (req: Request, res: Response) => {
   try {
     const { nominationId, reason } = req.body;
     
-    // Verify only CLI_ADMIN can reject
     if (req.user!.role !== 'CLI_ADMIN') {
       return res.status(403).json({ error: 'Only CLI_ADMIN can reject nominations' });
     }
     
-    // Get nomination details
-    const [nomination] = await db.select().from(supportAdminNominations).where(eq(supportAdminNominations.id, nominationId)).limit(1);
-    if (!nomination) {
-      return res.status(404).json({ error: 'Nomination not found' });
+    const result = await SupportAdminNominationService.rejectNomination(nominationId, reason);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-    
-    if (nomination.status !== 'pending') {
-      return res.status(400).json({ error: 'Nomination is not in pending status' });
-    }
-    
-    // Update nomination status
-    await db.update(supportAdminNominations)
-      .set({ 
-        status: 'rejected',
-        updatedAt: new Date()
-      })
-      .where(eq(supportAdminNominations.id, nominationId));
-    
-    // Notify user via Velum Bot
-    const systemBot = SystemBot.getInstance();
-    await systemBot.sendToUser(nomination.nominatedUserId,
-      `Your nomination for the Velum Support Administrator role has been declined.\n\n` +
-      `Reason: ${reason || 'No reason provided'}\n\n` +
-      `Your regular user account remains unchanged and unaffected.`
-    );
     
     res.json({ 
       success: true, 
@@ -434,44 +348,14 @@ adminRouter.post('/demote-support', async (req: Request, res: Response) => {
   try {
     const { targetUserId } = req.body;
     
-    // Verify only CLI_ADMIN can demote
     if (req.user!.role !== 'CLI_ADMIN') {
       return res.status(403).json({ error: 'Only CLI_ADMIN can demote support admins' });
     }
     
-    // Get target user info
-    const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
-    if (!targetUser) {
-      return res.status(404).json({ error: 'User not found' });
+    const result = await SupportAdminNominationService.demoteSupportAdmin(targetUserId, 'Demoted by CLI_ADMIN');
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-    
-    // Find and delete support admin account
-    const adminUsername = `support_${targetUser.username}`;
-    const deletedAdmin = await db.delete(users).where(
-      and(
-        eq(users.username, adminUsername),
-        eq(users.role, 'SUPPORT_ADMIN')
-      )
-    ).returning();
-    
-    if (deletedAdmin.length === 0) {
-      return res.status(404).json({ error: 'Support admin account not found' });
-    }
-    
-    // Update any related nominations
-    await db.update(supportAdminNominations)
-      .set({ 
-        status: 'revoked',
-        updatedAt: new Date()
-      })
-      .where(eq(supportAdminNominations.nominatedUserId, targetUserId));
-    
-    // Notify user via Velum Bot
-    const systemBot = SystemBot.getInstance();
-    await systemBot.sendToUser(targetUserId,
-      `Your Support Administrator access has been revoked by CLI_ADMIN.\n\n` +
-      `Your regular user account remains unchanged and unaffected.`
-    );
     
     res.json({ 
       success: true, 

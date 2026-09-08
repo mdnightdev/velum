@@ -10,6 +10,7 @@ import type { RegisterInput, LoginInput, UpdateProfileInput } from '../schemas/a
 import { deviceFingerprintService } from '../services/deviceFingerprint.js';
 import { ensureAdminSeeded } from '../services/adminSeeder.js';
 import { systemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
 
 import crypto from 'node:crypto';
 
@@ -283,22 +284,6 @@ export class AuthController {
       userAgent: userAgentStr
     });
 
-    await systemBot.sendToUser(newUser.id,
-      `Welcome to Velum, ${username}!\n\n` +
-      `Your recovery key is: ${recoveryKey}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `GETTING STARTED:\n` +
-      `• Join lounges to connect with communities\n` +
-      `• Send direct messages to other users\n` +
-      `• Check your Velum Bot DM for system notifications\n\n` +
-      `SECURITY:\n` +
-      `• Save your recovery key securely\n` +
-      `• Never share your credentials\n` +
-      `• Use emergency phrase if compromised\n\n` +
-      `Need help? Contact an administrator.\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-    );
-
     res.status(201).json({
       token,
       user: {
@@ -434,7 +419,7 @@ export class AuthController {
     });
 
     if (!user.recoveryKeyDelivered && user.recoveryKey) {
-      systemBot.sendToUser(user.id, `Welcome to Velum. Your recovery key is: ${user.recoveryKey}. Store this securely. You will not receive it again.`);
+      systemBot.sendToUser(user.id, BotTemplates.welcomeUser(user.username, user.recoveryKey));
       await userRepository.update(user.id, { recoveryKeyDelivered: true });
     }
 

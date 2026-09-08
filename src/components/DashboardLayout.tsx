@@ -16,6 +16,7 @@ import { MessageSquare, Globe, ShoppingBag, Bell, Menu, Users } from 'lucide-rea
 import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
 import { getLocalKV, setLocalKV, flushLoungeCache, purgeDmMessages } from '../utils/indexedDb';
+import { velumToast } from '../utils/toast';
 
 interface DashboardLayoutProps {
   user: any;
@@ -272,11 +273,12 @@ export default function DashboardLayout({
       if (res.ok) {
         loadPeopleAndRequests();
         const msg = action === 'accepted' ? 'Request accepted.' : 'Request declined.';
+        velumToast.success(msg);
       } else {
         const err = await res.json();
         // Ignore "already accepted" duplicate errors silently
         if (!err.error?.includes('already')) {
-          window.alert(err.error || 'Response error');
+          velumToast.error(err.error || 'Response error');
         }
       }
     } catch (err) {
@@ -303,10 +305,10 @@ export default function DashboardLayout({
       });
       if (res.ok) {
         loadPeopleAndRequests();
-        window.alert('Friend request sent.');
+        velumToast.success('Friend request sent.');
       } else {
         const err = await res.json();
-        window.alert(err.error || 'Failed to send request.');
+        velumToast.error(err.error || 'Failed to send request.');
       }
     } catch (err) {
       console.error('Failed to send request:', err);

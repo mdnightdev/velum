@@ -1,5 +1,6 @@
 import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
+import { dms } from '../db/schema/dms.js';
 import { loungeMuteSettings } from '../db/schema/lounge_mutes.js';
 import { userReadCursors } from '../db/schema/read_cursors.js';
 import { userChatClears } from '../db/schema/chat_clears.js';
@@ -7,7 +8,7 @@ import { users } from '../db/schema/users.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { loungeRepository } from '../repositories/loungeRepository.js';
 import { generateSecureInviteCode } from '../utils/crypto.js';
-import { eq, gt, and, desc, like, inArray, sql } from 'drizzle-orm';
+import { eq, gt, and, or, desc, like, inArray, sql } from 'drizzle-orm';
 
 export const SYSTEM_ADMIN_ROLES = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
 export const SYSTEM_ADMIN_USERNAMES = ['lexie', 'midnight'];
@@ -195,6 +196,36 @@ export async function getConversationsSummary(currentUserId?: number) {
         deliveredTo: lastMsg.deliveredTo,
         readBy: lastMsg.readBy,
         created_at: lastMsg.createdAt ? new Date(lastMsg.createdAt).toISOString() : new Date().toISOString()
+      };
+    }
+  }
+
+  if (currentUserId) {
+    const [velumDm] = await db
+      .select()
+      .from(dms)
+      .where(
+        or(
+          and(eq(dms.sender, currentUserId), eq(dms.peer, 999)),
+          and(eq(dms.sender, 999), eq(dms.peer, currentUserId))
+        )
+      )
+      .orderBy(desc(dms.id))
+      .limit(1);
+
+    if (velumDm) {
+      const velumRoomId = `dm_velum_${currentUserId}`;
+      summary[velumRoomId] = {
+        message_id: velumDm.id.toString(),
+        room_id: velumRoomId,
+        lounge_id: velumRoomId,
+        user_id: velumDm.sender,
+        username: velumDm.sender === 999 ? 'Velum' : 'You',
+        content: velumDm.body,
+        is_encrypted: !!velumDm.encrypted,
+        deliveredTo: velumDm.deliveredAt ? velumDm.deliveredAt.toISOString() : '',
+        readBy: velumDm.readAt ? velumDm.readAt.toISOString() : '',
+        created_at: velumDm.created ? velumDm.created.toISOString() : new Date().toISOString()
       };
     }
   }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, ChevronLeft, Search, Clock } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { velumToast } from '../../utils/toast';
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getSessionId } from '../../utils/auth';
@@ -110,15 +110,15 @@ export default function TicketsMainDashboard({
         setReason('');
         setCredentials('');
         setIssueType('general_support');
-        toast('Support ticket submitted successfully.');
+        velumToast.success('Support ticket submitted successfully.');
         await loadTickets();
         setIsCreating(false);
       } else {
         const data = await res.json();
-        toast(data.error || 'Failed to submit ticket.');
+        velumToast.error(data.error || 'Failed to submit ticket.');
       }
     } catch (err) {
-      toast('Network error occurred while submitting ticket.');
+      velumToast.error('Network error occurred while submitting ticket.');
     } finally {
       setIsSubmitting(false);
     }
@@ -139,10 +139,10 @@ export default function TicketsMainDashboard({
           loadTickets();
         } else {
           const data = await res.json();
-          alert(data.error || 'Failed to submit reply.');
+          velumToast.error(data.error || 'Failed to submit reply.');
         }
       } catch (err) {
-        alert('Network error occurred while submitting reply.');
+        velumToast.error('Network error occurred while submitting reply.');
       }
     }
   };
@@ -157,15 +157,15 @@ export default function TicketsMainDashboard({
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
-        toast('Ticket deleted permanently.');
+        velumToast.success('Ticket deleted permanently.');
         if (activeTicketId === ticketId) setActiveTicketId(null);
         loadTickets();
       } else {
         const data = await res.json();
-        toast(data.error || 'Failed to delete ticket.');
+        velumToast.error(data.error || 'Failed to delete ticket.');
       }
     } catch (err) {
-      toast('Network error occurred while deleting ticket.');
+      velumToast.error('Network error occurred while deleting ticket.');
     }
   };
 

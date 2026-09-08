@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlus, Unlock, Sliders, Megaphone } from 'lucide-react';
+import { velumToast } from '../../utils/toast';
 
 interface AdminSystemProps {
   adminId: number;
@@ -42,16 +43,16 @@ export default function AdminSystem({
         setNewCodeInfo(data.code);
         fetchData();
       } else {
-        alert(data.error || 'Failed to create invite.');
+        velumToast.error(data.error || 'Failed to create invite.');
       }
     } catch {
-      alert('Connection error.');
+      velumToast.error('Connection error.');
     }
   };
 
   const handleSendBroadcast = async () => {
     if (!broadcastMsg.trim()) {
-      alert('Broadcast message cannot be empty.');
+      velumToast.error('Broadcast message cannot be empty.');
       return;
     }
     try {
@@ -65,16 +66,16 @@ export default function AdminSystem({
         })
       });
       if (res.ok) {
-        alert('Broadcast sent successfully.');
+        velumToast.success('Broadcast sent successfully.');
         setBroadcastMsg('');
         setBroadcastRoomId('');
         setBroadcastUserId('');
       } else {
         const data = await res.json();
-        alert(data.error || 'Failed to send broadcast.');
+        velumToast.error(data.error || 'Failed to send broadcast.');
       }
     } catch {
-      alert('Connection error.');
+      velumToast.error('Connection error.');
     }
   };
 
@@ -160,7 +161,7 @@ export default function AdminSystem({
                   <button
                     onClick={() => {
                       setIsGatewayLocked(false);
-                      alert('Maintenance mode disabled.');
+                      velumToast.info('Maintenance mode disabled.');
                     }}
                     className="w-full bg-status-online hover:bg-status-online/80 text-text-primary font-semibold py-2 rounded-lg transition cursor-pointer text-xs"
                   >
@@ -170,7 +171,7 @@ export default function AdminSystem({
                   <button
                     onClick={() => {
                       setIsGatewayLocked(true);
-                      alert('Maintenance mode enabled.');
+                      velumToast.info('Maintenance mode enabled.');
                     }}
                     className="w-full bg-status-dnd hover:bg-status-dnd/80 text-text-primary font-semibold py-2 rounded-lg transition cursor-pointer text-xs"
                   >

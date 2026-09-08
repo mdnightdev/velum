@@ -1,3 +1,5 @@
+import zxcvbn from 'zxcvbn';
+
 export async function computeClientHash(secret: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(salt + secret);
@@ -22,12 +24,7 @@ export function checkPasswordStrength(password: string): string | null {
   if (!/[0-9]/.test(password)) {
     return 'Password must contain at least one number.';
   }
-  const weakPasswords = [
-    'password', '12345678', '123456789', '1234567890', 'qwertyuiop',
-    'password123', 'admin123', 'admin1234', 'welcome123', 'letmein123',
-    'qwerty123', 'iloveyou', 'passcode123', 'velum123', 'password1'
-  ];
-  if (weakPasswords.includes(password.toLowerCase())) {
+  if (zxcvbn(password).score < 2) {
     return 'The password chosen is too common or weak.';
   }
   return null;

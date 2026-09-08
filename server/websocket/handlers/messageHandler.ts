@@ -31,7 +31,8 @@ export async function handleAddReaction(client: ClientConnection, message: any) 
     const roomId = message.room_id;
     if (isNaN(messageId) || !emoji || !roomId || !client.userId) return;
 
-    const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+    const isDm = peerId !== null;
 
     if (isDm) {
       const [dmMsg] = await executeWithRetry(() =>
@@ -185,7 +186,8 @@ export async function handleEditMessage(client: ClientConnection, message: any) 
     );
 
     if (!originalMsg) {
-      const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+      const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+      const isDm = peerId !== null;
       if (isDm) {
         const [dmMsg] = await executeWithRetry(() =>
           db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
@@ -294,7 +296,8 @@ export async function handleDeleteMessage(client: ClientConnection, message: any
     );
 
     if (!originalMsg) {
-      const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+      const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+      const isDm = peerId !== null;
       if (isDm) {
         const [dmMsg] = await executeWithRetry(() =>
           db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
@@ -420,45 +423,38 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
   if (!roomId) return;
 
   try {
-    const isDm = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
-    if (isDm) {
-      const parts = roomId.replace('dm_', '').split('_');
-      const peerId = parts.length === 2
-        ? (Number(parts[0]) === client.userId ? Number(parts[1]) : Number(parts[0]))
-        : Number(parts[0]);
+    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+    if (peerId !== null && peerId > 0) {
+      const dmMessages = await dmService.getConversation(client.userId, peerId, limit);
+      const sinceId = sinceSeq; // In DMs, sequence is the message id
+      const filtered = sinceId > 0 ? dmMessages.filter(d => d.id > sinceId) : dmMessages;
+      const formatted = filtered.map(d => ({
+        id: d.id,
+        message_id: String(d.id),
+        db_message_id: d.id,
+        room_id: roomId,
+        lounge_id: roomId,
+        user_id: d.sender,
+        username: d.sender === client.userId ? (client.username || 'You') : (d.sender === 999 ? 'Velum' : `User #${d.sender}`),
+        content: d.body,
+        sequence_id: d.id,
+        client_msg_id: undefined,
+        is_encrypted: !!d.encrypted,
+        reply_to: d.replyTo || null,
+        timestamp: d.created ? d.created.toISOString() : new Date().toISOString(),
+        status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
+      }));
 
-      if (!isNaN(peerId) && peerId > 0) {
-        const dmMessages = await dmService.getConversation(client.userId, peerId, limit);
-        const sinceId = sinceSeq; // In DMs, sequence is the message id
-        const filtered = sinceId > 0 ? dmMessages.filter(d => d.id > sinceId) : dmMessages;
-        const formatted = filtered.map(d => ({
-          id: d.id,
-          message_id: String(d.id),
-          db_message_id: d.id,
+      const maxId = dmMessages.length > 0 ? Math.max(...dmMessages.map(d => d.id)) : 0;
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify({
+          type: 'sync_response',
           room_id: roomId,
-          lounge_id: roomId,
-          user_id: d.sender,
-          username: d.sender === client.userId ? (client.username || 'You') : `User #${d.sender}`,
-          content: d.body,
-          sequence_id: d.id,
-          client_msg_id: undefined,
-          is_encrypted: !!d.encrypted,
-          reply_to: d.replyTo || null,
-          timestamp: d.created ? d.created.toISOString() : new Date().toISOString(),
-          status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
+          messages: formatted,
+          max_seq: maxId
         }));
-
-        const maxId = dmMessages.length > 0 ? Math.max(...dmMessages.map(d => d.id)) : 0;
-        if (client.ws.readyState === WebSocket.OPEN) {
-          client.ws.send(JSON.stringify({
-            type: 'sync_response',
-            room_id: roomId,
-            messages: formatted,
-            max_seq: maxId
-          }));
-        }
-        return;
       }
+      return;
     }
 
     const loungeId = await getLoungeIdFromRoomId(roomId);
@@ -659,18 +655,16 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
   }
   members.add(client.ws);
 
-  if (roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_')) {
-    const peerId = parseInt(roomId.replace('dm_', ''), 10);
-    if (!isNaN(peerId) && peerId > 0) {
-      await handleDirectMessage(client, {
-        to: peerId,
-        body: message.content || '',
-        enc: message.is_encrypted,
-        reply_to: message.reply_to,
-        client_msg_id: clientMsgId
-      });
-      return;
-    }
+  const dmPeerId = getPeerIdFromDmRoom(roomId, client.userId);
+  if (dmPeerId !== null && dmPeerId > 0) {
+    await handleDirectMessage(client, {
+      to: dmPeerId,
+      body: message.content || '',
+      enc: message.is_encrypted,
+      reply_to: message.reply_to,
+      client_msg_id: clientMsgId
+    });
+    return;
   }
 
   // Hard-block raw base64 data URIs from entering database storage

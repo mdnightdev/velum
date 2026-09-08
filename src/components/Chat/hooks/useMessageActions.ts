@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Message } from '../../../types';
 import { parseAttachment } from '../../../utils/messageParser';
+import { velumToast } from '../../../utils/toast';
 
 export function useMessageActions() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -69,7 +70,7 @@ export function useMessageActions() {
     const timestampMs = typeof msg.timestamp === 'number' ? msg.timestamp : new Date(msg.timestamp).getTime();
     const timeDiffMinutes = (Date.now() - timestampMs) / (1000 * 60);
     if (timeDiffMinutes > 15) {
-      alert('Message editing window (15 minutes) has expired.');
+      velumToast.error('Message editing window (15 minutes) has expired.');
       return;
     }
     setEditingMessageId(msg.message_id);

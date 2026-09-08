@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { getSessionId } from '../../utils/auth';
+import { velumToast } from '../../utils/toast';
 
 interface PrivateSubloungeBannerProps {
   activeRoom: any;
@@ -58,7 +59,7 @@ export default function PrivateSubloungeBanner({
   };
 
   const handleRequestDeletion = () => {
-    alert(`System Admin Request Submitted: A request to delete private sublounge "${activeRoom.name}" has been logged for system administrator review.`);
+    velumToast.info(`System Admin Request Submitted: A request to delete private sublounge "${activeRoom.name}" has been logged for system administrator review.`);
   };
 
   // Only show invite code banner to the sublounge creator/owner or system admins

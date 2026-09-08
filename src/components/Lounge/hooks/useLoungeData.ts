@@ -3,6 +3,7 @@ import { useLoungeSettings } from './useLoungeSettings';
 import { streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
 import { getSessionId } from '../../../utils/auth';
 import { storage } from '../../../services/storageService';
+import { velumToast } from '../../../utils/toast';
 
 interface UseLoungeDataOptions {
   loungeId: string;
@@ -282,7 +283,7 @@ export function useLoungeData({
         }
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to apply sanction.');
+        velumToast.error(err.error || 'Failed to apply sanction.');
       }
     } catch (err) {
       console.error('Error sanctioning member:', err);
@@ -543,12 +544,12 @@ export function useLoungeData({
         return true;
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to delete lounge.');
+        velumToast.error(err.error || 'Failed to delete lounge.');
         return false;
       }
     } catch (err) {
       console.error('Error deleting lounge:', err);
-      alert('Error deleting lounge.');
+      velumToast.error('Error deleting lounge.');
       return false;
     }
   };
@@ -573,12 +574,12 @@ export function useLoungeData({
         return true;
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to delete room.');
+        velumToast.error(err.error || 'Failed to delete room.');
         return false;
       }
     } catch (err) {
       console.error('Error deleting room:', err);
-      alert('Error deleting room.');
+      velumToast.error('Error deleting room.');
       return false;
     }
   };

@@ -8,6 +8,7 @@ import { enqueueOutboxMessage, removeOutboxMessage, drainOutboxQueue } from '../
 import { storage } from '../services/storageService';
 import { handleInboundMessageNotification, updateAppBadge, dismissDeliveredNotification } from '../utils/notifications';
 import { useChatStore } from '../stores/chatStore';
+import { velumToast } from '../utils/toast';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -81,9 +82,12 @@ export function useWebSocket({
       const sessionToken = storage.getItem('velum-sessionId') || '';
       
       try {
-        const isDm = activeRoomId.startsWith('dm_') && !activeRoomId.startsWith('dm_velum_');
+        const isVelumDm = activeRoomId.startsWith('dm_velum_') || activeRoomId === 'dm_999';
+        const isDm = activeRoomId.startsWith('dm_');
         let url = `/v2/lounges/${activeRoomId}/messages`;
-        if (isDm) {
+        if (isVelumDm) {
+          url = `/v2/dm/999`;
+        } else if (isDm) {
           const parts = activeRoomId.replace('dm_', '').split('_');
           const peerId = parts.length === 2
             ? (Number(parts[0]) === userId ? parts[1] : parts[0])
@@ -108,7 +112,7 @@ export function useWebSocket({
             room_id: activeRoomId,
             lounge_id: activeRoomId,
             user_id: d.sender,
-            username: d.sender === userId ? 'You' : `User #${d.sender}`,
+            username: d.sender === userId ? 'You' : (d.sender === 999 ? 'Velum' : `User #${d.sender}`),
             content: d.body,
             sequence_id: d.id,
             is_encrypted: !!d.encrypted,
@@ -425,11 +429,11 @@ export function useWebSocket({
             appendMessage(systemMsg);
           }
         } else if (data.type === 'kicked_alert') {
-          alert('You have been kicked from this room.');
+          velumToast.error('You have been kicked from this room.');
         } else if (data.type === 'banned_alert') {
-          alert(`Account suspended. Reason: ${data.reason}`);
+          velumToast.error(`Account suspended. Reason: ${data.reason}`);
         } else if (data.type === 'compromised_alert' || data.type === 'panic_triggered') {
-          alert('Your session has ended. Please log in again.');
+          velumToast.error('Your session has ended. Please log in again.');
           if (onSessionCompromised) {
             onSessionCompromised();
           }
@@ -446,7 +450,7 @@ export function useWebSocket({
           )) {
             console.warn('Suppressed socket connection payload alert:', data.message);
           } else {
-            alert(`Error: ${data.message}`);
+            velumToast.error(`Error: ${data.message}`);
           }
         } else if (data.type === 'message_ack' || data.type === 'dm_ack') {
           const ackClientId = data.client_msg_id || data.nonce;

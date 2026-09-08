@@ -1,5 +1,6 @@
 import { broadcastToRoom, connectedClients } from '../../websocket.js';
 import { dmService } from './dmService.js';
+import { BotTemplates } from './botTemplates.js';
 
 export class SystemBot {
   private static instance: SystemBot;
@@ -72,7 +73,7 @@ export class SystemBot {
       timestamp: new Date().toISOString()
     };
     this.sendSystemAlert('admin_control_desk', `[DURESS_ALERT] User ${userId} triggered panic protocol. Ticket: ${ticketId}`);
-    this.sendToUser(userId, `[SECURITY_SYSTEM] Emergency panic protocol executed. Reference ticket: ${ticketId}`);
+    this.sendToUser(userId, BotTemplates.emergencyPanicExecuted());
   }
 
   dispatchAdminEscalation(ticketId: string, priority: string, details: string) {

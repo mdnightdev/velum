@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Search, Filter, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { getSessionId } from '../utils/auth';
+import { velumToast } from '../utils/toast';
 
 interface AdminVerificationViewProps {
   adminRole: 'SUPPORT_ADMIN' | 'LOGIN_ADMIN' | 'CLI_ADMIN';
@@ -67,11 +68,13 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
       });
       if (res.ok) {
         loadVerificationQueue();
+        velumToast.success(`Listing marked as ${decision}.`);
       } else {
-        alert('Failed to submit review');
+        velumToast.error('Failed to submit review');
       }
     } catch (e) {
       console.error(e);
+      velumToast.error('Network error submitting review');
     }
   };
 
@@ -86,14 +89,15 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || 'Failed to resolve dispute');
+        velumToast.error(data.error || 'Failed to resolve dispute');
       } else {
         loadVerificationQueue();
         setSelectedDispute(null);
+        velumToast.success('Dispute resolved successfully');
       }
     } catch (e) {
       console.error(e);
-      alert('Network error resolving dispute');
+      velumToast.error('Network error resolving dispute');
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Users, Search, UserCheck, Trash2, Lock, Unlock } from 'lucide-react';
+import { velumToast } from '../../utils/toast';
 
 interface AdminUsersProps {
   userSearch: string;
@@ -295,14 +296,14 @@ export default function AdminUsers({
                                     method: 'POST',
                                   });
                                   if (res.ok) {
-                                    alert(`User ${u.username} deleted successfully.`);
+                                    velumToast.success(`User ${u.username} deleted successfully.`);
                                     fetchData();
                                   } else {
                                     const errData = await res.json();
-                                    alert(errData.error || 'Delete failed.');
+                                    velumToast.error(errData.error || 'Delete failed.');
                                   }
                                 } catch {
-                                  alert('Server unreachable.');
+                                  velumToast.error('Server unreachable.');
                                 }
                               }}
                               className="p-1.5 rounded-lg bg-status-dnd/10 text-status-dnd hover:bg-status-dnd/20 transition cursor-pointer"
@@ -326,14 +327,14 @@ export default function AdminUsers({
                                     method: 'PATCH',
                                   });
                                   if (res.ok) {
-                                    alert(`User ${u.username} ${action}ed successfully.`);
+                                    velumToast.success(`User ${u.username} ${action}ed successfully.`);
                                     fetchData();
                                   } else {
                                     const errData = await res.json();
-                                    alert(errData.error || `${action} failed.`);
+                                    velumToast.error(errData.error || `${action} failed.`);
                                   }
                                 } catch {
-                                  alert('Server unreachable.');
+                                  velumToast.error('Server unreachable.');
                                 }
                               }}
                               className={`p-1.5 rounded-lg transition cursor-pointer ${
@@ -367,14 +368,14 @@ export default function AdminUsers({
                                       }),
                                     });
                                     if (res.ok) {
-                                      alert(`Nominated @${u.username} for Support Admin!`);
+                                      velumToast.success(`Nominated @${u.username} for Support Admin!`);
                                       fetchData();
                                     } else {
                                       const errData = await res.json();
-                                      alert(errData.error || 'Nomination rejected.');
+                                      velumToast.error(errData.error || 'Nomination rejected.');
                                     }
                                   } catch {
-                                    alert('Server unreachable.');
+                                    velumToast.error('Server unreachable.');
                                   }
                                 }}
                                 className="p-1.5 rounded-lg border border-accent-20 bg-accent-10 hover:bg-accent text-accent hover:text-text-primary transition cursor-pointer"

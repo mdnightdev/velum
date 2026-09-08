@@ -9,6 +9,7 @@ import { users } from '../db/schema/users.js';
 import { eq } from 'drizzle-orm';
 import { hashArgon2id, generateRandomToken, generateRecoveryKey } from '../utils/crypto.js';
 import { systemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
 
 import { executeEmergencyWipe } from '../services/duress/panicService.js';
 
@@ -157,8 +158,13 @@ authRouter.post('/promote-to-support-admin', authMiddleware, async (req, res, ne
     }).returning();
 
     // Send credentials to original user's VELUM bot DM
-    const credentialMessage = `Congratulations! You have been promoted to Support Admin.\n\nYour new SUPPORT_ADMIN account credentials:\n\nUsername: ${saUsername}\nPassword: ${saPassword}\nPasscode: ${saPasscode}\nPanic Phrase: ${saPanicPhrase}\nRecovery Key: ${saRecoveryKey}\n\nUse these credentials to access the admin panel. Your original user account remains active. Store these credentials securely.`;
-    await systemBot.sendToUser(targetUserId, credentialMessage);
+    await systemBot.sendToUser(targetUserId, BotTemplates.supportCredentialsDelivered({
+      username: saUsername,
+      password: saPassword,
+      passcode: saPasscode,
+      recoveryKey: saRecoveryKey,
+      panicPhrase: saPanicPhrase
+    }));
 
     res.status(201).json({
       message: 'User promoted to SUPPORT_ADMIN successfully',
