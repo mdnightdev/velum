@@ -1,5 +1,5 @@
-export function formatMessageTimestamp(timestamp: string | number | null | undefined): string {
-  if (!timestamp) return '';
+function parseTimestamp(timestamp: string | number | null | undefined): Date | null {
+  if (!timestamp) return null;
   let date: Date;
   if (typeof timestamp === 'number') {
     date = new Date(timestamp);
@@ -11,7 +11,25 @@ export function formatMessageTimestamp(timestamp: string | number | null | undef
       date = new Date(timestamp);
     }
   }
-  if (isNaN(date.getTime())) return '';
+  return isNaN(date.getTime()) ? null : date;
+}
+
+function formatHoursMinutes(date: Date): string {
+  let hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'pm' : 'am';
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
+
+export function safeFormatTimeOnly(timestamp: string | number | null | undefined): string {
+  const date = parseTimestamp(timestamp);
+  return date ? formatHoursMinutes(date) : '';
+}
+
+export function formatMessageTimestamp(timestamp: string | number | null | undefined): string {
+  const date = parseTimestamp(timestamp);
+  if (!date) return '';
 
   const now = new Date();
   const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -21,12 +39,7 @@ export function formatMessageTimestamp(timestamp: string | number | null | undef
   const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
 
   if (diffDays === 0) {
-    let hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'pm' : 'am';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${hours}:${minutes} ${ampm}`;
+    return formatHoursMinutes(date);
   } else if (diffDays === 1) {
     return 'Yesterday';
   } else if (diffDays < 7 && diffDays > 0) {
@@ -37,26 +50,3 @@ export function formatMessageTimestamp(timestamp: string | number | null | undef
     return `${date.getDate()} ${months[date.getMonth()]}`;
   }
 }
-
-export function safeFormatTimeOnly(timestamp: string | number | null | undefined): string {
-  if (!timestamp) return '';
-  let date: Date;
-  if (typeof timestamp === 'number') {
-    date = new Date(timestamp);
-  } else {
-    const num = Number(timestamp);
-    if (!isNaN(num) && String(num) === String(timestamp).trim()) {
-      date = new Date(num);
-    } else {
-      date = new Date(timestamp);
-    }
-  }
-  if (isNaN(date.getTime())) return '';
-  let hours = date.getHours();
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const ampm = hours >= 12 ? 'pm' : 'am';
-  hours = hours % 12;
-  hours = hours ? hours : 12;
-  return `${hours}:${minutes} ${ampm}`;
-}
-
