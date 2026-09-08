@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { RotateCcw, Check } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 
 export interface ImageCropperModalProps {
   imageSrc: string;
@@ -32,7 +32,7 @@ export function ImageCropperModal({
   const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [aspect, setAspect] = useState<Aspect>(aspectRatio);
+  const [aspect] = useState<Aspect>(aspectRatio);
   const [crop, setCrop] = useState<Rect>({ x: 0, y: 0, w: 0, h: 0 });
 
   useLayoutEffect(() => {
@@ -228,7 +228,7 @@ export function ImageCropperModal({
   ] : [];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black select-none">
+    <div className="fixed inset-0 z-[990] flex items-center justify-center bg-black select-none">
       <div className="w-full h-full max-w-lg max-h-[100dvh] flex flex-col">
         {/* Crop stage — fills nearly the whole screen, no header bar at all */}
         <div
@@ -315,12 +315,12 @@ export function ImageCropperModal({
           </button>
         </div>
 
-        {/* Bottom strip — aspect pills + rotate, no border/box, just floating on black */}
-          <div>
+        {/* Bottom strip — rotate only */}
+        <div className="flex items-center justify-end gap-3 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
           <button
             type="button"
             onClick={() => setRotation((r) => (r + 90) % 360)}
-            className="text-white/80 hover:text-white transition cursor-pointer p-1"
+            className="text-white/80 hover:text-white transition cursor-pointer p-1 shrink-0"
             title="Rotate 90°"
           >
             <RotateCcw className="w-5 h-5" />

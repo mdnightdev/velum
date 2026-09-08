@@ -6,20 +6,61 @@ interface UploadConfig {
   relativeDbPath: string;
 }
 
+const KNOWN_MEDIA_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg',
+  'webm', 'mp4', 'mov', 'mkv', 'm4v', 'ogg',
+  'mp3', 'm4a', 'wav',
+  'pdf', 'txt', 'csv', 'json', 'doc', 'docx', 'xls', 'xlsx',
+]);
+
+/**
+ * Normalize MIME subtypes / filenames into a safe upload extension.
+ * `audio/webm;codecs=opus` → `webm` (never `webmcodecsopus`).
+ */
+export function sanitizeMediaExtension(extOrMime: string, fallback = 'bin'): string {
+  let raw = (extOrMime || '').trim().toLowerCase();
+  if (!raw) return fallback;
+
+  if (raw.includes('/')) {
+    raw = raw.split('/').pop() || raw;
+  }
+  raw = raw.split(';')[0].trim().replace(/^\./, '');
+
+  const cleaned = raw.replace(/[^a-z0-9]/g, '');
+  if (!cleaned) return fallback;
+  if (KNOWN_MEDIA_EXTENSIONS.has(cleaned)) return cleaned === 'jpeg' ? 'jpg' : cleaned;
+
+  // Recover when codecs/params were concatenated before sanitizing (legacy bug).
+  for (const ext of [
+    'webm', 'webp', 'jpeg', 'jpg', 'png', 'gif', 'mp4', 'm4a', 'm4v',
+    'ogg', 'mp3', 'wav', 'mov', 'mkv', 'pdf', 'docx', 'xlsx', 'csv', 'json', 'txt', 'svg',
+  ]) {
+    if (cleaned.startsWith(ext)) return ext === 'jpeg' ? 'jpg' : ext;
+  }
+
+  return fallback;
+}
+
 /**
  * Generates an anonymous, compact collision-resistant filename.
  * Formats: img_[id10].[ext], aud_[id10].[ext], vid_[id10].[ext], doc_[id10].[ext]
  * Guarantees zero leakage of client device timestamps, camera models, app names, or phone numbers.
  */
 export function generateAnonymousFilename(fileExtension: string, mimeTypeOrCategory?: string): string {
-  const cleanExt = (fileExtension || 'bin').replace(/^\./, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const hint = (mimeTypeOrCategory || fileExtension || '').toLowerCase();
+  const fallback =
+    hint.includes('audio') || hint.includes('voice') ? 'webm' :
+    hint.includes('video') ? 'mp4' :
+    hint.includes('image') ? 'webp' :
+    'bin';
+  const cleanExt = sanitizeMediaExtension(fileExtension, fallback) || fallback;
+
   let prefix = 'doc';
-  const hint = (mimeTypeOrCategory || cleanExt).toLowerCase();
   if (hint.includes('image') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(cleanExt)) {
     prefix = 'img';
   } else if (hint.includes('audio') || hint.includes('voice') || ['webm', 'ogg', 'mp3', 'm4a', 'wav'].includes(cleanExt)) {
     prefix = 'aud';
-  } else if (hint.includes('video') || ['mp4', 'mov', 'mkv'].includes(cleanExt)) {
+  } else if (hint.includes('video') || ['mp4', 'mov', 'mkv', 'm4v'].includes(cleanExt)) {
     prefix = 'vid';
   }
 
@@ -32,7 +73,7 @@ export function generateAnonymousFilename(fileExtension: string, mimeTypeOrCateg
     randomHex = Math.random().toString(16).substring(2, 12);
   }
 
-  return `${prefix}_${randomHex}.${cleanExt || 'bin'}`;
+  return `${prefix}_${randomHex}.${cleanExt}`;
 }
 
 /**
@@ -134,7 +175,8 @@ export const initiateMicrophoneStream = async (): Promise<MediaStream> => {
   nativeRecorder.ondataavailable = (event) => {
     if (event.data.size > 0) collectedAudioBuffers.push(event.data);
   };
-  nativeRecorder.start();
+  // Timeslice keeps buffers fresh for pause-to-review without waiting for stop.
+  nativeRecorder.start(250);
   return liveStream;
 };
 
@@ -157,13 +199,37 @@ export const terminateMicrophoneStream = (): Promise<Blob> => {
   });
 };
 
-export const pauseMicrophoneStream = (): void => {
-  if (nativeRecorder && nativeRecorder.state === 'recording') {
+export const pauseMicrophoneStream = (): Promise<void> => {
+  return new Promise((resolve) => {
+    if (!nativeRecorder || nativeRecorder.state !== 'recording') {
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        if (nativeRecorder && nativeRecorder.state === 'recording') {
+          nativeRecorder.pause();
+        }
+      } catch {
+        // ignore
+      }
+      resolve();
+    };
+
+    nativeRecorder.addEventListener('dataavailable', finish, { once: true });
     try {
       nativeRecorder.requestData();
-      nativeRecorder.pause();
-    } catch (e) {}
-  }
+    } catch {
+      finish();
+      return;
+    }
+
+    window.setTimeout(finish, 400);
+  });
 };
 
 export const resumeMicrophoneStream = (): void => {
@@ -207,7 +273,11 @@ export const streamFileDirectToCloudStorage = async (
 ): Promise<string> => {
   const sid = getSessionId();
   const mimeType = processedBlob.type || 'image/webp';
-  const cleanExt = mimeType.split('/')[1] || fileExtension.replace(/^\./, '') || 'webp';
+  const fromArg = sanitizeMediaExtension(fileExtension, '');
+  const fromMime = sanitizeMediaExtension(mimeType, '');
+  const cleanExt = fromArg || fromMime || 'webp';
+  // Strip codec parameters from Content-Type (servers may reject parameterized audio MIME).
+  const uploadContentType = (mimeType.split(';')[0] || mimeType).trim() || `application/octet-stream`;
   const anonymousFilename = generateAnonymousFilename(cleanExt, mimeType);
   const folder = folderDestination === 'avatars' ? 'avatars' : 'chat';
 
@@ -216,7 +286,7 @@ export const streamFileDirectToCloudStorage = async (
     processedBlob,
     {
       headers: {
-        'Content-Type': mimeType,
+        'Content-Type': uploadContentType,
         'Authorization': `Bearer ${sid}`,
         'x-session-id': sid,
         'x-session-token': sid

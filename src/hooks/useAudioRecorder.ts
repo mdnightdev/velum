@@ -65,8 +65,8 @@ export function useAudioRecorder() {
     }
   };
 
-  const pauseRecording = () => {
-    pauseMicrophoneStream();
+  const pauseRecording = async () => {
+    await pauseMicrophoneStream();
     setIsPaused(true);
     setAudioLevels(new Array(30).fill(10));
   };

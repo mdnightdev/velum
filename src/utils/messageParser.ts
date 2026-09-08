@@ -89,6 +89,63 @@ export function stripAttachmentTokens(content: string): string {
     .trim();
 }
 
+function isVideoAttachment(att: AttachmentPayload): boolean {
+  return (
+    att.type?.startsWith('video/') ||
+    att.name?.startsWith('vid_') ||
+    /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name || '') ||
+    /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data || '')
+  );
+}
+
+function isImageAttachment(att: AttachmentPayload): boolean {
+  if (isVideoAttachment(att)) return false;
+  return (
+    att.type?.startsWith('image/') ||
+    att.name?.startsWith('img_') ||
+    /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.name || '') ||
+    /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.data || '')
+  );
+}
+
+/** Chat-list / reply preview label for one or more attachments (WA/TG-style). */
+export function formatAttachmentAlbumPreview(
+  attachments: AttachmentPayload[],
+  caption = ''
+): string {
+  if (!attachments.length) return caption || 'Attachment';
+  const n = attachments.length;
+  const videoCount = attachments.filter(isVideoAttachment).length;
+  const imageCount = attachments.filter(isImageAttachment).length;
+
+  let label: string;
+  if (videoCount === n) {
+    label = n === 1 ? 'Video' : `${n} videos`;
+  } else if (imageCount === n) {
+    label = n === 1 ? 'Photo' : `${n} photos`;
+  } else if (n > 1) {
+    label = `${n} media`;
+  } else {
+    const att = attachments[0];
+    if (att.type?.startsWith('audio/') || /\.(webm|ogg|mp3|m4a|wav)($|\?)/i.test(att.name || '')) {
+      label = 'Voice message';
+    } else {
+      const hasCleanName =
+        att.name &&
+        !att.name.startsWith('doc_') &&
+        !att.name.startsWith('img_') &&
+        !att.name.startsWith('aud_') &&
+        !att.name.startsWith('vid_') &&
+        !att.name.includes('-') &&
+        !att.name.startsWith('upload_');
+      label = hasCleanName ? att.name : 'Document';
+    }
+  }
+
+  const cap = caption.trim();
+  return cap ? `${label}: ${cap}` : label;
+}
+
 export function getCleanPreview(content: string): string {
   if (!content) return '';
   const trimmed = content.trim();
@@ -102,29 +159,10 @@ export function getCleanPreview(content: string): string {
     const attachments = parseAttachment(trimmed);
     const textOutside = stripAttachmentTokens(trimmed);
     if (attachments.length > 0) {
-      if (attachments.length > 1) {
-        return textOutside ? `${attachments.length} items: ${textOutside}` : `${attachments.length} items`;
-      }
-      const att = attachments[0];
-      const caption = att.caption || textOutside;
-      const isVid = att.type.startsWith('video/') ||
-        /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.name) ||
-        /\.(mp4|webm|mov|mkv|ogg|m4v)($|\?)/i.test(att.data);
-
-      if (isVid) {
-        return caption ? `Video: ${caption}` : 'Video';
-      }
-      if (att.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.name) || /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(att.data)) {
-        return caption ? `Photo: ${caption}` : 'Photo';
-      }
-      if (att.type.startsWith('audio/') || /\.(webm|ogg|mp3|m4a|wav)($|\?)/i.test(att.name) || /\.(webm|ogg|mp3|m4a|wav)($|\?)/i.test(att.data)) {
-        return caption ? `Voice message: ${caption}` : 'Voice message';
-      }
-
-      // Document / other file
-      const hasCleanName = att.name && !att.name.startsWith('doc_') && !att.name.startsWith('img_') && !att.name.startsWith('aud_') && !att.name.startsWith('vid_') && !att.name.includes('-') && !att.name.startsWith('upload_');
-      const docLabel = hasCleanName ? att.name : 'Document';
-      return caption ? `${docLabel}: ${caption}` : docLabel;
+      const caption = attachments.length === 1
+        ? (attachments[0].caption || textOutside)
+        : textOutside;
+      return formatAttachmentAlbumPreview(attachments, caption);
     }
     return textOutside || 'Attachment';
   }

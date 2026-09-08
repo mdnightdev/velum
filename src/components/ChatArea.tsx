@@ -6,8 +6,7 @@ import { useMessageInput } from './Chat/hooks/useMessageInput';
 import { useMessageScroll } from './Chat/hooks/useMessageScroll';
 import { useMessageActions } from './Chat/hooks/useMessageActions';
 import { useSupportNomination } from './Chat/hooks/useSupportNomination';
-import { useAttachmentActions } from './Chat/hooks/useAttachmentActions';
-import { useAudioPlayback } from './Chat/hooks/useAudioPlayback';
+import { useAttachmentActions, dataUriToBlob, uploadComposeItems, shouldOpenChatImageCropper } from './Chat/hooks/useAttachmentActions';
 import { useMessageDecryption } from './Chat/hooks/useMessageDecryption';
 import { useTypingStatus } from './Chat/hooks/useTypingStatus';
 import { useMessageSearch } from './Chat/hooks/useMessageSearch';
@@ -15,12 +14,13 @@ import { useForwardingFriends } from './Chat/hooks/useForwardingFriends';
 import { usePeerPresence } from './Chat/hooks/usePeerPresence';
 import { ChatHeader } from './Chat/ChatHeader';
 import { ChatInput } from './Chat/ChatInput';
+import { MediaComposeModal, ComposeMediaItem } from './Chat/MediaComposeModal';
 import { SearchDrawer } from './Chat/SearchDrawer';
 import { PinnedMessageBar } from './Chat/PinnedMessageBar';
 import { MessageList } from './Chat/MessageList';
 import { velumToast } from '../utils/toast';
 import { ImageCropperModal } from './ImageCropperModal';
-import { streamFileDirectToCloudStorage, generateAnonymousFilename } from '../utils/mediaPipeline';
+import { streamFileDirectToCloudStorage, generateAnonymousFilename, sanitizeMediaExtension } from '../utils/mediaPipeline';
 import { stripAttachmentTokens, getCleanPreview } from '../utils/messageParser';
 import { useLanguage } from '../i18n/LanguageContext';
 import { requestNotificationPermission, dismissDeliveredNotification } from '../utils/notifications';
@@ -60,22 +60,6 @@ export interface ChatAreaProps {
   isMember?: boolean;
   onJoinLounge?: () => void;
   avatarUrl?: string;
-}
-
-function dataURItoBlob(dataURI: string): Blob {
-  try {
-    const parts = dataURI.split(',');
-    const byteString = atob(parts[1] || parts[0]);
-    const mimeString = parts[0]?.split(':')[1]?.split(';')[0] || 'application/octet-stream';
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    return new Blob([ab], { type: mimeString });
-  } catch (err) {
-    return new Blob([dataURI], { type: 'application/octet-stream' });
-  }
 }
 
 export default function ChatArea({
@@ -286,7 +270,15 @@ export default function ChatArea({
   const videoInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
-  const [croppingImage, setCroppingImage] = useState<{ src: string; fileName: string; file: File } | null>(null);
+  const [croppingImage, setCroppingImage] = useState<{
+    src: string;
+    fileName: string;
+    file: File;
+    composeItemId?: string;
+  } | null>(null);
+  const [composeItems, setComposeItems] = useState<ComposeMediaItem[] | null>(null);
+  const [composeSending, setComposeSending] = useState(false);
+  const [composeProgress, setComposeProgress] = useState<number | null>(null);
   const [fileErrorAlert, setFileErrorAlert] = useState<string | null>(null);
 
   const {
@@ -302,9 +294,12 @@ export default function ChatArea({
     audioInputRef,
     docInputRef,
     setSelectedAttachment,
-    setCroppingImage,
     setFileErrorAlert,
-    onSendMessage
+    onSendMessage,
+    onOpenMediaCompose: (items) => {
+      setComposeItems(items);
+      setComposeProgress(null);
+    },
   });
 
   const isSubmittingRef = useRef(false);
@@ -319,7 +314,7 @@ export default function ChatArea({
       setIsSending(true);
       stopRecording(async (audioBlob, durationSeconds) => {
         try {
-          const ext = audioBlob.type.split('/')[1] || 'webm';
+          const ext = sanitizeMediaExtension(audioBlob.type, 'webm');
           const url = await streamFileDirectToCloudStorage(audioBlob, 'media', ext);
           const voicePayload = `[Voice Note duration:${durationSeconds}s url:${url}]`;
           const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
@@ -382,10 +377,13 @@ export default function ChatArea({
       if (selectedAttachment) {
         try {
           const blob = selectedAttachment.data.startsWith('data:')
-            ? dataURItoBlob(selectedAttachment.data)
+            ? dataUriToBlob(selectedAttachment.data)
             : await (await fetch(selectedAttachment.data)).blob();
           
-          const ext = blob.type.split('/')[1] || selectedAttachment.name.split('.').pop() || 'webp';
+          const ext = sanitizeMediaExtension(
+            blob.type || selectedAttachment.name.split('.').pop() || 'webp',
+            'webp'
+          );
           const anonymousName = generateAnonymousFilename(ext, selectedAttachment.type || blob.type);
           const url = await streamFileDirectToCloudStorage(blob, 'media', ext);
           textToSend = `[Attachment: ${anonymousName} size:${selectedAttachment.size} type:${selectedAttachment.type || blob.type || 'image/webp'} url:${url}] ${inputText.trim()}`.trim();
@@ -662,6 +660,56 @@ export default function ChatArea({
         className="hidden"
       />
 
+      {composeItems && composeItems.length > 0 && (
+        <MediaComposeModal
+          items={composeItems}
+          onClose={() => {
+            if (composeSending) return;
+            setComposeItems(null);
+            setComposeProgress(null);
+          }}
+          onUpdateItems={setComposeItems}
+          isSending={composeSending}
+          uploadProgress={composeProgress}
+          onCropItem={(itemId) => {
+            const item = composeItems.find((i) => i.id === itemId);
+            if (!item) return;
+            const blob = item.data.startsWith('data:') ? dataUriToBlob(item.data) : null;
+            const file = blob
+              ? new File([blob], item.name || 'image.webp', { type: item.type || blob.type || 'image/webp' })
+              : new File([], item.name || 'image.webp', { type: item.type || 'image/webp' });
+            if (!shouldOpenChatImageCropper(file) && !item.type.startsWith('image/')) return;
+            setCroppingImage({
+              src: item.data,
+              fileName: item.name || 'image.webp',
+              file,
+              composeItemId: itemId,
+            });
+          }}
+          onSend={async (items, caption) => {
+            if (composeSending || items.length === 0) return;
+            setComposeSending(true);
+            setComposeProgress(0);
+            try {
+              const tokens = await uploadComposeItems(items, (done, total) => {
+                setComposeProgress(Math.round((done / total) * 100));
+              });
+              const textToSend = `${tokens.join(' ')}${caption ? ` ${caption}` : ''}`.trim();
+              const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
+              const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
+              onSendMessage(textToSend, null, isEnc, targetRoom, undefined, textToSend);
+              setComposeItems(null);
+              setComposeProgress(null);
+            } catch (err) {
+              log.error('Compose media upload failed', { error: (err as Error).message });
+              velumToast.error('Media upload failed. Please try again.');
+            } finally {
+              setComposeSending(false);
+            }
+          }}
+        />
+      )}
+
       {croppingImage && (
         <ImageCropperModal
           imageSrc={croppingImage.src}
@@ -670,12 +718,28 @@ export default function ChatArea({
           onCancel={() => setCroppingImage(null)}
           onCropComplete={(croppedDataUrl, croppedFile) => {
             const sizeStr = `${(croppedFile.size / 1024).toFixed(0)} KB`;
-            setSelectedAttachment({
-              name: croppedFile.name,
-              size: sizeStr,
-              type: croppedFile.type || 'image/png',
-              data: croppedDataUrl,
-            });
+            if (croppingImage.composeItemId && composeItems) {
+              setComposeItems(
+                composeItems.map((item) =>
+                  item.id === croppingImage.composeItemId
+                    ? {
+                        ...item,
+                        name: croppedFile.name || item.name,
+                        size: sizeStr,
+                        type: croppedFile.type || item.type || 'image/png',
+                        data: croppedDataUrl,
+                      }
+                    : item
+                )
+              );
+            } else {
+              setSelectedAttachment({
+                name: croppedFile.name,
+                size: sizeStr,
+                type: croppedFile.type || 'image/png',
+                data: croppedDataUrl,
+              });
+            }
             setCroppingImage(null);
           }}
         />
@@ -686,6 +750,31 @@ export default function ChatArea({
         setInputText={setInputText}
         selectedAttachment={selectedAttachment}
         onDismissAttachment={handleDismissAttachment}
+        onEditAttachment={
+          selectedAttachment &&
+          selectedAttachment.type.startsWith('image/') &&
+          selectedAttachment.type !== 'image/gif' &&
+          selectedAttachment.type !== 'image/svg+xml'
+            ? () => {
+                const blob = selectedAttachment.data.startsWith('data:')
+                  ? dataUriToBlob(selectedAttachment.data)
+                  : null;
+                const file = blob
+                  ? new File([blob], selectedAttachment.name || 'image.webp', {
+                      type: selectedAttachment.type || blob.type || 'image/webp'
+                    })
+                  : new File([], selectedAttachment.name || 'image.webp', {
+                      type: selectedAttachment.type || 'image/webp'
+                    });
+                setCroppingImage({
+                  src: selectedAttachment.data,
+                  fileName: selectedAttachment.name || 'image.webp',
+                  file
+                });
+              }
+            : undefined
+        }
+        selectedMediaCount={selectedAttachment ? 1 : 0}
         textareaRef={textareaRef}
         isRecording={isRecording}
         recordingSeconds={recordingSeconds}
@@ -717,11 +806,6 @@ export default function ChatArea({
         t={t}
         isSending={isSending}
         onSend={handleSend}
-        onSendVoiceNote={(voiceContent) => {
-          const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
-          const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
-          onSendMessage(voiceContent, null, isEnc, targetRoom, undefined, voiceContent);
-        }}
         onTriggerPhotoInput={handleTriggerPhotoInput}
         onTriggerVideoInput={handleTriggerVideoInput}
         onTriggerAudioInput={handleTriggerAudioInput}

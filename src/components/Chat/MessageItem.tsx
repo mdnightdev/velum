@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
-import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, Check, Copy, ShieldCheck, Download, Maximize2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Flag, Smile, Reply, Pin, Forward, Pencil, Trash2, Check, Copy, ShieldCheck, Download, Maximize2, Pause, X } from 'lucide-react';
 import { Message, stripAt } from '../../types';
 import { AudioMessagePlayer } from '../AudioMessagePlayer';
 import { SecureImageCard } from '../SecureImageCard';
 import { MessageStatusTicks } from '../MessageStatusTicks';
-import { parseAttachment, getCleanPreview } from '../../utils/messageParser';
+import { parseAttachment, getCleanPreview, stripAttachmentTokens } from '../../utils/messageParser';
 import { getSessionId } from '../../utils/auth';
 import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { ReactionPicker } from './ReactionPicker';
 import { resolveMediaUrl, getFormattedDownloadFilename } from '../../utils/mediaPipeline';
+
+function formatVideoClock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 function VideoCard({
   src,
@@ -19,6 +27,12 @@ function VideoCard({
   caption?: string;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [showChrome, setShowChrome] = useState(true);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hideChromeTimerRef = useRef<number | null>(null);
 
   const handleDownload = () => {
     const link = document.createElement('a');
@@ -27,21 +41,102 @@ function VideoCard({
     link.click();
   };
 
+  const clearHideChromeTimer = () => {
+    if (hideChromeTimerRef.current !== null) {
+      window.clearTimeout(hideChromeTimerRef.current);
+      hideChromeTimerRef.current = null;
+    }
+  };
+
+  const bumpChrome = () => {
+    setShowChrome(true);
+    clearHideChromeTimer();
+    hideChromeTimerRef.current = window.setTimeout(() => {
+      if (videoRef.current && !videoRef.current.paused) {
+        setShowChrome(false);
+      }
+    }, 2500);
+  };
+
+  useEffect(() => {
+    if (!isExpanded) {
+      clearHideChromeTimer();
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      setShowChrome(true);
+      return;
+    }
+    bumpChrome();
+    const el = videoRef.current;
+    if (!el) return;
+    const playPromise = el.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+    }
+    return () => clearHideChromeTimer();
+  }, [isExpanded]);
+
+  const togglePlay = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    bumpChrome();
+    if (el.paused) {
+      el.play().then(() => setIsPlaying(true)).catch(() => {});
+    } else {
+      el.pause();
+      setIsPlaying(false);
+      setShowChrome(true);
+      clearHideChromeTimer();
+    }
+  };
+
+  const seekTo = (ratio: number) => {
+    const el = videoRef.current;
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    el.currentTime = Math.max(0, Math.min(el.duration, ratio * el.duration));
+    setCurrentTime(el.currentTime);
+    bumpChrome();
+  };
+
   return (
     <>
-      <div className="relative rounded-2xl overflow-hidden shadow-md bg-black w-full max-w-[320px] max-h-[420px] border border-white-5 group">
+      <div
+        className="relative rounded-2xl overflow-hidden shadow-md bg-black w-full max-w-[320px] max-h-[420px] border border-white-5 group cursor-pointer"
+        onClick={() => setIsExpanded(true)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(true);
+          }
+        }}
+        aria-label="Open video"
+      >
         <video
           src={src}
-          controls
           playsInline
           preload="metadata"
-          className="w-full max-h-[420px] object-contain rounded-2xl bg-black block"
+          muted
+          className="w-full max-h-[420px] object-contain rounded-2xl bg-black block pointer-events-none"
         />
+
+        <div className="absolute inset-0 flex items-center justify-center bg-black/25 group-hover:bg-black/35 transition-colors">
+          <div className="w-14 h-14 rounded-full bg-black/55 border border-white/20 flex items-center justify-center backdrop-blur-[var(--blur-backdrop-sm)]">
+            <svg className="w-7 h-7 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          </div>
+        </div>
 
         <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-10">
           <button
             type="button"
-            onClick={handleDownload}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDownload();
+            }}
             className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
             title="Download"
           >
@@ -49,7 +144,10 @@ function VideoCard({
           </button>
           <button
             type="button"
-            onClick={() => setIsExpanded(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(true);
+            }}
             className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
             title="Fullscreen"
           >
@@ -66,17 +164,19 @@ function VideoCard({
 
       {isExpanded && (
         <div
-          className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-black/95 backdrop-blur-[var(--blur-backdrop-sm)] p-4 select-none"
+          className="fixed inset-0 z-[999] flex flex-col bg-black select-none"
           onClick={() => setIsExpanded(false)}
         >
-          <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+          <div
+            className={`absolute top-0 inset-x-0 z-20 flex items-center justify-end gap-2 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 bg-gradient-to-b from-black/80 to-transparent transition-opacity ${
+              showChrome ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDownload();
-              }}
-              className="p-2.5 bg-velum-900/80 border border-white-10 rounded-full text-white hover:bg-velum-800 transition cursor-pointer"
+              onClick={handleDownload}
+              className="p-2.5 bg-white/10 border border-white/15 rounded-full text-white hover:bg-white/15 transition cursor-pointer"
               title="Download"
             >
               <Download className="w-5 h-5" />
@@ -84,20 +184,78 @@ function VideoCard({
             <button
               type="button"
               onClick={() => setIsExpanded(false)}
-              className="p-2.5 bg-velum-900/80 border border-white-10 rounded-full text-white hover:bg-velum-800 transition cursor-pointer"
+              className="p-2.5 bg-white/10 border border-white/15 rounded-full text-white hover:bg-white/15 transition cursor-pointer"
               title="Close"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
-          <video
-            src={src}
-            controls
-            autoPlay
-            playsInline
-            className="max-w-full max-h-full object-contain rounded-xl"
+
+          <div
+            className="relative flex-1 min-h-0 flex items-center justify-center"
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePlay();
+            }}
+          >
+            <video
+              ref={videoRef}
+              src={src}
+              playsInline
+              preload="auto"
+              className="w-full h-full max-w-full max-h-full object-contain"
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+              onPlay={() => {
+                setIsPlaying(true);
+                bumpChrome();
+              }}
+              onPause={() => {
+                setIsPlaying(false);
+                setShowChrome(true);
+                clearHideChromeTimer();
+              }}
+              onEnded={() => {
+                setIsPlaying(false);
+                setShowChrome(true);
+                clearHideChromeTimer();
+              }}
+            />
+
+            {showChrome && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="w-16 h-16 rounded-full bg-black/45 border border-white/20 flex items-center justify-center">
+                  {isPlaying ? (
+                    <Pause className="w-7 h-7 text-white fill-current" />
+                  ) : (
+                    <svg className="w-8 h-8 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div
+            className={`absolute bottom-0 inset-x-0 z-20 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-8 bg-gradient-to-t from-black/85 to-transparent transition-opacity ${
+              showChrome ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <div className="text-[12px] text-white/90 font-mono tabular-nums mb-2">
+              {formatVideoClock(currentTime)} / {formatVideoClock(duration)}
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1000}
+              value={duration > 0 ? Math.round((currentTime / duration) * 1000) : 0}
+              onChange={(e) => seekTo(Number(e.target.value) / 1000)}
+              className="w-full h-1.5 appearance-none bg-white/25 rounded-full cursor-pointer accent-accent"
+              aria-label="Seek"
+            />
+          </div>
         </div>
       )}
     </>
@@ -200,12 +358,13 @@ export function MessageItem({
 
   const attachments = isAttachment ? parseAttachment(activeContent) : [];
   const firstAttachment = attachments[0];
+  const albumCaption = stripAttachmentTokens(activeContent);
 
   const parsedAttachmentName = firstAttachment?.name || '';
   const parsedAttachmentSize = firstAttachment?.size || '';
   const parsedAttachmentType = firstAttachment?.type || '';
   const parsedAttachmentData = firstAttachment?.data || '';
-  const parsedMsgContent = firstAttachment ? (firstAttachment.caption || '') : activeContent;
+  const parsedMsgContent = albumCaption || (firstAttachment ? (firstAttachment.caption || '') : activeContent);
 
   if (!msg.deleted && !activeContent && attachments.length === 0 && !msg.content && !msg.plaintext) {
     return null;
@@ -409,7 +568,7 @@ export function MessageItem({
                       })}
                     </div>
                     {parsedMsgContent && (
-                      <div className="p-2 text-xs text-text-primary whitespace-pre-wrap break-words">
+                      <div className="px-2.5 py-2 text-[13px] text-white whitespace-pre-wrap break-words">
                         {parsedMsgContent}
                       </div>
                     )}

@@ -4,7 +4,8 @@ import {
   Pause,
   Trash2,
   X,
-  Reply
+  Reply,
+  Pencil
 } from 'lucide-react';
 import { Message, stripAt } from '../../types';
 import { Attachment } from './hooks/useMessageInput';
@@ -17,6 +18,10 @@ export interface ChatInputProps {
   setInputText: (val: string) => void;
   selectedAttachment: Attachment | null;
   onDismissAttachment: () => void;
+  /** Re-open cropper for a still-image draft (WhatsApp edit). */
+  onEditAttachment?: () => void;
+  /** Number of staged media items (drives send-button count). */
+  selectedMediaCount?: number;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 
   // Voice recording
@@ -25,7 +30,7 @@ export interface ChatInputProps {
   isPaused: boolean;
   audioLevels: number[];
   cancelRecording: () => void;
-  pauseRecording: () => void;
+  pauseRecording: () => void | Promise<void>;
   resumeRecording: () => void;
   stopRecording: (callback: (audioBlob: Blob, durationSeconds: number) => void) => void;
   onToggleRecording: () => void;
@@ -56,7 +61,6 @@ export interface ChatInputProps {
   t: (key: string, fallback: string) => string;
   isSending?: boolean;
   onSend: (e: React.FormEvent) => void;
-  onSendVoiceNote: (voiceContent: string) => void;
   onTriggerFileInput?: () => void;
   onTriggerPhotoInput?: () => void;
   onTriggerVideoInput?: () => void;
@@ -72,6 +76,8 @@ export function ChatInput({
   setInputText,
   selectedAttachment,
   onDismissAttachment,
+  onEditAttachment,
+  selectedMediaCount = 0,
   textareaRef,
   isRecording,
   recordingSeconds,
@@ -103,7 +109,6 @@ export function ChatInput({
   t,
   isSending = false,
   onSend,
-  onSendVoiceNote,
   onTriggerFileInput,
   onTriggerPhotoInput,
   onTriggerVideoInput,
@@ -156,8 +161,20 @@ export function ChatInput({
       setIsPreviewPlaying(false);
       return;
     }
-    const blob = getDraftAudioBlob();
-    if (!blob) return;
+    let blob = getDraftAudioBlob();
+    if (!blob || blob.size === 0) {
+      // Brief retry in case pause flush just completed.
+      window.setTimeout(() => {
+        blob = getDraftAudioBlob();
+        if (!blob || blob.size === 0) return;
+        playDraftBlob(blob);
+      }, 50);
+      return;
+    }
+    playDraftBlob(blob);
+  };
+
+  const playDraftBlob = (blob: Blob) => {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     previewAudioRef.current = audio;
@@ -348,7 +365,10 @@ export function ChatInput({
               {/* Pause / Resume */}
               <button
                 type="button"
-                onClick={isPaused ? resumeRecording : pauseRecording}
+                onClick={() => {
+                  if (isPaused) resumeRecording();
+                  else void pauseRecording();
+                }}
                 className="w-9 h-9 rounded-full bg-accent/10 hover:bg-accent/20 text-accent flex items-center justify-center transition active:scale-95 cursor-pointer"
                 title={isPaused ? "Resume recording" : "Pause recording"}
               >
@@ -568,6 +588,22 @@ export function ChatInput({
                   )}
                 </div>
 
+                {onEditAttachment &&
+                  selectedAttachment &&
+                  selectedAttachment.type.startsWith('image/') &&
+                  selectedAttachment.type !== 'image/gif' &&
+                  selectedAttachment.type !== 'image/svg+xml' && (
+                  <button
+                    type="button"
+                    onClick={onEditAttachment}
+                    className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 text-text-secondary hover:text-accent hover:bg-white-5 flex items-center justify-center shrink-0 transition active:scale-95 cursor-pointer"
+                    title="Edit image"
+                    aria-label="Edit image"
+                  >
+                    <Pencil className="w-4.5 h-4.5" />
+                  </button>
+                )}
+
                 {/* Unified Textarea */}
                 <textarea
                   ref={textareaRef}
@@ -580,20 +616,27 @@ export function ChatInput({
                       if (!isSending) onSend(e);
                     }
                   }}
+                  placeholder={selectedAttachment ? 'Add a caption...' : undefined}
                   className="flex-1 bg-velum-800 border border-white-5 focus:border-accent/40 rounded-2xl px-4 py-2 text-[15px] text-white outline-none resize-none max-h-32 min-h-[42px] leading-relaxed placeholder:text-text-disabled font-sans"
                 />
 
-                {/* Right Action Button */}
+                {/* Send: paper plane + corner count badge (WhatsApp) */}
                 {inputText.trim().length > 0 || selectedAttachment ? (
                   <button
                     type="submit"
                     disabled={isSending}
-                    className="w-10 h-10 rounded-full bg-accent hover:bg-accent-hover text-velum-900 flex items-center justify-center shrink-0 shadow-md shadow-accent/25 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                    title="Send"
+                    className="relative w-10 h-10 rounded-full bg-accent hover:bg-accent-hover text-velum-900 flex items-center justify-center shrink-0 shadow-md shadow-accent/25 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    title={selectedMediaCount > 0 ? `Send ${selectedMediaCount}` : 'Send'}
+                    aria-label={selectedMediaCount > 0 ? `Send ${selectedMediaCount} media` : 'Send'}
                   >
                     <svg className="w-5 h-5 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                     </svg>
+                    {selectedMediaCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-velum-900 text-[10px] font-bold leading-[18px] text-center tabular-nums shadow-sm border border-velum-900/10">
+                        {selectedMediaCount > 99 ? '99+' : selectedMediaCount}
+                      </span>
+                    )}
                   </button>
                 ) : (
                   <button
