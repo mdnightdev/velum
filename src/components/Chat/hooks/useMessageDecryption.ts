@@ -41,6 +41,7 @@ export function useMessageDecryption({
         keys: string[];
         ciphertext: string;
         context: EncryptionContext;
+        rawMsg?: any;
       }> = [];
 
       const syncDecrypted: Record<string, string> = {};
@@ -125,10 +126,11 @@ export function useMessageDecryption({
         };
 
         pending.push({
-          keys,
-          ciphertext: m.content,
-          context
-        });
+        keys,
+        ciphertext: m.content,
+        context,
+        rawMsg: m
+      });
       }
 
       // Bound cache size to max 3000 items
@@ -181,14 +183,9 @@ export function useMessageDecryption({
           }
 
           messagesToPersist.push({
-            id: item.keys[0],
-            message_id: item.keys[0],
-            room_id: item.context.roomId,
-            loungeId: item.context.roomId,
-            plaintext: decrypted,
-            content: item.ciphertext,
-            user_id: item.context.peerUserId
-          });
+          ...item.rawMsg,
+          plaintext: decrypted
+        });
         }
       }
 

@@ -29,7 +29,7 @@ export function getDexieDb(userId: number = 0): VelumDatabase {
   const targetId = userId && !isNaN(userId) ? userId : 0;
   let instance = dbInstances.get(targetId);
   if (!instance) {
-    instance = new VelumDatabase(`v_${targetId}`);
+    instance = new VelumDatabase(`velum_v3_${targetId}`);
     dbInstances.set(targetId, instance);
   }
   return instance;

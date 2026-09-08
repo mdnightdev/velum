@@ -144,7 +144,8 @@ html, body {
 .chat-bubble {
   position: relative;
   border-radius: 1.125rem;
-  padding: 0.625rem 0.95rem;
+  min-width: 50px;
+  padding: 6px 10px;
   font-size: 0.9375rem; /* 15px */
   line-height: 1.55;
   word-break: break-word;
@@ -156,12 +157,14 @@ html, body {
   background-color: var(--color-bubble-me);
   color: var(--color-bubble-me-text);
   border: 1px solid var(--color-bubble-me-border);
+  border-top-right-radius: 0;
 }
 
 .chat-bubble-peer {
   background-color: var(--color-bubble-peer);
   color: var(--color-bubble-peer-text);
   border: 1px solid var(--color-bubble-peer-border);
+  border-top-right-radius: 0;
 }
 
 /* Appearance density scaling: Compact */
@@ -188,12 +191,12 @@ html[data-message-scaling="compact"] .chat-wallpaper {
 
 /* Appearance density scaling: Cozy (Default) */
 html[data-message-scaling="cozy"] .chat-wallpaper > * + *,
-html[data-message-scaling="cozy"] .space-y-2 > * + * {
+html[data-message-scaling="cozy"] .space-y-1 > * + * {
   margin-top: 0.5rem;
 }
 
 html[data-message-scaling="cozy"] .chat-bubble {
-  padding: 0.625rem 1rem;
+  padding: 0.35rem 0.65rem;
   font-size: 0.8125rem;
 }
 
@@ -274,11 +277,11 @@ html[data-reduced-motion="true"] *::after {
   --radius-xl:  24px;
 
   /* ---- Chat Bubble Color System (Velum Rose Gold & Muted Teal Tokens - Zero Grey) ---- */
-  --color-bubble-me:            rgba(200, 155, 138, 0.22); /* Rose Gold Accent Translucent */
-  --color-bubble-me-border:     rgba(200, 155, 138, 0.40); /* Rose Gold Border */
+  --color-bubble-me: #4c302a;
+  --color-bubble-me-border: transparent;
   --color-bubble-me-text:       #F5F2EB;                   /* Warm Ivory text */
-  --color-bubble-peer:          rgba(91, 154, 139, 0.16);  /* Muted Teal Accent Translucent */
-  --color-bubble-peer-border:   rgba(91, 154, 139, 0.30);  /* Muted Teal Border */
+  --color-bubble-peer: #1e3833;
+  --color-bubble-peer-border: transparent;
   --color-bubble-peer-text:     #F5F2EB;                   /* Warm Ivory text */
 
   /* ---- Payment Card Custom Gradients ---- */
@@ -592,7 +595,7 @@ body:has(input:focus, textarea:focus) .bottom-nav {
 
 /* Solid Velum Canvas Wallpaper */
 .chat-wallpaper {
-  background-color: var(--color-velum-900, #08090C);
+  background-color: var(--color-velum-850, #08090C);
   position: relative;
   z-index: 0;
 }

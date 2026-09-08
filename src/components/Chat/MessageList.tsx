@@ -79,7 +79,7 @@ export function MessageList({
         ref={scrollContainerRef}
         onScroll={onScroll}
         style={{ overflowAnchor: 'auto', scrollBehavior: 'auto' }}
-        className="flex-1 overflow-y-auto overscroll-contain p-3 pt-6 md:p-4 md:pt-8 space-y-2 chat-wallpaper select-none w-full max-w-[1050px] mx-auto"
+        className="flex-1 overflow-y-auto overscroll-contain p-3 pt-6 md:p-4 md:pt-8 space-y-1 chat-wallpaper select-none w-full max-w-[1050px] mx-auto"
       >
         {conversationMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center p-8 text-center select-none">

@@ -10,25 +10,14 @@ interface MessageStatusTicksProps {
 export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({ status = 'sent', isMe = true, onRetry }) => {
   if (!isMe) return null;
 
-  if (status === 'sending') {
+    if (status === 'sending' || status === 'failed') {
     return (
-      <span title="Sending...">
-        <Clock className="w-3 h-3 text-text-secondary/60 animate-pulse ml-1" />
+      <span title="Waiting to send...">
+        <Clock className="w-3 h-3 text-text-secondary/60 animate-spin ml-1" />
       </span>
     );
   }
 
-  if (status === 'failed') {
-    return (
-      <button 
-        onClick={onRetry}
-        className="flex items-center gap-1 text-status-dnd hover:text-status-dnd/80 cursor-pointer text-[10px] ml-1 uppercase font-bold tracking-wider transition-colors" 
-        title="Failed to send. Tap to retry."
-      >
-        <AlertCircle className="w-3 h-3" /> Failed
-      </button>
-    );
-  }
 
   if (status === 'read') {
     return (
