@@ -399,6 +399,12 @@ function DirectMainDashboard({
     setContextPeer(null);
   };
 
+  React.useEffect(() => {
+    if (archivedUserIds.length === 0 && filterTab === 'archived') {
+      setFilterTab('active');
+    }
+  }, [archivedUserIds.length, filterTab]);
+
   const handleDeleteConversation = async (peerId: number, peerName: string, dmRoomId: string) => {
     try {
       const now = Date.now();
@@ -732,37 +738,37 @@ function DirectMainDashboard({
         </div>
       )}
 
-      {/* Filter Tabs (All vs Archived) */}
-      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-velum-600 bg-velum-850 shrink-0 text-xs">
-        <button
-          type="button"
-          onClick={() => setFilterTab('active')}
-          className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
-            filterTab === 'active' 
-              ? 'bg-accent/15 text-accent' 
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          Chats
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilterTab('archived')}
-          className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
-            filterTab === 'archived' 
-              ? 'bg-accent/15 text-accent' 
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          <Archive className="w-3.5 h-3.5" />
-          <span>Archived</span>
-          {archivedUserIds.length > 0 && (
+      {/* Archived filter — only when something is archived */}
+      {archivedUserIds.length > 0 && (
+        <div className="flex items-center gap-1.5 px-4 py-2 border-b border-velum-600 bg-velum-850 shrink-0 text-xs">
+          <button
+            type="button"
+            onClick={() => setFilterTab('active')}
+            className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+              filterTab === 'active'
+                ? 'bg-accent/15 text-accent'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Chats
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('archived')}
+            className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
+              filterTab === 'archived'
+                ? 'bg-accent/15 text-accent'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Archive className="w-3.5 h-3.5" />
+            <span>Archived</span>
             <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-velum-750 border border-velum-600">
               {archivedUserIds.length}
             </span>
-          )}
-        </button>
-      </div>
+          </button>
+        </div>
+      )}
 
       {/* Directory List */}
       <div className="flex-1 overflow-y-auto w-full flex flex-col relative">
@@ -814,9 +820,8 @@ function DirectMainDashboard({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-text-primary flex items-center gap-1.5 truncate">
+                  <p className="text-xs font-semibold text-text-primary truncate">
                     Velum
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-accent/15 text-accent">System</span>
                   </p>
                   {velumTimeStr && (
                     <span className={`text-[10px] shrink-0 ${velumUnread > 0 ? 'text-accent font-semibold' : 'text-text-secondary'}`}>
