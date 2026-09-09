@@ -3,17 +3,27 @@ import { Message } from '../../../types';
 import { decryptMessage, encryptMessage, EncryptionContext } from '../../../services/encryptionService';
 import { statelessE2eeService } from '../../../services/statelessE2eeService';
 import { parseAttachment } from '../../../utils/messageParser';
-import { saveLocalMessages } from '../../../utils/indexedDb';
+import { putPlaintextByCiphertext, saveLocalMessages } from '../../../utils/indexedDb';
 import { useChatStore } from '../../../stores/chatStore';
 import { parseDmPeerId } from '../../../utils/roomUtils';
 import { isUsablePlaintext } from '../../../utils/messagePlaintext';
+import { getMemoryPlaintext, setMemoryPlaintext } from '../../../utils/plaintextCache';
 
-// Global session plaintext cache keyed by ciphertext (content)
-export const globalDecryptionCache = new Map<string, string>();
+/** @deprecated Prefer getMemoryPlaintext — kept for existing imports. */
+export const globalDecryptionCache = {
+  has: (ciphertext: string) => getMemoryPlaintext(ciphertext) != null,
+  get: (ciphertext: string) => getMemoryPlaintext(ciphertext),
+  set: (ciphertext: string, plaintext: string) => setMemoryPlaintext(ciphertext, plaintext),
+  delete: (_ciphertext: string) => {
+    /* memory cache is write-through; no public delete needed for poison — overwritten by usable pt */
+  },
+};
 
-export function cachePlaintext(ciphertext: string, plaintext: string) {
+export function cachePlaintext(ciphertext: string, plaintext: string, userId?: number) {
   if (ciphertext && isUsablePlaintext(plaintext)) {
-    globalDecryptionCache.set(ciphertext, plaintext);
+    setMemoryPlaintext(ciphertext, plaintext);
+    const uid = userId ?? statelessE2eeService.getLocalUserId() ?? undefined;
+    void putPlaintextByCiphertext(ciphertext, plaintext, uid ?? undefined);
   }
 }
 
@@ -64,6 +74,7 @@ export function useMessageDecryption({
             cacheRef.current[k] = { ciphertext: m.content, plaintext: m.content };
             syncDecrypted[k] = m.content;
           }
+          syncDecrypted[m.content] = m.content;
           continue;
         }
 
@@ -74,6 +85,7 @@ export function useMessageDecryption({
             cacheRef.current[k] = { ciphertext: m.content, plaintext: m.plaintext! };
             syncDecrypted[k] = m.plaintext!;
           }
+          syncDecrypted[m.content] = m.plaintext!;
           continue;
         }
 
@@ -93,6 +105,7 @@ export function useMessageDecryption({
               cacheRef.current[k] = { ciphertext: m.content, plaintext: cached };
               syncDecrypted[k] = cached;
             }
+            syncDecrypted[m.content] = cached;
             continue;
           }
         }
@@ -117,6 +130,7 @@ export function useMessageDecryption({
               cacheRef.current[k] = { ciphertext: m.content, plaintext: cachedPlaintext };
               syncDecrypted[k] = cachedPlaintext;
             }
+            syncDecrypted[m.content] = cachedPlaintext;
             continue;
           }
         }
@@ -157,7 +171,11 @@ export function useMessageDecryption({
       }
 
       if (Object.keys(syncDecrypted).length > 0) {
-        setDecryptedMap((prev) => ({ ...prev, ...syncDecrypted }));
+        // Stamp store even if effect re-runs; UI map update is mount-scoped.
+        useChatStore.getState().updatePlaintexts(syncDecrypted);
+        if (isMounted) {
+          setDecryptedMap((prev) => ({ ...prev, ...syncDecrypted }));
+        }
       }
 
       if (pending.length === 0) return;
@@ -169,7 +187,6 @@ export function useMessageDecryption({
       const store = useChatStore.getState();
 
       for (let i = 0; i < pending.length; i += CHUNK_SIZE) {
-        if (!isMounted) return;
         const chunk = pending.slice(i, i + CHUNK_SIZE);
         const results = await Promise.all(
           chunk.map(async (item) => {
@@ -197,17 +214,22 @@ export function useMessageDecryption({
             cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: decrypted };
             batchMapEntries[k] = decrypted;
           }
+          batchMapEntries[item.ciphertext] = decrypted;
+          void putPlaintextByCiphertext(item.ciphertext, decrypted, currentUserId);
 
           messagesToPersist.push({
             ...item.rawMsg,
             plaintext: decrypted,
           });
         }
-      }
 
-      if (isMounted && Object.keys(batchMapEntries).length > 0) {
-        store.updatePlaintexts(batchMapEntries);
-        setDecryptedMap((prev) => ({ ...prev, ...batchMapEntries }));
+        // Persist each chunk immediately so a remount cannot drop completed work.
+        if (Object.keys(batchMapEntries).length > 0) {
+          store.updatePlaintexts({ ...batchMapEntries });
+          if (isMounted) {
+            setDecryptedMap((prev) => ({ ...prev, ...batchMapEntries }));
+          }
+        }
       }
 
       if (messagesToPersist.length > 0) {

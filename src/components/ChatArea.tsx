@@ -28,6 +28,7 @@ import { createLogger } from '../utils/logger';
 import { getSessionId } from '../utils/auth';
 import { useMessageSearch } from './Chat/hooks/useMessageSearch';
 import { getPeerDisappearSeconds } from '../utils/dmPeerPrefs';
+import { useChatStore } from '../stores/chatStore';
 
 const log = createLogger('ChatArea');
 
@@ -72,7 +73,7 @@ export default function ChatArea({
   currentUserRole,
   roomId,
   wsConnected,
-  messages,
+  messages: _messagesProp,
   onSendMessage,
   onSendTyping,
   onRoomKick,
@@ -97,6 +98,8 @@ export default function ChatArea({
   onSelectProfileUser,
   onRequestForward,
 }: ChatAreaProps) {
+  // Subscribe directly so WS append + plaintext stamps re-render without App prop lag.
+  const messages = useChatStore((s) => s.messages);
   const { t } = useLanguage();
 
   const resolveBurnSeconds = (): number | null =>

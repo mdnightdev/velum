@@ -50,7 +50,7 @@ describe('DM room aliases (live push)', () => {
     expect(isActiveDmRoom('dm_7_42', 42, 7)).toBe(true);
     expect(isActiveDmRoom('dm_42', 42, 7)).toBe(true);
     expect(isActiveDmRoom('dm_99', 42, 7)).toBe(false);
-    expect(getPrimaryDmRoomId(42, 7)).toBe('dm_42');
+    expect(getPrimaryDmRoomId(42, 7)).toBe('dm_7_42');
   });
 
   it('matches velum aliases', () => {

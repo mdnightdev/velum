@@ -2,8 +2,90 @@ import { LocalVaultEncryption } from '../services/localVaultEncryption.js';
 import { getDexieDb } from '../services/dexieDb.js';
 import { purgeCryptoDatabase } from '../services/cryptoDbStore.js';
 import { isUsablePlaintext, mergeMessagePlaintext } from './messagePlaintext.js';
+import {
+  getMemoryPlaintext,
+  hashCiphertext,
+  setMemoryPlaintext,
+  warmMemoryPlaintexts,
+} from './plaintextCache.js';
 
 const MAX_MESSAGE_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — keep in sync with localCacheMaintenance
+
+export async function putPlaintextByCiphertext(
+  ciphertext: string,
+  plaintext: string,
+  userId?: number
+): Promise<void> {
+  if (!ciphertext || !isUsablePlaintext(plaintext)) return;
+  setMemoryPlaintext(ciphertext, plaintext);
+  try {
+    const db = getDexieDb(userId || 0);
+    await db.plaintext_cache.put({
+      hash: hashCiphertext(ciphertext),
+      plaintext,
+      updatedAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] putPlaintextByCiphertext error:', err);
+  }
+}
+
+export async function getPlaintextByCiphertext(
+  ciphertext: string,
+  userId?: number
+): Promise<string | null> {
+  if (!ciphertext) return null;
+  const mem = getMemoryPlaintext(ciphertext);
+  if (mem) return mem;
+  try {
+    const db = getDexieDb(userId || 0);
+    const row = await db.plaintext_cache.get(hashCiphertext(ciphertext));
+    if (row && isUsablePlaintext(row.plaintext)) {
+      setMemoryPlaintext(ciphertext, row.plaintext);
+      return row.plaintext;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Batch resolve plaintexts: memory first, then one IndexedDB anyOf on hashes. */
+export async function resolvePlaintextsForContents(
+  ciphertexts: string[],
+  userId?: number
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const missing: string[] = [];
+  for (const ct of ciphertexts) {
+    if (!ct) continue;
+    const mem = getMemoryPlaintext(ct);
+    if (mem) {
+      out.set(ct, mem);
+    } else {
+      missing.push(ct);
+    }
+  }
+  if (missing.length === 0) return out;
+
+  try {
+    const db = getDexieDb(userId || 0);
+    const hashToCt = new Map<string, string>();
+    for (const ct of missing) {
+      hashToCt.set(hashCiphertext(ct), ct);
+    }
+    const rows = await db.plaintext_cache.where('hash').anyOf([...hashToCt.keys()]).toArray();
+    for (const row of rows) {
+      const ct = hashToCt.get(row.hash);
+      if (!ct || !isUsablePlaintext(row.plaintext)) continue;
+      setMemoryPlaintext(ct, row.plaintext);
+      out.set(ct, row.plaintext);
+    }
+  } catch (err) {
+    console.warn('[IndexedDB] resolvePlaintextsForContents error:', err);
+  }
+  return out;
+}
 
 export async function saveLocalMessages(messages: any[], userId?: number): Promise<void> {
   if (!messages || messages.length === 0) return;
@@ -11,7 +93,7 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
     const db = getDexieDb(userId || 0);
     const now = Date.now();
 
-    await db.transaction('rw', db.messages, async () => {
+    await db.transaction('rw', db.messages, db.plaintext_cache, async () => {
       for (const msg of messages) {
         if (!msg) continue;
 
@@ -64,6 +146,14 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
         };
 
         await db.messages.put(record);
+        if (record.content && isUsablePlaintext(mergedPlaintext)) {
+          setMemoryPlaintext(record.content, mergedPlaintext as string);
+          await db.plaintext_cache.put({
+            hash: hashCiphertext(record.content),
+            plaintext: mergedPlaintext as string,
+            updatedAt: now,
+          });
+        }
       }
     });
   } catch (err) {
@@ -75,7 +165,6 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
   try {
     const db = getDexieDb(userId || 0);
     const now = Date.now();
-    const all: any[] = await db.messages.toArray();
     const targetRoom = String(loungeId || '');
     const cleanTarget = targetRoom.replace(/^#\s*/, '');
     const allowedSlugs = new Set<string>([cleanTarget]);
@@ -96,17 +185,19 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
       }
     }
 
+    const slugList = [...allowedSlugs].filter(Boolean);
+    let all: any[] = [];
+    if (slugList.length > 0) {
+      all = await db.messages.where('loungeId').anyOf(slugList).toArray();
+    }
+
     const valid = all
       .filter((m) => {
-        const mRoom = String(m.loungeId || m.room_id || m.roomId || '').replace(/^#\s*/, '');
-        const roomMatches = allowedSlugs.has(mRoom);
-        if (!roomMatches) return false;
         const msgTime = new Date(m.timestamp || m.createdAt || 0).getTime();
         return isNaN(msgTime) || (now - msgTime) <= MAX_MESSAGE_AGE_MS;
       })
       .map((m) => ({
         ...m,
-        // Drop poison placeholders so decrypt can retry; never surface them as body text
         plaintext: isUsablePlaintext(m.plaintext) ? m.plaintext : undefined,
       }))
       .sort((a, b) => {
@@ -115,6 +206,7 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
         return tA - tB;
       });
 
+    warmMemoryPlaintexts(valid);
     const seen = new Set<string>();
     const deduplicated: any[] = [];
     for (let i = valid.length - 1; i >= 0; i--) {
@@ -293,19 +385,6 @@ export async function getLocalKV<T = any>(key: string, userId?: number): Promise
     return record ? (record.value as T) : null;
   } catch (err) {
     console.warn('[IndexedDB] getLocalKV error:', err);
-    return null;
-  }
-}
-
-export async function getPlaintextByCiphertext(ciphertext: string, userId?: number): Promise<string | null> {
-  if (!ciphertext) return null;
-  try {
-    const db = getDexieDb(userId || 0);
-    const match = await db.messages
-      .filter((m) => m && m.content === ciphertext && isUsablePlaintext(m.plaintext))
-      .first();
-    return match?.plaintext || null;
-  } catch {
     return null;
   }
 }
