@@ -162,22 +162,53 @@ function looksLikeRawMediaPayload(text: string): boolean {
   return (
     /\[Attachment:/i.test(t) ||
     /\[Voice Note/i.test(t) ||
-    /https?:\/\/\S+/i.test(t) ||
     /\/uploads\/media\//i.test(t) ||
     /data:(image|video|audio)\//i.test(t)
   );
 }
 
+/** Strip media tokens / blob URLs from captions — do not treat bare http(s) links as media. */
 function scrubPreviewNoise(text: string): string {
   if (!text) return '';
   return text
     .replace(/\[Attachment:\s*[^\]]*\]/gi, ' ')
     .replace(/\[Voice Note[^\]]*\]/gi, ' ')
-    .replace(/https?:\/\/\S+/gi, ' ')
     .replace(/\/uploads\/media\/\S+/gi, ' ')
     .replace(/data:(image|video|audio)\/[^\s]+/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function extractHttpUrls(text: string): string[] {
+  return text.match(/https?:\/\/[^\s<>"']+/gi) || [];
+}
+
+function formatUrlPreview(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./i, '');
+    const path = u.pathname && u.pathname !== '/' ? u.pathname : '';
+    if (path && path.length <= 28) return `${host}${path}`;
+    return host || url.slice(0, 48);
+  } catch {
+    return url.slice(0, 48);
+  }
+}
+
+/** Direct-list label for plaintext link messages (not attachment tokens). */
+export function formatPlaintextLinkPreview(text: string): string | null {
+  const trimmed = (text || '').trim();
+  if (!trimmed || looksLikeRawMediaPayload(trimmed)) return null;
+  const urls = extractHttpUrls(trimmed);
+  if (urls.length === 0) return null;
+  const caption = trimmed
+    .replace(/https?:\/\/[^\s<>"']+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!caption) {
+    return urls.length === 1 ? formatUrlPreview(urls[0]) : `${urls.length} links`;
+  }
+  return caption;
 }
 
 function inferMediaLabelFromContent(content: string): string {
@@ -197,7 +228,7 @@ function inferMediaLabelFromContent(content: string): string {
   ) {
     return 'Photo';
   }
-  if (/\[Attachment:/i.test(t) || /https?:\/\//i.test(t) || /data:(video|audio)\//i.test(t)) {
+  if (/\[Attachment:/i.test(t) || /data:(video|audio)\//i.test(t)) {
     return 'Attachment';
   }
   return 'Media';
@@ -207,7 +238,7 @@ export function getCleanPreview(content: string): string {
   if (!content) return '';
   const trimmed = content.trim();
   if (trimmed.startsWith('e2ee:') || trimmed.startsWith('ratchet:v2:') || trimmed.startsWith('ratchet:v1:') || trimmed.startsWith('VEL_E2EE[')) {
-    return 'Encrypted Message';
+    return '';
   }
   if (trimmed.startsWith('[Voice Note')) {
     return formatVoiceNotePreview(trimmed);
@@ -222,6 +253,10 @@ export function getCleanPreview(content: string): string {
       return formatAttachmentAlbumPreview(attachments, caption);
     }
     return textOutside || inferMediaLabelFromContent(trimmed);
+  }
+  const linkPreview = formatPlaintextLinkPreview(trimmed);
+  if (linkPreview != null) {
+    return linkPreview;
   }
   if (looksLikeRawMediaPayload(trimmed)) {
     const cleaned = scrubPreviewNoise(trimmed);

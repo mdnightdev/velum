@@ -2,6 +2,7 @@ export type UserProfileData = {
   userId: number;
   username: string;
   displayName?: string;
+  nickname?: string;
   avatarUrl?: string;
   bio?: string;
   location?: string;
@@ -9,6 +10,8 @@ export type UserProfileData = {
   status?: string;
   role?: 'USER' | 'LOGIN_ADMIN' | 'SUPPORT_OPERATOR';
   isMuted?: boolean;
+  mutedUntil?: string | null;
+  muteDuration?: '24h' | '72h' | '30d' | 'off' | string | null;
   isBlocked?: boolean;
   stats?: {
     loungesCount: number;
@@ -22,12 +25,11 @@ export type ProfileCardProps = {
   variant: 'mobile' | 'expanded' | 'popover';
   onClose: () => void;
   onMessage?: () => void;
-  onMute?: () => void;
+  onMute?: (duration?: '24h' | '72h' | '30d' | 'off') => void;
   onBlock?: () => void;
   onDeleteChat?: () => void;
   onReport?: (reason?: string, attachments?: string[]) => void;
   onViewProfile?: () => void;
-  onSearchMessages?: () => void;
   onForceRekey?: () => void;
   /** Used to resolve DM room aliases when loading chat media. */
   currentUserId?: number;
@@ -62,13 +64,16 @@ export function toUserProfileData(raw: Record<string, unknown>): UserProfileData
     userId,
     username,
     displayName,
+    nickname: (raw.nickname as string | undefined) || '',
     avatarUrl: (raw.avatarUrl as string | undefined) || (raw.avatar as string | undefined) || '',
     bio: (raw.bio as string | undefined) || '',
     location: (raw.location as string | undefined) || '',
     joinedDate: joinedDate || '',
-    status: (raw.status as string | undefined) || 'offline',
+    status: (raw.status as string | undefined) || '',
     role,
     isMuted: !!raw.isMuted,
+    mutedUntil: (raw.mutedUntil as string | null | undefined) || null,
+    muteDuration: (raw.muteDuration as string | null | undefined) || null,
     isBlocked: !!raw.isBlocked,
     stats,
   };

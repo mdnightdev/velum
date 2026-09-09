@@ -1,6 +1,7 @@
 import React, { RefObject, UIEvent } from 'react';
 import { Message } from '../../types';
 import { MessageItem } from './MessageItem';
+import { getMessageListKey } from './messageKey';
 
 export interface MessageListProps {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
@@ -66,7 +67,7 @@ export function MessageList({
         ) : (
           conversationMessages.map((msg, index) => (
             <MessageItem
-              key={msg.message_id || msg.id || msg.nonce || (msg.created_at ? `${msg.user_id}-${msg.created_at}` : undefined) || `msg-${index}`}
+              key={getMessageListKey(msg, index)}
               msg={msg}
               index={index}
               currentUserId={currentUserId}

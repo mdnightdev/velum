@@ -89,10 +89,18 @@ utilityRouter.get('/admin/diagnostics', async (req, res) => {
 
   const suspicious: any[] = [];
 
+  let diagnosticLogs = clientDiagnosticsList;
+  try {
+    const { listClientDiagnostics } = await import('../services/clientDiagnosticsService.js');
+    diagnosticLogs = await listClientDiagnostics({ limit: 100, status: 'all' });
+  } catch {
+    /* fall back to RAM mirror */
+  }
+
   res.json({
     suspicious,
     logs: mappedLogs,
-    diagnostic_logs: clientDiagnosticsList,
+    diagnostic_logs: diagnosticLogs,
     invites: [],
     sanctions: [],
     sessions: mappedSessions,

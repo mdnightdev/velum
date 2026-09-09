@@ -62,6 +62,10 @@ dmRouter.post('/:peer', async (req: Request, res: Response) => {
 
     res.status(201).json({ message });
   } catch (err) {
+    const blocked = (err as Error & { code?: string })?.code === 'BLOCKED' || (err as Error)?.message === 'BLOCKED';
+    if (blocked) {
+      return res.status(403).json({ error: 'Unblock this contact to send messages' });
+    }
     logger.error('Failed to send direct message', { error: (err as Error).message });
     res.status(500).json({ error: 'Failed to send message' });
   }

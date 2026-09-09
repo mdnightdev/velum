@@ -144,12 +144,43 @@ userRouter.delete('/me', authMiddleware, (req, res, next) => {
   userController.deleteOwnAccount(req, res).catch(next);
 });
 
+// GET /v2/user/me/mutes — all timed DM mutes for the current user
+userRouter.get('/me/mutes', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const redis = await getRedisClient();
+    const mutes: Array<{ peerId: number; duration: string | null; mutedUntil: string | null }> = [];
+    if (!redis) {
+      return res.json({ mutes });
+    }
+    const pattern = `user:${currentUserId}:muted:*`;
+    for await (const key of redis.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+      const keyStr = String(key);
+      const peerId = parseInt(keyStr.slice(keyStr.lastIndexOf(':') + 1), 10);
+      if (!Number.isFinite(peerId) || peerId <= 0) continue;
+      const durationRaw = await redis.get(keyStr);
+      const ttl = await redis.ttl(keyStr);
+      mutes.push({
+        peerId,
+        duration: typeof durationRaw === 'string' ? durationRaw : null,
+        mutedUntil:
+          typeof ttl === 'number' && ttl > 0
+            ? new Date(Date.now() + ttl * 1000).toISOString()
+            : null,
+      });
+    }
+    res.json({ mutes });
+  } catch {
+    res.status(500).json({ error: 'Failed to load mutes.' });
+  }
+});
+
 userRouter.post('/report', authMiddleware, (req, res, next) => {
   userController.reportUser(req, res).catch(next);
 });
 
-// POST /v2/user/:id/mute - Mute or unmute user
-userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response) => {
+// GET /v2/user/:id/media-prefs — per-peer media visibility
+userRouter.get('/:id/media-prefs', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
     const targetUserId = parseInt(req.params.id, 10);
@@ -157,19 +188,129 @@ userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response)
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
     const redis = await getRedisClient();
+    const defaults = { autoDownload: true, saveToDevice: true };
+    if (!redis) {
+      return res.json(defaults);
+    }
+    const raw = await redis.get(`user:${currentUserId}:media_prefs:${targetUserId}`);
+    if (!raw) return res.json(defaults);
+    try {
+      const parsed = JSON.parse(raw) as Partial<typeof defaults>;
+      return res.json({
+        autoDownload: parsed.autoDownload !== false,
+        saveToDevice: parsed.saveToDevice !== false,
+      });
+    } catch {
+      return res.json(defaults);
+    }
+  } catch {
+    res.status(500).json({ error: 'Failed to load media prefs.' });
+  }
+});
+
+// PUT /v2/user/:id/media-prefs — persist Auto download / Save to device
+userRouter.put('/:id/media-prefs', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const targetUserId = parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+    const autoDownload = req.body?.autoDownload !== false;
+    const saveToDevice = req.body?.saveToDevice !== false;
+    const prefs = { autoDownload, saveToDevice };
+    const redis = await getRedisClient();
+    if (redis) {
+      await redis.set(`user:${currentUserId}:media_prefs:${targetUserId}`, JSON.stringify(prefs));
+    }
+    res.json({ success: true, ...prefs });
+  } catch {
+    res.status(500).json({ error: 'Failed to save media prefs.' });
+  }
+});
+
+// POST /v2/user/:id/mute - Mute (timed) or unmute user
+// Body: { duration?: '24h' | '72h' | '30d' | 'off' } — omit duration to toggle
+userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const targetUserId = parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+
+    const durationRaw = typeof req.body?.duration === 'string' ? req.body.duration : null;
+    const DURATION_SECONDS: Record<string, number> = {
+      '24h': 24 * 60 * 60,
+      '72h': 72 * 60 * 60,
+      '30d': 30 * 24 * 60 * 60,
+      off: 0,
+    };
+
+    const redis = await getRedisClient();
     const muteKey = `user:${currentUserId}:muted:${targetUserId}`;
     let isMuted = false;
-    if (redis) {
+    let mutedUntil: string | null = null;
+    let duration: string | null = null;
+
+    const resolveDuration =
+      durationRaw && DURATION_SECONDS[durationRaw] != null ? durationRaw : '24h';
+
+    if (!redis) {
+      // Client still applies mute locally; push gate requires Redis.
+      if (durationRaw === 'off' || durationRaw === '0') {
+        return res.json({
+          success: true,
+          isMuted: false,
+          duration: 'off',
+          mutedUntil: null,
+          persisted: false,
+          message: 'User unmuted.',
+        });
+      }
+      const seconds = DURATION_SECONDS[resolveDuration] || DURATION_SECONDS['24h'];
+      return res.json({
+        success: true,
+        isMuted: true,
+        duration: resolveDuration,
+        mutedUntil: new Date(Date.now() + seconds * 1000).toISOString(),
+        persisted: false,
+        message: 'User muted.',
+      });
+    }
+
+    if (durationRaw === 'off' || durationRaw === '0') {
+      await redis.del(muteKey);
+      isMuted = false;
+      duration = 'off';
+    } else if (durationRaw && DURATION_SECONDS[durationRaw] != null) {
+      const seconds = DURATION_SECONDS[durationRaw];
+      await redis.set(muteKey, durationRaw, { EX: seconds });
+      isMuted = true;
+      duration = durationRaw;
+      mutedUntil = new Date(Date.now() + seconds * 1000).toISOString();
+    } else {
       const exists = await redis.get(muteKey);
       if (exists) {
         await redis.del(muteKey);
         isMuted = false;
+        duration = 'off';
       } else {
-        await redis.set(muteKey, '1');
+        const seconds = DURATION_SECONDS['24h'];
+        await redis.set(muteKey, '24h', { EX: seconds });
         isMuted = true;
+        duration = '24h';
+        mutedUntil = new Date(Date.now() + seconds * 1000).toISOString();
       }
     }
-    res.json({ success: true, isMuted, message: isMuted ? 'User muted.' : 'User unmuted.' });
+
+    res.json({
+      success: true,
+      isMuted,
+      duration,
+      mutedUntil,
+      message: isMuted ? 'User muted.' : 'User unmuted.',
+    });
   } catch (err) {
     res.status(500).json({ error: 'Failed to toggle mute status.' });
   }

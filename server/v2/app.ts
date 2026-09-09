@@ -346,6 +346,12 @@ export function startV2Server(port = config.PORT) {
     logger.error('Failed to initialize UserDeletionService background sweeper:', err);
   });
 
+  import('./services/healRunner.js').then(({ startHealScheduler }) => {
+    startHealScheduler();
+  }).catch((err) => {
+    logger.error('Failed to start heal scheduler:', err);
+  });
+
   return app.listen(port, () => {
     logger.info(`V2 Server started`, { port, environment: config.NODE_ENV });
   });

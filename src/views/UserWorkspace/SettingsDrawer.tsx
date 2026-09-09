@@ -21,7 +21,7 @@ import { getSessionId } from '../../utils/auth';
 import { velumToast } from '../../utils/toast';
 import { computeClientHash } from '../../services/encryptionService';
 import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
-import { submitDiagnosticLogs, collectClientDiagnosticsPayload } from '../../utils/diagnostics';
+import { submitDiagnosticLogs } from '../../utils/diagnostics';
 import { getLocalMedia, saveLocalMedia, deleteLocalMedia } from '../../utils/indexedDb';
 import { FULL_BUILD_VERSION } from '../../version';
 import { useLanguage } from '../../i18n/LanguageContext';

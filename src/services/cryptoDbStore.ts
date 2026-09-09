@@ -88,33 +88,41 @@ export async function saveLocalIdentityKeys(userId: number, keys: LocalIdentityK
 }
 
 export async function loadLocalIdentityKeys(userId: number): Promise<LocalIdentityKeys | null> {
-  let record: any = null;
+  const candidates: any[] = [];
 
   try {
     if (typeof window !== 'undefined' && window.indexedDB) {
       const db = getDexieDb(userId);
-      record = await db.identity_keys.get('local_identity');
+      const idbRecord = await db.identity_keys.get('local_identity');
+      if (idbRecord?.signingPrivateKeyHex && idbRecord?.dhPrivateKeyHex) {
+        candidates.push(idbRecord);
+      }
     }
   } catch (err) {
     console.warn('[CryptoDB] Error loading identity keys from IndexedDB:', err);
   }
 
-  if (!record || !record.signingPrivateKeyHex || !record.dhPrivateKeyHex) {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem(`velum_identity_keys_${userId}`);
-        if (stored) {
-          record = JSON.parse(stored);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem(`velum_identity_keys_${userId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.signingPrivateKeyHex && parsed?.dhPrivateKeyHex) {
+          candidates.push(parsed);
         }
       }
-    } catch {}
+    }
+  } catch {}
+
+  const mem = memoryIdentityCache.get(userId);
+  if (mem?.signingPrivateKeyHex && mem?.dhPrivateKeyHex) {
+    candidates.push(mem);
   }
 
-  if (!record || !record.signingPrivateKeyHex || !record.dhPrivateKeyHex) {
-    record = memoryIdentityCache.get(userId);
-  }
+  if (candidates.length === 0) return null;
 
-  if (!record || !record.signingPrivateKeyHex || !record.dhPrivateKeyHex) return null;
+  candidates.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+  const record = candidates[0];
 
   return {
     signing: {

@@ -53,7 +53,9 @@ export function ContactAvatar({
     setImgFailed(false);
   }, [avatar]);
 
-  const classes = `${className} border relative flex items-center justify-center font-bold text-xs overflow-hidden flex-shrink-0 ${
+  const classes = `${className} relative flex items-center justify-center font-bold text-xs overflow-hidden flex-shrink-0 ${
+    className.includes('border-0') || className.includes('border-none') ? '' : 'border '
+  }${
     colorKey ? AVATAR_COLOR_CLASSES[colorKey] : 'bg-velum-750 border-velum-600 text-text-primary'
   }${onClick ? ' cursor-pointer active:scale-95 transition-transform' : ''}`;
 

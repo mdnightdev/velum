@@ -105,10 +105,45 @@ adminRouter.post('/reports/:id/escalate', async (req: Request, res: Response) =>
   }
 });
 
-// GET /v2/admin/diagnostics/logs - Get diagnostics logs
+// GET /v2/admin/ops-errors - Durable amber/red ops events
+adminRouter.get('/ops-errors', async (req: Request, res: Response) => {
+  try {
+    const { listOpsErrors } = await import('../services/opsErrorService.js');
+    const limit = parseInt(String(req.query.limit || '50'), 10) || 50;
+    const offset = parseInt(String(req.query.offset || '0'), 10) || 0;
+    const severity = (req.query.severity as 'amber' | 'red' | 'all' | undefined) || 'all';
+    const resolved = (req.query.resolved as 'open' | 'resolved' | 'all' | undefined) || 'open';
+    const events = await listOpsErrors({ limit, offset, severity, resolved });
+    res.json({ events });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch ops error events.' });
+  }
+});
+
+// POST /v2/admin/ops-errors/:eventId/resolve
+adminRouter.post('/ops-errors/:eventId/resolve', async (req: Request, res: Response) => {
+  try {
+    const { resolveOpsError } = await import('../services/opsErrorService.js');
+    const eventId = String(req.params.eventId || '');
+    if (!eventId) {
+      return res.status(400).json({ error: 'eventId required.' });
+    }
+    const ok = await resolveOpsError(eventId);
+    if (!ok) {
+      return res.status(404).json({ error: 'Ops error event not found.' });
+    }
+    res.json({ success: true, message: 'Ops error resolved.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to resolve ops error event.' });
+  }
+});
+
+// GET /v2/admin/diagnostics/logs - Get diagnostics logs (Postgres)
 adminRouter.get('/diagnostics/logs', async (req: Request, res: Response) => {
   try {
-    res.json(clientDiagnosticsList);
+    const { listClientDiagnostics } = await import('../services/clientDiagnosticsService.js');
+    const logs = await listClientDiagnostics({ limit: 100, status: 'all' });
+    res.json(logs);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch diagnostics logs.' });
   }
@@ -118,9 +153,12 @@ adminRouter.get('/diagnostics/logs', async (req: Request, res: Response) => {
 adminRouter.post('/diagnostics/logs/:logId/resolve', async (req: Request, res: Response) => {
   try {
     const { logId } = req.params;
-    const log = clientDiagnosticsList.find(l => l.id === logId);
-    if (log) {
-      log.status = 'resolved';
+    const { resolveClientDiagnostic } = await import('../services/clientDiagnosticsService.js');
+    const ok = await resolveClientDiagnostic(logId);
+    const ram = clientDiagnosticsList.find(l => l.id === logId);
+    if (ram) ram.status = 'resolved';
+    if (!ok && !ram) {
+      return res.status(404).json({ error: 'Diagnostic log not found.' });
     }
     res.json({ success: true, message: 'Diagnostic log resolved.' });
   } catch (err) {
@@ -132,6 +170,8 @@ adminRouter.post('/diagnostics/logs/:logId/resolve', async (req: Request, res: R
 adminRouter.delete('/diagnostics/logs/:logId', async (req: Request, res: Response) => {
   try {
     const { logId } = req.params;
+    const { deleteClientDiagnostic } = await import('../services/clientDiagnosticsService.js');
+    await deleteClientDiagnostic(logId);
     const index = clientDiagnosticsList.findIndex(l => l.id === logId);
     if (index !== -1) {
       clientDiagnosticsList.splice(index, 1);
@@ -139,6 +179,43 @@ adminRouter.delete('/diagnostics/logs/:logId', async (req: Request, res: Respons
     res.json({ success: true, message: 'Diagnostic log deleted.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete diagnostic log.' });
+  }
+});
+
+// GET /v2/admin/heal/reports
+adminRouter.get('/heal/reports', async (req: Request, res: Response) => {
+  try {
+    const { listHealReports } = await import('../services/healRunner.js');
+    const reports = await listHealReports(parseInt(String(req.query.limit || '20'), 10) || 20);
+    res.json({ reports });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch heal reports.' });
+  }
+});
+
+// GET /v2/admin/heal/latest
+adminRouter.get('/heal/latest', async (req: Request, res: Response) => {
+  try {
+    const { getLatestHealReport } = await import('../services/healRunner.js');
+    const report = await getLatestHealReport();
+    res.json({ report });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch latest heal report.' });
+  }
+});
+
+// POST /v2/admin/heal/run
+adminRouter.post('/heal/run', async (req: Request, res: Response) => {
+  try {
+    const mode = req.body?.mode === 'report' ? 'report' : 'fix';
+    const { runHeal } = await import('../services/healRunner.js');
+    const report = await runHeal({
+      mode,
+      triggeredBy: `admin:${req.user?.userId || 'unknown'}`,
+    });
+    res.json({ success: true, report });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to run heal.' });
   }
 });
 

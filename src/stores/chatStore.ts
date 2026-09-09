@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
 import { Message } from '../types';
 import { isTabSessionScope } from '../services/storageService';
+import { isUsablePlaintext, mergeMessagePlaintext } from '../utils/messagePlaintext';
 
 /** Tab-scoped chat persist so multi-account tabs do not share lastMessages/unreads. */
 const tabAwareChatStorage: StateStorage = {
@@ -91,9 +92,29 @@ export const useChatStore = create<ChatStoreState>()(
           if (existsIdx !== -1) {
             const next = [...state.messages];
             const existing = next[existsIdx];
+            const existingServerId = existing.db_message_id ?? existing.id ?? existing.message_id;
+            const incomingServerId = message.db_message_id ?? message.id ?? message.message_id;
+            // True duplicate delivery (not optimistic→ack merge)
+            if (
+              existingServerId != null &&
+              incomingServerId != null &&
+              String(existingServerId) === String(incomingServerId) &&
+              existing.status &&
+              existing.status !== 'sending' &&
+              existing.status !== 'pending'
+            ) {
+              void import('../utils/diagnostics').then(({ reportClientOpsEvent }) => {
+                reportClientOpsEvent({
+                  severity: 'amber',
+                  code: 'CHAT_DUP_APPEND_DROPPED',
+                  message: 'Duplicate server message append recovered',
+                  component: 'chatStore',
+                });
+              });
+            }
             next[existsIdx] = {
               ...message,
-              plaintext: message.plaintext || existing.plaintext
+              plaintext: mergeMessagePlaintext(existing.plaintext, message.plaintext)
             };
             return { messages: next };
           }
@@ -129,7 +150,7 @@ export const useChatStore = create<ChatStoreState>()(
               nextList[existingIdx] = {
                 ...existing,
                 ...incoming,
-                plaintext: incoming.plaintext || existing.plaintext,
+                plaintext: mergeMessagePlaintext(existing.plaintext, incoming.plaintext),
                 status: incoming.status || existing.status
               };
             } else {
@@ -157,10 +178,12 @@ export const useChatStore = create<ChatStoreState>()(
               .map(String);
             for (const k of keys) {
               const pt = keyToPlaintext[k];
-              if (pt && m.plaintext !== pt) {
-                hasChange = true;
-                return { ...m, plaintext: pt };
-              }
+              if (!pt || pt === m.plaintext) continue;
+              // Never overwrite real plaintext with placeholders / empty
+              if (!isUsablePlaintext(pt)) continue;
+              if (isUsablePlaintext(m.plaintext)) continue;
+              hasChange = true;
+              return { ...m, plaintext: pt };
             }
             return m;
           });

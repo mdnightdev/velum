@@ -6,12 +6,13 @@ import { parseAttachment } from '../../../utils/messageParser';
 import { saveLocalMessages } from '../../../utils/indexedDb';
 import { useChatStore } from '../../../stores/chatStore';
 import { parseDmPeerId } from '../../../utils/roomUtils';
+import { isUsablePlaintext } from '../../../utils/messagePlaintext';
 
 // Global session plaintext cache keyed by ciphertext (content)
 export const globalDecryptionCache = new Map<string, string>();
 
 export function cachePlaintext(ciphertext: string, plaintext: string) {
-  if (ciphertext && plaintext) {
+  if (ciphertext && isUsablePlaintext(plaintext)) {
     globalDecryptionCache.set(ciphertext, plaintext);
   }
 }
@@ -67,24 +68,33 @@ export function useMessageDecryption({
         }
 
         // 2. If plaintext already attached in memory, map to all key aliases immediately
-        if (m.plaintext) {
-          globalDecryptionCache.set(m.content, m.plaintext);
+        if (isUsablePlaintext(m.plaintext)) {
+          globalDecryptionCache.set(m.content, m.plaintext!);
           for (const k of keys) {
-            cacheRef.current[k] = { ciphertext: m.content, plaintext: m.plaintext };
-            syncDecrypted[k] = m.plaintext;
+            cacheRef.current[k] = { ciphertext: m.content, plaintext: m.plaintext! };
+            syncDecrypted[k] = m.plaintext!;
           }
           continue;
+        }
+
+        // Ignore poisoned placeholders left by older builds
+        if (m.plaintext && !isUsablePlaintext(m.plaintext)) {
+          m.plaintext = undefined;
         }
 
         // 3. Check global session cache first
         if (globalDecryptionCache.has(m.content)) {
           const cached = globalDecryptionCache.get(m.content)!;
-          m.plaintext = cached;
-          for (const k of keys) {
-            cacheRef.current[k] = { ciphertext: m.content, plaintext: cached };
-            syncDecrypted[k] = cached;
+          if (!isUsablePlaintext(cached)) {
+            globalDecryptionCache.delete(m.content);
+          } else {
+            m.plaintext = cached;
+            for (const k of keys) {
+              cacheRef.current[k] = { ciphertext: m.content, plaintext: cached };
+              syncDecrypted[k] = cached;
+            }
+            continue;
           }
-          continue;
         }
 
         // 4. Check component cache under any alias
@@ -98,13 +108,17 @@ export function useMessageDecryption({
         }
 
         if (cachedPlaintext) {
-          m.plaintext = cachedPlaintext;
-          globalDecryptionCache.set(m.content, cachedPlaintext);
-          for (const k of keys) {
-            cacheRef.current[k] = { ciphertext: m.content, plaintext: cachedPlaintext };
-            syncDecrypted[k] = cachedPlaintext;
+          if (!isUsablePlaintext(cachedPlaintext)) {
+            cachedPlaintext = null;
+          } else {
+            m.plaintext = cachedPlaintext;
+            globalDecryptionCache.set(m.content, cachedPlaintext);
+            for (const k of keys) {
+              cacheRef.current[k] = { ciphertext: m.content, plaintext: cachedPlaintext };
+              syncDecrypted[k] = cachedPlaintext;
+            }
+            continue;
           }
-          continue;
         }
 
         const isOutgoing = Boolean(currentUserId && String(m.user_id) === String(currentUserId));
@@ -168,14 +182,16 @@ export function useMessageDecryption({
                 stack: err instanceof Error ? err.stack : undefined,
                 keys: item.keys,
                 context: item.context,
-                ciphertext: item.ciphertext
               });
-              return { item, decrypted: '[Decryption Error]' };
+              return { item, decrypted: '' };
             }
           })
         );
 
         for (const { item, decrypted } of results) {
+          if (!isUsablePlaintext(decrypted)) {
+            continue;
+          }
           globalDecryptionCache.set(item.ciphertext, decrypted);
           for (const k of item.keys) {
             cacheRef.current[k] = { ciphertext: item.ciphertext, plaintext: decrypted };
@@ -183,9 +199,9 @@ export function useMessageDecryption({
           }
 
           messagesToPersist.push({
-          ...item.rawMsg,
-          plaintext: decrypted
-        });
+            ...item.rawMsg,
+            plaintext: decrypted,
+          });
         }
       }
 
@@ -207,18 +223,21 @@ export function useMessageDecryption({
   }, [messages, activeChatPeer?.userId, roomId, currentUserId]);
 
   const getDecryptedText = (msg: Message): string => {
-    if (msg.plaintext) return msg.plaintext;
+    if (isUsablePlaintext(msg.plaintext)) return msg.plaintext!;
     if (msg.content && globalDecryptionCache.has(msg.content)) {
-      return globalDecryptionCache.get(msg.content)!;
+      const cached = globalDecryptionCache.get(msg.content)!;
+      if (isUsablePlaintext(cached)) return cached;
     }
     const keys = [msg.message_id, msg.id, msg.client_msg_id, msg.nonce, (msg as any).db_message_id]
       .filter(Boolean)
       .map(String);
     for (const k of keys) {
-      if (decryptedMap[k]) return decryptedMap[k];
-      if (cacheRef.current[k]) return cacheRef.current[k].plaintext;
+      if (isUsablePlaintext(decryptedMap[k])) return decryptedMap[k];
+      if (cacheRef.current[k] && isUsablePlaintext(cacheRef.current[k].plaintext)) {
+        return cacheRef.current[k].plaintext;
+      }
     }
-    // If not an encrypted token, content is plaintext - never return empty string
+    // If not an encrypted token, content is plaintext
     if (msg.content && !msg.content.startsWith('e2ee:') && !msg.content.startsWith('VEL_E2EE[')) {
       return msg.content;
     }

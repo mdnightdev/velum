@@ -43,10 +43,20 @@ export class UserController {
     const resolvedStatus = isRecentlyActive ? 'Online' : 'Offline';
 
     let isMuted = false;
+    let mutedUntil: string | null = null;
+    let muteDuration: string | null = null;
     const redis = await getRedisClient();
     if (redis) {
-      const exists = await redis.get(`user:${req.user.userId}:muted:${targetUserId}`);
-      isMuted = !!exists;
+      const muteKey = `user:${req.user.userId}:muted:${targetUserId}`;
+      const muteVal = await redis.get(muteKey);
+      isMuted = !!muteVal;
+      if (isMuted) {
+        muteDuration = typeof muteVal === 'string' ? muteVal : '24h';
+        const ttl = await redis.ttl(muteKey);
+        if (typeof ttl === 'number' && ttl > 0) {
+          mutedUntil = new Date(Date.now() + ttl * 1000).toISOString();
+        }
+      }
     }
 
     let isBlocked = false;
@@ -73,6 +83,8 @@ export class UserController {
       createdAt: user.createdAt,
       status: resolvedStatus,
       isMuted,
+      mutedUntil,
+      muteDuration,
       isBlocked,
       stats: {
         loungesCount,

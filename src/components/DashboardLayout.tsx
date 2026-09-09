@@ -17,8 +17,10 @@ import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
 import { getLocalKV, setLocalKV, flushLoungeCache, purgeDmMessages } from '../utils/indexedDb';
 import { velumToast } from '../utils/toast';
-import { mergeLastMessagesMap, getPrimaryDmRoomId } from '../utils/roomUtils';
+import { mergeLastMessagesMap, getPrimaryDmRoomId, getDmRoomAliases } from '../utils/roomUtils';
 import { stripAt } from '../types';
+import { useChatStore } from '../stores/chatStore';
+import { setPeerMutedLocal } from '../utils/dmPeerPrefs';
 
 interface DashboardLayoutProps {
   user: any;
@@ -91,6 +93,9 @@ export default function DashboardLayout({
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [profileCardUser, setProfileCardUser] = useState<any | null>(null);
+  const clearRoomMessages = useChatStore((s) => s.clearRoomMessages);
+  const setLastMessages = useChatStore((s) => s.setLastMessages);
+  const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
 
   const handleLoadProfileCard = async (profUser: any) => {
     try {
@@ -101,6 +106,12 @@ export default function DashboardLayout({
       });
       if (res.ok) {
         const data = await res.json();
+        setPeerMutedLocal(
+          Number(targetUserId),
+          !!data.isMuted,
+          data.mutedUntil || null,
+          data.muteDuration || null
+        );
         setProfileCardUser({
           ...profUser,
           userId: targetUserId,
@@ -111,6 +122,8 @@ export default function DashboardLayout({
           location: data.location || '',
           status: data.status || 'Active',
           isMuted: !!data.isMuted,
+          mutedUntil: data.mutedUntil || null,
+          muteDuration: data.muteDuration || null,
           isBlocked: !!data.isBlocked,
           joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '',
           stats: data.stats || { loungesCount: 0, connectionsCount: 0 }
@@ -608,7 +621,7 @@ export default function DashboardLayout({
             <ProfileCard
               user={toUserProfileData({
                 ...profileCardUser,
-                status: profileCardUser.status || 'Offline',
+                status: profileCardUser.status,
                 joinedDate:
                   profileCardUser.joinedDate ||
                   (profileCardUser.created_at
@@ -619,7 +632,7 @@ export default function DashboardLayout({
                     : 'Recently'),
               })}
               variant={isMobile ? 'mobile' : 'expanded'}
-              currentUserId={user?.userId || user?.id}
+              currentUserId={Number(user?.userId || user?.id || 0) || undefined}
               onClose={() => setProfileCardUser(null)}
               onMessage={() => {
                 const targetUid = profileCardUser.userId || profileCardUser.id || profileCardUser.user_id;
@@ -629,18 +642,52 @@ export default function DashboardLayout({
                 setActiveCategory('direct');
                 setProfileCardUser(null);
               }}
-              onMute={async () => {
+              onMute={async (duration?: '24h' | '72h' | '30d' | 'off') => {
+                const peerId = Number(profileCardUser.userId);
+                const dur = duration || '24h';
+                const muted = dur !== 'off';
+                // Optimistic — enforce notify suppress immediately
+                setPeerMutedLocal(peerId, muted, null, muted ? dur : null);
+                setProfileCardUser((prev: any) =>
+                  prev
+                    ? {
+                        ...prev,
+                        isMuted: muted,
+                        mutedUntil: null,
+                        muteDuration: muted ? dur : null,
+                      }
+                    : null
+                );
                 try {
                   const sId = fetchSessionId();
                   const res = await fetch(`/v2/user/${profileCardUser.userId}/mute`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sId}` }
+                    headers: {
+                      Authorization: `Bearer ${sId}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ duration: dur }),
                   });
                   if (res.ok) {
                     const data = await res.json();
-                    setProfileCardUser((prev: any) => prev ? { ...prev, isMuted: data.isMuted } : null);
+                    setPeerMutedLocal(
+                      peerId,
+                      !!data.isMuted,
+                      data.mutedUntil || null,
+                      data.duration || dur
+                    );
+                    setProfileCardUser((prev: any) =>
+                      prev
+                        ? {
+                            ...prev,
+                            isMuted: data.isMuted,
+                            mutedUntil: data.mutedUntil || null,
+                            muteDuration: data.duration || null,
+                          }
+                        : null
+                    );
                   }
-                } catch(e) {}
+                } catch (e) {}
               }}
               onBlock={async () => {
                 try {
@@ -661,35 +708,41 @@ export default function DashboardLayout({
               }}
               onDeleteChat={async () => {
                 const targetId = profileCardUser.userId;
-                const aliases = targetId === 999
-                  ? [`dm_velum_${user.userId}`, 'dm_999']
-                  : [
-                      `dm_${targetId}`,
-                      `dm_${Math.min(user.userId, targetId)}_${Math.max(user.userId, targetId)}`,
-                      `dm_${user.userId}_${targetId}`,
-                      `dm_${targetId}_${user.userId}`
-                    ];
+                const aliases =
+                  targetId === 999
+                    ? getDmRoomAliases(999, user.userId)
+                    : getDmRoomAliases(targetId, user.userId);
 
                 try {
                   const sId = fetchSessionId();
                   await fetch(`/v2/user/${targetId}/chat`, {
                     method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${sId}` }
+                    headers: { Authorization: `Bearer ${sId}` },
                   });
 
                   await purgeDmMessages(targetId, user.userId);
                   for (const alias of aliases) {
                     await flushLoungeCache(alias, user.userId);
+                    clearRoomMessages(alias);
                   }
 
-                  window.dispatchEvent(new CustomEvent('velum-dm-cleared', {
-                    detail: { peerId: targetId, aliases }
-                  }));
+                  setLastMessages((prev) => {
+                    const next = { ...prev };
+                    for (const alias of aliases) delete next[alias];
+                    return next;
+                  });
+                  setUnreadCounts((prev) => {
+                    const next = { ...prev };
+                    for (const alias of aliases) next[alias] = 0;
+                    return next;
+                  });
 
-                  if (onRoomSelect) onRoomSelect('');
-                  if (onClearChatPeer) onClearChatPeer();
-                  setActiveCategory('direct');
-                } catch(e) {}
+                  window.dispatchEvent(
+                    new CustomEvent('velum-dm-cleared', {
+                      detail: { peerId: targetId, aliases },
+                    })
+                  );
+                } catch (e) {}
                 setProfileCardUser(null);
               }}
               onReport={async (reason?: string, attachments?: string[]) => {
@@ -698,10 +751,14 @@ export default function DashboardLayout({
                   const sId = fetchSessionId();
                   await fetch('/v2/user/report', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ targetUserId: profileCardUser.userId, reason: reason.trim(), attachments: attachments || [] })
+                    headers: { Authorization: `Bearer ${sId}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      targetUserId: profileCardUser.userId,
+                      reason: reason.trim(),
+                      attachments: attachments || [],
+                    }),
                   });
-                } catch(e) {}
+                } catch (e) {}
               }}
             />
           )}

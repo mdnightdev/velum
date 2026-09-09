@@ -97,21 +97,55 @@ export const logger = winston.createLogger({
 });
 
 /**
- * Initializes production file transports dynamically when running under production environment.
+ * File transports: warn + error always (unless DISABLE_FILE_LOGGING=true).
+ * Full app log only in production or ENABLE_FILE_LOGGING=true.
  */
 async function addFileTransports() {
-  const shouldLogToFile = process.env.NODE_ENV === 'production' || process.env.ENABLE_FILE_LOGGING === 'true';
-  if (shouldLogToFile) {
-    try {
-      const { resolve } = await import('path');
-      const fs = await import('fs');
-      const logsDir = resolve(process.cwd(), 'logs');
-      
-      // Ensure logs directory exists
-      if (!fs.existsSync(logsDir)) {
-        fs.mkdirSync(logsDir, { recursive: true });
-      }
-      
+  if (process.env.DISABLE_FILE_LOGGING === 'true') return;
+
+  try {
+    const { resolve } = await import('path');
+    const fs = await import('fs');
+    const logsDir = resolve(process.cwd(), 'logs');
+
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
+    }
+
+    const warnRotateTransport = new DailyRotateFile({
+      dirname: logsDir,
+      filename: 'warn-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      zippedArchive: true,
+      maxSize: '20m',
+      maxFiles: '30d',
+      level: 'warn',
+      format: prodFormat,
+    });
+    // Isolate amber: only warn lines (DailyRotateFile level includes error+warn;
+    // filter so warn file is warn-only).
+    warnRotateTransport.format = winston.format.combine(
+      winston.format((info) => (info.level === 'warn' ? info : false))(),
+      prodFormat
+    );
+
+    const errorRotateTransport = new DailyRotateFile({
+      dirname: logsDir,
+      filename: 'error-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      zippedArchive: true,
+      maxSize: '20m',
+      maxFiles: '30d',
+      level: 'error',
+      format: prodFormat,
+    });
+
+    logger.add(warnRotateTransport);
+    logger.add(errorRotateTransport);
+
+    const fullAppLog =
+      process.env.NODE_ENV === 'production' || process.env.ENABLE_FILE_LOGGING === 'true';
+    if (fullAppLog) {
       const appRotateTransport = new DailyRotateFile({
         dirname: logsDir,
         filename: 'app-%DATE%.log',
@@ -119,25 +153,12 @@ async function addFileTransports() {
         zippedArchive: true,
         maxSize: '20m',
         maxFiles: '14d',
-        format: prodFormat
+        format: prodFormat,
       });
-
-      const errorRotateTransport = new DailyRotateFile({
-        dirname: logsDir,
-        filename: 'error-%DATE%.log',
-        datePattern: 'YYYY-MM-DD',
-        zippedArchive: true,
-        maxSize: '20m',
-        maxFiles: '30d',
-        level: 'error',
-        format: prodFormat
-      });
-
       logger.add(appRotateTransport);
-      logger.add(errorRotateTransport);
-    } catch (err) {
-      console.error('Failed to initialize file logging transports:', err);
     }
+  } catch (err) {
+    console.error('Failed to initialize file logging transports:', err);
   }
 }
 
@@ -166,13 +187,25 @@ export const requestLoggerMiddleware = (req: Request, res: Response, next: NextF
   res.on('finish', () => {
     const duration = Date.now() - start;
     const logLevel = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'http';
-    
-    // Detailed logging but with correlation ID for traceability
-    logger[logLevel](`${req.method} ${req.originalUrl || req.url} ${res.statusCode} ${duration}ms`, {
+    const path = req.originalUrl || req.url;
+
+    logger[logLevel](`${req.method} ${path} ${res.statusCode} ${duration}ms`, {
       correlationId,
       ip: req.ip,
       userAgent: req.get('user-agent'),
     });
+
+    if (res.statusCode >= 400) {
+      void import('../services/opsErrorService.js')
+        .then(({ reportOpsErrorFromHttp }) =>
+          reportOpsErrorFromHttp({
+            req,
+            statusCode: res.statusCode,
+            durationMs: duration,
+          })
+        )
+        .catch(() => {});
+    }
   });
 
   next();

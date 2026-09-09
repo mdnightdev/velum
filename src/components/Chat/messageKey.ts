@@ -12,6 +12,25 @@ export function getMessageKey(msg: Pick<Message, 'id' | 'message_id' | 'client_m
   return String(raw);
 }
 
+/**
+ * Stable React list key — prefer client nonce so optimistic → acked does not remount media/previews.
+ */
+export function getMessageListKey(
+  msg:
+    | (Pick<Message, 'id' | 'message_id' | 'client_msg_id' | 'db_message_id' | 'user_id' | 'created_at'> & {
+        nonce?: string;
+      })
+    | null
+    | undefined,
+  index?: number
+): string {
+  if (!msg) return `msg-${index ?? 0}`;
+  const stable = msg.client_msg_id || msg.nonce || msg.db_message_id || msg.message_id || msg.id;
+  if (stable != null && String(stable) !== '') return String(stable);
+  if (msg.created_at && msg.user_id != null) return `${msg.user_id}-${msg.created_at}`;
+  return `msg-${index ?? 0}`;
+}
+
 export function messagesMatch(a: Message | null | undefined, b: Message | null | undefined): boolean {
   if (!a || !b) return false;
   const ka = getMessageKey(a);

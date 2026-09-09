@@ -23,6 +23,7 @@ import { processDeliveryReceipt } from '../../v2/services/messaging/deliveryRece
 import { dispatchPushNotification } from '../../v2/services/notifications/pushGateway.js';
 import { typingDebouncer } from '../../v2/services/messaging/typingDebouncer.js';
 import { dmService } from '../../v2/services/dmService.js';
+import { isDmPeerMuted } from '../../v2/utils/dmMute.js';
 import { handleJoinRoom, handleLeaveRoom } from './roomHandler.js';
 
 export async function handleAddReaction(client: ClientConnection, message: any) {
@@ -981,7 +982,11 @@ export async function handleDirectMessage(client: ClientConnection, message: any
 
     broadcastToUserDevices(to, outFrame);
 
-    // 3. Push notification fallback
+    // 3. Push notification fallback (skip if recipient muted sender)
+    if (await isDmPeerMuted(to, client.userId)) {
+      return;
+    }
+
     const isEncrypted = created.encrypted || (typeof body === 'string' && (body.startsWith('e2ee:') || body.startsWith('ratchet:') || body.startsWith('VEL_E2EE[')));
     const pushBody = isEncrypted ? 'New message' : (body || 'New message');
     const dmRoomId = `dm_${Math.min(client.userId, to)}_${Math.max(client.userId, to)}`;
@@ -993,10 +998,11 @@ export async function handleDirectMessage(client: ClientConnection, message: any
       senderId: client.userId
     }, pushBody).catch(err => console.error('[Push Gateway Error]:', err));
   } catch (err) {
+    const blocked = (err as Error & { code?: string })?.code === 'BLOCKED' || (err as Error)?.message === 'BLOCKED';
     console.error('[WS Direct Message Error]:', err);
     client.ws.send(JSON.stringify({
       type: 'error',
-      message: 'Failed to deliver direct message'
+      message: blocked ? 'Unblock this contact to send messages' : 'Failed to deliver direct message'
     }));
   }
 }

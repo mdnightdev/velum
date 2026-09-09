@@ -45,4 +45,17 @@ describe('album chat-list preview', () => {
     );
     expect(formatAttachmentAlbumPreview(atts)).toBe('2 videos');
   });
+
+  it('shows hostname for URL-only messages instead of Attachment', () => {
+    expect(getCleanPreview('https://example.com/path/to')).toBe('example.com/path/to');
+    expect(getCleanPreview('https://www.github.com/')).toBe('github.com');
+  });
+
+  it('keeps caption text when message mixes text and a link', () => {
+    expect(getCleanPreview('check this https://example.com/x later')).toBe('check this later');
+  });
+
+  it('labels multiple bare links', () => {
+    expect(getCleanPreview('https://a.example/ https://b.example/')).toBe('2 links');
+  });
 });

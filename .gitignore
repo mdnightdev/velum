@@ -4,10 +4,16 @@ node_modules/
 .env.encrypted
 .secrets.key
 dist/
-data/server.log
-data/velum_state_v3.bin
-server/services/ws.log
 logs/
+**/logs/
+*.log
+server/services/ws.log
+data/server.log
+# Winston rotate / heal runner artifacts (also under logs/)
+warn-*.log
+error-*.log
+app-*.log
+heal-*.log
 backups/
 
 # Ignore local databases, keys, and logs

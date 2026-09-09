@@ -1,5 +1,6 @@
 import { statelessE2eeService } from './statelessE2eeService.js';
 import { getPlaintextByCiphertext } from '../utils/indexedDb.js';
+import { isUsablePlaintext } from '../utils/messagePlaintext.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import {
@@ -109,33 +110,34 @@ export async function encryptMessage(content: string, context: EncryptionContext
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
+  // Device plaintext is authoritative — never re-derive if already stored.
+  try {
+    const uid = statelessE2eeService.getLocalUserId() || undefined;
+    const localPt = await getPlaintextByCiphertext(content, uid);
+    if (isUsablePlaintext(localPt)) {
+      return localPt as string;
+    }
+  } catch {}
+
   // 1. Stateless Direct Message (v3 Static DH, v2 Dual-Recipient & v1 Legacy)
   if (content.startsWith('e2ee:v3:') || content.startsWith('e2ee:v2:') || content.startsWith('e2ee:v1:') || content.startsWith('e2ee:')) {
     try {
       return await statelessE2eeService.decryptDirectMessage(content, context.peerUserId);
     } catch (err) {
-      try {
-        const uid = statelessE2eeService.getLocalUserId() || undefined;
-        const localPt = await getPlaintextByCiphertext(content, uid);
-        if (localPt) {
-          return localPt;
-        }
-      } catch {}
-
       console.error('[encryptionService] Stateless E2EE decryption error:', {
         error: err instanceof Error ? err.message : err,
         stack: err instanceof Error ? err.stack : undefined,
         peerUserId: context.peerUserId,
         roomId: context.roomId,
-        envelope: content
       });
-      return '[Encrypted Message]';
+      // Empty — never return poison placeholders that get written back to device DB.
+      return '';
     }
   }
 
   // 2. Legacy ratchet payload fallback
   if (content.startsWith('ratchet:v2:') || content.startsWith('ratchet:v1:')) {
-    return '[Legacy Encrypted Message]';
+    return '';
   }
 
   // 3. Lounge Room HMAC-GCM encryption
@@ -153,10 +155,10 @@ export async function decryptMessage(content: string, context: EncryptionContext
         return unwrapped;
       } catch (err) {
         console.error('[encryptionService] Room decryption error:', err);
-        return '[Encrypted Message]';
+        return '';
       }
     }
-    return '[Encrypted Message - No Room]';
+    return '';
   }
 
   return content;

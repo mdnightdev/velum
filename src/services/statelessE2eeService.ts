@@ -82,6 +82,25 @@ export function verifyPeerSignedPrekey(bundle: PeerPrekeyBundle): boolean {
   }
 }
 
+/** True when the bundle includes full SPK + Ed25519 material (post-migration peers). */
+export function peerBundleHasSpkMaterial(bundle: PeerPrekeyBundle): boolean {
+  return !!(
+    bundle.signingIdentityKeyHex &&
+    bundle.signedPrekeyHex &&
+    bundle.signedPrekeySignatureHex
+  );
+}
+
+/**
+ * ECDH only needs DH identity. Strict SPK verify when material is present;
+ * legacy bundles (no Ed/SPK) are accepted so decrypt does not hard-fail.
+ */
+export function acceptPeerBundleForEcdh(bundle: PeerPrekeyBundle): boolean {
+  if (!bundle.identityKeyHex) return false;
+  if (!peerBundleHasSpkMaterial(bundle)) return true;
+  return verifyPeerSignedPrekey(bundle);
+}
+
 class StatelessE2eeService {
   private localUserId: number | null = null;
   private peerKeyCache = new Map<number, PeerPrekeyBundle & { timestamp: number }>();
@@ -117,7 +136,12 @@ class StatelessE2eeService {
   /**
    * Initializes local identity keys in user IndexedDB and publishes public keys to server
    */
-  public async initLocalIdentityKeys(userId?: number, seedMaterial?: string, userSaltHex?: string): Promise<void> {
+  public async initLocalIdentityKeys(
+    userId?: number,
+    seedMaterial?: string,
+    userSaltHex?: string,
+    sessionToken?: string | null
+  ): Promise<void> {
     const uid = userId || this.getLocalUserId();
     if (!uid) return;
 
@@ -145,10 +169,16 @@ class StatelessE2eeService {
       await saveLocalIdentityKeys(uid, { signing: edIdentity, dh: dhIdentity });
       identity = { signing: edIdentity, dh: dhIdentity };
 
-      const spk = generateX25519KeyPair();
-      const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
-      await saveSignedPrekey(uid, 1, spk, spkSignature);
-        } else {
+      const existingSpk = await loadSignedPrekey(uid);
+      const spkStillValid =
+        !!existingSpk &&
+        verifyEd25519(existingSpk.signature, existingSpk.keyPair.publicKey, identity.signing.publicKey);
+      if (!spkStillValid) {
+        const spk = generateX25519KeyPair();
+        const spkSignature = signEd25519(spk.publicKey, identity.signing.privateKey);
+        await saveSignedPrekey(uid, 1, spk, spkSignature);
+      }
+    } else {
       identity = await loadLocalIdentityKeys(uid);
       if (!identity) {
         return;
@@ -167,12 +197,17 @@ class StatelessE2eeService {
       return;
     }
 
-
-
     // Publish public identity key and signed prekey to backend
+    const sid = (sessionToken && String(sessionToken).trim()) || getSessionId() || '';
+    if (!sid) {
+      if (typeof window !== 'undefined' && window.velumDebug) {
+        window.velumDebug.e2eePublishStatus = 'no_session';
+      }
+      throw new Error('[StatelessE2EE] Prekey publication skipped: no session token');
+    }
+    let res: Response;
     try {
-      const sid = getSessionId() || '';
-      const res = await fetch('/v2/crypto/prekeys', {
+      res = await fetch('/v2/crypto/prekeys', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${sid}`,
@@ -188,22 +223,33 @@ class StatelessE2eeService {
           oneTimePrekeys: []
         })
       });
-      if (!res.ok) {
-        console.warn('[StatelessE2EE] Prekey publication response:', res.status);
-      }
     } catch (err) {
-      console.warn('[StatelessE2EE] Prekey publication error:', err);
+      if (typeof window !== 'undefined' && window.velumDebug) {
+        window.velumDebug.e2eePublishStatus = 'network_error';
+      }
+      throw new Error(
+        `[StatelessE2EE] Prekey publication network error: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    if (!res.ok) {
+      if (typeof window !== 'undefined' && window.velumDebug) {
+        window.velumDebug.e2eePublishStatus = `http_${res.status}`;
+      }
+      throw new Error(`[StatelessE2EE] Prekey publication failed (${res.status})`);
+    }
+    if (typeof window !== 'undefined' && window.velumDebug) {
+      window.velumDebug.e2eePublishStatus = 'ok';
     }
   }
 
   /**
-   * Fetches peer's public DH identity key after verifying their signed prekey
-   * against the published Ed25519 identity key (server response and cache).
+   * Fetches peer's public DH identity key.
+   * Verifies SPK when present; allows legacy identity-only bundles for ECDH.
    */
   public async fetchPeerPublicKey(peerUserId: number): Promise<string> {
     const cached = this.peerKeyCache.get(peerUserId);
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
-      if (!verifyPeerSignedPrekey(cached)) {
+      if (!acceptPeerBundleForEcdh(cached)) {
         this.peerKeyCache.delete(peerUserId);
         throw new Error(`[StatelessE2EE] Cached signed prekey verification failed for peer ${peerUserId}`);
       }
@@ -247,7 +293,7 @@ class StatelessE2eeService {
       signedPrekeySignatureHex: String(signedPrekeySignatureHex || '')
     };
 
-    if (!verifyPeerSignedPrekey(bundle)) {
+    if (!acceptPeerBundleForEcdh(bundle)) {
       throw new Error(`[StatelessE2EE] Invalid or tampered signed prekey for peer ${peerUserId}`);
     }
 

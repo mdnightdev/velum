@@ -441,7 +441,7 @@ function DirectMainDashboard({
           if (isMounted) {
             setDecryptedPreviews(prev => ({
               ...prev,
-              [friendId]: known || 'Message sent'
+              [friendId]: known || '',
             }));
           }
           continue;
@@ -453,7 +453,7 @@ function DirectMainDashboard({
               ? await decryptMessage(raw, { type: 'direct', peerUserId: friendId })
               : decryptMessageSync(raw, candidateKeys[0], !!(last.is_encrypted || last.isEncrypted));
 
-            if (!decrypted || decrypted === '[Encrypted Message]' || isStatelessDmEnvelope(decrypted)) {
+            if (!decrypted || isStatelessDmEnvelope(decrypted)) {
               for (const roomKey of candidateKeys) {
                 const localStore = await getLocalMessages(roomKey, 10, currentUserId).catch(() => []);
                 const match = localStore.find((m: any) =>
@@ -469,14 +469,15 @@ function DirectMainDashboard({
             if (isMounted) {
               setDecryptedPreviews(prev => ({
                 ...prev,
-                [friendId]: decrypted && !isStatelessDmEnvelope(decrypted)
-                  ? decrypted
-                  : (isStatelessDmEnvelope(raw) ? 'Encrypted Message' : (raw || ''))
+                [friendId]:
+                  decrypted && !isStatelessDmEnvelope(decrypted)
+                    ? decrypted
+                    : '',
               }));
             }
           } catch {
             if (isMounted && isStatelessDmEnvelope(raw)) {
-              setDecryptedPreviews(prev => ({ ...prev, [friendId]: 'Encrypted Message' }));
+              setDecryptedPreviews(prev => ({ ...prev, [friendId]: '' }));
             }
           }
         }
@@ -540,7 +541,7 @@ function DirectMainDashboard({
     const raw = velumLast.content || velumLast.message || velumLast.body || velumLast.text || '';
     // Stateless e2ee:v1 envelopes are resolved async via the effect above and
     // land in velumDecrypted; never fall back to sync-decrypting them here.
-    velumTxt = velumDecrypted || (isStatelessDmEnvelope(raw) ? (velumIsMe ? (velumLast.plaintext || velumLast.client_plaintext || 'Message sent') : '') : raw || '');
+    velumTxt = velumDecrypted || (isStatelessDmEnvelope(raw) ? (velumLast.plaintext || velumLast.client_plaintext || '') : raw || '');
     if (velumIsMe) {
       if (velumLast.status) {
         velumMsgStatus = velumLast.status;
@@ -841,8 +842,7 @@ function DirectMainDashboard({
                   return last.plaintext || last.client_plaintext;
                 }
                 if (isStatelessDmEnvelope(raw)) {
-                  if (isMe) return 'Message sent';
-                  return 'Encrypted Message';
+                  return '';
                 }
                 try {
                   return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
@@ -850,7 +850,7 @@ function DirectMainDashboard({
                   return raw || '';
                 }
               })();
-              lastTxt = getCleanPreview(displayTxt) || (isStatelessDmEnvelope(raw) ? 'Encrypted Message' : '');
+              lastTxt = getCleanPreview(displayTxt) || '';
               if (last.status === 'failed' || last.delivery_status === 'failed') {
                 isFailed = true;
               } else if (isMe) {

@@ -8,12 +8,17 @@ import { MessageStatusTicks } from '../MessageStatusTicks';
 import { parseAttachment, getCleanPreview, stripAttachmentTokens } from '../../utils/messageParser';
 import { getSessionId } from '../../utils/auth';
 import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
-import { LinkPreviewCard } from './LinkPreviewCard';
+import { LinkPreviewCard, extractMessageUrls } from './LinkPreviewCard';
 import { resolveMediaUrl, getFormattedDownloadFilename } from '../../utils/mediaPipeline';
 import { getAlbumCellClass, getAlbumGridClass } from './albumLayout';
 import { getMessageKey } from './messageKey';
 import { ReactionPicker } from './ReactionPicker';
 import { velumToast } from '../../utils/toast';
+import {
+  shouldAutoDownloadMedia,
+  shouldSaveMediaToDevice,
+} from '../../utils/dmPeerPrefs';
+import { isUsablePlaintext } from '../../utils/messagePlaintext';
 
 function formatVideoClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -50,13 +55,32 @@ function AlbumVideoThumb({
   src,
   className,
   statusSlot,
+  manualLoad = false,
 }: {
   src: string;
   className?: string;
   statusSlot?: React.ReactNode;
+  manualLoad?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [loaded, setLoaded] = useState(!manualLoad);
+
+  React.useEffect(() => {
+    setLoaded(!manualLoad);
+  }, [src, manualLoad]);
+
+  if (!loaded) {
+    return (
+      <button
+        type="button"
+        className={`relative w-full h-full min-h-0 bg-velum-800 flex items-center justify-center cursor-pointer border-0 ${className || ''}`}
+        onClick={() => setLoaded(true)}
+      >
+        <span className="text-xs text-white">Tap to load</span>
+      </button>
+    );
+  }
 
   return (
     <>
@@ -322,13 +346,34 @@ function VideoCard({
   src,
   caption,
   statusSlot,
+  manualLoad = false,
+  allowSave = true,
 }: {
   src: string;
   caption?: string;
   statusSlot?: React.ReactNode;
+  manualLoad?: boolean;
+  allowSave?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [loaded, setLoaded] = useState(!manualLoad);
+
+  React.useEffect(() => {
+    setLoaded(!manualLoad);
+  }, [src, manualLoad]);
+
+  if (!loaded) {
+    return (
+      <button
+        type="button"
+        className="relative rounded-2xl overflow-hidden bg-velum-800 w-full max-w-[320px] min-h-[180px] border border-accent/25 flex items-center justify-center cursor-pointer"
+        onClick={() => setLoaded(true)}
+      >
+        <span className="text-sm text-white">Tap to load</span>
+      </button>
+    );
+  }
 
   return (
     <>
@@ -373,17 +418,19 @@ function VideoCard({
         {statusSlot}
 
         <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-10">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void saveMediaToDevice(src, 'mp4', 'video/mp4');
-            }}
-            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
-            title="Save"
-          >
-            <Download className="w-3.5 h-3.5 pointer-events-none" />
-          </button>
+          {allowSave && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void saveMediaToDevice(src, 'mp4', 'video/mp4');
+              }}
+              className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
+              title="Save"
+            >
+              <Download className="w-3.5 h-3.5 pointer-events-none" />
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {
@@ -560,11 +607,29 @@ export function MessageItem({
 }: MessageItemProps) {
   const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
   const isDm = Boolean(roomId && roomId.startsWith('dm_'));
+  const peerForPrefs = isDm ? activeChatPeer?.userId : undefined;
+  const manualMediaLoad = isDm && !isMe && !shouldAutoDownloadMedia(peerForPrefs);
+  const allowMediaSave = !isDm || isMe || shouldSaveMediaToDevice(peerForPrefs);
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
   const isCipher = msg.content?.startsWith('e2ee:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
   const msgKey = String(msg.id ?? msg.client_msg_id ?? msg.message_id ?? '');
-    const decryptedFallback = (getDecryptedText ? getDecryptedText(msg) : '') || (msgKey ? decryptedMap[msgKey] : '');
-  const activeContent = (msgKey && decryptedMap[msgKey]) || decryptedFallback || (isCipher ? '···' : (msg.content || ''));
+  const decryptedFallback = (getDecryptedText ? getDecryptedText(msg) : '') || (msgKey ? decryptedMap[msgKey] : '');
+  const candidates = [
+    msgKey ? decryptedMap[msgKey] : '',
+    decryptedFallback,
+    msg.plaintext,
+    !isCipher ? msg.content : '',
+  ];
+  const activeContent =
+    candidates.find((c) => isUsablePlaintext(c)) ||
+    (!isCipher && typeof msg.content === 'string' ? msg.content : '') ||
+    '';
+
+  // Encrypted relay payload with no device plaintext: render nothing (server is relay only).
+  if (!msg.deleted && isCipher && !isUsablePlaintext(activeContent)) {
+    return null;
+  }
+
   const isVoiceNote = activeContent.startsWith('[Voice Note') || activeContent.startsWith('[Voice Message');
   const isAttachment = activeContent.includes('[Attachment:');
 
@@ -582,7 +647,7 @@ export function MessageItem({
       ? getCleanPreview(activeContent)
       : activeContent);
 
-  if (!msg.deleted && !activeContent && attachments.length === 0 && !msg.content && !msg.plaintext) {
+  if (!msg.deleted && !activeContent && attachments.length === 0) {
     return null;
   }
 
@@ -626,10 +691,9 @@ export function MessageItem({
 
   return (
     <div
-      key={msg.id || msg.client_msg_id || msg.message_id || (msg.created_at ? `${msg.user_id}-${msg.created_at}` : undefined) || `msg-${index}`}
-      id={`msg-${msg.id || msg.client_msg_id || msg.message_id}`}
+      id={`msg-${msg.client_msg_id || msg.id || msg.message_id}`}
       className={`flex message-bubble-container group relative select-none ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
-      data-message-id={String(msg.id || msg.client_msg_id || msg.message_id)}
+      data-message-id={String(msg.client_msg_id || msg.id || msg.message_id)}
       style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       onTouchStart={() => handleTouchStart(msg)}
       onTouchEnd={handleTouchEnd}
@@ -715,7 +779,7 @@ export function MessageItem({
                       if (isVideoAttachment(att)) {
                         return (
                           <div key={idx} className={`${cellClass} rounded-md overflow-hidden`}>
-                            <AlbumVideoThumb src={att.data} statusSlot={status} />
+                            <AlbumVideoThumb src={att.data} statusSlot={status} manualLoad={manualMediaLoad} />
                           </div>
                         );
                       }
@@ -728,6 +792,8 @@ export function MessageItem({
                             size={att.size}
                             containerClass="w-full h-full min-h-0 rounded-md shadow-none border-0"
                             isMe={isMe}
+                            manualLoad={manualMediaLoad}
+                            allowSave={allowMediaSave}
                           >
                             {isLast ? renderStatusChips() : null}
                           </SecureImageCard>
@@ -748,6 +814,8 @@ export function MessageItem({
                       key={idx}
                       src={att.data}
                       caption={attachments.length === 1 ? undefined : att.caption}
+                      manualLoad={manualMediaLoad}
+                      allowSave={allowMediaSave}
                       statusSlot={
                         idx === attachments.length - 1 ? (
                           <MediaStatusOverlay>{renderStatusChips()}</MediaStatusOverlay>
@@ -769,6 +837,8 @@ export function MessageItem({
                     isMe={isMe}
                     timestamp={msgTime}
                     containerClass="w-full max-w-[280px] min-h-[180px] aspect-[4/3] border border-accent/25 shadow-none"
+                    manualLoad={manualMediaLoad}
+                    allowSave={allowMediaSave}
                   >
                     {renderStatusChips()}
                   </SecureImageCard>
@@ -862,18 +932,15 @@ export function MessageItem({
                         }
                       />
                       {(() => {
-                        const urlRegex = /(https?:\/\/[^\s]+)/g;
-                        const matchedUrls = parsedMsgContent.match(urlRegex) || [];
-                        if (matchedUrls.length > 0) {
-                          return (
-                            <div className="flex flex-col gap-2 mt-1">
-                              {matchedUrls.map((url, uIdx) => (
-                                <LinkPreviewCard key={uIdx} url={url} />
-                              ))}
-                            </div>
-                          );
-                        }
-                        return null;
+                        const matchedUrls = extractMessageUrls(parsedMsgContent);
+                        if (matchedUrls.length === 0) return null;
+                        return (
+                          <div className="flex flex-col gap-2 mt-1">
+                            {matchedUrls.map((url) => (
+                              <LinkPreviewCard key={url} url={url} />
+                            ))}
+                          </div>
+                        );
                       })()}
                       {(() => {
                         const keyMatch = parsedMsgContent.match(/`([a-f0-9A-F\-_\:]{12,})`/);

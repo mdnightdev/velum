@@ -3,6 +3,7 @@ import webpush from 'web-push';
 import { db, executeWithRetry } from '../../db/client.js';
 import { pushSubscriptions, loungeMuteSettings, users, fcmTokens } from '../../db/schema/index.js';
 import { eq, and } from 'drizzle-orm';
+import { isDmPeerMuted } from '../../utils/dmMute.js';
 
 let vapidKeys = {
   publicKey: process.env.VAPID_PUBLIC_KEY || '',
@@ -73,6 +74,13 @@ export async function dispatchPushNotification(
   messageContent?: string
 ): Promise<boolean> {
   try {
+    // Per-peer DM mute (recipient muted sender)
+    if (payload.senderId && (!loungeId || loungeId === 0)) {
+      if (await isDmPeerMuted(recipientUserId, payload.senderId)) {
+        return false;
+      }
+    }
+
     if (loungeId) {
       const [muteSetting] = await executeWithRetry(() =>
         db.select()

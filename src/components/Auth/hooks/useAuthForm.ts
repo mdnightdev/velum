@@ -8,6 +8,21 @@ import { Capacitor } from '@capacitor/core';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 import { saveBiometricSession, getBiometricSession } from '../../../hooks/useBiometricAuth';
 import { statelessE2eeService } from '../../../services/statelessE2eeService';
+import { velumToast } from '../../../utils/toast';
+
+async function initE2eeKeysSafe(
+  userId: number,
+  password: string,
+  salt?: string,
+  sessionToken?: string | null
+): Promise<void> {
+  try {
+    await statelessE2eeService.initLocalIdentityKeys(userId, password, salt, sessionToken);
+  } catch (e) {
+    console.error('[StatelessE2EE] Key init / publish failed:', e);
+    velumToast.error('Message keys could not be published. Try signing in again.');
+  }
+}
 
 interface UseAuthFormOptions {
   onLoginSuccess: (user: any, sessionId: string, deviceId: string, activeView: string) => void;
@@ -271,11 +286,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         const sessionToken = data.token || data.sessionId;
 
         if (data.user?.userId && password) {
-          try {
-            await statelessE2eeService.initLocalIdentityKeys(data.user.userId, password, data.user.salt);
-          } catch (e) {
-            console.error('[StatelessE2EE] Key derivation failed:', e);
-          }
+          await initE2eeKeysSafe(data.user.userId, password, data.user.salt, sessionToken);
         }
 
         if (Capacitor.isNativePlatform() && sessionToken && data.user) {
@@ -412,7 +423,12 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
 
           const deviceId = loginData.deviceId || (await collectDeviceFingerprint()).deviceId;
           if (loginData.user?.userId && password) {
-            statelessE2eeService.initLocalIdentityKeys(loginData.user.userId, password, loginData.user.salt || salt).catch(console.error);
+            void initE2eeKeysSafe(
+              loginData.user.userId,
+              password,
+              loginData.user.salt || salt,
+              sessionToken
+            );
           }
           if (Capacitor.isNativePlatform() && sessionToken && loginData.user) {
             saveBiometricSession(loginData.user, sessionToken, deviceId);
@@ -599,11 +615,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         const sessionToken = data.token || data.sessionId;
 
         if (data.user?.userId && password) {
-          try {
-            await statelessE2eeService.initLocalIdentityKeys(data.user.userId, password, data.user.salt);
-          } catch (e) {
-            console.error('[StatelessE2EE] Key derivation failed:', e);
-          }
+          await initE2eeKeysSafe(data.user.userId, password, data.user.salt, sessionToken);
         }
 
         if (Capacitor.isNativePlatform() && sessionToken && data.user) {

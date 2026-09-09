@@ -12,6 +12,8 @@ import { useChatStore } from '../stores/chatStore';
 import { velumToast } from '../utils/toast';
 import { parseDmPeerId, getDmRoomAliases, getPrimaryDmRoomId, isActiveDmRoom, reconcileUnreadCounts, expandDmUnreadAliases } from '../utils/roomUtils';
 import { globalDecryptionCache, cachePlaintext } from '../components/Chat/hooks/useMessageDecryption';
+import { hydrateMutesFromServer } from '../utils/dmPeerPrefs';
+import { isUsablePlaintext } from '../utils/messagePlaintext';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -78,7 +80,7 @@ export function useWebSocket({
     getLocalMessages(activeRoomId, 100, userId || 0).then((localMsgs) => {
       if (localMsgs && localMsgs.length > 0 && isCurrentRoom) {
         for (const m of localMsgs) {
-          if (m.content && m.plaintext && m.plaintext !== '[Decryption Error]' && m.plaintext !== '[Encrypted Message]') {
+          if (m.content && isUsablePlaintext(m.plaintext)) {
             cachePlaintext(m.content, m.plaintext);
           }
         }
@@ -222,6 +224,29 @@ export function useWebSocket({
     isAuthenticatedRef.current = isAuthenticated;
   }, [isAuthenticated]);
 
+  // Hydrate timed DM mutes from Redis so notify/push suppress survives reload
+  useEffect(() => {
+    if (!userId || !isAuthenticated) return;
+    let cancelled = false;
+    const sessionToken = getSessionId() || storage.getItem('velum-sessionId');
+    if (!sessionToken) return;
+    fetch('/v2/user/me/mutes', {
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+        'x-session-token': sessionToken,
+      },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.mutes) return;
+        hydrateMutesFromServer(data.mutes);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, isAuthenticated]);
+
   // Silent background revalidation on visibility change and network online events
   useEffect(() => {
     if (!userId || !isAuthenticated) return;
@@ -271,6 +296,15 @@ export function useWebSocket({
       reconnectTimeoutRef.current = null;
     }
 
+    // Suppress duplicate connect on StrictMode / effect churn while already live or handshaking
+    const existing = wsRef.current;
+    if (
+      existing &&
+      (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
     if (wsRef.current) {
       const oldWs = wsRef.current;
       oldWs.onclose = null;
@@ -316,6 +350,7 @@ export function useWebSocket({
       reconnectAttemptsRef.current = 0;
       if (window.velumDebug) {
         window.velumDebug.wsConnected = true;
+        window.velumDebug.activeRoomId = activeRoomIdRef.current || null;
       }
 
       fetchConversationsSummary();
@@ -465,7 +500,12 @@ export function useWebSocket({
             onSessionCompromised();
           }
         } else if (data.type === 'presence_update') {
-          window.dispatchEvent(new CustomEvent('velum-presence-change'));
+          window.dispatchEvent(new CustomEvent('velum-presence-change', {
+            detail: {
+              user_id: data.user_id ?? data.userId,
+              last_seen_at: data.last_seen_at ?? data.lastSeen ?? data.status,
+            },
+          }));
         } else if (data.type === 'typing_start') {
           window.dispatchEvent(new CustomEvent('velum-typing-start', { detail: data }));
         } else if (data.type === 'typing_stop') {
@@ -554,7 +594,8 @@ export function useWebSocket({
                 isFromMe: false,
                 roomId: dmRoomId,
                 activeRoomId: activeRoomIdRef.current,
-                timestamp: data.created ? new Date(data.created).getTime() : Date.now()
+                timestamp: data.created ? new Date(data.created).getTime() : Date.now(),
+                peerUserId: peerId,
               });
             };
 
@@ -840,6 +881,16 @@ export function useWebSocket({
       reconnectAttemptsRef.current += 1;
       if (window.velumDebug) {
         window.velumDebug.reconnectCount = reconnectAttemptsRef.current;
+      }
+      if (reconnectAttemptsRef.current === 5) {
+        void import('../utils/diagnostics').then(({ reportClientOpsEvent }) => {
+          reportClientOpsEvent({
+            severity: 'amber',
+            code: 'WS_RECONNECT_STORM',
+            message: 'WebSocket reconnect attempts reached 5',
+            component: 'useWebSocket',
+          });
+        });
       }
       const base = 1000;
       const max = 15000;
@@ -1276,7 +1327,12 @@ export function useWebSocket({
       connectWebSocket(userId);
     }
     return () => {
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [isAuthenticated, userId]);
 

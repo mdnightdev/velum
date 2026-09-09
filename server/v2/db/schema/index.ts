@@ -22,3 +22,5 @@ export * from './reversals.js';
 export * from './chat_clears.js';
 export * from './dms.js';
 export * from './media.js';
+export * from './ops_error_events.js';
+export * from './ops_client_diagnostics.js';

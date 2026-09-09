@@ -1,6 +1,12 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import toast from 'react-hot-toast';
+import {
+  playNotificationSound as playSelectedTone,
+  getSelectedNotificationSound,
+  type NotificationSoundId,
+} from '../constants/notificationSounds';
+import { isPeerMuted } from './dmPeerPrefs';
 
 export interface NotificationPreferences {
   desktopPopups: boolean;
@@ -44,47 +50,15 @@ export function saveNotificationPreferences(prefs: Partial<NotificationPreferenc
 }
 
 /**
- * Synthesizes a crisp chime using Web Audio API.
+ * Plays the user-selected tone from `simple-notification-sounds`.
  */
-export function playNotificationSound(): void {
+export function playNotificationSound(soundId?: NotificationSoundId): void {
   if (typeof window === 'undefined') return;
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
   const now = Date.now();
   if (now - lastSoundPlayedAt < 1500) return;
   lastSoundPlayedAt = now;
-
-  try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-    const audioNow = ctx.currentTime;
-
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(587.33, audioNow);
-    osc1.frequency.exponentialRampToValueAtTime(880, audioNow + 0.08);
-
-    gain1.gain.setValueAtTime(0.22, audioNow);
-    gain1.gain.exponentialRampToValueAtTime(0.0001, audioNow + 0.35);
-
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start(audioNow);
-    osc1.stop(audioNow + 0.35);
-
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(1174.66, audioNow + 0.04);
-    gain2.gain.setValueAtTime(0.12, audioNow + 0.04);
-    gain2.gain.exponentialRampToValueAtTime(0.0001, audioNow + 0.28);
-
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(audioNow + 0.04);
-    osc2.stop(audioNow + 0.28);
-  } catch {}
+  playSelectedTone(soundId || getSelectedNotificationSound(), true);
 }
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
@@ -254,11 +228,15 @@ export function handleInboundMessageNotification(msg: {
   roomId?: string;
   activeRoomId?: string;
   timestamp?: number;
+  peerUserId?: number;
 }): void {
   if (msg.isFromMe) return;
 
   // Drop alerts for messages synced before app launch or older than current session init
   if (msg.timestamp && msg.timestamp < APP_INIT_TIME) return;
+
+  // Per-peer mute (timed) — skip sound + banners
+  if (msg.peerUserId != null && isPeerMuted(Number(msg.peerUserId))) return;
 
   const isVisible = typeof document !== 'undefined' && !document.hidden;
   const isViewingSameRoom = isVisible && msg.roomId && msg.activeRoomId && msg.roomId === msg.activeRoomId;

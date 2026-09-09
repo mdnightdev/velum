@@ -13,6 +13,7 @@ import SanctionDialog from '../Lounge/SanctionDialog';
 import PrivateSubloungeBanner from '../Lounge/PrivateSubloungeBanner';
 import { getSessionId } from '../../utils/auth';
 import { velumToast } from '../../utils/toast';
+import { setPeerMutedLocal } from '../../utils/dmPeerPrefs';
 
 export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const [mobileTab, setMobileTab] = useState<'rooms' | 'members' | 'about'>('rooms');
@@ -79,16 +80,37 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   };
 
   const handleProfileMute = async (member: any) => {
+    const targetId = member.userId || member.user_id;
+    const peerId = Number(targetId);
+    const currentlyMuted = !!member.isMuted;
+    const nextMuted = !currentlyMuted;
+    setPeerMutedLocal(peerId, nextMuted, null, nextMuted ? '24h' : null);
+    setSelectedMember((prev: any) => {
+      const prevId = prev?.user_id || prev?.userId;
+      if (prev && String(prevId) === String(targetId)) {
+        return { ...prev, isMuted: nextMuted };
+      }
+      return prev;
+    });
     try {
       const sId = getSessionId();
-      const targetId = member.userId || member.user_id;
       const res = await fetch(`/v2/user/${targetId}/mute`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${sId}` }
+        headers: {
+          Authorization: `Bearer ${sId}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ duration: nextMuted ? '24h' : 'off' }),
       });
       if (res.ok) {
         const data = await res.json();
-        velumToast.info(data.isMuted ? 'Muted user. They can no longer disturb you.' : 'Unmuted user.');
+        setPeerMutedLocal(
+          peerId,
+          !!data.isMuted,
+          data.mutedUntil || null,
+          data.duration || null
+        );
+        velumToast.info(data.isMuted ? 'Muted' : 'Unmuted');
         setSelectedMember((prev: any) => {
           const prevId = prev?.user_id || prev?.userId;
           if (prev && String(prevId) === String(targetId)) {
@@ -97,7 +119,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           return prev;
         });
       }
-    } catch(e) {}
+    } catch (e) {}
   };
 
   const handleProfileBlock = async (member: any) => {

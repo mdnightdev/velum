@@ -11,6 +11,8 @@ import { deviceFingerprintService } from '../services/deviceFingerprint.js';
 import { ensureAdminSeeded } from '../services/adminSeeder.js';
 import { systemBot } from '../services/systemBot.js';
 import { BotTemplates } from '../services/botTemplates.js';
+import { logger } from '../utils/logger.js';
+import { reportOpsError } from '../services/opsErrorService.js';
 
 import crypto from 'node:crypto';
 
@@ -343,7 +345,17 @@ export class AuthController {
         platform: (req.headers['sec-ch-ua-platform'] as string) || 'unknown'
       });
     } catch (dfErr) {
-      console.error('[authController] Device record error on register:', dfErr);
+      const msg = dfErr instanceof Error ? dfErr.message : String(dfErr);
+      logger.warn('Device record error on register', { userId: newUser.id, error: msg });
+      void reportOpsError({
+        severity: 'amber',
+        code: 'AUTH_DEVICE_RECORD_REGISTER',
+        message: msg,
+        route: '/v2/auth/register',
+        method: 'POST',
+        userId: newUser.id,
+        component: 'authController',
+      });
     }
 
     await userRepository.createSession({
@@ -499,7 +511,17 @@ export class AuthController {
     try {
       await deviceFingerprintService.recordDeviceAccess(user.id, fingerprint, ipAddress, reqDetails);
     } catch (dfErr) {
-      console.error('[authController] Device record error on login:', dfErr);
+      const msg = dfErr instanceof Error ? dfErr.message : String(dfErr);
+      logger.warn('Device record error on login', { userId: user.id, error: msg });
+      void reportOpsError({
+        severity: 'amber',
+        code: 'AUTH_DEVICE_RECORD_LOGIN',
+        message: msg,
+        route: '/v2/auth/login',
+        method: 'POST',
+        userId: user.id,
+        component: 'authController',
+      });
     }
 
     const token = generateRandomToken(32);

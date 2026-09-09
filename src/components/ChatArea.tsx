@@ -328,9 +328,12 @@ export default function ChatArea({
           const originalMsg = messages.find(m => m.message_id === editingMessageId);
           let finalEditContent = inputText.trim();
           if (originalMsg) {
-            const isCipher = originalMsg.content?.startsWith('ratchet:v2:') || originalMsg.content?.startsWith('VEL_E2EE[');
-            const activeContent = decryptedMap[editingMessageId] || (isCipher ? '···' : (originalMsg.content || ''));
-            if (activeContent.includes('[Attachment:')) {
+            const isCipher = originalMsg.content?.startsWith('e2ee:') || originalMsg.content?.startsWith('ratchet:v2:') || originalMsg.content?.startsWith('ratchet:v1:') || originalMsg.content?.startsWith('VEL_E2EE[');
+            const activeContent =
+              decryptedMap[editingMessageId] ||
+              originalMsg.plaintext ||
+              (!isCipher ? originalMsg.content || '' : '');
+            if (activeContent && activeContent.includes('[Attachment:')) {
               const attachmentPart = activeContent.split(']')[0] + ']';
               finalEditContent = `${attachmentPart} ${inputText.trim()}`.trim();
             }
@@ -571,6 +574,7 @@ export default function ChatArea({
         getDecryptedText={getDecryptedText}
       />
       <MessageList
+        key={chatKey}
         scrollContainerRef={scrollContainerRef}
         messagesEndRef={messagesEndRef}
         onScroll={handleScroll}

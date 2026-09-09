@@ -51,65 +51,53 @@ export async function setMuteRule(req: Request, res: Response, next: NextFunctio
   }
 }
 
+const LINK_PREVIEW_CACHE = new Map<string, { at: number; payload: Record<string, string> }>();
+const LINK_PREVIEW_TTL_MS = 30 * 60 * 1000;
+
 export async function getLinkPreview(req: Request, res: Response) {
   try {
-    const targetUrl = req.query.url ? String(req.query.url).trim() : '';
-    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-      return res.status(400).json({ error: 'Invalid URL. Only http and https protocols are supported.' });
+    const { buildSafeLinkPreview } = await import('../utils/linkPreviewSafe.js');
+    const rawUrl = req.query.url ? String(req.query.url).trim() : '';
+    if (!rawUrl) {
+      return res.status(400).json({ error: 'URL required.' });
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(targetUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-      }
-    });
-    
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Failed to fetch target URL. Status: ${response.status}` });
+    let cacheKey = rawUrl;
+    try {
+      cacheKey = new URL(rawUrl).toString();
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL.' });
     }
 
-    const html = await response.text();
+    const cached = LINK_PREVIEW_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.at < LINK_PREVIEW_TTL_MS) {
+      return res.json(cached.payload);
+    }
 
-    const getMetaTag = (htmlText: string, name: string): string => {
-      const regex = new RegExp(`<meta[^>]*(?:property|name)=["']${name}["'][^>]*content=["']([^"']*)["']`, 'i');
-      const match = htmlText.match(regex);
-      if (match) return match[1];
-
-      const altRegex = new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*(?:property|name)=["']${name}["']`, 'i');
-      const altMatch = htmlText.match(altRegex);
-      if (altMatch) return altMatch[1];
-
-      return '';
-    };
-
-    const getTitle = (htmlText: string): string => {
-      const match = htmlText.match(/<title[^>]*>([^<]*)<\/title>/i);
-      return match ? match[1] : '';
-    };
-
-    const title = getMetaTag(html, 'og:title') || getTitle(html) || new URL(targetUrl).hostname;
-    const description = getMetaTag(html, 'og:description') || getMetaTag(html, 'description') || '';
-    const image = getMetaTag(html, 'og:image') || '';
-
-    res.json({
-      url: targetUrl,
-      title: title.trim(),
-      description: description.trim(),
-      image: image.trim()
-    });
+    const payload = await buildSafeLinkPreview(rawUrl);
+    LINK_PREVIEW_CACHE.set(payload.url, { at: Date.now(), payload });
+    if (LINK_PREVIEW_CACHE.size > 200) {
+      const oldest = LINK_PREVIEW_CACHE.keys().next().value;
+      if (oldest) LINK_PREVIEW_CACHE.delete(oldest);
+    }
+    return res.json(payload);
   } catch (err) {
-    res.json({
-      url: req.query.url ? String(req.query.url).trim() : '',
-      title: req.query.url ? new URL(String(req.query.url)).hostname : 'Link',
+    const code = (err as Error)?.message || 'PREVIEW_FAIL';
+    if (
+      code === 'INVALID_URL' ||
+      code === 'INVALID_PROTOCOL' ||
+      code === 'INVALID_URL_AUTH' ||
+      code === 'BLOCKED_HOST' ||
+      code === 'BLOCKED_IP' ||
+      code === 'DNS_FAIL'
+    ) {
+      return res.status(400).json({ error: 'URL not allowed.', code });
+    }
+    return res.json({
+      url: '',
+      title: '',
       description: '',
-      image: ''
+      image: '',
     });
   }
 }

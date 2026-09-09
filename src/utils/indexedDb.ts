@@ -1,6 +1,7 @@
 import { LocalVaultEncryption } from '../services/localVaultEncryption.js';
 import { getDexieDb } from '../services/dexieDb.js';
 import { purgeCryptoDatabase } from '../services/cryptoDbStore.js';
+import { isUsablePlaintext, mergeMessagePlaintext } from './messagePlaintext.js';
 
 const MAX_MESSAGE_AGE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year persistent storage
 
@@ -30,18 +31,18 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
           await db.messages.delete(String(clientNonce));
         }
 
-        let existingPlaintext = msg.plaintext;
-        if (!existingPlaintext) {
-          const existing = await db.messages.get(canonicalId);
-          if (existing?.plaintext) {
-            existingPlaintext = existing.plaintext;
-          } else if (clientNonce) {
-            const optExisting = await db.messages.get(String(clientNonce));
-            if (optExisting?.plaintext) {
-              existingPlaintext = optExisting.plaintext;
-            }
+        let storedPlaintext: string | undefined;
+        const existing = await db.messages.get(canonicalId);
+        if (isUsablePlaintext(existing?.plaintext)) {
+          storedPlaintext = existing.plaintext;
+        } else if (clientNonce) {
+          const optExisting = await db.messages.get(String(clientNonce));
+          if (isUsablePlaintext(optExisting?.plaintext)) {
+            storedPlaintext = optExisting.plaintext;
           }
         }
+
+        const mergedPlaintext = mergeMessagePlaintext(storedPlaintext, msg.plaintext);
 
         const record = {
           id: canonicalId,
@@ -53,7 +54,7 @@ export async function saveLocalMessages(messages: any[], userId?: number): Promi
           username: msg.username || '',
           avatar: msg.avatar || '',
           content: msg.content || '',
-          plaintext: existingPlaintext || msg.plaintext,
+          plaintext: mergedPlaintext,
           is_encrypted: Boolean(msg.is_encrypted || msg.encrypted || msg.isEncrypted),
           sequenceId: msg.sequenceId ?? msg.sequence_id ?? 0,
           sequence_id: msg.sequenceId ?? msg.sequence_id ?? 0,
@@ -103,6 +104,11 @@ export async function getLocalMessages(loungeId: string, limit = 100, userId?: n
         const msgTime = new Date(m.timestamp || m.createdAt || 0).getTime();
         return isNaN(msgTime) || (now - msgTime) <= MAX_MESSAGE_AGE_MS;
       })
+      .map((m) => ({
+        ...m,
+        // Drop poison placeholders so decrypt can retry; never surface them as body text
+        plaintext: isUsablePlaintext(m.plaintext) ? m.plaintext : undefined,
+      }))
       .sort((a, b) => {
         const tA = new Date(a.timestamp || a.createdAt || 0).getTime();
         const tB = new Date(b.timestamp || b.createdAt || 0).getTime();
@@ -296,9 +302,9 @@ export async function getPlaintextByCiphertext(ciphertext: string, userId?: numb
   try {
     const db = getDexieDb(userId || 0);
     const match = await db.messages
-      .filter((m) => m && m.content === ciphertext && m.plaintext && m.plaintext !== '[Decryption Error]' && m.plaintext !== '[Encrypted Message]')
+      .filter((m) => m && m.content === ciphertext && isUsablePlaintext(m.plaintext))
       .first();
-    return match ? match.plaintext : null;
+    return match?.plaintext || null;
   } catch {
     return null;
   }

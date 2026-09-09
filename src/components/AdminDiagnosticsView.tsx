@@ -20,7 +20,31 @@ export default function AdminDiagnosticsView({
   const [diagLogs, setDiagLogs] = useState<ClientDiagnosticLog[]>(Array.isArray(initialDiagLogs) ? initialDiagLogs : []);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<ClientDiagnosticLog | null>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'alerts' | 'audits' | 'debug'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'alerts' | 'audits' | 'debug' | 'errors' | 'heal'>('all');
+  const [opsErrors, setOpsErrors] = useState<Array<{
+    eventId: string;
+    severity: string;
+    code: string;
+    message: string;
+    route?: string | null;
+    statusCode?: number | null;
+    userId?: number | null;
+    correlationId?: string | null;
+    resolved: string;
+    createdAt: string;
+  }>>([]);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [healReports, setHealReports] = useState<Array<{
+    reportId: string;
+    mode: string;
+    status: string;
+    summary: string;
+    findings: Array<{ check: string; severity: string; message: string }>;
+    actions: string[];
+    triggeredBy?: string | null;
+    createdAt: string;
+  }>>([]);
+  const [healRunning, setHealRunning] = useState(false);
 
   useEffect(() => {
     if (Array.isArray(initialDiagLogs) && initialDiagLogs.length > 0) {
@@ -65,6 +89,124 @@ export default function AdminDiagnosticsView({
   useEffect(() => {
     fetchDiagLogs();
   }, []);
+
+  const fetchOpsErrors = async () => {
+    setOpsLoading(true);
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch('/v2/admin/ops-errors?resolved=open&limit=100');
+      } else {
+        const token = getSessionId();
+        res = await fetch('/v2/admin/ops-errors?resolved=open&limit=100', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+        });
+      }
+      if (res.ok) {
+        const data = await res.json();
+        setOpsErrors(Array.isArray(data.events) ? data.events : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch ops errors:', err);
+    } finally {
+      setOpsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'errors' || activeTab === 'all') {
+      fetchOpsErrors();
+    }
+  }, [activeTab]);
+
+  const handleResolveOps = async (eventId: string) => {
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch(`/v2/admin/ops-errors/${encodeURIComponent(eventId)}/resolve`, {
+          method: 'POST',
+        });
+      } else {
+        const token = getSessionId();
+        res = await fetch(`/v2/admin/ops-errors/${encodeURIComponent(eventId)}/resolve`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+        });
+      }
+      if (res.ok) {
+        setOpsErrors((prev) => prev.filter((e) => e.eventId !== eventId));
+      }
+    } catch (err) {
+      console.error('Failed to resolve ops error:', err);
+    }
+  };
+
+  const fetchHealReports = async () => {
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch('/v2/admin/heal/reports?limit=20');
+      } else {
+        const token = getSessionId();
+        res = await fetch('/v2/admin/heal/reports?limit=20', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+        });
+      }
+      if (res.ok) {
+        const data = await res.json();
+        setHealReports(Array.isArray(data.reports) ? data.reports : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch heal reports:', err);
+    }
+  };
+
+  const runHealNow = async (mode: 'fix' | 'report' = 'fix') => {
+    setHealRunning(true);
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch('/v2/admin/heal/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        });
+      } else {
+        const token = getSessionId();
+        res = await fetch('/v2/admin/heal/run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+          body: JSON.stringify({ mode }),
+        });
+      }
+      if (res.ok) {
+        await fetchHealReports();
+      }
+    } catch (err) {
+      console.error('Failed to run heal:', err);
+    } finally {
+      setHealRunning(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'heal' || activeTab === 'all') {
+      fetchHealReports();
+    }
+  }, [activeTab]);
 
   const handleResolve = async (logId: string) => {
     try {
@@ -173,6 +315,38 @@ export default function AdminDiagnosticsView({
           >
             Debug
           </button>
+          <button
+            onClick={() => setActiveTab('errors')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'errors'
+                ? 'bg-status-away-bg text-status-away border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Errors
+          </button>
+          <button
+            onClick={() => setActiveTab('heal')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'heal'
+                ? 'bg-accent-20 text-accent border-accent-40'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Heal
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeTab === 'errors') fetchOpsErrors();
+              else if (activeTab === 'heal') fetchHealReports();
+              else fetchDiagLogs();
+            }}
+            className="ml-1 p-1.5 rounded-lg text-text-secondary hover:text-text-primary cursor-pointer"
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading || opsLoading || healRunning ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
@@ -181,9 +355,11 @@ export default function AdminDiagnosticsView({
         <div className="w-full h-full overflow-y-auto space-y-2 pr-1">
           {(() => {
             const feed = [
-              ...suspicious.map(s => ({ ...s, _type: 'alert', _ts: new Date(s.created_at || s.timestamp || 0).getTime() })),
-              ...logs.map(l => ({ ...l, _type: 'audit', _ts: new Date(l.timestamp || 0).getTime() })),
-              ...diagLogs.map(d => ({ ...d, _type: 'debug', _ts: new Date(d.created_at || 0).getTime() }))
+              ...opsErrors.map(e => ({ ...e, _type: 'ops' as const, _ts: new Date(e.createdAt || 0).getTime() })),
+              ...healReports.map(h => ({ ...h, _type: 'heal' as const, _ts: new Date(h.createdAt || 0).getTime() })),
+              ...suspicious.map(s => ({ ...s, _type: 'alert' as const, _ts: new Date(s.created_at || s.timestamp || 0).getTime() })),
+              ...logs.map(l => ({ ...l, _type: 'audit' as const, _ts: new Date(l.timestamp || 0).getTime() })),
+              ...diagLogs.map(d => ({ ...d, _type: 'debug' as const, _ts: new Date(d.created_at || 0).getTime() }))
             ].sort((a, b) => b._ts - a._ts);
 
             if (feed.length === 0) {
@@ -191,6 +367,32 @@ export default function AdminDiagnosticsView({
             }
 
             return feed.map((item, i) => {
+              if (item._type === 'ops') {
+                const ops = item as typeof opsErrors[number] & { _type: 'ops'; _ts: number };
+                return (
+                  <div key={`ops-${ops.eventId}-${i}`} onClick={() => setActiveTab('errors')} className="p-3 border border-status-away/20 bg-status-away-bg/50 hover:bg-status-away-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${ops.severity === 'red' ? 'bg-status-dnd' : 'bg-status-away'}`} />
+                      <span className="text-status-away font-bold font-mono text-[10px] uppercase">[{ops.severity}]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{ops.code}: {ops.message}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
+              if (item._type === 'heal') {
+                const heal = item as typeof healReports[number] & { _type: 'heal'; _ts: number };
+                return (
+                  <div key={`heal-${heal.reportId}-${i}`} onClick={() => setActiveTab('heal')} className="p-3 border border-accent/20 bg-accent-20/40 hover:bg-accent-20 rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2 h-2 rounded-full bg-accent" />
+                      <span className="text-accent font-bold font-mono text-[10px] uppercase">[HEAL]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{heal.summary}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
               if (item._type === 'alert') {
                 return (
                   <div key={`alert-${i}`} onClick={() => setActiveTab('alerts')} className="p-3 border border-status-dnd/20 bg-status-dnd-bg/50 hover:bg-status-dnd-bg rounded-xl cursor-pointer flex items-center justify-between transition">
@@ -220,13 +422,117 @@ export default function AdminDiagnosticsView({
                   <div className="flex items-center gap-3">
                     <span className="w-2 h-2 rounded-full bg-status-sky" />
                     <span className="text-status-sky font-bold font-mono text-[10px] uppercase">[DEBUG]</span>
-                    <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).username || `User #${item.user_id}`} telemetry report</span>
+                    <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).username || `User #${(item as any).user_id}`} telemetry report</span>
                   </div>
                   <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
                 </div>
               );
             });
           })()}
+        </div>
+      )}
+
+      {(activeTab === 'errors') && (
+        <div className="w-full h-full overflow-y-auto space-y-2 pr-1">
+          <div className="text-[10px] font-mono font-black text-status-away uppercase mb-3 border-b border-white-5 pb-2 tracking-widest flex items-center gap-2">
+            <AlertTriangle className="w-3 h-3" />
+            <span>Errors ({opsErrors.length})</span>
+          </div>
+          {opsErrors.length === 0 ? (
+            <div className="text-text-disabled text-center py-16 font-mono text-[10.5px] font-black uppercase tracking-wider">
+              No open ops errors
+            </div>
+          ) : (
+            opsErrors.map((ev) => (
+              <div key={ev.eventId} className="p-3 border border-white-5 rounded-xl space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[9px] uppercase px-2 py-0.5 rounded font-mono font-bold ${
+                      ev.severity === 'red' ? 'text-status-dnd bg-status-dnd-bg' : 'text-status-away bg-status-away-bg'
+                    }`}>
+                      {ev.severity}
+                    </span>
+                    <span className="text-text-primary font-mono text-[11px] font-bold truncate">{ev.code}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleResolveOps(ev.eventId)}
+                    className="px-2.5 py-1 bg-status-online-bg text-status-online rounded text-[10px] font-bold uppercase cursor-pointer shrink-0"
+                  >
+                    Resolve
+                  </button>
+                </div>
+                <p className="text-text-primary text-xs font-mono break-words">{ev.message}</p>
+                <div className="text-text-disabled font-mono text-[9px] flex flex-wrap gap-x-3 gap-y-1">
+                  {ev.route && <span>{ev.route}</span>}
+                  {ev.statusCode != null && <span>HTTP {ev.statusCode}</span>}
+                  {ev.userId != null && <span>user #{ev.userId}</span>}
+                  {ev.correlationId && <span>{ev.correlationId}</span>}
+                  <span className="ml-auto">{ev.createdAt ? new Date(ev.createdAt).toLocaleString() : ''}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {(activeTab === 'heal') && (
+        <div className="w-full h-full overflow-y-auto space-y-3 pr-1">
+          <div className="flex items-center justify-between gap-2 border-b border-white-5 pb-2">
+            <div className="text-[10px] font-mono font-black text-accent uppercase tracking-widest flex items-center gap-2">
+              <Cpu className="w-3 h-3" />
+              <span>Heal ({healReports.length})</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={healRunning}
+                onClick={() => runHealNow('report')}
+                className="px-2.5 py-1 rounded text-[10px] font-bold uppercase border border-white-5 text-text-secondary cursor-pointer disabled:opacity-50"
+              >
+                Report
+              </button>
+              <button
+                type="button"
+                disabled={healRunning}
+                onClick={() => runHealNow('fix')}
+                className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-accent-20 text-accent cursor-pointer disabled:opacity-50"
+              >
+                {healRunning ? 'Running…' : 'Run heal'}
+              </button>
+            </div>
+          </div>
+          {healReports.length === 0 ? (
+            <div className="text-text-disabled text-center py-16 font-mono text-[10.5px] font-black uppercase tracking-wider">
+              No heal reports yet
+            </div>
+          ) : (
+            healReports.map((r) => (
+              <div key={r.reportId} className="p-3 border border-white-5 rounded-xl space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[9px] uppercase px-2 py-0.5 rounded font-mono font-bold ${
+                    r.status === 'critical' ? 'text-status-dnd bg-status-dnd-bg'
+                      : r.status === 'degraded' ? 'text-status-away bg-status-away-bg'
+                      : 'text-status-online bg-status-online-bg'
+                  }`}>
+                    {r.status}
+                  </span>
+                  <span className="text-text-disabled font-mono text-[9px]">{r.mode} · {r.triggeredBy}</span>
+                </div>
+                <p className="text-text-primary text-xs font-mono">{r.summary}</p>
+                {Array.isArray(r.findings) && r.findings.length > 0 && (
+                  <ul className="text-[10px] font-mono text-text-secondary space-y-1">
+                    {r.findings.slice(0, 8).map((f, idx) => (
+                      <li key={`${r.reportId}-${idx}`}>[{f.severity}] {f.check}: {f.message}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="text-text-disabled font-mono text-[9px] text-right">
+                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 

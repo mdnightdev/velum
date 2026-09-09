@@ -2,8 +2,27 @@ import { eq, and, or, gt, inArray, desc, asc, sql } from 'drizzle-orm';
 import { db, executeWithRetry } from '../db/client.js';
 import { dms, dmClears, dmReactions, type Dm, type NewDm } from '../db/schema/dms.js';
 import { users } from '../db/schema/users.js';
+import { relationships } from '../db/schema/relationships.js';
 
 export class DmService {
+  /** True if either user has blocked the other. */
+  async isBlockedBetween(userA: number, userB: number): Promise<boolean> {
+    const rows = await db
+      .select({ id: relationships.id })
+      .from(relationships)
+      .where(
+        and(
+          eq(relationships.status, 'blocked'),
+          or(
+            and(eq(relationships.userId, userA), eq(relationships.friendId, userB)),
+            and(eq(relationships.userId, userB), eq(relationships.friendId, userA))
+          )
+        )
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
   /**
    * Fetches message history between two users, respecting the requesting user's monotonic clear cutoff.
    */
@@ -75,6 +94,12 @@ export class DmService {
     encrypted = false,
     replyTo?: number
   ): Promise<Dm> {
+    if (await this.isBlockedBetween(senderId, peerId)) {
+      const err = new Error('BLOCKED');
+      (err as Error & { code?: string }).code = 'BLOCKED';
+      throw err;
+    }
+
     return executeWithRetry(async () => {
       const [created] = await db
         .insert(dms)

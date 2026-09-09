@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   statelessE2eeService,
-  verifyPeerSignedPrekey
+  verifyPeerSignedPrekey,
+  acceptPeerBundleForEcdh
 } from '../../src/services/statelessE2eeService';
 import {
   generateEd25519KeyPair,
@@ -49,6 +50,38 @@ describe('E2EE peer signed prekey (SPK) verification', () => {
         signedPrekeyHex: toHex(tamperedSpk)
       })
     ).toBe(false);
+  });
+
+  it('allows legacy identity-only bundles for ECDH', () => {
+    const dh = generateX25519KeyPair();
+    const legacy = {
+      identityKeyHex: toHex(dh.publicKey),
+      signingIdentityKeyHex: '',
+      signedPrekeyHex: '',
+      signedPrekeySignatureHex: ''
+    };
+    expect(verifyPeerSignedPrekey(legacy)).toBe(false);
+    expect(acceptPeerBundleForEcdh(legacy)).toBe(true);
+  });
+
+  it('fetchPeerPublicKey accepts legacy identity-only server bundles', async () => {
+    const peerUserId = 502;
+    const dh = generateX25519KeyPair();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          bundle: {
+            identityKey: toHex(dh.publicKey)
+          }
+        })
+      }))
+    );
+
+    const keyHex = await statelessE2eeService.fetchPeerPublicKey(peerUserId);
+    expect(keyHex).toBe(toHex(dh.publicKey));
   });
 
   it('rejects fetchPeerPublicKey when the server returns a tampered SPK signature', async () => {

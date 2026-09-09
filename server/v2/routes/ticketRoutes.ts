@@ -147,6 +147,7 @@ ticketRouter.post('/user/tickets/:ticketId/reply', authMiddleware, async (req: R
 export const clientDiagnosticsList: any[] = [];
 
 const diagnosticsRateLimit = new Map<number, number>();
+const autoDiagRateLimit = new Map<number, number>();
 
 ticketRouter.post('/support/diagnostics', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -154,38 +155,60 @@ ticketRouter.post('/support/diagnostics', authMiddleware, async (req: Request, r
       return res.status(403).json({ error: 'Admins cannot submit client diagnostics.' });
     }
 
+    const source = (req.body?.source as string) || 'manual';
+    const isAuto = source === 'auto' || source === 'error_boundary';
     const now = Date.now();
-    const lastSubmit = diagnosticsRateLimit.get(req.user!.userId) || 0;
-    if (now - lastSubmit < 60000) { // 1 minute cooldown
+    const rateMap = isAuto ? autoDiagRateLimit : diagnosticsRateLimit;
+    const cooldown = isAuto ? 30000 : 60000;
+    const lastSubmit = rateMap.get(req.user!.userId) || 0;
+    if (now - lastSubmit < cooldown) {
       return res.status(429).json({ error: 'Too many diagnostic reports. Please wait before submitting again.' });
     }
-    diagnosticsRateLimit.set(req.user!.userId, now);
+    rateMap.set(req.user!.userId, now);
 
-    const payload = req.body;
-    const logId = `diag_${Date.now()}`;
-    const newLog = {
-      id: logId,
-      user_id: req.user!.userId,
+    const { saveClientDiagnostic } = await import('../services/clientDiagnosticsService.js');
+    const newLog = await saveClientDiagnostic({
+      userId: req.user!.userId,
       username: req.user!.username,
-      status: 'pending',
-      app_version: payload.app_version || '2.0.0',
-      ip_address: req.ip || '127.0.0.1',
-      screen_resolution: payload.screen_resolution || '1920x1080',
-      device_pixel_ratio: payload.device_pixel_ratio || 1,
-      viewport_size: payload.viewport_size || '1920x1080',
-      online_status: payload.online_status !== undefined ? payload.online_status : true,
-      connection_type: payload.connection_type || 'unknown',
-      storage_summary: payload.storage_summary || {},
-      user_agent: payload.user_agent || req.headers['user-agent'] || 'Unknown',
-      created_at: new Date().toISOString(),
-      notes: payload.notes || '',
-      error_buffer: payload.error_buffer || []
-    };
-    
-    clientDiagnosticsList.push(newLog);
-    res.status(201).json({ success: true, log_id: logId });
+      ipAddress: req.ip || '127.0.0.1',
+      payload: req.body || {},
+      source: (source as 'manual' | 'auto' | 'error_boundary') || 'manual',
+      severity: req.body?.severity === 'amber' ? 'amber' : 'red',
+    });
+
+    // Keep a small RAM mirror for legacy admin paths that still read the array
+    clientDiagnosticsList.unshift(newLog);
+    if (clientDiagnosticsList.length > 200) clientDiagnosticsList.length = 200;
+
+    res.status(201).json({ success: true, log_id: newLog.id });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save diagnostic logs.' });
+  }
+});
+
+ticketRouter.post('/support/client-ops', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.user && req.user.role && String(req.user.role).includes('ADMIN')) {
+      return res.status(403).json({ error: 'Admins cannot submit client ops events.' });
+    }
+    const code = String(req.body?.code || 'CLIENT_OPS').slice(0, 64);
+    const message = String(req.body?.message || 'Client ops event').slice(0, 500);
+    const severity = req.body?.severity === 'red' ? 'red' : 'amber';
+    const { reportOpsError } = await import('../services/opsErrorService.js');
+    const eventId = await reportOpsError({
+      severity,
+      code,
+      message,
+      userId: req.user!.userId,
+      component: String(req.body?.component || 'client').slice(0, 128),
+      details: {
+        buildVersion: req.body?.buildVersion,
+        reconnectCount: req.body?.reconnectCount,
+      },
+    });
+    res.status(201).json({ success: true, event_id: eventId });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to record client ops event.' });
   }
 });
 

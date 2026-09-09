@@ -1,7 +1,21 @@
 import React from 'react';
-import { Paperclip, Image as ImageIcon, Loader2, ChevronRight, ArrowLeft, X } from 'lucide-react';
+import {
+  Paperclip,
+  Image as ImageIcon,
+  Loader2,
+  ChevronRight,
+  ArrowLeft,
+  X,
+  Link2,
+  FileText,
+} from 'lucide-react';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
-import { ChatMediaItem } from '../../utils/chatMedia';
+import {
+  ChatMediaItem,
+  ChatMediaTab,
+  countChatMediaTabs,
+  filterChatMediaByTab,
+} from '../../utils/chatMedia';
 
 function formatMediaClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -41,6 +55,12 @@ function MediaStripVideoThumb({ url }: { url: string }) {
   );
 }
 
+const TABS: { id: ChatMediaTab; label: string }[] = [
+  { id: 'media', label: 'Media' },
+  { id: 'links', label: 'Links' },
+  { id: 'docs', label: 'Docs' },
+];
+
 type ChatMediaSectionProps = {
   chatMedia: ChatMediaItem[];
   mediaLoading: boolean;
@@ -58,29 +78,63 @@ export default function ChatMediaSection({
   galleryOpen,
   setGalleryOpen,
 }: ChatMediaSectionProps) {
+  const [activeTab, setActiveTab] = React.useState<ChatMediaTab>('media');
+  const counts = React.useMemo(() => countChatMediaTabs(chatMedia), [chatMedia]);
+  const tabItems = React.useMemo(
+    () => filterChatMediaByTab(chatMedia, activeTab),
+    [chatMedia, activeTab]
+  );
+  const stripItems = tabItems.slice(0, 12);
+  const totalCount = chatMedia.length;
+
+  const openItem = (item: ChatMediaItem) => {
+    if (item.kind === 'link') {
+      window.open(item.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setViewerItem(item);
+  };
+
   return (
     <>
       <div className="rounded-2xl bg-velum-850 border border-velum-600/50 p-4 space-y-3 shadow-lg">
         <button
           type="button"
-          onClick={() => {
-            if (chatMedia.length > 0) setGalleryOpen(true);
-          }}
+          onClick={() => setGalleryOpen(true)}
           className="w-full flex items-center justify-between cursor-pointer bg-transparent border-0 p-0 text-left"
         >
-          <span className="text-xs font-semibold text-text-primary">Media, links, and docs</span>
+          <span className="text-xs font-semibold text-text-primary">Shared</span>
           <div className="flex items-center gap-1 text-xs text-text-secondary">
-            <span>{mediaLoading ? '…' : chatMedia.length}</span>
+            <span>{mediaLoading ? '…' : totalCount}</span>
             <ChevronRight className="w-4 h-4" />
           </div>
         </button>
-        {chatMedia.length > 0 ? (
+
+        <div className="flex items-center gap-1 p-0.5 rounded-xl bg-velum-800/80">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-velum-700 text-text-primary'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {tab.label}
+              <span className="ml-1 text-text-disabled tabular-nums">{counts[tab.id]}</span>
+            </button>
+          ))}
+        </div>
+
+        {stripItems.length > 0 ? (
           <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none">
-            {chatMedia.slice(0, 12).map((item) => (
+            {stripItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setViewerItem(item)}
+                onClick={() => openItem(item)}
                 className="relative w-16 h-16 rounded-xl overflow-hidden bg-velum-750 border border-velum-600/50 shrink-0 cursor-pointer active:scale-95 transition"
                 title={item.name}
               >
@@ -93,9 +147,14 @@ export default function ChatMediaSection({
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
+                ) : item.kind === 'link' ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-text-secondary px-1">
+                    <Link2 className="w-5 h-5 mb-0.5" />
+                    <span className="text-[8px] truncate w-full text-center">{item.name}</span>
+                  </div>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-text-secondary px-1">
-                    <Paperclip className="w-5 h-5 mb-0.5" />
+                    <FileText className="w-5 h-5 mb-0.5" />
                     <span className="text-[8px] truncate w-full text-center">{item.name}</span>
                   </div>
                 )}
@@ -109,7 +168,13 @@ export default function ChatMediaSection({
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  <ImageIcon className="w-5 h-5 mb-1" />
+                  {activeTab === 'links' ? (
+                    <Link2 className="w-5 h-5 mb-1" />
+                  ) : activeTab === 'docs' ? (
+                    <Paperclip className="w-5 h-5 mb-1" />
+                  ) : (
+                    <ImageIcon className="w-5 h-5 mb-1" />
+                  )}
                   <span className="text-[9px]">None yet</span>
                 </>
               )}
@@ -118,7 +183,7 @@ export default function ChatMediaSection({
         )}
       </div>
 
-      {viewerItem && (
+      {viewerItem && viewerItem.kind !== 'link' && (
         <div
           className="fixed inset-0 z-[1000001] flex flex-col bg-black select-none"
           onClick={() => setViewerItem(null)}
@@ -180,32 +245,90 @@ export default function ChatMediaSection({
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <span className="text-sm font-semibold">Media, links, and docs</span>
-            <span className="text-xs text-text-secondary w-10 text-right">{chatMedia.length}</span>
+            <span className="text-sm font-semibold">Shared</span>
+            <span className="text-xs text-text-secondary w-10 text-right">{totalCount}</span>
           </div>
+
           <div
-            className="flex-1 overflow-y-auto p-3 grid grid-cols-3 gap-1.5 content-start"
+            className="flex items-center gap-1 px-3 py-2 border-b border-velum-600 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
-            {chatMedia.map((item) => (
+            {TABS.map((tab) => (
               <button
-                key={item.id}
+                key={tab.id}
                 type="button"
-                onClick={() => setViewerItem(item)}
-                className="relative aspect-square rounded-lg overflow-hidden bg-velum-800 border border-velum-600/40 cursor-pointer"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 py-2 rounded-xl text-xs font-medium transition cursor-pointer ${
+                  activeTab === tab.id
+                    ? 'bg-velum-750 text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
               >
-                {item.kind === 'video' ? (
-                  <MediaStripVideoThumb url={resolveMediaUrl(item.url)} />
-                ) : item.kind === 'image' ? (
-                  <img src={resolveMediaUrl(item.url)} alt="" className="w-full h-full object-cover" loading="lazy" />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-text-secondary px-2">
-                    <Paperclip className="w-6 h-6 mb-1" />
-                    <span className="text-[9px] truncate w-full text-center">{item.name}</span>
-                  </div>
-                )}
+                {tab.label} · {counts[tab.id]}
               </button>
             ))}
+          </div>
+
+          <div
+            className="flex-1 overflow-y-auto p-3 content-start"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {tabItems.length === 0 ? (
+              <div className="py-16 text-center text-sm text-text-secondary">None yet</div>
+            ) : activeTab === 'links' ? (
+              <div className="space-y-1.5">
+                {tabItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => openItem(item)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-velum-800 border border-velum-600/40 text-left cursor-pointer hover:bg-velum-750"
+                  >
+                    <Link2 className="w-4 h-4 text-accent shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-text-primary truncate">{item.name}</div>
+                      <div className="text-[11px] text-text-secondary truncate">{item.url}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : activeTab === 'docs' ? (
+              <div className="space-y-1.5">
+                {tabItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => openItem(item)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-velum-800 border border-velum-600/40 text-left cursor-pointer hover:bg-velum-750"
+                  >
+                    <FileText className="w-4 h-4 text-text-secondary shrink-0" />
+                    <span className="text-sm text-text-primary truncate">{item.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5">
+                {tabItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => openItem(item)}
+                    className="relative aspect-square rounded-lg overflow-hidden bg-velum-800 border border-velum-600/40 cursor-pointer"
+                  >
+                    {item.kind === 'video' ? (
+                      <MediaStripVideoThumb url={resolveMediaUrl(item.url)} />
+                    ) : (
+                      <img
+                        src={resolveMediaUrl(item.url)}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
