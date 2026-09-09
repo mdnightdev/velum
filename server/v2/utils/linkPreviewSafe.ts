@@ -16,7 +16,9 @@ const BLOCKED_HOSTS = new Set([
   'metadata',
 ]);
 
-const purify = createDOMPurify(new JSDOM('').window as unknown as Window);
+const purify = createDOMPurify(
+  new JSDOM('').window as unknown as Parameters<typeof createDOMPurify>[0]
+);
 
 export type SafeLinkPreview = {
   url: string;
