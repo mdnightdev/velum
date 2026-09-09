@@ -1,6 +1,7 @@
 import { statelessE2eeService } from './statelessE2eeService.js';
 import { getPlaintextByCiphertext } from '../utils/indexedDb.js';
 import { isUsablePlaintext } from '../utils/messagePlaintext.js';
+import { getMemoryPlaintext } from '../utils/plaintextCache.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import {
@@ -110,7 +111,11 @@ export async function encryptMessage(content: string, context: EncryptionContext
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
-  // Device plaintext is authoritative — never re-derive if already stored.
+  // Session memory first — never touch Dexie/crypto if we already know the plaintext.
+  const mem = getMemoryPlaintext(content);
+  if (mem) return mem;
+
+  // Device plaintext cache (indexed) — never re-derive if already stored.
   try {
     const uid = statelessE2eeService.getLocalUserId() || undefined;
     const localPt = await getPlaintextByCiphertext(content, uid);

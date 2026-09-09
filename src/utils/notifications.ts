@@ -7,6 +7,7 @@ import {
   type NotificationSoundId,
 } from '../constants/notificationSounds';
 import { isPeerMuted } from './dmPeerPrefs';
+import { getNotificationBodyText } from './messagePlaintext';
 
 export interface NotificationPreferences {
   desktopPopups: boolean;
@@ -246,7 +247,8 @@ export function handleInboundMessageNotification(msg: {
 
   const prefs = getNotificationPreferences();
   const cleanSender = (msg.senderName || 'Velum').replace(/^@/, '');
-  const previewText = msg.content || '';
+  // Never decrypt here; never surface ciphertext / poison as the body.
+  const previewText = getNotificationBodyText(msg.content);
 
   if (isVisible) {
     // In-app foreground: crisp Web Audio chime + single-token toast

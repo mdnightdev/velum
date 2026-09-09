@@ -625,9 +625,21 @@ export function MessageItem({
     (!isCipher && typeof msg.content === 'string' ? msg.content : '') ||
     '';
 
-  // Encrypted relay payload with no device plaintext: render nothing (server is relay only).
+  // Encrypted relay with no plaintext yet — keep a slot so live receives aren't invisible.
   if (!msg.deleted && isCipher && !isUsablePlaintext(activeContent)) {
-    return null;
+    return (
+      <div
+        id={`msg-${msg.client_msg_id || msg.id || msg.message_id}`}
+        className={`flex message-bubble-container group relative select-none ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
+        data-message-id={String(msg.client_msg_id || msg.id || msg.message_id)}
+      >
+        <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
+          <div className={`chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-peer'} opacity-70`}>
+            <span className="inline-block w-12 h-3 rounded bg-current/20 animate-pulse" aria-hidden />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const isVoiceNote = activeContent.startsWith('[Voice Note') || activeContent.startsWith('[Voice Message');

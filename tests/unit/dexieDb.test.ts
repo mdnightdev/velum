@@ -33,15 +33,16 @@ describe('Dexie DB version, naming, and uid resolution', () => {
     expect(resolveDexieUserId(-3)).toBe(0);
   });
 
-  it('runs the v2 upgrade stub when opening a fresh database', async () => {
+  it('runs the v3 upgrade and exposes plaintext_cache', async () => {
     const db = getDexieDb(0);
     await db.open();
-    expect(db.verno).toBe(2);
+    expect(db.verno).toBe(3);
     expect(db.tables.map((t) => t.name).sort()).toEqual([
       'identity_keys',
       'media_blobs',
       'messages',
       'outbox_messages',
+      'plaintext_cache',
       'signed_prekeys',
       'user_kv',
       'vault_metadata'

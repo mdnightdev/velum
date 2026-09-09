@@ -38,10 +38,11 @@ export function getDmRoomAliases(peerId: number, currentUserId: number): string[
   ]));
 }
 
-/** Primary room id used for DM previews / unread bumps. */
+/** Primary room id used for DM previews / unread bumps / live thread. */
 export function getPrimaryDmRoomId(peerId: number, currentUserId: number): string {
   if (peerId === 999) return `dm_velum_${currentUserId}`;
-  return `dm_${peerId}`;
+  // Pairwise form — must match App.tsx / onSelectPeer activeRoomId.
+  return `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`;
 }
 
 /** Whether the open chat is this DM (any alias). */

@@ -41,6 +41,49 @@ export function getMessagePreviewPlaintext(msg: {
 }
 
 /**
+ * Sidebar/list label: known plaintext only. Empty while still opaque — never a fake "Message" label.
+ * Never triggers decrypt and never surfaces ciphertext.
+ */
+export function getSidebarPreviewLabel(msg: {
+  plaintext?: string | null;
+  client_plaintext?: string | null;
+  content?: string | null;
+  message?: string | null;
+  body?: string | null;
+  text?: string | null;
+  is_encrypted?: boolean | null;
+  isEncrypted?: boolean | null;
+} | null | undefined): string {
+  return getMessagePreviewPlaintext(msg);
+}
+
+/**
+ * Notification body: usable plaintext / clear unencrypted text only.
+ * Encrypted or unknown → empty (caller should omit body or wait for decrypt stamp).
+ * Never decrypt here.
+ */
+export function getNotificationBodyText(input: {
+  plaintext?: string | null;
+  content?: string | null;
+  isEncrypted?: boolean | null;
+} | string | null | undefined): string {
+  if (input == null) return '';
+  const rejectOpaque = (value: string): boolean =>
+    isPoisonPlaintext(value) || /e2ee:|VEL_E2EE\[|ratchet:v/i.test(value);
+
+  if (typeof input === 'string') {
+    if (!input.trim() || rejectOpaque(input)) return '';
+    return input;
+  }
+  if (isUsablePlaintext(input.plaintext) && !rejectOpaque(String(input.plaintext))) {
+    return String(input.plaintext);
+  }
+  const raw = input.content || '';
+  if (!raw || input.isEncrypted || rejectOpaque(raw)) return '';
+  return String(raw);
+}
+
+/**
  * Prefer existing device plaintext over incoming. Never let poison overwrite real text.
  */
 export function mergeMessagePlaintext(
