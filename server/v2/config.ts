@@ -71,3 +71,16 @@ if (!parsedEnv.success) {
 
 export const config = parsedEnv.data;
 export type Config = z.infer<typeof envSchema>;
+
+const pointsAtLocalhost = (value: string) => /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(value);
+
+if (config.NODE_ENV === 'production') {
+  // A silent fall back to the local dev database would run production against an empty box.
+  if (config.DATABASE_URL === defaultLocalDbUrl || pointsAtLocalhost(config.DATABASE_URL)) {
+    throw new Error('[CONFIG] DATABASE_URL is missing or points at localhost while NODE_ENV=production.');
+  }
+
+  if (pointsAtLocalhost(config.WEBAUTHN_RP_ID) || pointsAtLocalhost(config.WEBAUTHN_ORIGIN)) {
+    throw new Error('[CONFIG] WEBAUTHN_RP_ID and WEBAUTHN_ORIGIN must be set to the public domain while NODE_ENV=production.');
+  }
+}

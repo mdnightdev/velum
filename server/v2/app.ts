@@ -185,28 +185,43 @@ app.use((_req, res, next) => {
 });
 
 // Configure CORS for Web, PWA, and Android Capacitor APK
-const allowedOrigins = [
+const isProductionRuntime = config.NODE_ENV === 'production';
+
+// capacitor:// and ionic:// are the APK's own origin and stay allowed everywhere.
+const LOCAL_DEV_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost',
-  'https://localhost',
+  'https://localhost'
+];
+
+const allowedOrigins = [
   'capacitor://localhost',
   'ionic://localhost',
-  ...(process.env.ALLOWED_ORIGINS?.split(',') || [])
+  ...(isProductionRuntime ? [] : LOCAL_DEV_ORIGINS),
+  ...(config.APP_URL ? [config.APP_URL.replace(/\/+$/, '')] : []),
+  ...(process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean) || [])
 ];
+
+if (isProductionRuntime && !config.APP_URL && !process.env.ALLOWED_ORIGINS) {
+  logger.warn('[CORS] No APP_URL or ALLOWED_ORIGINS set; only same-origin and native app requests will be accepted');
+}
 
 const corsOptions: cors.CorsOptions = {
   origin: (requestOrigin, callback) => {
     if (!requestOrigin) {
       return callback(null, true);
     }
-    const isAllowed = 
-      allowedOrigins.includes(requestOrigin) || 
-      requestOrigin.startsWith('http://localhost') || 
-      requestOrigin.startsWith('http://127.0.0.1') || 
-      requestOrigin.startsWith('https://localhost') || 
-      requestOrigin.startsWith('https://127.0.0.1') || 
-      requestOrigin.startsWith('capacitor://') || 
+    const isLocalOrigin =
+      requestOrigin.startsWith('http://localhost') ||
+      requestOrigin.startsWith('http://127.0.0.1') ||
+      requestOrigin.startsWith('https://localhost') ||
+      requestOrigin.startsWith('https://127.0.0.1');
+
+    const isAllowed =
+      allowedOrigins.includes(requestOrigin.replace(/\/+$/, '')) ||
+      (!isProductionRuntime && isLocalOrigin) ||
+      requestOrigin.startsWith('capacitor://') ||
       requestOrigin.startsWith('ionic://');
 
     if (isAllowed) {
