@@ -3,7 +3,7 @@ import { getDexieDb } from '../services/dexieDb.js';
 import { purgeCryptoDatabase } from '../services/cryptoDbStore.js';
 import { isUsablePlaintext, mergeMessagePlaintext } from './messagePlaintext.js';
 
-const MAX_MESSAGE_AGE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year persistent storage
+const MAX_MESSAGE_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — keep in sync with localCacheMaintenance
 
 export async function saveLocalMessages(messages: any[], userId?: number): Promise<void> {
   if (!messages || messages.length === 0) return;

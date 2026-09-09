@@ -199,7 +199,6 @@ export const useChatStore = create<ChatStoreState>()(
             for (const k of keys) {
               const pt = keyToPlaintext[k];
               if (!pt || pt === m.plaintext) continue;
-              // Never overwrite real plaintext with placeholders / empty
               if (!isUsablePlaintext(pt)) continue;
               if (isUsablePlaintext(m.plaintext)) continue;
               hasChange = true;
@@ -207,7 +206,37 @@ export const useChatStore = create<ChatStoreState>()(
             }
             return m;
           });
-          return hasChange ? { messages: nextList } : state;
+
+          const nextLast = { ...state.lastMessages };
+          for (const [roomId, m] of Object.entries(state.lastMessages)) {
+            if (!m) continue;
+            const keys = [m.message_id, m.id, m.client_msg_id, m.nonce, (m as any).db_message_id]
+              .filter(Boolean)
+              .map(String);
+            for (const k of keys) {
+              const pt = keyToPlaintext[k];
+              if (!pt || pt === m.plaintext) continue;
+              if (!isUsablePlaintext(pt)) continue;
+              if (isUsablePlaintext(m.plaintext)) continue;
+              nextLast[roomId] = { ...m, plaintext: pt };
+              hasChange = true;
+              break;
+            }
+            // Also match by ciphertext content key
+            if (m.content && keyToPlaintext[m.content] && !isUsablePlaintext(m.plaintext)) {
+              const pt = keyToPlaintext[m.content];
+              if (isUsablePlaintext(pt)) {
+                nextLast[roomId] = { ...m, plaintext: pt };
+                hasChange = true;
+              }
+            }
+          }
+
+          if (!hasChange) return state;
+          return {
+            messages: nextList,
+            lastMessages: nextLast,
+          };
         });
       },
 

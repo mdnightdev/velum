@@ -67,6 +67,42 @@ export async function getLoungeIdFromRoomId(roomId: string): Promise<number | nu
   return null;
 }
 
+export function getPrimaryDmRoomId(peerId: number, currentUserId: number): string {
+  if (peerId === 999) return `dm_velum_${currentUserId}`;
+  return `dm_${peerId}`;
+}
+
+/** Room id for viewer looking at peer (same as getPrimaryDmRoomId). */
+export function getPrimaryDmRoomIdForPair(viewerId: number, peerId: number): string {
+  return getPrimaryDmRoomId(peerId, viewerId);
+}
+
+/**
+ * Authoritative DM unread from Postgres (excludes expired), mirrored onto Redis aliases.
+ */
+export async function setDmUnreadFromDb(userId: number, peerId: number): Promise<number> {
+  try {
+    const count = await dmService.countUnreadFromPeer(userId, peerId, 0);
+    const redis = await getRedisClient();
+    const aliases = getDmRoomAliases(peerId, userId);
+    if (redis) {
+      for (const alias of aliases) {
+        const key = `unread:${userId}:${alias}`;
+        if (count <= 0) {
+          await redis.del(key);
+        } else {
+          await redis.set(key, String(count));
+          await redis.expire(key, 86400);
+        }
+      }
+    }
+    return count;
+  } catch (err) {
+    console.error('[WS] Failed to set DM unread from DB:', err);
+    return 0;
+  }
+}
+
 export async function incrementUnread(userId: number, roomId: string) {
   try {
     const redis = await getRedisClient();

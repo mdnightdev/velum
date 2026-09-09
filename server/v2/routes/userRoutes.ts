@@ -651,7 +651,8 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
         }
       }
 
-      // Recover DM unread counts from dms table
+      // Recover DM unread counts from dms table (exclude expired)
+      const { dmNotExpiredClause } = await import('../services/dmService.js');
       const unreadDms = await db
         .select({
           sender: dms.sender,
@@ -661,7 +662,8 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
         .where(
           and(
             eq(dms.peer, userId),
-            sql`${dms.readAt} IS NULL`
+            sql`${dms.readAt} IS NULL`,
+            dmNotExpiredClause()
           )
         )
         .groupBy(dms.sender);

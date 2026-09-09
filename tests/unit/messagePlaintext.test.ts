@@ -19,4 +19,10 @@ describe('messagePlaintext', () => {
     expect(mergeMessagePlaintext(undefined, '[Encrypted Message]')).toBeUndefined();
     expect(mergeMessagePlaintext(undefined, 'ok')).toBe('ok');
   });
+
+  it('getMessagePreviewPlaintext skips ciphertext', async () => {
+    const { getMessagePreviewPlaintext } = await import('../../src/utils/messagePlaintext');
+    expect(getMessagePreviewPlaintext({ plaintext: 'ok', content: 'e2ee:x', is_encrypted: true })).toBe('ok');
+    expect(getMessagePreviewPlaintext({ content: 'VEL_E2EE[x]', is_encrypted: true })).toBe('');
+  });
 });

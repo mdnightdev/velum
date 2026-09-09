@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Bot, Check, CheckCheck, Archive, ArchiveRestore, Trash2, MoreVertical, X, MessageSquarePlus, Search, Info, LogOut } from 'lucide-react';
-import { decryptMessage, decryptMessageSync } from '../../services/encryptionService';
 import { stripAt } from '../../types';
 import logoSvg from '../../assets/logo.svg?raw';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getCleanPreview, formatVoiceNotePreview } from '../../utils/messageParser';
 import { formatMessageTimestamp } from '../../utils/time';
-import { getLocalMessages, flushLoungeCache, purgeDmMessages } from '../../utils/indexedDb';
+import { flushLoungeCache, purgeDmMessages } from '../../utils/indexedDb';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
 import { getSessionId } from '../../utils/auth';
 import { getDmRoomAliases, resolveDmUnreadCount, selectLatestDmMessage, messageTimestamp, shouldHideDeletedDm, getPrimaryDmRoomId } from '../../utils/roomUtils';
+import { getMessagePreviewPlaintext } from '../../utils/messagePlaintext';
 import { useChatStore } from '../../stores/chatStore';
 import { ContactAvatar, isAvatarImageSrc } from '../ContactAvatar';
 
@@ -106,14 +106,6 @@ function renderPreviewWithIcons(content: string) {
   return <span className="truncate">{content}</span>;
 }
 
-// e2ee:v1: envelopes are stateless-ECDH DMs and can only be decrypted async
-// (they hit IndexedDB for the local identity key). decryptMessageSync only
-// understands the VEL_E2EE[...] lounge XOR format, so it must never be used
-// as the terminal decryptor for DM content - only as a legacy/lounge fallback.
-function isStatelessDmEnvelope(raw: string): boolean {
-  return raw.startsWith('e2ee:v2:') || raw.startsWith('e2ee:v1:') || raw.startsWith('e2ee:');
-}
-
 interface DirectMainDashboardProps {
   friendRequests: any[];
   friendRelationships: any;
@@ -166,7 +158,6 @@ function DirectMainDashboard({
     return dedupeRelationshipsByPeerId(raw);
   })();
   const [searchQuery, setSearchQuery] = useState('');
-  const [decryptedPreviews, setDecryptedPreviews] = useState<Record<number, string>>({});
   const [filterTab, setFilterTab] = useState<'active' | 'archived'>('active');
   const [archivedUserIds, setArchivedUserIds] = useState<number[]>(() => {
     try {
@@ -293,32 +284,13 @@ function DirectMainDashboard({
       const detail = (e as CustomEvent).detail || {};
       const peerId = Number(detail.peerId);
       if (!Number.isFinite(peerId)) return;
-      setDecryptedPreviews(prev => {
-        const copy = { ...prev };
-        delete copy[peerId];
-        return copy;
-      });
-    };
-
-    const onPreviewChanged = (e: Event) => {
-      const detail = (e as CustomEvent).detail || {};
-      const peerId = Number(detail.peerId);
-      if (!Number.isFinite(peerId)) return;
-      setDecryptedPreviews((prev) => {
-        if (!(peerId in prev)) return prev;
-        const copy = { ...prev };
-        delete copy[peerId];
-        return copy;
-      });
     };
 
     window.addEventListener('velum-dm-deleted', onDeleted);
     window.addEventListener('velum-dm-cleared', onCleared);
-    window.addEventListener('velum-dm-preview-changed', onPreviewChanged);
     return () => {
       window.removeEventListener('velum-dm-deleted', onDeleted);
       window.removeEventListener('velum-dm-cleared', onCleared);
-      window.removeEventListener('velum-dm-preview-changed', onPreviewChanged);
     };
   }, [currentUserId]);
 
@@ -403,141 +375,12 @@ function DirectMainDashboard({
         console.warn('Server chat deletion call failed:', err);
       }
 
-      setDecryptedPreviews(prev => {
-        const copy = { ...prev };
-        delete copy[peerId];
-        return copy;
-      });
       window.dispatchEvent(new CustomEvent('velum-dm-deleted', { detail: { peerId, deletedAt: now } }));
       setContextPeer(null);
     } catch (e) {
       console.warn('Failed to delete conversation:', e);
     }
   };
-
-  React.useEffect(() => {
-    let isMounted = true;
-    const processPreviews = async () => {
-      for (const r of relationshipsArray) {
-        const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
-        if (!Number.isFinite(friendId)) continue;
-        const candidateKeys = getDmRoomAliases(friendId, currentUserId);
-        const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message, forgottenPreviewIds);
-        if (!last) continue;
-
-        const raw = last.content || last.message || last.body || last.text || '';
-        const isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-        const knownPlain =
-          last.plaintext ||
-          last.client_plaintext ||
-          '';
-
-        if (knownPlain && !isStatelessDmEnvelope(knownPlain)) {
-          if (isMounted) {
-            setDecryptedPreviews(prev => ({ ...prev, [friendId]: knownPlain }));
-          }
-          continue;
-        }
-
-        if (isMe && isStatelessDmEnvelope(raw)) {
-          let known = knownPlain;
-          if (!known) {
-            for (const roomKey of candidateKeys) {
-              const localStore = await getLocalMessages(roomKey, 10, currentUserId).catch(() => []);
-              const match = localStore.find((m: any) =>
-                m.plaintext && (m.content === raw || m.id === last.message_id || m.message_id === last.message_id)
-              );
-              if (match?.plaintext) {
-                known = match.plaintext;
-                break;
-              }
-            }
-          }
-          if (isMounted) {
-            setDecryptedPreviews(prev => ({
-              ...prev,
-              [friendId]: known || '',
-            }));
-          }
-          continue;
-        }
-
-        if (raw) {
-          try {
-            let decrypted = isStatelessDmEnvelope(raw)
-              ? await decryptMessage(raw, { type: 'direct', peerUserId: friendId })
-              : decryptMessageSync(raw, candidateKeys[0], !!(last.is_encrypted || last.isEncrypted));
-
-            if (!decrypted || isStatelessDmEnvelope(decrypted)) {
-              for (const roomKey of candidateKeys) {
-                const localStore = await getLocalMessages(roomKey, 10, currentUserId).catch(() => []);
-                const match = localStore.find((m: any) =>
-                  m.plaintext && (m.content === raw || m.id === last.message_id || m.message_id === last.message_id)
-                );
-                if (match?.plaintext) {
-                  decrypted = match.plaintext;
-                  break;
-                }
-              }
-            }
-
-            if (isMounted) {
-              setDecryptedPreviews(prev => ({
-                ...prev,
-                [friendId]:
-                  decrypted && !isStatelessDmEnvelope(decrypted)
-                    ? decrypted
-                    : '',
-              }));
-            }
-          } catch {
-            if (isMounted && isStatelessDmEnvelope(raw)) {
-              setDecryptedPreviews(prev => ({ ...prev, [friendId]: '' }));
-            }
-          }
-        }
-      }
-    };
-    processPreviews();
-    return () => { isMounted = false; };
-  }, [relationshipsArray, lastMessages, currentUserId, forgottenPreviewIds]);
-
-  const velumRoomIdKey = `dm_velum_${currentUserId}`;
-  const velumLastForEffect = lastMessages[velumRoomIdKey];
-  const [velumDecrypted, setVelumDecrypted] = React.useState('');
-
-  React.useEffect(() => {
-    let isMounted = true;
-    const processVelumPreview = async () => {
-      if (!velumLastForEffect) {
-        if (isMounted) setVelumDecrypted('');
-        return;
-      }
-      const raw = velumLastForEffect.content || velumLastForEffect.message || velumLastForEffect.body || velumLastForEffect.text || '';
-      const actualRoomId = velumLastForEffect.room_id || velumRoomIdKey;
-      const isMe = (velumLastForEffect.user_id === currentUserId) || (velumLastForEffect.senderId === currentUserId);
-      if (!raw) {
-        if (isMounted) setVelumDecrypted('');
-        return;
-      }
-      if (isMe && isStatelessDmEnvelope(raw)) {
-        // Can't decrypt our own outgoing message here - only the recipient
-        // can. Use the plaintext we already know locally, if it's still around.
-        if (isMounted) setVelumDecrypted(velumLastForEffect.plaintext || velumLastForEffect.client_plaintext || '');
-        return;
-      }
-      try {
-        const decrypted = isStatelessDmEnvelope(raw)
-          ? await decryptMessage(raw, { type: 'direct', peerUserId: 999 })
-          : (decryptMessageSync(raw, actualRoomId, !!(velumLastForEffect.is_encrypted || velumLastForEffect.isEncrypted)) || raw);
-        if (isMounted) setVelumDecrypted(decrypted || '');
-      } catch (e) {
-        if (isMounted) setVelumDecrypted('');
-      }
-    };
-    processVelumPreview();
-    return () => { isMounted = false; };
-  }, [velumLastForEffect, currentUserId]);
 
   const filteredFriends = relationshipsArray.filter(r => {
     const name = r.username || r.displayName;
@@ -546,17 +389,14 @@ function DirectMainDashboard({
   const velumUnread = unreadCounts[`dm_velum_${currentUserId}`] || 0;
 
   const velumRoomId = `dm_velum_${currentUserId}`;
-  const velumLast = lastMessages[velumRoomId];
+  const velumLast = selectLatestDmMessage(999, currentUserId, lastMessages, undefined, forgottenPreviewIds);
   let velumTxt = '';
   let velumTimeStr = '';
   let velumMsgStatus = '';
   let velumIsMe = false;
   if (velumLast) {
     velumIsMe = (velumLast.user_id === currentUserId) || (velumLast.senderId === currentUserId);
-    const raw = velumLast.content || velumLast.message || velumLast.body || velumLast.text || '';
-    // Stateless e2ee:v1 envelopes are resolved async via the effect above and
-    // land in velumDecrypted; never fall back to sync-decrypting them here.
-    velumTxt = velumDecrypted || (isStatelessDmEnvelope(raw) ? (velumLast.plaintext || velumLast.client_plaintext || '') : raw || '');
+    velumTxt = getCleanPreview(getMessagePreviewPlaintext(velumLast)) || '';
     if (velumIsMe) {
       if (velumLast.status) {
         velumMsgStatus = velumLast.status;
@@ -848,25 +688,7 @@ function DirectMainDashboard({
 
             if (last) {
               isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-              const isEnc = !!(last.is_encrypted || last.isEncrypted);
-              const actualRoomId = last.room_id || dmRoomId;
-              const cachedPreview = decryptedPreviews[friendId];
-              const displayTxt =
-                last.plaintext ||
-                last.client_plaintext ||
-                cachedPreview ||
-                (function () {
-                const rawInner = last.content || last.message || last.body || last.text || '';
-                if (isStatelessDmEnvelope(rawInner)) {
-                  return '';
-                }
-                try {
-                  return decryptMessageSync(rawInner, actualRoomId, isEnc) || rawInner || '';
-                } catch {
-                  return rawInner || '';
-                }
-              })();
-              lastTxt = getCleanPreview(displayTxt) || '';
+              lastTxt = getCleanPreview(getMessagePreviewPlaintext(last)) || '';
               if (last.status === 'failed' || last.delivery_status === 'failed') {
                 isFailed = true;
               } else if (isMe) {

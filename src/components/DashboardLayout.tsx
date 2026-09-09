@@ -101,6 +101,13 @@ export default function DashboardLayout({
   // Runs even when ChatArea is unmounted (DM list / other tabs)
   useDisappearingMessages(user?.userId ?? null);
 
+  useEffect(() => {
+    if (!user?.userId) return;
+    void import('../utils/localCacheMaintenance').then(({ scheduleLocalCacheMaintenance }) => {
+      scheduleLocalCacheMaintenance(user.userId);
+    });
+  }, [user?.userId]);
+
   const handleLoadProfileCard = async (profUser: any) => {
     try {
       const targetUserId = profUser?.userId || profUser?.id || profUser?.user_id;

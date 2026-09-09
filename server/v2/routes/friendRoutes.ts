@@ -80,9 +80,12 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
       return res.json({ relationships: [] });
     }
 
+    const { dmService, dmNotExpiredClause } = await import('../services/dmService.js');
+    // Drop expired DMs involving this user so last_message / unread stay honest
+    await dmService.purgeExpiredDmsAndSync({ involvingUserId: currentUserId });
+
     const peerUsers = await db.select().from(users).where(inArray(users.id, peerIds));
     const isUserOnline = (uid: number) => Array.from(connectedClients.values()).some(c => c.userId === uid);
-    const redis = await getRedisClient();
 
     const mapped = await Promise.all(relations.map(async r => {
       const peerId = r.userId === currentUserId ? r.friendId : r.userId;
@@ -98,7 +101,7 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
 
       const cutoffId = clearRecord?.lastId || 0;
 
-      // 2. Query latest message between pair
+      // 2. Query latest non-expired message between pair
       const [lastDm] = await db
         .select()
         .from(dms)
@@ -108,7 +111,8 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
               and(eq(dms.sender, currentUserId), eq(dms.peer, peerId)),
               and(eq(dms.sender, peerId), eq(dms.peer, currentUserId))
             ),
-            gt(dms.id, cutoffId)
+            gt(dms.id, cutoffId),
+            dmNotExpiredClause()
           )
         )
         .orderBy(desc(dms.id))
@@ -123,22 +127,13 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
           senderId: lastDm.sender,
           user_id: lastDm.sender,
           is_encrypted: lastDm.encrypted,
-          createdAt: lastDm.created?.toISOString() || new Date().toISOString()
+          createdAt: lastDm.created?.toISOString() || new Date().toISOString(),
+          expires_at: lastDm.expiresAt ? lastDm.expiresAt.toISOString() : null,
         };
       }
 
-      // 3. Count unread incoming messages
-      const unreadList = await db
-        .select({ id: dms.id })
-        .from(dms)
-        .where(
-          and(
-            eq(dms.sender, peerId),
-            eq(dms.peer, currentUserId),
-            gt(dms.id, cutoffId),
-            sql`${dms.readAt} IS NULL`
-          )
-        );
+      // 3. Count unread incoming messages (exclude expired)
+      const unreadCount = await dmService.countUnreadFromPeer(currentUserId, peerId, cutoffId);
 
       const { hasBlocked } = await import('../services/blockService.js');
       const iBlocked = await hasBlocked(currentUserId, peerId);
@@ -153,7 +148,7 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
         last_seen_at: lastSeen,
         active_lounge: null,
         dm_room_id: peerId === 999 ? `dm_velum_${currentUserId}` : `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`,
-        unread_count: unreadList.length,
+        unread_count: unreadCount,
         last_message: lastMessage
       };
     }));

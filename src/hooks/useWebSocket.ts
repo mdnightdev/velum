@@ -599,31 +599,45 @@ export function useWebSocket({
 
           if (!isFromMe) {
             const senderName = (data.sender_username || dmMsg.username || `User #${data.from}`).replace(/^@/, '');
-            
-            const notifyDm = (bodyText: string) => {
-              handleInboundMessageNotification({
-                senderName,
-                content: bodyText,
-                isFromMe: false,
-                roomId: dmRoomId,
-                activeRoomId: activeRoomIdRef.current,
-                timestamp: data.created ? new Date(data.created).getTime() : Date.now(),
-                peerUserId: peerId,
-              });
-            };
+            const isEnc =
+              !!dmMsg.is_encrypted ||
+              !!(dmMsg.content && (dmMsg.content.startsWith('e2ee:') || dmMsg.content.startsWith('VEL_E2EE[')));
+            const notifyBody = isUsablePlaintext(dmMsg.plaintext)
+              ? String(dmMsg.plaintext)
+              : isEnc
+                ? 'New message'
+                : (dmMsg.content || 'New message');
 
-            if (dmMsg.is_encrypted || (dmMsg.content && (dmMsg.content.startsWith('e2ee:') || dmMsg.content.startsWith('VEL_E2EE[')))) {
+            handleInboundMessageNotification({
+              senderName,
+              content: notifyBody,
+              isFromMe: false,
+              roomId: dmRoomId,
+              activeRoomId: activeRoomIdRef.current,
+              timestamp: data.created ? new Date(data.created).getTime() : Date.now(),
+              peerUserId: peerId,
+            });
+
+            if (isEnc && !isUsablePlaintext(dmMsg.plaintext) && dmMsg.content) {
               decryptMessage(dmMsg.content, { type: 'direct', peerUserId: data.from })
                 .then((pt) => {
-                  if (pt && dmMsg.content) {
-                    cachePlaintext(dmMsg.content, pt);
-                    useChatStore.getState().updatePlaintexts({ [String(canonicalId)]: pt });
+                  if (!pt || !isUsablePlaintext(pt)) return;
+                  cachePlaintext(dmMsg.content!, pt);
+                  const idKey = String(canonicalId || '');
+                  const patch: Record<string, string> = { [idKey]: pt };
+                  if (clientMsgId) patch[String(clientMsgId)] = pt;
+                  patch[dmMsg.content!] = pt;
+                  useChatStore.getState().updatePlaintexts(patch);
+                  for (const alias of aliases) {
+                    setLastMessage(alias, {
+                      ...dmMsg,
+                      plaintext: pt,
+                      room_id: alias,
+                      lounge_id: alias,
+                    });
                   }
-                  notifyDm(pt);
                 })
-                .catch(() => notifyDm('Sent a message'));
-            } else {
-              notifyDm(dmMsg.content);
+                .catch(() => {});
             }
 
             if (!viewing) {
@@ -637,13 +651,19 @@ export function useWebSocket({
             }
           }
 
+          const lastPayload = {
+            ...dmMsg,
+            plaintext: isUsablePlaintext(dmMsg.plaintext)
+              ? dmMsg.plaintext
+              : (!dmMsg.is_encrypted && dmMsg.content && isUsablePlaintext(dmMsg.content) ? dmMsg.content : dmMsg.plaintext),
+          };
           for (const alias of aliases) {
-            setLastMessage(alias, { ...dmMsg, room_id: alias, lounge_id: alias });
+            setLastMessage(alias, { ...lastPayload, room_id: alias, lounge_id: alias });
           }
           if (viewing) {
-            appendMessage({ ...dmMsg, to: peerId } as any);
+            appendMessage({ ...lastPayload, to: peerId } as any);
           }
-          window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: dmMsg }));
+          window.dispatchEvent(new CustomEvent('velum-dm-received', { detail: lastPayload }));
         } else if (data.type === 'sync_response') {
           if (data.room_id === activeRoomIdRef.current && Array.isArray(data.messages)) {
             const newMsgs = data.messages.map((m: any) => {
@@ -682,7 +702,7 @@ export function useWebSocket({
           removeMessageRecompute(targetId, {
             currentUserId: userId,
             roomId: data.room_id || null,
-            adjustUnread: false,
+            adjustUnread: true,
           });
           deleteLocalMessage(targetId, userId || undefined);
           removeOutboxMessage(targetId, userId || undefined);
@@ -821,24 +841,33 @@ export function useWebSocket({
             if (!isFromMe && newMessage.user_id) {
               const senderDisplayName = (newMessage.username || (newMessage as any).sender_name || 'Velum').replace(/^@/, '');
               const rawContent = newMessage.plaintext || newMessage.content || '';
-              
-              const notifyLounge = (bodyText: string) => {
-                handleInboundMessageNotification({
-                  senderName: `#${data.room_id}`,
-                  content: senderDisplayName ? `${senderDisplayName}: ${bodyText}` : bodyText,
-                  isFromMe: false,
-                  roomId: data.room_id,
-                  activeRoomId: activeRoomIdRef.current,
-                  timestamp: newMessage.timestamp ? new Date(newMessage.timestamp).getTime() : Date.now()
-                });
-              };
+              const isEnc =
+                !!(rawContent && (rawContent.startsWith('VEL_E2EE[') || rawContent.startsWith('e2ee:')));
+              const bodyText = isUsablePlaintext(newMessage.plaintext)
+                ? String(newMessage.plaintext)
+                : isEnc
+                  ? 'New message'
+                  : (isUsablePlaintext(rawContent) ? rawContent : 'New message');
 
-              if (rawContent && (rawContent.startsWith('VEL_E2EE[') || rawContent.startsWith('e2ee:'))) {
+              handleInboundMessageNotification({
+                senderName: `#${data.room_id}`,
+                content: senderDisplayName ? `${senderDisplayName}: ${bodyText}` : bodyText,
+                isFromMe: false,
+                roomId: data.room_id,
+                activeRoomId: activeRoomIdRef.current,
+                timestamp: newMessage.timestamp ? new Date(newMessage.timestamp).getTime() : Date.now()
+              });
+
+              if (isEnc && !isUsablePlaintext(newMessage.plaintext) && rawContent) {
                 decryptMessage(rawContent, { type: 'lounge', roomId: data.room_id })
-                  .then(notifyLounge)
-                  .catch(() => notifyLounge('Sent a message'));
-              } else {
-                notifyLounge(rawContent);
+                  .then((pt) => {
+                    if (!pt || !isUsablePlaintext(pt)) return;
+                    cachePlaintext(rawContent, pt);
+                    const idKey = String(canonicalId || '');
+                    useChatStore.getState().updatePlaintexts({ [idKey]: pt, [rawContent]: pt });
+                    setLastMessage(data.room_id, { ...newMessage, plaintext: pt });
+                  })
+                  .catch(() => {});
               }
             }
 

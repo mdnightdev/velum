@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
-import { Mic, Play, Trash2, HardDrive, Image as ImageIcon } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Mic, Play, Trash2, HardDrive } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { purgeCryptoDatabase } from '../../../services/cryptoDbStore';
+import {
+  clearReusableLocalCache,
+  estimateLocalCacheBytes,
+} from '../../../utils/localCacheMaintenance';
 
 interface SettingsMediaTabProps {
   voiceEnabled: boolean;
@@ -10,6 +13,13 @@ interface SettingsMediaTabProps {
   mediaError: string | null;
   currentUserId: number;
   handleSaveMedia: (voice: boolean, autoPlay: boolean) => void;
+}
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function SettingsMediaTab({
@@ -23,6 +33,30 @@ export function SettingsMediaTab({
   const [voice, setVoice] = useState<boolean>(propVoice);
   const [autoPlay, setAutoPlay] = useState<boolean>(propAutoPlay);
   const [isClearingCache, setIsClearingCache] = useState(false);
+  const [cacheLabel, setCacheLabel] = useState('Measuring…');
+
+  const refreshEstimate = async () => {
+    try {
+      const est = await estimateLocalCacheBytes(currentUserId);
+      const local = est.messagesBytes + est.mediaBytes;
+      if (est.usageBytes != null && est.quotaBytes != null && est.quotaBytes > 0) {
+        const pct = Math.round((est.usageBytes / est.quotaBytes) * 100);
+        setCacheLabel(
+          `${formatBytes(est.usageBytes)} used (${pct}% of quota) · ${est.messageCount} msgs · ${est.mediaCount} media`
+        );
+      } else {
+        setCacheLabel(
+          `~${formatBytes(local)} local · ${est.messageCount} msgs · ${est.mediaCount} media`
+        );
+      }
+    } catch {
+      setCacheLabel('Size unavailable');
+    }
+  };
+
+  useEffect(() => {
+    void refreshEstimate();
+  }, [currentUserId]);
 
   const handleToggleVoice = () => {
     const next = !voice;
@@ -39,18 +73,19 @@ export function SettingsMediaTab({
   };
 
   const handleClearMediaCache = async () => {
-    if (!window.confirm('Clear cached media and thumbnails from local device storage?')) {
+    if (!window.confirm('Clear cached media and old message history from this device? Chat keys are kept.')) {
       return;
     }
     setIsClearingCache(true);
     try {
-      if (typeof window !== 'undefined' && 'caches' in window) {
-        const cacheKeys = await window.caches.keys();
-        await Promise.all(cacheKeys.map(k => window.caches.delete(k)));
-      }
-      toast('Local media cache cleared.');
+      const result = await clearReusableLocalCache(currentUserId);
+      toast(
+        `Cache cleared (${result.mediaCleared} media, trimmed ${result.messagesTrimmed} messages).`
+      );
+      await refreshEstimate();
     } catch {
       toast('Cache reset complete.');
+      await refreshEstimate();
     } finally {
       setIsClearingCache(false);
     }
@@ -70,7 +105,6 @@ export function SettingsMediaTab({
         </h3>
       </div>
 
-      {/* Voice Playback Preferences */}
       <div className="p-5 rounded-2xl bg-velum-800 border border-white-10 space-y-4">
         <label className="block text-[11px] font-mono text-text-secondary uppercase tracking-wider">
           Voice Messages
@@ -119,27 +153,26 @@ export function SettingsMediaTab({
         </div>
       </div>
 
-      {/* Storage & Local Cache */}
       <div className="p-5 rounded-2xl bg-velum-800 border border-white-10 space-y-4">
         <label className="block text-[11px] font-mono text-text-secondary uppercase tracking-wider">
           Storage
         </label>
 
-        <div className="flex items-center justify-between py-2">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-velum-750 flex items-center justify-center text-text-primary">
+        <div className="flex items-center justify-between py-2 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-velum-750 flex items-center justify-center text-text-primary flex-shrink-0">
               <HardDrive className="w-4 h-4" />
             </div>
-            <div>
-              <span className="text-xs font-semibold text-text-primary block">Clear Media Cache</span>
-              <span className="text-[10px] text-text-secondary font-mono">Free up device storage by purging cached photos and audio blobs</span>
+            <div className="min-w-0">
+              <span className="text-xs font-semibold text-text-primary block">Local Cache</span>
+              <span className="text-[10px] text-text-secondary font-mono truncate block">{cacheLabel}</span>
             </div>
           </div>
           <button
             type="button"
             onClick={handleClearMediaCache}
             disabled={isClearingCache}
-            className="px-3.5 py-1.5 rounded-xl border border-white-10 bg-velum-750 hover:bg-velum-700 text-xs font-medium text-text-primary transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+            className="px-3.5 py-1.5 rounded-xl border border-white-10 bg-velum-750 hover:bg-velum-700 text-xs font-medium text-text-primary transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>{isClearingCache ? 'Clearing...' : 'Clear Cache'}</span>
