@@ -104,8 +104,7 @@ export function acceptPeerBundleForEcdh(bundle: PeerPrekeyBundle): boolean {
 class StatelessE2eeService {
   private localUserId: number | null = null;
   private peerKeyCache = new Map<number, PeerPrekeyBundle & { timestamp: number }>();
-  /** Keep peer DH keys warm across room opens — 1m was too short and re-hit the network. */
-  private readonly CACHE_TTL_MS = 30 * 60 * 1000;
+  private readonly CACHE_TTL_MS = 60 * 1000; // 1 minute fresh cache
 
     public setLocalUserId(userId: number | null): void {
     this.localUserId = userId;
@@ -300,28 +299,6 @@ class StatelessE2eeService {
 
     this.peerKeyCache.set(peerUserId, { ...bundle, timestamp: Date.now() });
     return bundle.identityKeyHex;
-  }
-
-  /**
-   * Warm peer DH keys in the background (friends list). Skips Velum system (999).
-   * Bounded concurrency so list load does not stampede `/v2/crypto/prekeys`.
-   */
-  public async prefetchPeerPublicKeys(peerUserIds: number[], concurrency = 4): Promise<void> {
-    const unique = [...new Set(peerUserIds.filter((id) => Number.isFinite(id) && id > 0 && id !== 999))];
-    if (unique.length === 0) return;
-
-    let idx = 0;
-    const workers = Array.from({ length: Math.min(concurrency, unique.length) }, async () => {
-      while (idx < unique.length) {
-        const peerId = unique[idx++];
-        try {
-          await this.fetchPeerPublicKey(peerId);
-        } catch {
-          // Best-effort warm; open-chat path will retry.
-        }
-      }
-    });
-    await Promise.all(workers);
   }
 
   /**

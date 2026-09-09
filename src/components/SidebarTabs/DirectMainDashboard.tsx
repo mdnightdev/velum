@@ -9,7 +9,7 @@ import { flushLoungeCache, purgeDmMessages } from '../../utils/indexedDb';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
 import { getSessionId } from '../../utils/auth';
 import { getDmRoomAliases, resolveDmUnreadCount, selectLatestDmMessage, messageTimestamp, shouldHideDeletedDm, getPrimaryDmRoomId } from '../../utils/roomUtils';
-import { getSidebarPreviewLabel } from '../../utils/messagePlaintext';
+import { getMessagePreviewPlaintext } from '../../utils/messagePlaintext';
 import { useChatStore } from '../../stores/chatStore';
 import { ContactAvatar, isAvatarImageSrc } from '../ContactAvatar';
 
@@ -396,7 +396,7 @@ function DirectMainDashboard({
   let velumIsMe = false;
   if (velumLast) {
     velumIsMe = (velumLast.user_id === currentUserId) || (velumLast.senderId === currentUserId);
-    velumTxt = getCleanPreview(getSidebarPreviewLabel(velumLast)) || '';
+    velumTxt = getCleanPreview(getMessagePreviewPlaintext(velumLast)) || '';
     if (velumIsMe) {
       if (velumLast.status) {
         velumMsgStatus = velumLast.status;
@@ -688,7 +688,7 @@ function DirectMainDashboard({
 
             if (last) {
               isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-              lastTxt = getCleanPreview(getSidebarPreviewLabel(last)) || '';
+              lastTxt = getCleanPreview(getMessagePreviewPlaintext(last)) || '';
               if (last.status === 'failed' || last.delivery_status === 'failed') {
                 isFailed = true;
               } else if (isMe) {

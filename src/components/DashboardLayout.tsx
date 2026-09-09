@@ -212,17 +212,7 @@ export default function DashboardLayout({
 
     if (relRes.status === 'fulfilled' && relRes.value.ok) {
       const relData = await relRes.value.json();
-      const rels = relData.relationships || relData || [];
-      setFriendRelationships(rels);
-      const peerIds = (Array.isArray(rels) ? rels : [])
-        .map((r: any) => Number(r.friendId ?? r.userId ?? r.user_id ?? r.id))
-        .filter((id: number) => Number.isFinite(id) && id > 0);
-      if (peerIds.length > 0) {
-        void import('../services/statelessE2eeService').then(({ statelessE2eeService }) => {
-          if (user?.userId) statelessE2eeService.setLocalUserId(user.userId);
-          void statelessE2eeService.prefetchPeerPublicKeys(peerIds);
-        });
-      }
+      setFriendRelationships(relData.relationships || relData || []);
     }
 
     } catch (err) {

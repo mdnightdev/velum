@@ -1,6 +1,7 @@
 import React from 'react';
 import { Hash, Lock, Trash2 } from 'lucide-react';
 import { OutlinedSeal, FilledSeal, LockedSeal, cleanRoomName } from './SealIcons';
+import { decryptMessageSync } from '../../services/encryptionService';
 
 interface RoomsListProps {
   publicRooms: any[];

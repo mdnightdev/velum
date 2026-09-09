@@ -1,9 +1,7 @@
 import Dexie, { type Table, type Transaction } from 'dexie';
-import { hashCiphertext } from '../utils/plaintextCache.js';
-import { isUsablePlaintext } from '../utils/messagePlaintext.js';
 
 /** Source of truth for IndexedDB schema verno — keep in sync with highest this.version(n). */
-export const DEXIE_DB_VERSION = 3;
+export const DEXIE_DB_VERSION = 2;
 
 const STORES_V1 = {
   identity_keys: 'id',
@@ -15,18 +13,6 @@ const STORES_V1 = {
   user_kv: 'key',
 } as const;
 
-const STORES_V3 = {
-  ...STORES_V1,
-  /** O(1) ciphertext→plaintext; key is sha256 hex of ciphertext. */
-  plaintext_cache: 'hash',
-} as const;
-
-export type PlaintextCacheRecord = {
-  hash: string;
-  plaintext: string;
-  updatedAt: number;
-};
-
 export class VelumDatabase extends Dexie {
   identity_keys!: Table<any, string>;
   signed_prekeys!: Table<any, string>;
@@ -35,7 +21,6 @@ export class VelumDatabase extends Dexie {
   media_blobs!: Table<any, string>;
   outbox_messages!: Table<any, string>;
   user_kv!: Table<any, string>;
-  plaintext_cache!: Table<PlaintextCacheRecord, string>;
 
   constructor(dbName: string) {
     super(dbName);
@@ -43,30 +28,11 @@ export class VelumDatabase extends Dexie {
     this.version(1).stores({ ...STORES_V1 });
 
     // v2: no store shape change — establishes the upgrade pipeline for future migrations.
-    this.version(2)
+    // When changing schema: bump DEXIE_DB_VERSION, add this.version(N).stores({...}).upgrade(...).
+    this.version(DEXIE_DB_VERSION)
       .stores({ ...STORES_V1 })
       .upgrade(async (_tx: Transaction) => {
-        // No-op stub from prior release.
-      });
-
-    this.version(DEXIE_DB_VERSION)
-      .stores({ ...STORES_V3 })
-      .upgrade(async (tx: Transaction) => {
-        const messages = tx.table('messages');
-        const cache = tx.table('plaintext_cache');
-        const rows = await messages.toArray();
-        const now = Date.now();
-        for (const m of rows) {
-          const content = m?.content;
-          const plaintext = m?.plaintext;
-          if (!content || typeof content !== 'string') continue;
-          if (!isUsablePlaintext(plaintext)) continue;
-          await cache.put({
-            hash: hashCiphertext(content),
-            plaintext: String(plaintext),
-            updatedAt: now,
-          });
-        }
+        // No-op stub. Put data transforms for schema changes here on the next version bump.
       });
   }
 }

@@ -204,50 +204,31 @@ export const useChatStore = create<ChatStoreState>()(
               hasChange = true;
               return { ...m, plaintext: pt };
             }
-            if (m.content && keyToPlaintext[m.content] && !isUsablePlaintext(m.plaintext)) {
-              const pt = keyToPlaintext[m.content];
-              if (isUsablePlaintext(pt)) {
-                hasChange = true;
-                return { ...m, plaintext: pt };
-              }
-            }
             return m;
           });
 
           const nextLast = { ...state.lastMessages };
-          const stampedByContent = new Map<string, string>();
           for (const [roomId, m] of Object.entries(state.lastMessages)) {
             if (!m) continue;
             const keys = [m.message_id, m.id, m.client_msg_id, m.nonce, (m as any).db_message_id]
               .filter(Boolean)
               .map(String);
-            let stamped: string | undefined;
             for (const k of keys) {
               const pt = keyToPlaintext[k];
-              if (!pt || !isUsablePlaintext(pt)) continue;
-              if (isUsablePlaintext(m.plaintext) && m.plaintext === pt) continue;
-              if (isUsablePlaintext(m.plaintext)) break;
-              stamped = pt;
-              break;
-            }
-            if (!stamped && m.content && keyToPlaintext[m.content] && !isUsablePlaintext(m.plaintext)) {
-              const pt = keyToPlaintext[m.content];
-              if (isUsablePlaintext(pt)) stamped = pt;
-            }
-            if (!stamped) continue;
-            nextLast[roomId] = { ...m, plaintext: stamped };
-            if (m.content) stampedByContent.set(m.content, stamped);
-            hasChange = true;
-          }
-
-          // Propagate the same plaintext onto every alias that still holds the same ciphertext.
-          if (stampedByContent.size > 0) {
-            for (const [roomId, m] of Object.entries(nextLast)) {
-              if (!m?.content) continue;
-              const pt = stampedByContent.get(m.content);
-              if (!pt || isUsablePlaintext(m.plaintext)) continue;
+              if (!pt || pt === m.plaintext) continue;
+              if (!isUsablePlaintext(pt)) continue;
+              if (isUsablePlaintext(m.plaintext)) continue;
               nextLast[roomId] = { ...m, plaintext: pt };
               hasChange = true;
+              break;
+            }
+            // Also match by ciphertext content key
+            if (m.content && keyToPlaintext[m.content] && !isUsablePlaintext(m.plaintext)) {
+              const pt = keyToPlaintext[m.content];
+              if (isUsablePlaintext(pt)) {
+                nextLast[roomId] = { ...m, plaintext: pt };
+                hasChange = true;
+              }
             }
           }
 
@@ -388,23 +369,10 @@ export const useChatStore = create<ChatStoreState>()(
           for (const id of messageIdentityKeys(message)) {
             delete forgottenPreviewIds[id];
           }
-          const prev = state.lastMessages[roomId];
-          const sameAsPrev =
-            !!prev &&
-            (messageIdentityKeys(message).some((id) => messageRefEquals(prev, id)) ||
-              (!!prev.content && !!message.content && prev.content === message.content));
-          const nextMessage = { ...message };
-          if (sameAsPrev) {
-            const merged = mergeMessagePlaintext(prev.plaintext, message.plaintext);
-            if (merged !== undefined) nextMessage.plaintext = merged;
-            else if (isUsablePlaintext(prev.plaintext) && !isUsablePlaintext(message.plaintext)) {
-              nextMessage.plaintext = prev.plaintext;
-            }
-          }
           return {
             lastMessages: {
               ...state.lastMessages,
-              [roomId]: nextMessage,
+              [roomId]: message
             },
             forgottenPreviewIds,
           };
