@@ -102,7 +102,7 @@ fi
 
 # Step 3: Drizzle schema sync (non-interactive migrations — never drizzle-kit push)
 echo -e "${YELLOW}[DEV-START] Step 3/4: Applying Drizzle migrations...${NC}"
-if ! npx drizzle-kit migrate; then
+if ! npx drizzle-kit push; then
   echo -e "${YELLOW}[DEV-START] drizzle-kit migrate failed; applying idempotent SQL fallback...${NC}"
   npx tsx scripts/apply-pending-schema.ts || {
     echo -e "${RED}[DEV-START] Schema sync failed. Fix DB then retry.${NC}"
