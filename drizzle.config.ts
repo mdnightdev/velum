@@ -2,7 +2,8 @@ import 'dotenv/config';
 
 const getCleanUrl = () => {
   const raw = (process.env.DATABASE_URL || process.env.CLOUD_DATABASE_URL || '').trim().replace(/\s+/g, '');
-  let clean = raw.replace(/(&|\?)channel_binding=[^&]+/g, '').replace('-pooler', '');
+  let clean = raw.replace(/([?&])channel_binding=[^&]*/g, (match, sep) => (sep === '?' ? '?' : ''));
+  clean = clean.replace(/\?&/g, '?').replace(/[?&]$/g, '').replace('-pooler', '');
   if (!clean.includes('uselibpqcompat=true')) {
     clean += (clean.includes('?') ? '&' : '?') + 'uselibpqcompat=true';
   }
