@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pin, X } from 'lucide-react';
 import { Message } from '../../types';
+import { getCleanPreview } from '../../utils/messageParser';
 
 export interface PinnedMessageBarProps {
   pinnedMessages: Message[];
@@ -23,6 +24,8 @@ export function PinnedMessageBar({
 }: PinnedMessageBarProps) {
   if (pinnedMessages.length === 0 || !activePinnedMsg) return null;
 
+  const preview = getCleanPreview(getDecryptedText(activePinnedMsg));
+
   return (
     <div className="bg-bg-pinned-bar border-b border-white-5 p-2.5 px-4 flex items-center justify-between gap-3 text-xs backdrop-blur-[var(--blur-backdrop-md)] relative z-30 select-none">
       <div
@@ -35,7 +38,7 @@ export function PinnedMessageBar({
             {pinnedMessages.length > 1 ? `Pinned Messages (${pinnedMessages.length})` : 'Pinned Message'}
           </div>
           <div className="text-text-primary/95 truncate font-medium max-w-full">
-            {getDecryptedText(activePinnedMsg)}
+            {preview}
           </div>
         </div>
       </div>
@@ -55,7 +58,7 @@ export function PinnedMessageBar({
             type="button"
             onClick={() =>
               onPinMessage(
-                activePinnedMsg.db_message_id ? String(activePinnedMsg.db_message_id) : activePinnedMsg.message_id,
+                String(activePinnedMsg.db_message_id ?? activePinnedMsg.id ?? activePinnedMsg.message_id),
                 activePinnedMsg.room_id || roomId,
                 false
               )

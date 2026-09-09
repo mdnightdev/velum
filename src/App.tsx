@@ -1,9 +1,20 @@
+import { ErrorBoundary } from './components/ErrorBoundary';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { useWebSocket } from './hooks/useWebSocket';
 import LoadingFallback from './components/LoadingFallback';
+import { initAppearance } from './utils/appearance';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { dismissDeliveredNotification } from './utils/notifications';
+import { registerPushNotifications } from './utils/pushNotifications';
+import { checkOtaUpdate, applyOtaUpdate } from './utils/otaUpdater';
+
+
+import { Toaster } from 'react-hot-toast';
+import MaintenanceBanner from './components/MaintenanceBanner';
+
 const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const DashboardLayout = lazy(() => import('./components/DashboardLayout'));
 const ProfileMigration = lazy(() => import('./components/ProfileMigration'));
@@ -11,38 +22,128 @@ const AdminControlDesk = lazy(() => import('./views/AdminControlDesk'));
 
 
 function AppContent() {
-  const { isAuthenticated, user, sessionId, deviceId, handleLoginSuccess, handleLogout, isLoadingSession } = useAuth();
+  const { isAuthenticated, user, sessionId, deviceId, handleLoginSuccess, handleLogout, updateUser, isLoadingSession } = useAuth();
   const [isDark, setIsDark] = useState<boolean>(true);
   const [activeRoomId, setActiveRoomId] = useState<string>('');
-  const [activeChatPeer, setActiveChatPeer] = useState<{ userId: number; username: string; avatar?: string } | null>(null);
+  const [activeChatPeer, setActiveChatPeer] = useState<{
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  } | null>(null);
   const [migrationUser, setMigrationUser] = useState<{ userId: number; username: string } | null>(null);
 
-  // Lock mobile viewport and ensure page never scrolls or offsets on virtual keyboard
+  // Keep open DM header in sync when a nickname is saved from the profile card
+  useEffect(() => {
+    const onNicknameUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const targetUserId = Number(detail.targetUserId);
+      if (!Number.isFinite(targetUserId)) return;
+      const nickname = typeof detail.nickname === 'string' ? detail.nickname : '';
+      setActiveChatPeer((prev) => {
+        if (!prev || Number(prev.userId) !== targetUserId) return prev;
+        return { ...prev, nickname };
+      });
+    };
+    window.addEventListener('velum-nickname-updated', onNicknameUpdated);
+    return () => window.removeEventListener('velum-nickname-updated', onNicknameUpdated);
+  }, []);
+
+  // Initialize global appearance settings
+  useEffect(() => {
+    initAppearance();
+  }, []);
+
+
+  // Request notification permissions and register system channels immediately on mount
+  useEffect(() => {
+    LocalNotifications.requestPermissions().then(() => {
+      LocalNotifications.createChannel({
+        id: 'velum_messages',
+        name: 'Messages',
+        description: 'Direct messages and lounge notifications',
+        importance: 4,
+        visibility: 1,
+        vibration: true,
+      }).catch(() => {});
+
+      LocalNotifications.createChannel({
+        id: 'velum_default',
+        name: 'General Alerts',
+        description: 'General system notifications',
+        importance: 3,
+        visibility: 1,
+        vibration: true,
+      }).catch(() => {});
+
+      LocalNotifications.removeAllListeners().catch(() => {});
+      LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+        const data = action.notification?.extra || {};
+        const targetRoom = data.roomId || data.room_id || data.tag;
+        if (targetRoom && targetRoom !== 'velum-chat') {
+          window.dispatchEvent(new CustomEvent('velum-open-room', { detail: { roomId: targetRoom } }));
+        }
+      }).catch(() => {});
+    }).catch(() => {});
+  }, []);
+
+  // Dismiss delivered notification when room is active
+  useEffect(() => {
+    if (activeRoomId) {
+      dismissDeliveredNotification(activeRoomId).catch(() => {});
+    }
+  }, [activeRoomId]);
+
+  // Check for OTA updates silently on startup
+  useEffect(() => {
+    checkOtaUpdate().then(res => {
+      if (res.updateAvailable && res.manifest) {
+        applyOtaUpdate(res.manifest).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Register push notifications when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      registerPushNotifications();
+    }
+  }, [isAuthenticated]);
+
+ 
+
+  // Set up visual viewport height tracking to handle mobile keyboard resizing properly
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const preventScrollOffset = () => {
-      if (window.scrollY !== 0 || window.scrollX !== 0) {
-        window.scrollTo(0, 0);
-      }
+    const updateHeight = () => {
+      const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty('--viewport-height', `${height}px`);
     };
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', preventScrollOffset);
-      window.visualViewport.addEventListener('scroll', preventScrollOffset);
+      window.visualViewport.addEventListener('resize', updateHeight);
+      window.visualViewport.addEventListener('scroll', updateHeight);
     } else {
-      window.addEventListener('resize', preventScrollOffset);
+      window.addEventListener('resize', updateHeight);
     }
     
-    preventScrollOffset();
+    updateHeight();
+
+    // Run updateHeight after small timeouts to ensure correct initial dimensions and stable height
+    const timer1 = setTimeout(updateHeight, 150);
+    const timer2 = setTimeout(updateHeight, 450);
 
     return () => {
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', preventScrollOffset);
-        window.visualViewport.removeEventListener('scroll', preventScrollOffset);
+        window.visualViewport.removeEventListener('resize', updateHeight);
+        window.visualViewport.removeEventListener('scroll', updateHeight);
       } else {
-        window.removeEventListener('resize', preventScrollOffset);
+        window.removeEventListener('resize', updateHeight);
       }
+      clearTimeout(timer1);
+      clearTimeout(timer2);
     };
   }, []);
 
@@ -55,6 +156,78 @@ function AppContent() {
       setActiveRoomId(dmRoomId);
     }
   }, [activeChatPeer, user]);
+
+  // Push notification click navigation
+  useEffect(() => {
+    const handleOpenRoom = (e: any) => {
+      const targetRoom = e.detail?.roomId;
+      if (targetRoom) {
+        setActiveRoomId(targetRoom);
+      }
+    };
+    window.addEventListener('velum-open-room', handleOpenRoom);
+    return () => window.removeEventListener('velum-open-room', handleOpenRoom);
+  }, []);
+
+  // Native deep link & shortcut URL router
+  useEffect(() => {
+    let removeListener: (() => void) | null = null;
+    import('@capacitor/app').then(({ App: CapApp }) => {
+      CapApp.addListener('appUrlOpen', (event) => {
+        const url = event.url;
+        if (!url) return;
+        try {
+          const parsed = new URL(url);
+          const host = parsed.host;
+          const pathname = parsed.pathname.replace(/^\//, '');
+
+          if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+            // Handle https://velum.chat/<path>
+            const parts = pathname.split('/');
+            const first = parts[0] || '';
+            const second = parts[1] || '';
+
+            if (first === 'dm' && second) {
+              setActiveRoomId(`dm_${second}`);
+            } else if (first === 'room' && second) {
+              setActiveRoomId(second);
+            } else if (first === 'wallet' || first === 'direct' || first === 'rooms' || first === 'people' || first === 'market') {
+              window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: first } }));
+            }
+          } else if (host === 'category') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: pathname } }));
+          } else if (host === 'dm' || host === 'room') {
+            const roomId = host === 'dm' ? `dm_${pathname}` : pathname;
+            setActiveRoomId(roomId);
+          } else if (host === 'chats' || host === 'direct') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'direct' } }));
+          } else if (host === 'wallet') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'wallet' } }));
+          } else if (host === 'lounges' || host === 'rooms') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'rooms' } }));
+          } else if (host === 'people' || host === 'contacts') {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'people' } }));
+          }
+        } catch {
+          if (url.includes('wallet')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'wallet' } }));
+          } else if (url.includes('direct') || url.includes('chats')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'direct' } }));
+          } else if (url.includes('rooms') || url.includes('lounges')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'rooms' } }));
+          } else if (url.includes('people') || url.includes('contacts')) {
+            window.dispatchEvent(new CustomEvent('velum-open-category', { detail: { category: 'people' } }));
+          }
+        }
+      }).then(handle => {
+        removeListener = () => handle.remove();
+      });
+    }).catch(() => {});
+
+    return () => {
+      if (removeListener) removeListener();
+    };
+  }, []);
 
   // WebSocket connection integration
   const ws = useWebSocket({
@@ -170,7 +343,17 @@ function AppContent() {
         setActiveRoomId(roomId);
       }}
       activeChatPeer={activeChatPeer}
-      onSelectPeer={setActiveChatPeer}
+      onSelectPeer={(peer) => {
+        setActiveChatPeer(peer);
+        if (peer && user) {
+          const dmRoomId = peer.userId === 999 
+            ? `dm_velum_${user.userId}`
+            : `dm_${Math.min(user.userId, peer.userId)}_${Math.max(user.userId, peer.userId)}`;
+          setActiveRoomId(dmRoomId);
+        } else {
+          setActiveRoomId('');
+        }
+      }}
       onClearChatPeer={() => {
         setActiveChatPeer(null);
         setActiveRoomId('');
@@ -187,8 +370,25 @@ function AppContent() {
       onEditMessage={ws.editMessage}
       onDeleteMessage={ws.deleteMessage}
       onPinMessage={ws.pinMessage}
+      onRetryMessage={ws.retryMessage}
       onMarkAsRead={ws.markAsRead}
       onMarkAllAsRead={ws.markAllAsRead}
+      onProfileUpdate={(updated) => {
+        if (!updated) return;
+        const avatarVal = updated.avatarUrl || updated.avatar || '';
+        updateUser({
+          ...(updated.userId || updated.id ? { userId: updated.userId || updated.id } : {}),
+          ...(updated.username ? { username: updated.username } : {}),
+          ...(updated.displayName !== undefined ? { displayName: updated.displayName } : {}),
+          ...(avatarVal || updated.avatar === '' || updated.avatarUrl === ''
+            ? { avatar: avatarVal, avatarUrl: avatarVal }
+            : {}),
+          ...(updated.bio !== undefined ? { bio: updated.bio } : {}),
+          ...(updated.location !== undefined ? { location: updated.location } : {}),
+          ...(updated.role ? { role: updated.role } : {}),
+          ...(updated.status ? { status: updated.status } : {}),
+        });
+      }}
     />
   );
 }
@@ -196,13 +396,31 @@ function AppContent() {
 export default function App() {
   return (
     <LanguageProvider>
-      <AuthProvider>
-        <CartProvider>
-          <Suspense fallback={<LoadingFallback />}>
-            <AppContent />
-          </Suspense>
-        </CartProvider>
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <CartProvider>
+            <Toaster
+              position="top-center"
+              containerStyle={{ zIndex: 10000000 }}
+              toastOptions={{
+                duration: 2500,
+                style: {
+                  background: 'var(--theme-velum-800)',
+                  color: 'var(--theme-text-primary)',
+                  boxShadow: 'none',
+                  borderRadius: '6px',
+                  padding: '6px 10px',
+                  fontSize: '11px',
+                },
+              }}
+            />
+            <MaintenanceBanner />
+            <Suspense fallback={<LoadingFallback />}>
+              <AppContent />
+            </Suspense>
+          </CartProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </LanguageProvider>
   );
 }

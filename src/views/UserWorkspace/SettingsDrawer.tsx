@@ -1,26 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  User, Lock, X, Check, Upload, Bell, Volume2, 
-  Type, ShieldCheck, CheckCircle, AlertTriangle, Palette, 
-  Laptop, Monitor, Trash2, Camera, Mic, Image as ImageIcon, 
-  Sparkles, Globe, Clock, Shield, Zap, Play, LogOut, Info, ChevronRight, Activity
+import {
+  User, Lock, X, Check, Upload, Bell, Volume2,
+  Type, ShieldCheck, CheckCircle, AlertTriangle, Palette,
+  Laptop, Monitor, Trash2, Camera, Mic, Image as ImageIcon,
+  Sparkles, Globe, Clock, Shield, Zap, Play, Info, ChevronRight, Activity
 } from 'lucide-react';
 import PasswordInput from '../../components/PasswordInput';
 import { SettingsPrivacyTab } from './SettingsTabs/SettingsPrivacyTab';
 import { SettingsAccountTab } from './SettingsTabs/SettingsAccountTab';
+import { SettingsAppearanceTab } from './SettingsTabs/SettingsAppearanceTab';
+import { SettingsNotificationsTab } from './SettingsTabs/SettingsNotificationsTab';
+import { SettingsMediaTab } from './SettingsTabs/SettingsMediaTab';
+import { SettingsLanguageTab } from './SettingsTabs/SettingsLanguageTab';
+import { SettingsDiagnosticsTab } from './SettingsTabs/SettingsDiagnosticsTab';
+import { SettingsAboutTab } from './SettingsTabs/SettingsAboutTab';
 
-import { useResponsive } from '../../hooks/useResponsive';
 import { useBuildVersion } from '../../hooks/useBuildVersion';
 import logoSvg from '../../assets/logo.svg?raw';
 import { getSessionId } from '../../utils/auth';
+import { velumToast } from '../../utils/toast';
 import { computeClientHash } from '../../services/encryptionService';
 import { streamFileDirectToCloudStorage, captureAndCompressPhoto } from '../../utils/mediaPipeline';
-import { submitDiagnosticLogs, collectClientDiagnosticsPayload } from '../../utils/diagnostics';
+import { submitDiagnosticLogs } from '../../utils/diagnostics';
 import { getLocalMedia, saveLocalMedia, deleteLocalMedia } from '../../utils/indexedDb';
 import { FULL_BUILD_VERSION } from '../../version';
 import { useLanguage } from '../../i18n/LanguageContext';
-import { LegalDocModal, LegalDocType } from '../../components/LegalDocModal';
 import { ImageCropperModal } from '../../components/ImageCropperModal';
+import { storage } from '../../services/storageService';
+import { getStoredAppearanceSettings, applyAppearanceSettings } from '../../utils/appearance';
+import { stripAt } from '../../types';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -39,21 +47,20 @@ export default function SettingsDrawer({
   isOpen,
   onClose,
   currentUserId,
-  currentUsername,
+  currentUsername = 'Guest',
   currentUserRole = 'USER',
   isDark,
   onToggleTheme,
   onProfileUpdate
 }: SettingsDrawerProps) {
-  const { isMobile } = useResponsive();
   const buildVersion = useBuildVersion();
   const { language, setLanguage, t, supportedLanguages } = useLanguage();
 
   const [activeView, setActiveView] = useState<SettingCategory | 'menu'>('menu');
-  const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
 
   // Account settings states
-  const [displayName, setDisplayName] = useState(currentUsername.replace('@', ''));
+  const [username, setUsername] = useState(stripAt(currentUsername || ''));
+  const [displayName, setDisplayName] = useState(stripAt(currentUsername || ''));
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [permanentOtp, setPermanentOtp] = useState('');
@@ -67,14 +74,10 @@ export default function SettingsDrawer({
 
   // Profile personalization states
   const [bio, setBio] = useState('');
+  const [location, setLocation] = useState('');
   const [avatarColor, setAvatarColor] = useState('emerald');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [bannerColor, setBannerColor] = useState('charcoal');
-  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
-  const [bannerFile, setBannerFile] = useState<File | Blob | null>(null);
-  const [bannerUrl, setBannerUrl] = useState('');
   
-  const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -83,20 +86,13 @@ export default function SettingsDrawer({
   const [connectionsCount, setConnectionsCount] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Appearance states
-  const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'system'>('dark');
-  const [messageScaling, setMessageScaling] = useState<'cozy' | 'compact'>('cozy');
-  const [fontAdjustment, setFontAdjustment] = useState<'small' | 'medium' | 'large'>('medium');
-  const [reducedMotion, setReducedMotion] = useState<boolean>(false);
+  // Appearance states initialized from live stored settings
+  const initialAppearance = getStoredAppearanceSettings();
+  const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'system'>(initialAppearance.theme);
+  const [messageScaling, setMessageScaling] = useState<'cozy' | 'compact'>(initialAppearance.messageScaling);
+  const [fontAdjustment, setFontAdjustment] = useState<'small' | 'medium' | 'large'>(initialAppearance.fontAdjustment);
+  const [reducedMotion, setReducedMotion] = useState<boolean>(initialAppearance.reducedMotion);
   const [appearanceMsg, setAppearanceMsg] = useState<string | null>(null);
-  const [lockedFeatureToast, setLockedFeatureToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (lockedFeatureToast) {
-      const timer = setTimeout(() => setLockedFeatureToast(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [lockedFeatureToast]);
 
   // Notifications states
   const [desktopPopups, setDesktopPopups] = useState(true);
@@ -111,27 +107,6 @@ export default function SettingsDrawer({
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [autoPlayVoice, setAutoPlayVoice] = useState(false);
 
-  // Diagnostics state
-  const [diagNotes, setDiagNotes] = useState('');
-  const [diagSubmitting, setDiagSubmitting] = useState(false);
-  const [diagResult, setDiagResult] = useState<{ success?: boolean; log_id?: string; error?: string } | null>(null);
-
-  const handleTransmitDiagnostics = async () => {
-    setDiagSubmitting(true);
-    setDiagResult(null);
-    try {
-      const res = await submitDiagnosticLogs(diagNotes);
-      setDiagResult(res);
-      if (res.success) {
-        setDiagNotes('');
-      }
-    } catch (err: any) {
-      setDiagResult({ success: false, error: err.message || 'Transmission failed.' });
-    } finally {
-      setDiagSubmitting(false);
-    }
-  };
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchSessionId = () => getSessionId();
@@ -142,156 +117,101 @@ export default function SettingsDrawer({
 
   // Load profile details from real API endpoint on open
   useEffect(() => {
-    if (isOpen) {
-      setAccountMsg(null);
-      setAccountError(null);
-      setProfileMsg(null);
-      setProfileError(null);
-      setAppearanceMsg(null);
-      setNotificationsMsg(null);
-      setMediaMsg(null);
-      setMediaError(null);
+    if (!isOpen || !currentUserId) return;
 
-      getLocalMedia(`avatar_${currentUserId}`).then((cachedBlob) => {
-        if (cachedBlob) {
-          const localUrl = URL.createObjectURL(cachedBlob);
-          setAvatarPreview(localUrl);
-          setAvatarColor('custom');
-        }
-      }).catch(() => {});
-
-      getLocalMedia(`banner_${currentUserId}`).then((cachedBlob) => {
-        if (cachedBlob) {
-          const localUrl = URL.createObjectURL(cachedBlob);
-          setBannerPreview(localUrl);
-          setBannerColor('custom');
-        }
-      }).catch(() => {});
-
-      const sId = getSessionId();
-      const requestHeaders = {
-        'Authorization': `Bearer ${sId}`,
-        'Content-Type': 'application/json'
-      };
-
-      fetch(`/v2/user/${currentUserId}/profile`, { headers: requestHeaders })
-        .then(res => res.json())
-        .then(data => {
-          if (data) {
-            if (data.bio) setBio(data.bio);
-            if (data.displayName) {
-              setDisplayName(data.displayName.replace('@', ''));
-            } else {
-              setDisplayName(currentUsername.replace('@', ''));
-            }
-            if (data.avatar !== undefined) {
-              const avatarVal = data.avatar || '';
-              if (avatarVal.startsWith('http') || avatarVal.startsWith('data:') || avatarVal.startsWith('/')) {
-                setAvatarUrl(avatarVal);
-                setAvatarColor('custom');
-              } else {
-                setAvatarUrl('');
-                setAvatarColor(avatarVal || 'charcoal');
-              }
-            }
-            if (data.email) setEmail(data.email);
-            if (data.phone) setPhone(data.phone);
-            if (data.bannerColor) {
-              const bannerVal = data.bannerColor || '';
-              if (bannerVal.startsWith('http') || bannerVal.startsWith('data:') || bannerVal.startsWith('/')) {
-                setBannerUrl(bannerVal);
-                setBannerColor('custom');
-              } else {
-                setBannerUrl('');
-                setBannerColor(bannerVal || 'charcoal');
-              }
-            }
-
-            if (data.settings) {
-              const s = data.settings;
-              if (s.theme) setThemeMode(s.theme);
-              if (s.messageScaling) setMessageScaling(s.messageScaling);
-              if (s.fontAdjustment) setFontAdjustment(s.fontAdjustment);
-              if (s.desktopPopups !== undefined) setDesktopPopups(s.desktopPopups);
-              if (s.soundTriggers !== undefined) setSoundTriggers(s.soundTriggers);
-              if (s.unreadBadges !== undefined) setUnreadBadges(s.unreadBadges);
-              if (s.pushPreferences !== undefined) setPushPreferences(s.pushPreferences);
-              if (s.voiceEnabled !== undefined) setVoiceEnabled(s.voiceEnabled);
-              if (s.autoPlayVoice !== undefined) setAutoPlayVoice(s.autoPlayVoice);
-            }
-          }
-        })
-        .catch(() => {});
-
-      // Fetch user lounges count
-      fetch('/v2/lounges', { headers: requestHeaders })
-        .then(res => res.ok ? res.json() : [])
-        .then(data => {
-          const list = Array.isArray(data) ? data : (data?.lounges || []);
-          setLoungesCount(list.length);
-        })
-        .catch(() => {});
-
-      // Fetch user connections/friends count
-      fetch('/v2/friends/relationships', { headers: requestHeaders })
-        .then(res => res.ok ? res.json() : [])
-        .then(data => {
-          const rels = Array.isArray(data) ? data : (data?.relationships || []);
-          const activeFriends = rels.filter((r: any) => r.status === 'accepted');
-          setConnectionsCount(activeFriends.length);
-        })
-        .catch(() => {});
-    }
-  }, [isOpen, currentUserId]);
-
-  const handleUpdateAccountDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
     setAccountMsg(null);
     setAccountError(null);
+    setProfileError(null);
+    setAppearanceMsg(null);
+    setNotificationsMsg(null);
+    setMediaMsg(null);
+    setMediaError(null);
 
-    const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
-
-    try {
-      const res = await fetch('/v2/user/profile', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
-          bio,
-          avatar: chosenAvatar,
-          location: '',
-          email: email.trim(),
-          phone: phone.trim(),
-          bannerColor,
-          settings: {
-            theme: themeMode,
-            messageScaling,
-            fontAdjustment,
-            desktopPopups,
-            soundTriggers,
-            unreadBadges,
-            pushPreferences,
-            voiceEnabled,
-            autoPlayVoice
-          }
-        })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setAccountMsg('Account details saved.');
-        if (onProfileUpdate) {
-          onProfileUpdate(data.user);
-        }
-        sessionStorage.setItem('velum-username', data.user.username);
-      } else {
-        setAccountError(data.error || 'Failed to update account details.');
+    getLocalMedia(`avatar_${currentUserId}`, currentUserId).then((cachedBlob) => {
+      if (cachedBlob) {
+        const localUrl = URL.createObjectURL(cachedBlob);
+        setAvatarPreview(localUrl);
+        setAvatarColor('custom');
       }
-    } catch {
-      setAccountError('Server connection error.');
-    }
+    }).catch(() => {});
+
+    const sId = getSessionId();
+    const requestHeaders = {
+      'Authorization': `Bearer ${sId}`,
+      'Content-Type': 'application/json'
+    };
+
+    fetch('/v2/user/me/profile', { headers: requestHeaders })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!data || data.error) return;
+        if (data.bio !== undefined) setBio(data.bio || '');
+        if (data.username) setUsername(stripAt(data.username));
+        setDisplayName(stripAt(data.displayName || data.username || currentUsername || ''));
+        if (data.location !== undefined) setLocation(data.location || '');
+        const avatarVal = data.avatar || data.avatarUrl || '';
+        if (avatarVal.startsWith('http') || avatarVal.startsWith('data:') || avatarVal.startsWith('/') || avatarVal.includes('/uploads/')) {
+          setAvatarUrl(avatarVal);
+          setAvatarPreview(avatarVal);
+          setAvatarColor('custom');
+        } else if (avatarVal) {
+          setAvatarUrl('');
+          setAvatarPreview(null);
+          setAvatarColor(avatarVal);
+        } else {
+          setAvatarUrl('');
+          setAvatarPreview(null);
+          setAvatarColor('charcoal');
+        }
+        if (data.email) setEmail(data.email);
+        if (data.phone) setPhone(data.phone);
+
+        if (data.settings) {
+          const s = data.settings;
+          if (s.theme) setThemeMode(s.theme);
+          if (s.messageScaling) setMessageScaling(s.messageScaling);
+          if (s.fontAdjustment) setFontAdjustment(s.fontAdjustment);
+          if (s.desktopPopups !== undefined) setDesktopPopups(s.desktopPopups);
+          if (s.soundTriggers !== undefined) setSoundTriggers(s.soundTriggers);
+          if (s.unreadBadges !== undefined) setUnreadBadges(s.unreadBadges);
+          if (s.pushPreferences !== undefined) setPushPreferences(s.pushPreferences);
+          if (s.voiceEnabled !== undefined) setVoiceEnabled(s.voiceEnabled);
+          if (s.autoPlayVoice !== undefined) setAutoPlayVoice(s.autoPlayVoice);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/v2/lounges', { headers: requestHeaders })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.lounges || []);
+        setLoungesCount(list.length);
+      })
+      .catch(() => {});
+
+    fetch('/v2/friends/relationships', { headers: requestHeaders })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const rels = Array.isArray(data) ? data : (data?.relationships || []);
+        const activeFriends = rels.filter((r: any) => r.status === 'accepted');
+        setConnectionsCount(activeFriends.length);
+      })
+      .catch(() => {});
+  }, [isOpen, currentUserId, currentUsername]);
+
+  const buildProfileBody = (overrides: Record<string, unknown> = {}) => {
+    const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
+    return {
+      userId: currentUserId,
+      username: stripAt(username || displayName),
+      displayName: stripAt(displayName || username),
+      bio: bio.trim(),
+      location: location.trim(),
+      avatar: chosenAvatar,
+      email: email.trim(),
+      phone: phone.trim(),
+      ...overrides,
+    };
   };
 
   const handlePasswordReset = async (e: React.FormEvent) => {
@@ -379,7 +299,7 @@ export default function SettingsDrawer({
   const [croppingConfig, setCroppingConfig] = useState<{
     src: string;
     fileName: string;
-    type: 'avatar' | 'banner';
+    type: 'avatar';
   } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -395,19 +315,6 @@ export default function SettingsDrawer({
     e.target.value = '';
   };
 
-  const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (reader.result) {
-        setCroppingConfig({ src: reader.result as string, fileName: file.name, type: 'banner' });
-      }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
   const handleRemovePhoto = () => {
     setAvatarPreview(null);
     setAvatarFile(null);
@@ -415,15 +322,11 @@ export default function SettingsDrawer({
     setAvatarColor('charcoal');
   };
 
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setProfileMsg(null);
+  const handleSaveProfile = async () => {
     setProfileError(null);
     setIsUploading(true);
 
     let finalAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
-    let finalBanner = bannerColor === 'custom' ? bannerUrl : bannerColor;
-
     try {
       const sId = getSessionId();
       const requestHeaders = {
@@ -432,33 +335,27 @@ export default function SettingsDrawer({
       };
 
       if (avatarFile && avatarPreview) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(avatarFile, 'avatars', 'webp');
+        const uploadedUrl = await streamFileDirectToCloudStorage(avatarFile, 'avatars', avatarFile.type.split('/')[1] || 'webp');
         finalAvatar = uploadedUrl;
         setAvatarUrl(uploadedUrl);
-        await saveLocalMedia(`avatar_${currentUserId}`, avatarFile);
+        setAvatarPreview(uploadedUrl);
+        setAvatarColor('custom');
+        await saveLocalMedia(
+          `avatar_${currentUserId}`,
+          avatarFile,
+          avatarFile.type || 'image/webp',
+          currentUserId
+        );
       } else if (avatarColor === 'charcoal' && !avatarPreview && !avatarUrl) {
         finalAvatar = '';
-        await deleteLocalMedia(`avatar_${currentUserId}`);
-      }
-
-      if (bannerFile && bannerPreview) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(bannerFile, 'avatars', 'webp');
-        finalBanner = uploadedUrl;
-        setBannerUrl(uploadedUrl);
-        await saveLocalMedia(`banner_${currentUserId}`, bannerFile);
+        await deleteLocalMedia(`avatar_${currentUserId}`, currentUserId);
       }
 
       const res = await fetch('/v2/user/profile', {
         method: 'POST',
         headers: requestHeaders,
         body: JSON.stringify({
-          userId: currentUserId,
-          displayName: displayName.trim().replace('@', ''),
-          bio: bio.trim(),
-          avatar: finalAvatar,
-          email: email.trim(),
-          phone: phone.trim(),
-          bannerColor: finalBanner,
+          ...buildProfileBody({ avatar: finalAvatar }),
           settings: {
             theme: themeMode,
             messageScaling,
@@ -474,60 +371,86 @@ export default function SettingsDrawer({
       });
       const data = await res.json();
       if (res.ok) {
-        setProfileMsg('Profile updated.');
+        velumToast.success('Profile updated.');
+        const savedUser = data.user || {};
+        const avatarVal = savedUser.avatar || savedUser.avatarUrl || finalAvatar || '';
+        if (savedUser.username) {
+          storage.setItem('velum-username', savedUser.username);
+          setUsername(stripAt(savedUser.username));
+        }
+        if (avatarVal) {
+          setAvatarUrl(avatarVal);
+          setAvatarPreview(avatarVal);
+          setAvatarColor('custom');
+        } else if (!finalAvatar) {
+          setAvatarUrl('');
+          setAvatarPreview(null);
+        }
+        try {
+          const cached = storage.getItem<any>('velum-user') || {};
+          storage.setItem('velum-user', {
+            ...cached,
+            ...savedUser,
+            userId: savedUser.userId || savedUser.id || currentUserId,
+            username: savedUser.username || username,
+            displayName: savedUser.displayName || displayName,
+            avatar: avatarVal,
+            avatarUrl: avatarVal,
+            bio: savedUser.bio ?? bio,
+            location: savedUser.location ?? location,
+          });
+        } catch (_) {}
         if (onProfileUpdate) {
-          onProfileUpdate(data.user);
+          onProfileUpdate({
+            ...savedUser,
+            avatar: avatarVal,
+            avatarUrl: avatarVal,
+          });
         }
         window.dispatchEvent(new CustomEvent('velum-profile-updated'));
-        
-        if (data.user?.avatar) {
-          setAvatarUrl(data.user.avatar);
-          setAvatarPreview(data.user.avatar);
-        }
-        if (data.user?.bannerColor) {
-          setBannerUrl(data.user.bannerColor);
-          setBannerPreview(data.user.bannerColor);
-        }
         setAvatarFile(null);
-        setBannerFile(null);
-        setTimeout(() => setProfileMsg(null), 3500);
+        return true;
       } else {
-        setProfileError(data.error || 'Failed to update profile.');
+        const message = data.error || 'Failed to update profile.';
+        velumToast.error(message);
+        setProfileError(message);
         setTimeout(() => setProfileError(null), 3500);
+        return false;
       }
     } catch (err) {
       console.error('Profile save error:', err);
+      velumToast.error('Failed to establish server connection.');
       setProfileError('Failed to establish server connection.');
       setTimeout(() => setProfileError(null), 3500);
+      return false;
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleSaveAppearance = async (
+    newTheme: 'dark' | 'light' | 'system',
     newScaling: 'cozy' | 'compact', 
     newFont: 'small' | 'medium' | 'large',
     newReducedMotion?: boolean
   ) => {
     setAppearanceMsg(null);
     const motionVal = newReducedMotion !== undefined ? newReducedMotion : reducedMotion;
+    applyAppearanceSettings({
+      theme: newTheme,
+      messageScaling: newScaling,
+      fontAdjustment: newFont,
+      reducedMotion: motionVal
+    });
 
     try {
-      const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
       await fetch('/v2/user/profile', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
-          bio,
-          avatar: chosenAvatar,
-          email,
-          phone,
-          bannerColor,
+          ...buildProfileBody(),
           settings: {
-            theme: 'dark',
+            theme: newTheme,
             messageScaling: newScaling,
             fontAdjustment: newFont,
             reducedMotion: motionVal,
@@ -540,32 +463,26 @@ export default function SettingsDrawer({
           }
         })
       });
-      setThemeMode('dark');
+      setThemeMode(newTheme);
       setMessageScaling(newScaling);
       setFontAdjustment(newFont);
       setReducedMotion(motionVal);
       setAppearanceMsg('Appearance profile updated.');
+      setTimeout(() => setAppearanceMsg(null), 2000);
     } catch {
       setAppearanceMsg('Network exception saving settings.');
+      setTimeout(() => setAppearanceMsg(null), 2000);
     }
   };
 
   const handleSaveNotifications = async (popups: boolean, sound: boolean, badges: boolean, push: boolean) => {
     setNotificationsMsg(null);
     try {
-      const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
       await fetch('/v2/user/profile', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
-          bio,
-          avatar: chosenAvatar,
-          email,
-          phone,
-          bannerColor,
+          ...buildProfileBody(),
           settings: {
             theme: themeMode,
             messageScaling,
@@ -593,19 +510,11 @@ export default function SettingsDrawer({
     setMediaMsg(null);
     setMediaError(null);
     try {
-      const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
       await fetch('/v2/user/profile', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${displayName.trim().replace('@', '')}`,
-          displayName: displayName.trim().replace('@', ''),
-          bio,
-          avatar: chosenAvatar,
-          email,
-          phone,
-          bannerColor,
+          ...buildProfileBody(),
           settings: {
             theme: themeMode,
             messageScaling,
@@ -639,31 +548,19 @@ export default function SettingsDrawer({
         headers
       });
       if (res.ok) {
-        window.alert("Account deleted successfully.");
-        sessionStorage.clear();
+        velumToast.success("Account deleted successfully.");
+        storage.clear();
         window.location.reload();
       } else {
         const data = await res.json();
-        window.alert(data.error || "Failed to delete account.");
+        velumToast.error(data.error || "Failed to delete account.");
       }
     } catch {
-      window.alert("Connection failed.");
+      velumToast.error("Connection failed.");
     }
   };
 
   if (!isOpen) return null;
-
-  const getBannerClass = (color: string) => {
-    const classes: Record<string, string> = {
-      charcoal: 'bg-velum-800',
-      emerald: 'bg-theme-emerald-banner',
-      bronze: 'bg-theme-bronze-banner',
-      violet: 'bg-theme-violet-banner',
-      indigo: 'bg-theme-indigo-banner',
-      crimson: 'bg-theme-crimson-banner'
-    };
-    return classes[color] || classes.charcoal;
-  };
 
   const getAvatarClass = (color: string) => {
     const classes: Record<string, string> = {
@@ -677,14 +574,14 @@ export default function SettingsDrawer({
 
   return (
     <div className="fixed inset-0 z-[99999] flex overflow-hidden select-none font-sans">
-      {/* Backdrop with a premium blur */}
+      {/* Dark backdrop */}
       <div 
-        className="absolute inset-0 modal-backdrop transition-opacity duration-300"
+        className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-200"
         onClick={onClose}
       />
-      <div className="glass-panel w-full max-w-md ml-auto h-full bg-velum-900 border-l border-white-5 flex flex-col relative overflow-hidden z-10 border-y-0 rounded-none shadow-2xl animate-in slide-in-from-right duration-200">
-        
-        <div className="p-4 md:p-4 border-b border-white-5 flex items-center justify-between flex-shrink-0 bg-velum-850">
+            <div className="w-full h-full bg-velum-850 flex flex-col relative overflow-hidden z-10 animate-in fade-in duration-150">
+  
+        <div className="p-4 md:p-4 border-b border-velum-600 flex items-center justify-between flex-shrink-0 bg-velum-850">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-widest text-accent font-mono">Settings</h2>
           </div>
@@ -698,145 +595,117 @@ export default function SettingsDrawer({
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          
-          {activeView === 'menu' ? (
-            <div className="flex-shrink-0 w-full bg-velum-850 overflow-y-auto">
-              <div className="flex flex-col p-4 gap-6">
-                
-                <div className="space-y-1">
-                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">{t('settings.account', 'Account')}</div>
-                  {[
-                    { id: 'account', label: t('settings.account', 'Account'), icon: User },
-                    { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
-                    { id: 'notifications', label: t('settings.notifications', 'Notifications'), icon: Bell }
-                  ].map((cat) => {
-                    const Icon = cat.icon;
-                    const active = activeView === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setActiveView(cat.id as SettingCategory)}
-                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                          active 
-                            ? 'bg-accent/10 text-accent' 
-                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span>{cat.label}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-text-disabled" />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-1">
-                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">App</div>
-                  {[
-                    { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
-                    { id: 'media', label: t('settings.voice_audio', 'Voice & Audio'), icon: Volume2 },
-                    { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
-                  ].map((cat) => {
-                    const isLocked = cat.id === 'appearance';
-                    const Icon = cat.icon;
-                    const active = activeView === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => {
-                          if (isLocked) {
-                            setLockedFeatureToast('Feature in development. Coming soon!');
-                            return;
-                          }
-                          setActiveView(cat.id as SettingCategory);
-                        }}
-                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none ${
-                          isLocked
-                            ? 'opacity-50 cursor-not-allowed text-text-secondary'
-                            : active 
-                              ? 'bg-accent/10 text-accent cursor-pointer' 
-                              : 'text-text-secondary hover:bg-white-5 hover:text-text-primary cursor-pointer'
-                        }`}
-                        title={isLocked ? `${cat.label} (Coming soon)` : undefined}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span>{cat.label}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-text-disabled" />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-1">
-                  <div className="px-4 py-2 text-[10px] uppercase font-bold text-text-secondary font-mono tracking-widest">More</div>
-                  {[
-                    { id: 'diagnostics', label: t('settings.diagnostics', 'Diagnostics'), icon: Activity },
-                    { id: 'about', label: t('settings.about', 'About Velum'), icon: Info }
-                  ].map((cat) => {
-                    const Icon = cat.icon;
-                    const active = activeView === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setActiveView(cat.id as SettingCategory)}
-                        className={`w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer ${
-                          active 
-                            ? 'bg-accent/10 text-accent' 
-                            : 'text-text-secondary hover:bg-white-5 hover:text-text-primary'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span>{cat.label}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-text-disabled" />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-1 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      sessionStorage.clear();
-                      window.location.reload();
-                    }}
-                    className="w-full px-4 py-3 text-left rounded-xl text-sm font-medium flex items-center justify-between transition select-none cursor-pointer text-alert-error hover:bg-alert-error-bg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <LogOut className="w-4 h-4 shrink-0" />
-                      <span>Log Out</span>
+        <div className="flex-1 flex flex-col overflow-y-auto">
+              {activeView === 'menu' ? (
+                <div className="w-full max-w-2xl mx-auto p-4 md:p-6 space-y-6">
+                  
+                  {/* Account Section Card */}
+                  <div className="space-y-2">
+                    <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
+                      {t('settings.account', 'Account')}
                     </div>
-                  </button>
-                </div>
+                    <div className="bg-velum-800 border border-velum-600 rounded-2xl overflow-hidden divide-y divide-velum-600/50 shadow-sm">
+                      {[
+                        { id: 'account', label: t('settings.account', 'Account'), icon: User },
+                        { id: 'privacy', label: t('settings.privacy', 'Privacy & Safety'), icon: Lock },
+                        { id: 'notifications', label: t('settings.notifications', 'Notifications'), icon: Bell }
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setActiveView(cat.id as SettingCategory)}
+                            className="w-full px-4 py-3.5 text-left text-sm font-medium flex items-center justify-between text-text-primary hover:bg-white-5 transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className="w-4 h-4 text-accent shrink-0" />
+                              <span>{cat.label}</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-text-disabled" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 bg-velum-900 p-4 overflow-y-auto">
-              <div className="mb-4 flex items-center">
+                  {/* App Section Card */}
+                  <div className="space-y-2">
+                    <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
+                      App
+                    </div>
+                    <div className="bg-velum-800 border border-velum-600 rounded-2xl overflow-hidden divide-y divide-velum-600/50 shadow-sm">
+                      {[
+                        { id: 'appearance', label: t('settings.appearance', 'Appearance'), icon: Palette },
+                        { id: 'media', label: t('settings.media', 'Media & Storage'), icon: Mic },
+                        { id: 'language', label: t('settings.language', 'Language'), icon: Globe }
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setActiveView(cat.id as SettingCategory)}
+                            className="w-full px-4 py-3.5 text-left text-sm font-medium flex items-center justify-between text-text-primary hover:bg-white-5 transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className="w-4 h-4 text-accent shrink-0" />
+                              <span>{cat.label}</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-text-disabled" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* More Section Card */}
+                  <div className="space-y-2">
+                    <div className="px-3 text-xs font-semibold uppercase tracking-wider text-text-secondary font-mono">
+                      More
+                    </div>
+                    <div className="bg-velum-800 border border-velum-600 rounded-2xl overflow-hidden divide-y divide-velum-600/50 shadow-sm">
+                      {[
+                        { id: 'diagnostics', label: 'Diagnostics', icon: Activity },
+                        { id: 'about', label: 'About Velum', icon: Info }
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setActiveView(cat.id as SettingCategory)}
+                            className="w-full px-4 py-3.5 text-left text-sm font-medium flex items-center justify-between text-text-primary hover:bg-white-5 transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className="w-4 h-4 text-accent shrink-0" />
+                              <span>{cat.label}</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-text-disabled" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                </div>
+              ) : (
+              <div className="flex-1 overflow-y-auto">
+            <div className="w-full max-w-2xl mx-auto p-4 md:p-6">
+              <div className="mb-6 flex items-center">
                 <button
                   type="button"
                   onClick={() => setActiveView('menu')}
-                  className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition cursor-pointer"
+                  className="inline-flex items-center p-1 text-text-secondary hover:text-text-primary transition cursor-pointer"
+                  aria-label="Back"
+                  title="Back"
                 >
                   <ChevronRight className="w-4 h-4 rotate-180" />
-                  <span className="text-[10px] uppercase font-bold font-mono tracking-widest">Back</span>
                 </button>
               </div>
 
               {activeView === 'account' && (
                 <SettingsAccountTab
-                  profileMsg={profileMsg}
                   profileError={profileError}
                   handleSaveProfile={handleSaveProfile}
                   avatarPreview={avatarPreview}
@@ -844,24 +713,20 @@ export default function SettingsDrawer({
                   avatarColor={avatarColor}
                   getAvatarClass={getAvatarClass}
                   displayName={displayName}
+                  username={username}
+                  setUsername={setUsername}
                   bio={bio}
+                  location={location}
+                  setLocation={setLocation}
                   loungesCount={loungesCount}
                   connectionsCount={connectionsCount}
                   currentUsername={currentUsername}
                   currentUserRole={currentUserRole}
-                  email={email}
-                  setEmail={setEmail}
-                  phone={phone}
-                  setPhone={setPhone}
-                  setDisplayName={setDisplayName}
+              	  setDisplayName={setDisplayName}
                   setBio={setBio}
                   handleFileChange={handleFileChange}
                   handleDeleteAvatar={handleRemovePhoto}
-                  bannerPreview={bannerPreview}
-                  bannerUrl={bannerUrl}
-                  bannerColor={bannerColor}
-                  getBannerClass={getBannerClass}
-                  handleBannerFileChange={handleBannerFileChange}
+                  isUploading={isUploading}
                 />
               )}
 
@@ -879,323 +744,56 @@ export default function SettingsDrawer({
               />
             )}
 
-            {activeView === 'appearance' && (
-              <div className="w-full max-w-4xl space-y-8">
-                
-                {appearanceMsg && (
-                  <div className="p-3.5 bg-velum-800 border border-white-5 text-accent rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{appearanceMsg}</span>
-                  </div>
-                )}
-
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Appearance</h3>
-
-                {/* Message Density Section */}
-                <div className="space-y-3">
-                  <span className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Message Density</span>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { id: 'cozy', label: 'Cozy' },
-                      { id: 'compact', label: 'Compact' }
-                    ].map((s) => {
-                      const active = messageScaling === s.id;
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => handleSaveAppearance(s.id as any, fontAdjustment, reducedMotion)}
-                          className={`p-3 border rounded-xl font-mono text-xs uppercase font-bold transition cursor-pointer ${
-                            active 
-                              ? 'bg-velum-750 border-accent text-accent' 
-                              : 'bg-velum-850/40 border-white-5 text-text-secondary hover:text-text-primary'
-                          }`}
-                        >
-                          {s.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Font Size Section */}
-                <div className="space-y-3">
-                  <span className="text-[10px] uppercase font-mono font-bold text-text-secondary block">Font Scale</span>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { id: 'small', label: 'Small' },
-                      { id: 'medium', label: 'Medium' },
-                      { id: 'large', label: 'Large' }
-                    ].map((f) => {
-                      const active = fontAdjustment === f.id;
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => handleSaveAppearance(messageScaling, f.id as any, reducedMotion)}
-                          className={`p-3 border rounded-xl font-mono text-xs uppercase font-bold transition cursor-pointer ${
-                            active 
-                              ? 'bg-velum-750 border-accent text-accent' 
-                              : 'bg-velum-850/40 border-white-5 text-text-secondary hover:text-text-primary'
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-              </div>
+            {activeView === 'notifications' && (
+              <SettingsNotificationsTab
+                desktopPopups={desktopPopups}
+                soundTriggers={soundTriggers}
+                unreadBadges={unreadBadges}
+                pushPreferences={pushPreferences}
+                notificationsMsg={notificationsMsg}
+                handleSaveNotifications={handleSaveNotifications}
+              />
             )}
 
-            {activeView === 'notifications' && (
-              <div className="w-full max-w-4xl space-y-8">
-                
-                {notificationsMsg && (
-                  <div className="p-3.5 bg-velum-800 border border-white-5 text-accent rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{notificationsMsg}</span>
-                  </div>
-                )}
-
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Notifications</h3>
-
-                <div className="space-y-3">
-                  {[
-                    { id: 'popups', label: 'Desktop notifications', val: desktopPopups, set: (v: boolean) => handleSaveNotifications(v, soundTriggers, unreadBadges, pushPreferences) },
-                    { id: 'sounds', label: 'Sound alerts', val: soundTriggers, set: (v: boolean) => handleSaveNotifications(desktopPopups, v, unreadBadges, pushPreferences) },
-                    { id: 'badges', label: 'Unread badges', val: unreadBadges, set: (v: boolean) => handleSaveNotifications(desktopPopups, soundTriggers, v, pushPreferences) },
-                    { id: 'push', label: 'Background sync', val: pushPreferences, set: (v: boolean) => handleSaveNotifications(desktopPopups, soundTriggers, unreadBadges, v) }
-                  ].map((notif) => (
-                    <button
-                      key={notif.id}
-                      type="button"
-                      onClick={() => notif.set(!notif.val)}
-                      className="w-full p-4 bg-velum-750/50 border border-white-5 hover:bg-velum-750 rounded-xl flex items-center justify-between text-left cursor-pointer transition select-none"
-                    >
-                      <span className="text-sm font-medium text-text-primary pr-4">{notif.label}</span>
-                      <div className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${notif.val ? 'bg-accent' : 'bg-velum-600'}`}>
-                        <div className={`w-5 h-5 rounded-full bg-velum-900 transition-transform ${notif.val ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-              </div>
+            {activeView === 'appearance' && (
+              <SettingsAppearanceTab
+                themeMode={themeMode}
+                messageScaling={messageScaling}
+                fontAdjustment={fontAdjustment}
+                reducedMotion={reducedMotion}
+                appearanceMsg={appearanceMsg}
+                handleSaveAppearance={handleSaveAppearance}
+                onToggleTheme={onToggleTheme}
+              />
             )}
 
             {activeView === 'media' && (
-              <div className="w-full max-w-4xl space-y-8">
-                
-                {mediaMsg && (
-                  <div className="p-3.5 bg-alert-success-bg text-alert-success rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{mediaMsg}</span>
-                  </div>
-                )}
-
-                {mediaError && (
-                  <div className="p-3.5 bg-alert-error-bg text-alert-error rounded-xl text-[10px] font-mono uppercase font-bold flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>{mediaError}</span>
-                  </div>
-                )}
-
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">Media & Voice</h3>
-
-                <div className="space-y-3">
-                  <button
-                    type="button"
-                    onClick={() => handleSaveMedia(!voiceEnabled, autoPlayVoice)}
-                    className="w-full p-4 bg-velum-750/50 border border-white-5 hover:bg-velum-750 rounded-xl flex items-center justify-between text-left cursor-pointer transition select-none"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Volume2 className="w-4 h-4 text-text-secondary" />
-                      <span className="text-sm font-medium text-text-primary">Voice Recording</span>
-                    </div>
-                    <div className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${voiceEnabled ? 'bg-accent' : 'bg-velum-600'}`}>
-                      <div className={`w-5 h-5 rounded-full bg-velum-900 transition-transform ${voiceEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSaveMedia(voiceEnabled, !autoPlayVoice)}
-                    className="w-full p-4 bg-velum-750/50 border border-white-5 hover:bg-velum-750 rounded-xl flex items-center justify-between text-left cursor-pointer transition select-none"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Play className="w-4 h-4 text-text-secondary" />
-                      <span className="text-sm font-medium text-text-primary">Auto-play Voice Notes</span>
-                    </div>
-                    <div className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${autoPlayVoice ? 'bg-accent' : 'bg-velum-600'}`}>
-                      <div className={`w-5 h-5 rounded-full bg-velum-900 transition-transform ${autoPlayVoice ? 'translate-x-5' : 'translate-x-0'}`} />
-                    </div>
-                  </button>
-                </div>
-
-              </div>
+              <SettingsMediaTab
+                voiceEnabled={voiceEnabled}
+                autoPlayVoice={autoPlayVoice}
+                mediaMsg={mediaMsg}
+                mediaError={mediaError}
+                currentUserId={currentUserId}
+                handleSaveMedia={handleSaveMedia}
+              />
             )}
 
-            {activeView === 'language' && (
-              <div className="w-full max-w-4xl space-y-6">
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">
-                    {t('language.title', 'Language Preferences')}
-                  </h3>
-                  <p className="text-xs text-text-secondary mt-1">
-                    {t('language.subtitle', 'Select your preferred display language for Velum interface and system messages.')}
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  {supportedLanguages.map((langOption) => {
-                    const isSelected = language === langOption.code;
-                    return (
-                      <button
-                        key={langOption.code}
-                        type="button"
-                        onClick={() => setLanguage(langOption.code)}
-                        className={`w-full p-4 rounded-xl border flex items-center justify-between transition text-left cursor-pointer select-none ${
-                          isSelected
-                            ? 'bg-velum-750 border-accent/70 text-text-primary shadow-lg ring-1 ring-accent/30'
-                            : 'bg-velum-750/50 border-white-5 hover:bg-velum-750 text-text-secondary hover:text-text-primary'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-xl">{langOption.flag}</span>
-                          <div>
-                            <span className="text-sm font-semibold block">{langOption.name}</span>
-                            <span className="text-xs text-text-disabled font-mono">{langOption.nativeName}</span>
-                          </div>
-                        </div>
-
-                        {isSelected && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono uppercase font-bold text-accent bg-accent/10 border border-accent/20 px-2 py-0.5 rounded">
-                              {t('language.active', 'Active')}
-                            </span>
-                            <CheckCircle className="w-4 h-4 text-accent" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-
+            {activeView === 'language' && <SettingsLanguageTab />}
 
             {activeView === 'diagnostics' && (
-              <div className="w-full max-w-4xl space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono flex items-center gap-2">
-                    <Activity className="w-4 h-4" />
-                    {t('diagnostics.title')}
-                  </h3>
-                  <span className="px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent font-mono text-[10px] font-bold">
-                    Build {FULL_BUILD_VERSION}
-                  </span>
-                </div>
-
-                <div className="p-6 rounded-xl border border-white-10 bg-velum-750/50 space-y-4">
-                  <p className="text-xs text-text-secondary leading-relaxed">
-                    {t('diagnostics.subtitle')}
-                  </p>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono font-bold uppercase text-text-secondary block">
-                      {t('diagnostics.notes_label')}
-                    </label>
-                    <textarea
-                      value={diagNotes}
-                      onChange={(e) => setDiagNotes(e.target.value)}
-                      className="w-full bg-velum-850/80 border border-white-10 text-text-primary rounded-xl p-3 text-xs outline-none focus:border-accent/50 resize-none h-24 font-mono"
-                    />
-                  </div>
-
-                  {diagResult && (
-                    <div className={`p-3.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 ${
-                      diagResult.success 
-                        ? 'bg-alert-success-bg text-alert-success' 
-                        : 'bg-alert-error-bg text-alert-error'
-                    }`}>
-                      {diagResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-                      <span>
-                        {diagResult.success 
-                          ? `${t('diagnostics.success')} (ID: ${diagResult.log_id})`
-                          : `${t('diagnostics.error')} (${diagResult.error})`}
-                      </span>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handleTransmitDiagnostics}
-                    disabled={diagSubmitting}
-                    className="w-full py-3 bg-accent hover:bg-accent-hover text-velum-950 font-mono font-bold text-xs uppercase tracking-wider rounded-xl transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {diagSubmitting ? (
-                      <span>{t('diagnostics.transmitting')}</span>
-                    ) : (
-                      <>
-                        <Activity className="w-4 h-4" />
-                        <span>{t('diagnostics.transmit_btn')}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+              <SettingsDiagnosticsTab currentUserId={currentUserId} />
             )}
 
-            {activeView === 'about' && (
-              <div className="w-full max-w-4xl space-y-8">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-accent font-mono">About Velum</h3>
-                <div className="p-8 rounded-xl border border-white-5 bg-velum-750/50 flex flex-col items-center text-center space-y-4">
-                  <div className="w-16 h-16 rounded-2xl bg-velum-800 border border-white/10 flex items-center justify-center">
-                    <div className="w-9 h-9 [&>svg]:w-full [&>svg]:h-full text-accent" dangerouslySetInnerHTML={{ __html: logoSvg }} />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold tracking-[0.2em] text-text-primary">VELUM</div>
-                    <div className="text-[10px] text-text-secondary font-mono tracking-widest mt-1">Secure conversations, refined.</div>
-                  </div>
+            {activeView === 'about' && <SettingsAboutTab />}
 
-                  <div className="flex items-center justify-center gap-4 py-2 border-t border-b border-white-5 w-full">
-                    <button
-                      type="button"
-                      onClick={() => setActiveLegalDoc('terms')}
-                      className="text-xs font-mono text-accent hover:underline cursor-pointer"
-                    >
-                      Terms of Service
-                    </button>
-                    <span className="text-text-disabled">•</span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveLegalDoc('privacy')}
-                      className="text-xs font-mono text-accent hover:underline cursor-pointer"
-                    >
-                      Privacy Policy
-                    </button>
-                  </div>
-
-                  <div className="pt-2 w-full">
-                    <div className="text-[10px] text-text-secondary font-mono">Version {FULL_BUILD_VERSION || '2.2.0'}</div>
-                    <div className="text-[10px] text-text-secondary font-mono mt-1">© 2026 Velum Network. All rights reserved.</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
+            </div>
           </div>
           )}
         </div>
 
       </div>
 
-      {/* In-App Legal Document Modal */}
-      <LegalDocModal docType={activeLegalDoc} onClose={() => setActiveLegalDoc(null)} />
-
+      
       {croppingConfig && (
         <ImageCropperModal
           imageSrc={croppingConfig.src}
@@ -1207,10 +805,6 @@ export default function SettingsDrawer({
               setAvatarFile(croppedFile);
               setAvatarPreview(croppedDataUrl);
               setAvatarColor('custom');
-            } else {
-              setBannerFile(croppedFile);
-              setBannerPreview(croppedDataUrl);
-              setBannerColor('custom');
             }
             setCroppingConfig(null);
           }}
@@ -1225,23 +819,6 @@ export default function SettingsDrawer({
         accept="image/*" 
         className="hidden" 
       />
-      {/* Toast Alert for Locked Features */}
-      {lockedFeatureToast && (
-        <div className="fixed bottom-6 right-6 z-[999999] animate-fadeIn">
-          <div className="bg-velum-850 border border-accent/40 text-accent text-xs font-mono px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            <span className="font-semibold">{lockedFeatureToast}</span>
-            <button 
-              type="button"
-              onClick={() => setLockedFeatureToast(null)}
-              className="ml-2 text-text-secondary hover:text-white cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

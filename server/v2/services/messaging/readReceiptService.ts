@@ -36,20 +36,34 @@ export async function processReadReceipt(
     }
   }
 
-  // 1. Upsert read cursor
+  // 1. Fetch existing cursor to ensure monotonic lastReadSeq progress
+  const [existingCursor] = await executeWithRetry(() =>
+    db.select({ lastReadSeq: userReadCursors.lastReadSeq, lastReadMsgId: userReadCursors.lastReadMsgId })
+      .from(userReadCursors)
+      .where(and(eq(userReadCursors.userId, userId), eq(userReadCursors.loungeId, loungeId)))
+      .limit(1)
+  );
+
+  const prevSeq = existingCursor?.lastReadSeq || 0;
+  if (targetSeq < prevSeq) {
+    targetSeq = prevSeq;
+  }
+  const effectiveMsgId = targetSeq === prevSeq && existingCursor?.lastReadMsgId ? existingCursor.lastReadMsgId : lastReadMsgId;
+
+  // Upsert read cursor with monotonic LWW
   await executeWithRetry(() =>
     db.insert(userReadCursors)
       .values({
         userId,
         loungeId,
-        lastReadMsgId,
+        lastReadMsgId: effectiveMsgId,
         lastReadSeq: targetSeq,
         updatedAt: now
       })
       .onConflictDoUpdate({
         target: [userReadCursors.userId, userReadCursors.loungeId],
         set: {
-          lastReadMsgId,
+          lastReadMsgId: effectiveMsgId,
           lastReadSeq: targetSeq,
           updatedAt: now
         }

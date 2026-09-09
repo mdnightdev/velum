@@ -21,9 +21,11 @@ export interface LoungeWorkspaceProps {
   onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
-  onMarkAsRead?: (messageId: string, roomId: string) => void;
+  onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => void;
   onMarkAllAsRead?: (roomId: string) => void;
   onToggleSidebar?: () => void;
+  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
+  onRequestForward?: (content: string) => void;
 }
 
 export interface LoungeRoom {

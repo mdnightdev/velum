@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { initiateMicrophoneStream, terminateMicrophoneStream, cancelMicrophoneStream } from '../utils/mediaPipeline';
+import { initiateMicrophoneStream, terminateMicrophoneStream, cancelMicrophoneStream, pauseMicrophoneStream, resumeMicrophoneStream, getDraftAudioBlob } from '../utils/mediaPipeline';
+import { velumToast } from '../utils/toast';
 
 export function useAudioRecorder() {
   const [isRecording, setIsRecording] = useState(false);
@@ -60,16 +61,18 @@ export function useAudioRecorder() {
       }
     } catch (err) {
       console.warn('Microphone permission check/access issue:', err);
-      setMicError('Microphone permission denied or blocked by iframe container.');
+      setMicError('Microphone permission denied or blocked by container.');
     }
   };
 
-  const pauseRecording = () => {
+  const pauseRecording = async () => {
+    await pauseMicrophoneStream();
     setIsPaused(true);
     setAudioLevels(new Array(30).fill(10));
   };
 
   const resumeRecording = () => {
+    resumeMicrophoneStream();
     setIsPaused(false);
   };
 
@@ -81,27 +84,18 @@ export function useAudioRecorder() {
     }
   };
 
-  const stopRecording = async (onRecordingComplete: (audioBase64: string, durationSeconds: number) => void) => {
+  const stopRecording = async (onRecordingComplete: (audioBlob: Blob, durationSeconds: number) => void) => {
     setIsRecording(false);
     setIsPaused(false);
     cleanupAudio();
     try {
       const audioBlob = await terminateMicrophoneStream();
-      if (audioBlob.size > 5 * 1024 * 1024) {
-        alert('Voice note exceeds 5MB limit. Please record a shorter message.');
+      if (audioBlob.size > 15 * 1024 * 1024) {
+        velumToast.error('Voice note exceeds 15MB limit. Please record a shorter message.');
         return;
       }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const audioBase64 = (reader.result as string).split(',')[1];
-        const seconds = secondsRef.current > 0 ? secondsRef.current : 4;
-        onRecordingComplete(audioBase64, seconds);
-      };
-      reader.onerror = () => {
-        alert('Failed to process voice note. Please try again.');
-      };
-      reader.readAsDataURL(audioBlob);
+      const seconds = secondsRef.current > 0 ? secondsRef.current : 1;
+      onRecordingComplete(audioBlob, seconds);
     } catch (err) {
       console.error('Failed to stop voice recording:', err);
     }
@@ -125,6 +119,7 @@ export function useAudioRecorder() {
     resumeRecording,
     stopRecording,
     cancelRecording,
+    getDraftAudioBlob,
     setMicError,
   };
 }

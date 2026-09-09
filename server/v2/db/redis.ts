@@ -1,5 +1,6 @@
 import { createClient, RedisClientType } from 'redis';
 import { config } from '../config.js';
+import { logger } from '../utils/logger.js';
 
 let redisClient: RedisClientType | null = null;
 let connectionPool: RedisClientType[] = [];
@@ -24,30 +25,32 @@ export async function getRedisClient(): Promise<RedisClientType | null> {
   try {
     const client = createClient({ url: config.REDIS_URL });
     client.on('error', (err) => {
-      console.error('[REDIS v2] Redis client error:', err.message);
+      logger.error('Redis client error', { error: err.message });
     });
     await client.connect();
     redisClient = client as RedisClientType;
-    console.log('[REDIS v2] Connected to Redis stream bus successfully.');
+    logger.info('Connected to Redis stream bus successfully');
     
     // Initialize connection pool
     for (let i = 1; i < MAX_POOL_SIZE; i++) {
       try {
         const pooledClient = createClient({ url: config.REDIS_URL });
         pooledClient.on('error', (err) => {
-          console.error('[REDIS v2] Pooled Redis client error:', err.message);
+          logger.error('Pooled Redis client error', { error: err.message });
         });
         await pooledClient.connect();
         connectionPool.push(pooledClient as RedisClientType);
       } catch (err) {
-        console.warn('[REDIS v2] Failed to create pooled Redis connection:', err);
+        logger.warn('Failed to create pooled Redis connection', { error: err });
       }
     }
     
-    console.log(`[REDIS v2] Redis connection pool initialized with ${connectionPool.length + 1} connections.`);
+    logger.info('Redis connection pool initialized', { 
+      connections: connectionPool.length + 1 
+    });
     return redisClient;
   } catch (err) {
-    console.warn('[REDIS v2] Unable to connect to Redis. Falling back to in-memory event stream dispatch.', err);
+    logger.warn('Unable to connect to Redis, falling back to in-memory event stream dispatch', { error: err });
     return null;
   }
 }
@@ -57,7 +60,7 @@ export async function closeRedisConnections(): Promise<void> {
     try {
       await redisClient.quit();
     } catch (err) {
-      console.error('[REDIS v2] Error closing main Redis connection:', err);
+      logger.error('Error closing main Redis connection', { error: err });
     }
     redisClient = null;
   }
@@ -66,7 +69,7 @@ export async function closeRedisConnections(): Promise<void> {
     try {
       await client.quit();
     } catch (err) {
-      console.error('[REDIS v2] Error closing pooled Redis connection:', err);
+      logger.error('Error closing pooled Redis connection', { error: err });
     }
   }
   connectionPool = [];

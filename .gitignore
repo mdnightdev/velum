@@ -1,20 +1,29 @@
 node_modules/
 *.sqlite
 .env
+.env.example
+.env.encrypted
+set_secrets.sh
+**/set_secrets.sh
+.agents/
+.secrets.key
 dist/
-.env
-.superdesign
-data/server.log
-data/velum_state_v3.bin
+logs/
+**/logs/
+*.log
 server/services/ws.log
-
-/scripts/
+data/server.log
+# Winston rotate / heal runner artifacts (also under logs/)
+warn-*.log
+error-*.log
+app-*.log
+heal-*.log
+backups/
 
 # Ignore local databases, keys, and logs
 bun.lock
 bun.lockb
 data/
-*.sqlite
 *.sqlite-journal
 *.log
 bank-log.txt
@@ -26,3 +35,20 @@ velum_backup_*.json
 databackup.md
 uploads
 dump.rdb
+gradle-*.zip
+gradle-*.zip
+public/ota/*.zip
+photos/
+pgdata/
+emergency/
+*.bak
+*.keystore
+firebase-service-account.json
+PLANNING.md
+Cat/
+reports.md
+test-ecdh.cjs
+query.gql
+redis-data/
+.devin/
+toast-plan.md

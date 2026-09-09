@@ -1,10 +1,143 @@
+import axios from 'axios';
+import { getSessionId } from './auth';
+
 interface UploadConfig {
   uploadUrl: string;
   relativeDbPath: string;
 }
 
+const KNOWN_MEDIA_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg',
+  'webm', 'mp4', 'mov', 'mkv', 'm4v', 'ogg',
+  'mp3', 'm4a', 'wav',
+  'pdf', 'txt', 'csv', 'json', 'doc', 'docx', 'xls', 'xlsx',
+]);
+
 /**
- * PHASE A: INSTANT HARDWARE PHOTO PROCESSING & COMPRESSION
+ * Normalize MIME subtypes / filenames into a safe upload extension.
+ * `audio/webm;codecs=opus` → `webm` (never `webmcodecsopus`).
+ */
+export function sanitizeMediaExtension(extOrMime: string, fallback = 'bin'): string {
+  let raw = (extOrMime || '').trim().toLowerCase();
+  if (!raw) return fallback;
+
+  if (raw.includes('/')) {
+    raw = raw.split('/').pop() || raw;
+  }
+  raw = raw.split(';')[0].trim().replace(/^\./, '');
+
+  const cleaned = raw.replace(/[^a-z0-9]/g, '');
+  if (!cleaned) return fallback;
+  if (KNOWN_MEDIA_EXTENSIONS.has(cleaned)) return cleaned === 'jpeg' ? 'jpg' : cleaned;
+
+  // Recover when codecs/params were concatenated before sanitizing (legacy bug).
+  for (const ext of [
+    'webm', 'webp', 'jpeg', 'jpg', 'png', 'gif', 'mp4', 'm4a', 'm4v',
+    'ogg', 'mp3', 'wav', 'mov', 'mkv', 'pdf', 'docx', 'xlsx', 'csv', 'json', 'txt', 'svg',
+  ]) {
+    if (cleaned.startsWith(ext)) return ext === 'jpeg' ? 'jpg' : ext;
+  }
+
+  return fallback;
+}
+
+/**
+ * Generates an anonymous, compact collision-resistant filename.
+ * Formats: img_[id10].[ext], aud_[id10].[ext], vid_[id10].[ext], doc_[id10].[ext]
+ * Guarantees zero leakage of client device timestamps, camera models, app names, or phone numbers.
+ */
+export function generateAnonymousFilename(fileExtension: string, mimeTypeOrCategory?: string): string {
+  const hint = (mimeTypeOrCategory || fileExtension || '').toLowerCase();
+  const fallback =
+    hint.includes('audio') || hint.includes('voice') ? 'webm' :
+    hint.includes('video') ? 'mp4' :
+    hint.includes('image') ? 'webp' :
+    'bin';
+  const cleanExt = sanitizeMediaExtension(fileExtension, fallback) || fallback;
+
+  let prefix = 'doc';
+  if (hint.includes('image') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(cleanExt)) {
+    prefix = 'img';
+  } else if (hint.includes('audio') || hint.includes('voice') || ['webm', 'ogg', 'mp3', 'm4a', 'wav'].includes(cleanExt)) {
+    prefix = 'aud';
+  } else if (hint.includes('video') || ['mp4', 'mov', 'mkv', 'm4v'].includes(cleanExt)) {
+    prefix = 'vid';
+  }
+
+  let randomHex = '';
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const bytes = new Uint8Array(5);
+    crypto.getRandomValues(bytes);
+    randomHex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  } else {
+    randomHex = Math.random().toString(16).substring(2, 12);
+  }
+
+  return `${prefix}_${randomHex}.${cleanExt}`;
+}
+
+/**
+ * Strips EXIF, GPS, and hardware device metadata from image files by re-rendering
+ * through an HTML5 Canvas into a clean WebP/JPEG blob.
+ */
+export function stripImageMetadataAndCompress(file: File | Blob, maxDimension = 1400, quality = 0.85): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          let targetWidth = img.naturalWidth || img.width;
+          let targetHeight = img.naturalHeight || img.height;
+
+          if (targetWidth > maxDimension || targetHeight > maxDimension) {
+            if (targetWidth >= targetHeight) {
+              targetHeight = Math.round((targetHeight * maxDimension) / targetWidth);
+              targetWidth = maxDimension;
+            } else {
+              targetWidth = Math.round((targetWidth * maxDimension) / targetHeight);
+              targetHeight = maxDimension;
+            }
+          }
+
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            return reject(new Error("Canvas 2D context unavailable"));
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+          // Re-encode to clean image/webp without EXIF/metadata header blocks
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Image re-encoding failed to generate blob"));
+            }
+          }, "image/webp", quality);
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      img.onerror = () => reject(new Error("Failed to decode image data into Image element"));
+      img.src = event.target?.result as string;
+    };
+
+    reader.onerror = () => reject(new Error("FileReader failed to read raw image"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * PHASE A: INSTANT HARDWARE PHOTO PROCESSING & METADATA STRIPPING
  */
 export const captureAndCompressPhoto = (inputEvent: any): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -12,48 +145,10 @@ export const captureAndCompressPhoto = (inputEvent: any): Promise<Blob> => {
     if (!target.files || target.files.length === 0) {
       return reject(new Error("No asset target selected"));
     }
-
     const rawFile = target.files[0];
-    const imageReader = new FileReader();
-
-    imageReader.onload = (event) => {
-      const imgElement = new Image();
-      imgElement.onload = () => {
-        const canvas = document.createElement("canvas");
-        
-        // Enforce maximum production image boundaries (1200px width limit)
-        const MAX_WIDTH = 1200;
-        let targetWidth = imgElement.width;
-        let targetHeight = imgElement.height;
-
-        if (targetWidth > MAX_WIDTH) {
-          targetHeight = Math.round((targetHeight * MAX_WIDTH) / targetWidth);
-          targetWidth = MAX_WIDTH;
-        }
-
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return reject(new Error("Canvas generation failed"));
-        
-        // Redraw image onto sizing bounds
-        ctx.drawImage(imgElement, 0, 0, targetWidth, targetHeight);
-
-        // Compress asset to high-efficiency webp profile at 80% compression quality
-        canvas.toBlob((compressedBlob) => {
-          if (compressedBlob) {
-            resolve(compressedBlob);
-          } else {
-            reject(new Error("Image compression logic dropped bytes"));
-          }
-        }, "image/webp", 0.80);
-      };
-      imgElement.onerror = () => reject(new Error("Failed to load image element"));
-      imgElement.src = event.target?.result as string;
-    };
-    imageReader.onerror = () => reject(new Error("FileReader failed to parse raw file"));
-    imageReader.readAsDataURL(rawFile);
+    stripImageMetadataAndCompress(rawFile, 1200, 0.80)
+      .then(resolve)
+      .catch(reject);
   });
 };
 
@@ -80,7 +175,8 @@ export const initiateMicrophoneStream = async (): Promise<MediaStream> => {
   nativeRecorder.ondataavailable = (event) => {
     if (event.data.size > 0) collectedAudioBuffers.push(event.data);
   };
-  nativeRecorder.start();
+  // Timeslice keeps buffers fresh for pause-to-review without waiting for stop.
+  nativeRecorder.start(250);
   return liveStream;
 };
 
@@ -103,11 +199,60 @@ export const terminateMicrophoneStream = (): Promise<Blob> => {
   });
 };
 
+export const pauseMicrophoneStream = (): Promise<void> => {
+  return new Promise((resolve) => {
+    if (!nativeRecorder || nativeRecorder.state !== 'recording') {
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        if (nativeRecorder && nativeRecorder.state === 'recording') {
+          nativeRecorder.pause();
+        }
+      } catch {
+        // ignore
+      }
+      resolve();
+    };
+
+    nativeRecorder.addEventListener('dataavailable', finish, { once: true });
+    try {
+      nativeRecorder.requestData();
+    } catch {
+      finish();
+      return;
+    }
+
+    window.setTimeout(finish, 400);
+  });
+};
+
+export const resumeMicrophoneStream = (): void => {
+  if (nativeRecorder && nativeRecorder.state === 'paused') {
+    try {
+      nativeRecorder.resume();
+    } catch (e) {}
+  }
+};
+
+export const getDraftAudioBlob = (): Blob | null => {
+  if (collectedAudioBuffers.length === 0) return null;
+  const mimeType = nativeRecorder ? nativeRecorder.mimeType : "audio/webm";
+  return new Blob(collectedAudioBuffers, { type: mimeType });
+};
+
 export const cancelMicrophoneStream = (): void => {
   if (nativeRecorder) {
     nativeRecorder.onstop = null;
-    if (nativeRecorder.state === 'recording') {
-      nativeRecorder.stop();
+    if (nativeRecorder.state === 'recording' || nativeRecorder.state === 'paused') {
+      try {
+        nativeRecorder.stop();
+      } catch (e) {}
     }
     if (nativeRecorder.stream) {
       nativeRecorder.stream.getTracks().forEach(track => track.stop());
@@ -118,67 +263,87 @@ export const cancelMicrophoneStream = (): void => {
 };
 
 /**
- * PHASE C: SECURE PRESIGNED LEASE TOKEN DISPATCH TO CLOUDFLARE R2
+ * DIRECT FAST-PATH MEDIA STREAMING
+ * Uploads directly to /v2/media/upload using axios with instant progress and zero timeout cascading.
  */
 export const streamFileDirectToCloudStorage = async (
   processedBlob: Blob,
   folderDestination: "avatars" | "media",
   fileExtension: string
 ): Promise<string> => {
-  const sid = sessionStorage.getItem('velum-sessionId') || '';
-  
-  try {
-    // 1. Fetch secure upload config from Velum node
-    const tokenNegotiator = await fetch('/v2/storage/upload-token', {
-      method: "POST",
+  const sid = getSessionId();
+  const mimeType = processedBlob.type || 'image/webp';
+  const fromArg = sanitizeMediaExtension(fileExtension, '');
+  const fromMime = sanitizeMediaExtension(mimeType, '');
+  const cleanExt = fromArg || fromMime || 'webp';
+  // Strip codec parameters from Content-Type (servers may reject parameterized audio MIME).
+  const uploadContentType = (mimeType.split(';')[0] || mimeType).trim() || `application/octet-stream`;
+  const anonymousFilename = generateAnonymousFilename(cleanExt, mimeType);
+  const folder = folderDestination === 'avatars' ? 'avatars' : 'chat';
+
+  const response = await axios.post(
+    `/v2/media/upload?filename=${encodeURIComponent(anonymousFilename)}&folder=${encodeURIComponent(folder)}`,
+    processedBlob,
+    {
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${sid}`
+        'Content-Type': uploadContentType,
+        'Authorization': `Bearer ${sid}`,
+        'x-session-id': sid,
+        'x-session-token': sid
       },
-      body: JSON.stringify({ extension: fileExtension, type: folderDestination })
-    });
-
-    if (tokenNegotiator.ok) {
-      const data = await tokenNegotiator.json();
-      const uploadUrl = data.presigned?.uploadUrl || data.uploadUrl;
-      const relativeDbPath = data.presigned?.relativePath || data.relativeDbPath;
-
-      if (uploadUrl && uploadUrl.startsWith('http')) {
-        // Stream binary payload directly to Cloudflare R2 / S3 edge or direct upload handler
-        const httpPipe = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Type": processedBlob.type || "application/octet-stream",
-            ...(data.presigned?.headers || {})
-          },
-          body: processedBlob
-        });
-
-        if (httpPipe.ok) {
-          return relativeDbPath;
-        }
-      }
+      timeout: 30000
     }
-  } catch (err) {
-    console.warn('[STORAGE] Presigned S3 upload failed, falling back to local server upload:', err);
+  );
+
+  if (response.data && (response.data.url || response.data.relative_path)) {
+    return response.data.url || response.data.relative_path;
   }
 
-  // Fallback to direct binary POST endpoint
-  const endpoint = folderDestination === 'avatars' ? '/v2/user/upload-avatar' : '/v2/user/upload-media';
-  const uploadRes = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': processedBlob.type || 'application/octet-stream',
-      'Authorization': `Bearer ${sid}`
-    },
-    body: processedBlob
-  });
-
-  if (!uploadRes.ok) {
-    throw new Error("Target object server streaming channel rejected bytes");
-  }
-
-  const data = await uploadRes.json();
-  return data.url; 
+  throw new Error('Upload completed but server returned no storage URL');
 };
 
+/**
+ * Resolves media/avatar URLs to ensure valid absolute/relative resolution across Web, PWA, and Capacitor APKs.
+ */
+export function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  const isCapacitorOrLocalApk = typeof window !== 'undefined' && (
+    (window as any).Capacitor?.isNativePlatform?.() ||
+    window.location.protocol === 'capacitor:' || 
+    window.location.protocol === 'ionic:' ||
+    (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173')
+  );
+
+  if (isCapacitorOrLocalApk) {
+    const backendBase = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+    return backendBase ? `${backendBase}${url.startsWith('/') ? '' : '/'}${url}` : url;
+  }
+
+  return url;
+}
+
+/**
+ * Formats a clean download filename with timestamp instead of exposing internal storage keys.
+ * Format: IMG_YYYYMMDD_HHMMSS.[ext], VID_YYYYMMDD_HHMMSS.[ext], AUD_YYYYMMDD_HHMMSS.[ext]
+ */
+export function getFormattedDownloadFilename(urlOrName?: string, defaultExt = 'bin'): string {
+  const target = (urlOrName || '').split('?')[0];
+  const ext = (target.split('.').pop() || defaultExt).toLowerCase().replace(/[^a-z0-9]/g, '') || defaultExt;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+  let prefix = 'DOC';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) {
+    prefix = 'IMG';
+  } else if (['mp4', 'mov', 'webm', 'mkv', 'avi'].includes(ext)) {
+    prefix = 'VID';
+  } else if (['ogg', 'mp3', 'm4a', 'wav'].includes(ext)) {
+    prefix = 'AUD';
+  }
+  return `${prefix}_${timestamp}.${ext}`;
+}

@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import UserSidebar from '../views/UserWorkspace/UserSidebar';
 import ChatArea from './ChatArea';
-import MarketMainDashboard from './SidebarTabs/MarketMainDashboard';
 import TicketsMainDashboard from './SidebarTabs/TicketsMainDashboard';
 import SavedMainDashboard from './SidebarTabs/SavedMainDashboard';
 import PeopleMainDashboard from './SidebarTabs/PeopleMainDashboard';
@@ -9,14 +7,20 @@ import NotificationsMainDashboard from './SidebarTabs/NotificationsMainDashboard
 import LoungeMainDashboard from './SidebarTabs/LoungeMainDashboard';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import DirectMainDashboard from './SidebarTabs/DirectMainDashboard';
-import WalletMainDashboard from './SidebarTabs/WalletMainDashboard';
+import UnderDevelopment from './UnderDevelopment';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
-import ProfileCard from './ProfileCard';
+import ProfileCard, { toUserProfileData } from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
-import { useResponsiveLayout } from '../hooks/useResponsive';
-import { BadgeCheck, Terminal, Radio, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
-import { doubleRatchetService } from '../services/doubleRatchetService';
+import { MessageSquare, Globe, ShoppingBag, Bell, Menu, Users } from 'lucide-react';
+import { statelessE2eeService } from '../services/statelessE2eeService';
 import { getSessionId } from '../utils/auth';
+import { getLocalKV, setLocalKV, flushLoungeCache, purgeDmMessages } from '../utils/indexedDb';
+import { velumToast } from '../utils/toast';
+import { mergeLastMessagesMap, getPrimaryDmRoomId, getDmRoomAliases } from '../utils/roomUtils';
+import { stripAt } from '../types';
+import { useChatStore } from '../stores/chatStore';
+import { setPeerMutedLocal } from '../utils/dmPeerPrefs';
+import { useDisappearingMessages } from './Chat/hooks/useDisappearingMessages';
 
 interface DashboardLayoutProps {
   user: any;
@@ -25,8 +29,20 @@ interface DashboardLayoutProps {
   onLogout: () => void;
   activeRoomId: string;
   onRoomSelect: (roomId: string) => void;
-  activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
-  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
+  activeChatPeer?: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  } | null;
+  onSelectPeer?: (peer: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  }) => void;
   onClearChatPeer?: () => void;
   onProfileUpdate?: (u: any) => void;
   wsConnected?: boolean;
@@ -41,7 +57,8 @@ interface DashboardLayoutProps {
   onEditMessage?: (messageId: string, roomId: string, content: string) => void;
   onDeleteMessage?: (messageId: string, roomId: string) => void;
   onPinMessage?: (messageId: string, roomId: string, pin: boolean) => void;
-  onMarkAsRead?: (messageId: string, roomId: string) => void;
+  onRetryMessage?: (clientMsgId: string) => void;
+  onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => void;
   onMarkAllAsRead?: (roomId: string) => void;
 }
 
@@ -68,29 +85,19 @@ export default function DashboardLayout({
   onEditMessage,
   onDeleteMessage,
   onPinMessage,
+  onRetryMessage,
   onMarkAsRead,
   onMarkAllAsRead
 }: DashboardLayoutProps) {
-  const { isMobile: _isMobile, isTablet, isDesktop } = useResponsiveLayout();
-  const isMobile = _isMobile || isTablet;
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  const isMobile = true;
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(!isTablet);
-  const toggleSidebarExpand = () => setIsSidebarExpanded(prev => !prev);
-
-  useEffect(() => {
-    if (isTablet) {
-      setIsSidebarExpanded(false);
-    } else if (isDesktop) {
-      setIsSidebarExpanded(true);
-    }
-  }, [isTablet, isDesktop]);
   
   const [activeLoungeId, setActiveLoungeId] = useState<string>('');
   const [activeLoungeName, setActiveLoungeName] = useState<string>('');
 
   // Dynamic navigation category
   const [activeCategory, setActiveCategory] = useState<string>('direct');
+  const [pendingForwardContent, setPendingForwardContent] = useState<string | null>(null);
   
   // Handshake & peer networks
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
@@ -98,53 +105,89 @@ export default function DashboardLayout({
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [profileCardUser, setProfileCardUser] = useState<any | null>(null);
+  const clearRoomMessages = useChatStore((s) => s.clearRoomMessages);
+  const setLastMessages = useChatStore((s) => s.setLastMessages);
+  const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
+
+  // Runs even when ChatArea is unmounted (DM list / other tabs)
+  useDisappearingMessages(user?.userId ?? null);
+
+  useEffect(() => {
+    if (!user?.userId) return;
+    void import('../utils/localCacheMaintenance').then(({ scheduleLocalCacheMaintenance }) => {
+      scheduleLocalCacheMaintenance(user.userId);
+    });
+  }, [user?.userId]);
 
   const handleLoadProfileCard = async (profUser: any) => {
     try {
+      const targetUserId = profUser?.userId || profUser?.id || profUser?.user_id;
       const sId = fetchSessionId();
-      const res = await fetch(`/v2/user/${profUser.userId}/profile`, {
+      const res = await fetch(`/v2/user/${targetUserId}/profile`, {
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
         const data = await res.json();
+        setPeerMutedLocal(
+          Number(targetUserId),
+          !!data.isMuted,
+          data.mutedUntil || null,
+          data.muteDuration || null
+        );
         setProfileCardUser({
           ...profUser,
+          userId: targetUserId,
+          id: targetUserId,
+          avatarUrl: data.avatarUrl || data.avatar || profUser.avatarUrl || profUser.avatar || '',
           displayName: data.displayName || profUser.displayName || profUser.username,
+          nickname: data.nickname || '',
           bio: data.bio || '',
           location: data.location || '',
           status: data.status || 'Active',
           isMuted: !!data.isMuted,
+          mutedUntil: data.mutedUntil || null,
+          muteDuration: data.muteDuration || null,
           isBlocked: !!data.isBlocked,
           joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '',
           stats: data.stats || { loungesCount: 0, connectionsCount: 0 }
         });
       } else {
-        setProfileCardUser(profUser);
+        setProfileCardUser({
+          ...profUser,
+          userId: targetUserId,
+          id: targetUserId,
+          avatarUrl: profUser.avatarUrl || profUser.avatar || ''
+        });
       }
     } catch (e) {
-      setProfileCardUser(profUser);
+      const targetUserId = profUser?.userId || profUser?.id || profUser?.user_id;
+      setProfileCardUser({
+        ...profUser,
+        userId: targetUserId,
+        id: targetUserId,
+        avatarUrl: profUser?.avatarUrl || profUser?.avatar || ''
+      });
     }
   };
 
-  // Notes persistence
-  const [savedNotes, setSavedNotes] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(`velum-notes-${user?.userId || 0}`);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Notes persistence via user-isolated KV store
+  const [savedNotes, setSavedNotes] = useState<string[]>([]);
   const [newSavedNoteText, setNewSavedNoteText] = useState('');
   const [loungeRoomId, setLoungeRoomId] = useState<string>('');
 
   useEffect(() => {
-    // Left empty since we default to direct workspace now
-  }, [user]);
+    if (user?.userId) {
+      getLocalKV<string[]>('saved_notes', user.userId).then((notes) => {
+        if (notes && Array.isArray(notes)) {
+          setSavedNotes(notes);
+        }
+      }).catch(() => {});
+    }
+  }, [user?.userId]);
 
   useEffect(() => {
-    if (user?.userId) {
-      localStorage.setItem(`velum-notes-${user.userId}`, JSON.stringify(savedNotes));
+    if (user?.userId && savedNotes.length > 0) {
+      setLocalKV('saved_notes', savedNotes, user.userId).catch(() => {});
     }
   }, [savedNotes, user?.userId]);
 
@@ -169,42 +212,114 @@ export default function DashboardLayout({
         'Authorization': `Bearer ${sId}`,
         'Content-Type': 'application/json'
       };
-      const [reqRes, relRes, usersRes] = await Promise.allSettled([
-        fetch('/v2/friends/requests', { headers }),
-        fetch('/v2/friends/relationships', { headers }),
-        fetch('/v2/user', { headers })
-      ]);
-      if (reqRes.status === 'fulfilled' && reqRes.value.ok) {
-        const reqData = await reqRes.value.json();
-        setFriendRequests(reqData.requests || reqData || []);
+          const [reqRes, relRes] = await Promise.allSettled([
+      fetch('/v2/friends/requests', { headers }),
+      fetch('/v2/friends/relationships', { headers }),
+    ]);
+
+    if (reqRes.status === 'fulfilled' && reqRes.value.ok) {
+      const reqData = await reqRes.value.json();
+      setFriendRequests(reqData.requests || reqData || []);
+    }
+
+    if (relRes.status === 'fulfilled' && relRes.value.ok) {
+      const relData = await relRes.value.json();
+      const rels = relData.relationships || relData || [];
+      setFriendRelationships(rels);
+      const peerIds = (Array.isArray(rels) ? rels : [])
+        .map((r: any) => Number(r.friendId ?? r.userId ?? r.user_id ?? r.id))
+        .filter((id: number) => Number.isFinite(id) && id > 0);
+      if (peerIds.length > 0) {
+        void import('../services/statelessE2eeService').then(({ statelessE2eeService }) => {
+          if (user?.userId) statelessE2eeService.setLocalUserId(user.userId);
+          void statelessE2eeService.prefetchPeerPublicKeys(peerIds);
+        });
       }
-      if (relRes.status === 'fulfilled' && relRes.value.ok) {
-        const relData = await relRes.value.json();
-        setFriendRelationships(relData);
-      }
-      if (usersRes.status === 'fulfilled' && usersRes.value.ok) {
-        const usersData = await usersRes.value.json();
-        const normalized = usersData.map((u: any) => ({
-          ...u,
-          user_id: u.userId !== undefined ? u.userId : u.user_id,
-          userId: u.userId !== undefined ? u.userId : u.user_id
-        }));
-        setRegisteredUsers(normalized);
-      }
+    }
+
     } catch (err) {
       console.warn('Sync issue in relationship fetching:', err);
     }
   };
 
   useEffect(() => {
-    if (user?.userId) {
-      doubleRatchetService.setLocalUserId(Number(user.userId));
-      doubleRatchetService.initializeLocalKeys().catch(console.error);
+    if (!user?.userId) return;
+    statelessE2eeService.setLocalUserId(Number(user.userId));
+    loadPeopleAndRequests();
+    const ms = wsConnected ? 30000 : 8000;
+    const interval = setInterval(loadPeopleAndRequests, ms);
+    return () => clearInterval(interval);
+  }, [user?.userId, wsConnected]);
+
+  useEffect(() => {
+    const onNicknameUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const targetUserId = Number(detail.targetUserId);
+      if (!Number.isFinite(targetUserId)) return;
+      const nickname = typeof detail.nickname === 'string' ? detail.nickname : '';
+      setFriendRelationships((prev) =>
+        (Array.isArray(prev) ? prev : []).map((r: any) => {
+          const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
+          if (friendId !== targetUserId) return r;
+          return { ...r, nickname };
+        })
+      );
+    };
+    window.addEventListener('velum-nickname-updated', onNicknameUpdated);
+    return () => window.removeEventListener('velum-nickname-updated', onNicknameUpdated);
+  }, []);
+
+  // Silent background revalidation on visibility change, online event, and socket reconnection
+  useEffect(() => {
+    if (!user?.userId) return;
+
+    const handleSilentRevalidate = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        loadPeopleAndRequests();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleSilentRevalidate);
+    window.addEventListener('online', handleSilentRevalidate);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSilentRevalidate);
+      window.removeEventListener('online', handleSilentRevalidate);
+    };
+  }, [user?.userId]);
+
+  useEffect(() => {
+    if (wsConnected && user?.userId) {
       loadPeopleAndRequests();
-      const interval = setInterval(loadPeopleAndRequests, 12000);
-      return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [wsConnected, user?.userId]);
+
+  useEffect(() => {
+    if (!user?.userId) return;
+
+    const handleSocialUpdate = () => {
+      loadPeopleAndRequests();
+    };
+
+    window.addEventListener('velum-social-update', handleSocialUpdate);
+    window.addEventListener('velum-profile-update', handleSocialUpdate);
+
+    return () => {
+      window.removeEventListener('velum-social-update', handleSocialUpdate);
+      window.removeEventListener('velum-profile-update', handleSocialUpdate);
+    };
+  }, [user?.userId]);
+
+  useEffect(() => {
+    const handleOpenCategory = (e: any) => {
+      const cat = e.detail?.category;
+      if (cat) {
+        setActiveCategory(cat);
+      }
+    };
+    window.addEventListener('velum-open-category', handleOpenCategory);
+    return () => window.removeEventListener('velum-open-category', handleOpenCategory);
+  }, []);
 
   const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
 
@@ -225,11 +340,12 @@ export default function DashboardLayout({
       if (res.ok) {
         loadPeopleAndRequests();
         const msg = action === 'accepted' ? 'Request accepted.' : 'Request declined.';
+        velumToast.success(msg);
       } else {
         const err = await res.json();
         // Ignore "already accepted" duplicate errors silently
         if (!err.error?.includes('already')) {
-          window.alert(err.error || 'Response error');
+          velumToast.error(err.error || 'Response error');
         }
       }
     } catch (err) {
@@ -256,10 +372,10 @@ export default function DashboardLayout({
       });
       if (res.ok) {
         loadPeopleAndRequests();
-        window.alert('Friend request sent.');
+        velumToast.success('Friend request sent.');
       } else {
         const err = await res.json();
-        window.alert(err.error || 'Failed to send request.');
+        velumToast.error(err.error || 'Failed to send request.');
       }
     } catch (err) {
       console.error('Failed to send request:', err);
@@ -268,41 +384,58 @@ export default function DashboardLayout({
 
   const stripAt = (username: string) => username ? username.replace('@', '') : '';
 
-  useEffect(() => {
-    if (!isMobile) setSidebarOpen(false);
-  }, [isMobile]);
-
-  const closeSidebar = () => setSidebarOpen(false);
-  const toggleSidebar = () => setSidebarOpen(s => !s);
-
-
   const computedUnreadCounts = React.useMemo(() => {
     return { ...(externalUnreadCounts || {}) };
   }, [externalUnreadCounts]);
 
-  // Compute last message preview per room (DMs and lounges)
+  // Compute last message preview per room (DMs and lounges) — newer wins
   const computedLastMessages = React.useMemo(() => {
-    const map: Record<string, any> = { ...(externalLastMessages || {}) };
-    const msgs = (messages || []).slice();
-    // sort by timestamp/created_at if present
-    msgs.sort((a: any, b: any) => {
-      const ta = a.timestamp || a.created_at || 0;
-      const tb = b.timestamp || b.created_at || 0;
-      return (ta > tb) ? -1 : (ta < tb ? 1 : 0);
-    });
-    msgs.forEach((m: any) => {
-      const rId = m.room_id || m.lounge_id;
-      if (!rId) return;
-      if (!map[rId]) {
-        map[rId] = m;
+    return mergeLastMessagesMap(externalLastMessages, messages);
+  }, [messages, externalLastMessages]);
+
+  const totalDmUnread = React.useMemo(() => {
+    let sum = 0;
+    const countedPeers = new Set<number>();
+    const myUid = Number(user?.userId);
+    if (!Number.isFinite(myUid)) return 0;
+
+    countedPeers.add(999);
+    sum += Math.max(0, Number(computedUnreadCounts[`dm_velum_${myUid}`]) || 0);
+
+    const rels = Array.isArray(friendRelationships) ? friendRelationships : ((friendRelationships as any)?.relationships || []);
+    rels.forEach((r: any) => {
+      const fid = Number(r.friendId || r.id || r.userId);
+      if (!Number.isFinite(fid) || countedPeers.has(fid)) return;
+      countedPeers.add(fid);
+      const peerKey = `dm_${fid}`;
+      const canonical = `dm_${Math.min(myUid, fid)}_${Math.max(myUid, fid)}`;
+      if (typeof computedUnreadCounts[peerKey] === 'number') {
+        sum += Math.max(0, computedUnreadCounts[peerKey]);
+      } else if (typeof computedUnreadCounts[canonical] === 'number') {
+        sum += Math.max(0, computedUnreadCounts[canonical]);
+      } else if (typeof r.unread_count === 'number') {
+        sum += Math.max(0, r.unread_count);
       }
     });
-    return map;
-  }, [messages, externalLastMessages]);
+
+    return sum;
+  }, [computedUnreadCounts, friendRelationships, user?.userId]);
+
+  const totalLoungeUnread = React.useMemo(() => {
+    let sum = 0;
+    Object.entries(computedUnreadCounts || {}).forEach(([key, val]) => {
+      if (!key.startsWith('dm_')) sum += Math.max(0, Number(val) || 0);
+    });
+    return sum;
+  }, [computedUnreadCounts]);
+
+  const pendingRequestsCount = React.useMemo(() => {
+    return (friendRequests || []).filter(r => r.status === 'pending' && (Number(r.receiver_id) === Number(user?.userId) || !r.receiver_id)).length;
+  }, [friendRequests, user?.userId]);
 
   try {
     return (
-      <div className="flex flex-col md:flex-row w-full h-full bg-velum-900 text-text-primary overflow-hidden relative font-sans">
+      <div className="flex flex-col w-full h-[var(--viewport-height,100dvh)] pt-[env(safe-area-inset-top,0px)] bg-velum-850 text-text-primary overflow-hidden relative font-sans">
         <SettingsDrawer
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
@@ -314,154 +447,15 @@ export default function DashboardLayout({
           onProfileUpdate={onProfileUpdate}
         />
 
-
-
-        {/* Mobile Slide-Over Off-Canvas Drawer */}
-        {isMobile && sidebarOpen && (
-          <div className="fixed inset-0 z-50 flex">
-            <div 
-              className="fixed inset-0 modal-backdrop transition-opacity"
-              onClick={closeSidebar}
-            />
-            <div className="relative z-10 w-64 max-w-[80vw] h-full bg-velum-850 border-r border-white-5 shadow-2xl flex flex-col overflow-x-hidden animate-in slide-in-from-left duration-200">
-              <UserSidebar
-                friendRequests={friendRequests}
-                currentUserId={user?.userId || 0}
-                currentUsername={user?.username || 'Guest'}
-                currentUserRole={user?.role || 'USER'}
-                activeRoomId={activeRoomId}
-                onRoomSelect={(rid) => { 
-                  onRoomSelect(rid); 
-                  if (rid) {
-                    setActiveCategory('rooms');
-                    if (onClearChatPeer) onClearChatPeer();
-                  }
-                  closeSidebar();
-                }}
-                onLogout={onLogout}
-                onSectionView={() => {}}
-                activeView="chat"
-                activeChatPeer={activeChatPeer || null}
-                onSelectPeer={(p) => { 
-                  onSelectPeer?.(p); 
-                  if (p) {
-                    setActiveCategory('direct');
-                  }
-                  closeSidebar();
-                }}
-                onClearChatPeer={onClearChatPeer}
-                onProfileUpdate={onProfileUpdate}
-                isDark={isDark}
-                onToggleTheme={() => setIsDark(!isDark)}
-                wsConnected={!!wsConnected}
-                messages={messages || []}
-                onSendMessage={onSendMessage}
-                onSendTyping={onSendTyping}
-                isMobile={true}
-                activePanel={activeCategory === 'rooms' || activeCategory === 'direct' ? 'workspace' : 'directory'}
-                onPanelChange={() => {}}
-                activeCategory={activeCategory as any}
-                onCategoryChange={(cat) => {
-                  setActiveCategory(cat);
-                  if (cat !== 'rooms' && cat !== 'direct') {
-                    onRoomSelect('');
-                    if (onClearChatPeer) onClearChatPeer();
-                  }
-                  closeSidebar();
-                }}
-                onOpenSettings={() => {
-                  setIsSettingsOpen(true);
-                  closeSidebar();
-                }}
-                onCloseSidebar={closeSidebar}
-                isSidebarExpanded={true}
-                onToggleExpand={closeSidebar}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Desktop / Tablet Navigation Sidebar */}
-        {!isMobile && (
-          <aside className={`h-full flex flex-col transition-all duration-300 z-30 bg-velum-850 border-r border-white-5 relative shrink-0 overflow-x-hidden ${
-            isSidebarExpanded ? 'w-60 min-w-[240px]' : 'w-14 min-w-[56px]'
-          }`}>
-            <UserSidebar
-              friendRequests={friendRequests}
-              currentUserId={user?.userId || 0}
-              currentUsername={user?.username || 'Guest'}
-              currentUserRole={user?.role || 'USER'}
-              activeRoomId={activeRoomId}
-              onRoomSelect={(rid) => { 
-                onRoomSelect(rid); 
-                if (rid) {
-                  setActiveCategory('rooms');
-                  if (onClearChatPeer) onClearChatPeer();
-                }
-                closeSidebar();
-              }}
-              onLogout={onLogout}
-              onSectionView={() => {}}
-              activeView="chat"
-              activeChatPeer={activeChatPeer || null}
-              onSelectPeer={(p) => { 
-                onSelectPeer?.(p); 
-                if (p) {
-                  setActiveCategory('direct');
-                }
-                closeSidebar();
-              }}
-              onClearChatPeer={onClearChatPeer}
-              onProfileUpdate={onProfileUpdate}
-              isDark={isDark}
-              onToggleTheme={() => setIsDark(!isDark)}
-              wsConnected={!!wsConnected}
-              messages={messages || []}
-              onSendMessage={onSendMessage}
-              onSendTyping={onSendTyping}
-              isMobile={false}
-              activePanel={activeCategory === 'rooms' || activeCategory === 'direct' ? 'workspace' : 'directory'}
-              onPanelChange={() => {}}
-              activeCategory={activeCategory as any}
-              onCategoryChange={(cat) => {
-                setActiveCategory(cat);
-                if (cat !== 'rooms' && cat !== 'direct') {
-                  onRoomSelect('');
-                  if (onClearChatPeer) onClearChatPeer();
-                }
-                closeSidebar();
-              }}
-              onOpenSettings={() => {
-                setIsSettingsOpen(true);
-                closeSidebar();
-              }}
-              onCloseSidebar={closeSidebar}
-              isSidebarExpanded={isSidebarExpanded}
-              onToggleExpand={toggleSidebarExpand}
-            />
-          </aside>
-        )}
-
-        <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden glass-panel border-y-0 border-r-0 rounded-none">
+        <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden bg-velum-850 border-none rounded-none text-text-primary">
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">
-
-              <WalletMainDashboard
-                currentUserId={user ? user.userId : 0}
-                isDark={isDark}
-                onToggleSidebar={toggleSidebar}
-              />
+              <UnderDevelopment title="Wallet" />
             </div>
           ) : activeCategory === 'market' ? (
             <div className="flex-1 overflow-y-auto relative flex flex-col">
-
-              <MarketMainDashboard
-                currentUserId={user?.userId || 0}
-                currentUserRole={user?.role || 'USER'}
-                isDark={isDark}
-                onToggleSidebar={toggleSidebar}
-              />
+              <UnderDevelopment title="Market" />
             </div>
           ) : activeCategory === 'tickets' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">
@@ -469,7 +463,6 @@ export default function DashboardLayout({
               <TicketsMainDashboard
                 currentUserId={user?.userId || 0}
                 isDark={isDark}
-                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'saved' ? (
@@ -482,7 +475,7 @@ export default function DashboardLayout({
                 isDark={isDark}
                 onSaveNote={handleSaveNote}
                 onDeleteNote={handleDeleteNote}
-                onToggleSidebar={toggleSidebar}
+                onBack={() => setActiveCategory('direct')}
               />
             </div>
           ) : activeCategory === 'people' ? (
@@ -490,7 +483,6 @@ export default function DashboardLayout({
 
               <PeopleMainDashboard
                 friendRequests={friendRequests}
-                registeredUsers={registeredUsers}
                 currentUserId={user?.userId || 0}
                 isDark={isDark}
                 userSearchTerm={userSearchTerm}
@@ -498,7 +490,17 @@ export default function DashboardLayout({
                 handleRespondFriendRequest={handleRespondFriendRequest}
                 handleSendFriendRequest={handleSendFriendRequest}
                 loadAndShowProfileCard={handleLoadProfileCard}
+                forwardMode={Boolean(pendingForwardContent)}
+                onCancelForward={() => setPendingForwardContent(null)}
                 onSelectPeer={(peer) => {
+                  if (pendingForwardContent) {
+                    const uid = user?.userId || 0;
+                    const dest = getPrimaryDmRoomId(peer.userId, uid);
+                    const isEnc = peer.userId !== 999;
+                    onSendMessage(pendingForwardContent, null, isEnc, dest);
+                    setPendingForwardContent(null);
+                    velumToast.success(`Forwarded to ${stripAt(peer.username)}`);
+                  }
                   if (onSelectPeer) onSelectPeer(peer);
                   setActiveCategory('direct');
                 }}
@@ -507,12 +509,6 @@ export default function DashboardLayout({
                     setActiveCategory('direct');
                   }
                 }}
-                getCountryOnly={(loc) => {
-                  if (!loc) return 'Poland';
-                  const parts = loc.split(',');
-                  return parts[parts.length - 1].trim();
-                }}
-                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'notifications' ? (
@@ -523,7 +519,6 @@ export default function DashboardLayout({
                 currentUserId={user?.userId || 0}
                 isDark={isDark}
                 handleRespondFriendRequest={handleRespondFriendRequest}
-                onToggleSidebar={toggleSidebar}
               />
             </div>
           ) : activeCategory === 'rooms' ? (
@@ -563,7 +558,14 @@ export default function DashboardLayout({
                   onPinMessage={onPinMessage}
                   onMarkAsRead={onMarkAsRead}
                   onMarkAllAsRead={onMarkAllAsRead}
-                  onToggleSidebar={toggleSidebar}
+                  onRequestForward={(content) => {
+                    setPendingForwardContent(content);
+                    onRoomSelect('');
+                    if (onClearChatPeer) onClearChatPeer();
+                    setActiveLoungeId('');
+                    setActiveLoungeName('');
+                    setActiveCategory('people');
+                  }}
                 />
               ) : (
                 <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col">
@@ -577,7 +579,6 @@ export default function DashboardLayout({
                     }}
                     unreadCounts={(computedUnreadCounts as any) || {}}
                     lastMessages={(computedLastMessages as any) || {}}
-                    onToggleSidebar={toggleSidebar}
                   />
                 </div>
               )}
@@ -598,11 +599,19 @@ export default function DashboardLayout({
                 lastMessages={(computedLastMessages as any) || {}}
                 loadAndShowProfileCard={handleLoadProfileCard}
                 getCountryOnly={(loc) => {
-                  if (!loc) return 'Poland';
+                  if (!loc) return '';
                   const parts = loc.split(',');
                   return parts[parts.length - 1].trim();
                 }}
-                onToggleSidebar={toggleSidebar}
+                onOpenContacts={() => {
+                  setActiveCategory('people');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+                onOpenWallet={() => setActiveCategory('wallet')}
+                onOpenSaved={() => setActiveCategory('saved')}
+                onLogout={onLogout}
               />
             </div>
           ) : (
@@ -622,12 +631,13 @@ export default function DashboardLayout({
               onEditMessage={onEditMessage}
               onDeleteMessage={onDeleteMessage}
               onPinMessage={onPinMessage}
+              onRetryMessage={onRetryMessage}
               onMarkAsRead={onMarkAsRead}
               onMarkAllAsRead={onMarkAllAsRead}
               isDark={isDark}
               activeChatPeer={activeChatPeer}
-              onToggleSidebar={toggleSidebar}
               isMobile={isMobile}
+              onSelectProfileUser={handleLoadProfileCard}
               onBackToDeck={() => {
                 const wasRoom = activeRoomId && !activeRoomId.startsWith('dm_');
                 onRoomSelect('');
@@ -638,6 +648,12 @@ export default function DashboardLayout({
                   setActiveCategory('direct');
                 }
               }}
+              onRequestForward={(content) => {
+                setPendingForwardContent(content);
+                onRoomSelect('');
+                if (onClearChatPeer) onClearChatPeer();
+                setActiveCategory('people');
+              }}
             />
           )}
 
@@ -645,48 +661,75 @@ export default function DashboardLayout({
 
           {profileCardUser && (
             <ProfileCard
-                      user={{
-          userId: profileCardUser.userId,
-          username: profileCardUser.username || '',
-          displayName: profileCardUser.displayName || profileCardUser.username || '',
-          avatarUrl: profileCardUser.avatar,
-          bio: profileCardUser.bio || '',
-          location: profileCardUser.location || '',
-          joinedDate: profileCardUser.created_at 
-            ? new Date(profileCardUser.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) 
-            : 'Recently',
-          status: profileCardUser.status || 'Offline',
-          isMuted: !!profileCardUser.isMuted,
-          isBlocked: !!profileCardUser.isBlocked,
-          stats: {
-            loungesCount: profileCardUser.loungesCount ?? 0,
-            connectionsCount: profileCardUser.connectionsCount ?? 0,
-          },
-        }}
+              user={toUserProfileData({
+                ...profileCardUser,
+                status: profileCardUser.status,
+                joinedDate:
+                  profileCardUser.joinedDate ||
+                  (profileCardUser.created_at
+                    ? new Date(profileCardUser.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        year: 'numeric',
+                      })
+                    : 'Recently'),
+              })}
               variant={isMobile ? 'mobile' : 'expanded'}
+              currentUserId={Number(user?.userId || user?.id || 0) || undefined}
               onClose={() => setProfileCardUser(null)}
               onMessage={() => {
-                if (onSelectPeer) onSelectPeer({ userId: profileCardUser.userId, username: profileCardUser.username, avatar: profileCardUser.avatar });
+                const targetUid = profileCardUser.userId || profileCardUser.id || profileCardUser.user_id;
+                if (onSelectPeer && targetUid) {
+                  onSelectPeer({ userId: targetUid, username: profileCardUser.username, avatar: profileCardUser.avatar || profileCardUser.avatarUrl });
+                }
                 setActiveCategory('direct');
                 setProfileCardUser(null);
               }}
-              onMute={async () => {
+              onMute={async (duration?: '24h' | '72h' | '30d' | 'off') => {
+                const peerId = Number(profileCardUser.userId);
+                const dur = duration || '24h';
+                const muted = dur !== 'off';
+                // Optimistic — enforce notify suppress immediately
+                setPeerMutedLocal(peerId, muted, null, muted ? dur : null);
+                setProfileCardUser((prev: any) =>
+                  prev
+                    ? {
+                        ...prev,
+                        isMuted: muted,
+                        mutedUntil: null,
+                        muteDuration: muted ? dur : null,
+                      }
+                    : null
+                );
                 try {
                   const sId = fetchSessionId();
                   const res = await fetch(`/v2/user/${profileCardUser.userId}/mute`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sId}` }
+                    headers: {
+                      Authorization: `Bearer ${sId}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ duration: dur }),
                   });
                   if (res.ok) {
-                    const willBeMuted = !profileCardUser.isMuted;
-                    setProfileCardUser({...profileCardUser, isMuted: willBeMuted});
-                    if (willBeMuted) {
-                      alert(`Muted ${profileCardUser.username}. They can no longer disturb you.`);
-                    } else {
-                      alert(`Unmuted ${profileCardUser.username}.`);
-                    }
+                    const data = await res.json();
+                    setPeerMutedLocal(
+                      peerId,
+                      !!data.isMuted,
+                      data.mutedUntil || null,
+                      data.duration || dur
+                    );
+                    setProfileCardUser((prev: any) =>
+                      prev
+                        ? {
+                            ...prev,
+                            isMuted: data.isMuted,
+                            mutedUntil: data.mutedUntil || null,
+                            muteDuration: data.duration || null,
+                          }
+                        : null
+                    );
                   }
-                } catch(e) {}
+                } catch (e) {}
               }}
               onBlock={async () => {
                 try {
@@ -696,54 +739,172 @@ export default function DashboardLayout({
                     headers: { 'Authorization': `Bearer ${sId}` }
                   });
                   if (res.ok) {
-                    const willBeBlocked = !profileCardUser.isBlocked;
-                    setProfileCardUser({...profileCardUser, isBlocked: willBeBlocked});
-                    if (willBeBlocked) {
-                      alert(`Blocked ${profileCardUser.username}. User Blocked!`);
-                      if (onRoomSelect) onRoomSelect('');
-                      if (onClearChatPeer) onClearChatPeer();
-                      setActiveCategory('direct');
-                    } else {
-                      alert(`Unblocked ${profileCardUser.username}.`);
-                    }
+                    const data = await res.json();
+                    setProfileCardUser((prev: any) => prev ? { ...prev, isBlocked: data.isBlocked } : null);
+                    // Keep chat mounted so Unblock remains available on the profile card
                   }
                 } catch(e) {}
               }}
               onDeleteChat={async () => {
+                const targetId = profileCardUser.userId;
+                const aliases =
+                  targetId === 999
+                    ? getDmRoomAliases(999, user.userId)
+                    : getDmRoomAliases(targetId, user.userId);
+
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch(`/v2/user/${profileCardUser.userId}/chat`, {
+                  await fetch(`/v2/user/${targetId}/chat`, {
                     method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${sId}` }
+                    headers: { Authorization: `Bearer ${sId}` },
                   });
-                  if (res.ok) {
-                    alert(`Chat with ${profileCardUser.username} Deleted!`);
-                    if (onRoomSelect) onRoomSelect('');
-                    if (onClearChatPeer) onClearChatPeer();
-                    setActiveCategory('direct');
+
+                  await purgeDmMessages(targetId, user.userId);
+                  for (const alias of aliases) {
+                    await flushLoungeCache(alias, user.userId);
+                    clearRoomMessages(alias);
                   }
-                } catch(e) {}
+
+                  setLastMessages((prev) => {
+                    const next = { ...prev };
+                    for (const alias of aliases) delete next[alias];
+                    return next;
+                  });
+                  setUnreadCounts((prev) => {
+                    const next = { ...prev };
+                    for (const alias of aliases) next[alias] = 0;
+                    return next;
+                  });
+
+                  window.dispatchEvent(
+                    new CustomEvent('velum-dm-cleared', {
+                      detail: { peerId: targetId, aliases },
+                    })
+                  );
+                } catch (e) {}
                 setProfileCardUser(null);
               }}
-              onReport={async () => {
-                const reason = prompt(`Reason for reporting ${profileCardUser.username}:`);
+              onReport={async (reason?: string, attachments?: string[]) => {
                 if (!reason || !reason.trim()) return;
                 try {
                   const sId = fetchSessionId();
-                  const res = await fetch('/v2/user/report', {
+                  await fetch('/v2/user/report', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ targetUserId: profileCardUser.userId, reason: reason.trim() })
+                    headers: { Authorization: `Bearer ${sId}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      targetUserId: profileCardUser.userId,
+                      reason: reason.trim(),
+                      attachments: attachments || [],
+                    }),
                   });
-                  if (res.ok) alert(`Report submitted for ${profileCardUser.username}.`);
-                } catch(e) {
-                  alert("Failed to report user.");
-                }
-                setProfileCardUser(null);
+                } catch (e) {}
               }}
             />
           )}
           </PullToRefresh>
+
+          {/* Mobile Bottom Navigation Bar */}
+          {!activeRoomId && !activeChatPeer && (
+            <nav className="h-14 shrink-0 bg-velum-850 border-t border-white-5 flex items-center justify-around px-2 z-30 pb-[env(safe-area-inset-bottom,0px)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('direct');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }}
+                className={`flex-1 flex flex-col items-center justify-center py-1 relative transition cursor-pointer ${
+                  activeCategory === 'direct' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <div className="relative">
+                  <MessageSquare className="w-6 h-6" />
+                  {totalDmUnread > 0 && (
+                    <span className="absolute -top-1 -right-2 bg-accent text-velum-900 text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                      {totalDmUnread > 99 ? '99+' : totalDmUnread}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium mt-0.5">Chats</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('people');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }}
+                className={`flex-1 flex flex-col items-center justify-center py-1 relative transition cursor-pointer ${
+                  activeCategory === 'people' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <div className="relative">
+                  <Users className="w-6 h-6" />
+                  {pendingRequestsCount > 0 && (
+                    <span className="absolute -top-1 -right-2 bg-accent text-velum-900 text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                      {pendingRequestsCount}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium mt-0.5">Contacts</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('rooms');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }}
+                className={`flex-1 flex flex-col items-center justify-center py-1 relative transition cursor-pointer ${
+                  activeCategory === 'rooms' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <div className="relative">
+                  <Globe className="w-6 h-6" />
+                  {totalLoungeUnread > 0 && (
+                    <span className="absolute -top-1 -right-2 bg-accent text-velum-900 text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                      {totalLoungeUnread > 99 ? '99+' : totalLoungeUnread}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium mt-0.5">Lounges</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('market');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }}
+                className={`flex-1 flex flex-col items-center justify-center py-1 relative transition cursor-pointer ${
+                  activeCategory === 'market' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <ShoppingBag className="w-6 h-6" />
+                <span className="text-[10px] font-medium mt-0.5">Market</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('notifications');
+                  onRoomSelect('');
+                  if (onClearChatPeer) onClearChatPeer();
+                }}
+                className={`flex-1 flex flex-col items-center justify-center py-1 relative transition cursor-pointer ${
+                  activeCategory === 'notifications' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <div className="relative">
+                  <Bell className="w-6 h-6" />
+                </div>
+                <span className="text-[10px] font-medium mt-0.5">Alerts</span>
+              </button>
+            </nav>
+          )}
         </main>
       </div>
     );

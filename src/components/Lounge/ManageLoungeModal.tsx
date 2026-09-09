@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, X, Upload, Loader2 } from 'lucide-react';
+import { Settings, X, Upload,Trash2, Loader2,Check,Copy } from 'lucide-react';
 import { captureAndCompressPhoto, streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
 import { ImageCropperModal } from '../ImageCropperModal';
 
@@ -74,6 +74,8 @@ export default function ManageLoungeModal({
   const [uploadError, setUploadError] = useState('');
   const [loungeIconFile, setLoungeIconFile] = useState<Blob | null>(null);
   const [croppingIcon, setCroppingIcon] = useState<{ src: string; fileName: string } | null>(null);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
+  
 
   const handleIconFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError('');
@@ -145,15 +147,7 @@ export default function ManageLoungeModal({
           {manageTab === 'settings' && (
             <div className="space-y-5 animate-fade-in">
               {/* Header Badge */}
-              <div className="flex justify-between items-center pb-2 border-b border-white-5">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-accent font-mono">
-                  Lounge Settings
-                </span>
-                <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded bg-white-5 text-text-secondary">
-                  Live Sync Mode
-                </span>
-              </div>
-
+                
               {/* Status Notifications */}
               {settingsError && (
                 <div className="text-alert-error text-[10.5px] font-mono bg-alert-error-bg p-3 rounded-xl uppercase tracking-wide flex items-center gap-2 border border-alert-error/20">
@@ -210,7 +204,7 @@ export default function ManageLoungeModal({
                     
                     <div className="mb-1">
                       <h4 className="text-lg font-bold text-text-primary leading-none tracking-widest uppercase">{editName || loungeName || 'Unnamed Lounge'}</h4>
-                      <p className="text-xs font-mono text-accent mt-1">Workspace Configuration</p>
+                     
                     </div>
                   </div>
                 </div>
@@ -227,7 +221,7 @@ export default function ManageLoungeModal({
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     className="w-full p-3 rounded-xl border text-xs outline-none transition font-mono bg-velum-900 border-white-10 text-text-primary focus:border-accent/60 shadow-inner"
-                    placeholder="e.g. general-lounge"
+                    placeholder=""
                   />
                 </div>
 
@@ -238,8 +232,8 @@ export default function ManageLoungeModal({
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full p-3 rounded-xl border text-xs outline-none resize-none h-24 transition font-mono bg-velum-900 border-white-10 text-text-primary focus:border-accent/60 shadow-inner"
-                    placeholder="Describe lounge topic or community rules..."
+                    className="w-full p-3 rounded-xl border text-xs outline-none resize-none h-24 transition font-Ariel bg-velum-900 border-white-10 text-text-primary focus:border-accent/60 shadow-inner"
+                   
                   />
                 </div>
 
@@ -273,7 +267,7 @@ export default function ManageLoungeModal({
                       await onSaveSettings(loungeIconFile);
                       setLoungeIconFile(null);
                     } catch (err: any) {
-                      setUploadError(err.message || 'Failed to save configuration.');
+                      setUploadError(err.message || 'Failed to save.');
                     } finally {
                       setIsUploadingIcon(false);
                     }
@@ -281,7 +275,7 @@ export default function ManageLoungeModal({
                   disabled={isUploadingIcon}
                   className="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-velum-950 text-xs font-mono font-bold uppercase tracking-wider rounded-xl cursor-pointer transition shadow-lg active:scale-95"
                 >
-                  {isUploadingIcon ? 'Saving...' : 'Save Configuration'}
+                  {isUploadingIcon ? 'Saving...' : 'Save '}
                 </button>
               </div>
 
@@ -293,10 +287,7 @@ export default function ManageLoungeModal({
                   <div className="p-4 rounded-2xl bg-alert-error/10 border border-alert-error/20 flex items-center justify-between gap-4">
                     <div>
                       <div className="text-xs font-bold text-white">Delete Lounge</div>
-                      <div className="text-[10px] text-text-secondary mt-0.5">
-                        Permanently delete this lounge, all sublounges, and messages. This action cannot be undone.
                       </div>
-                    </div>
                     <button
                       onClick={() => {
                         if (confirm(`Are you sure you want to permanently delete "${loungeName}" and all its sublounges?`)) {
@@ -305,7 +296,7 @@ export default function ManageLoungeModal({
                       }}
                       className="px-4 py-2 bg-alert-error hover:bg-alert-error/90 text-white text-[10px] font-bold uppercase tracking-wider rounded-xl cursor-pointer transition shrink-0"
                     >
-                      Delete Lounge
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -317,7 +308,6 @@ export default function ManageLoungeModal({
           {manageTab === 'members' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">Lounge Members</span>
                 <span className="text-[10px] font-mono text-accent">{members.length} Active Members</span>
               </div>
               
@@ -400,12 +390,10 @@ export default function ManageLoungeModal({
           {/* Tab 2: Join Applications */}
           {manageTab === 'requests' && (
             <div className="space-y-4">
-              <div className="text-[10px] font-bold uppercase tracking-widest opacity-60">Pending Admission Logs</div>
               
               {(!manageRequests || manageRequests.length === 0) ? (
                 <div className={`p-8 rounded-2xl text-center border font-mono text-[10px] uppercase tracking-widest ${isDark ? 'bg-white/[0.01] border-white-5 text-text-secondary' : 'bg-text-primary border-velum-600 text-text-disabled'}`}>
-                  // No active admission requests pending //
-                </div>
+                  </div>
               ) : (
                 <div className="space-y-2">
                   {(manageRequests || []).map((req, index) => (
@@ -451,16 +439,15 @@ export default function ManageLoungeModal({
             <div className="space-y-6">
               {/* Direct Add User */}
               <div className={`p-4 rounded-2xl border ${isDark ? 'bg-white/[0.01] border-white-5' : 'bg-text-primary border-velum-600'}`}>
-                <h4 className="text-[10px] font-bold uppercase tracking-widest mb-3 text-accent">Add Member Directly</h4>
+                <h4 className="text-[10px] font-bold uppercase tracking-widest mb-3 text-accent">Add User</h4>
                 <p className={`text-[10.5px] opacity-75 mb-4 ${isDark ? 'text-text-secondary' : 'text-text-secondary'}`}>
-                  Add a registered user directly to this lounge by typing their username below.
+                  
                 </p>
                 
                 <div className="flex gap-2">
                   <input 
                     type="text"
-                    placeholder="Enter username (e.g. alice)"
-                    value={directAddUsername}
+                     value={directAddUsername}
                     onChange={(e) => setDirectAddUsername(e.target.value)}
                     className={`flex-1 p-2.5 rounded-xl text-xs outline-none border font-mono transition ${
                       isDark 
@@ -472,7 +459,7 @@ export default function ManageLoungeModal({
                     onClick={onDirectAddMember}
                     className="px-4 py-2.5 bg-accent hover:bg-accent/90 text-velum-900 text-xs font-black uppercase tracking-wider rounded-xl transition cursor-pointer shrink-0"
                   >
-                    Add Member
+                    Add 
                   </button>
                 </div>
 
@@ -487,19 +474,20 @@ export default function ManageLoungeModal({
               {/* Lounge Invites */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-accent">Invite Codes Desk</h4>
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-accent">Link</h4>
                   <button
                     onClick={onCreateInviteCode}
                     className="px-3 py-1.5 bg-white-5 hover:bg-white-10 text-white text-[9.5px] font-bold uppercase tracking-widest rounded-lg border border-white-5 transition active:scale-95 cursor-pointer"
                   >
                     Generate Invite Code
+                    
+                    
                   </button>
                 </div>
 
                 {(!manageInvites || manageInvites.length === 0) ? (
                   <div className={`p-6 rounded-2xl text-center border font-mono text-[9.5px] uppercase tracking-widest ${isDark ? 'bg-white/[0.01] border-white-5 text-text-secondary' : 'bg-text-primary border-velum-600 text-text-disabled'}`}>
-                    // No custom invite links generated //
-                  </div>
+                    </div>
                 ) : (
                   <div className="space-y-2">
                     {(manageInvites || []).map((inv, index) => (
@@ -513,6 +501,24 @@ export default function ManageLoungeModal({
                           <span className="text-xs font-bold text-accent tracking-widest select-all">{inv.invite_code}</span>
                           <div className="text-[9px] opacity-65 mt-1 uppercase">
                             Uses: {inv.uses || 0} // Created: {new Date(inv.created_at).toLocaleDateString()}
+
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(inv.invite_code);
+                                setCopiedInviteId(inv.invite_id);
+                                setTimeout(() => setCopiedInviteId(null), 2000);
+                              }}
+                              className="p-1.5 hover:bg-white/10 rounded-lg text-text-secondary hover:text-text-primary transition cursor-pointer"
+                              title="Copy Invite Code"
+                            >
+                              {copiedInviteId === inv.invite_id ? (
+                                <Check size={14} className="text-status-online" />
+                              ) : (
+                                <Copy size={14} />
+                              )}
+                            </button>
+                            
+
                           </div>
                         </div>
                         <button

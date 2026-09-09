@@ -1,6 +1,7 @@
 name: Build Android APK
 
-on: [push, workflow_dispatch]
+on:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -9,11 +10,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: 24
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -24,34 +24,46 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          validate-wrappers: false
-
-      - name: Install and Build Web
-        env:
-          APP_VERSION: '1.0.0'
-          BUILD_NUMBER: ${{ github.run_number }}
-          VITE_BUILD_NUMBER: b${{ github.run_number }}
+      - name: Configure SDK Location
         run: |
-          npm install --legacy-peer-deps
-          npm run build
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Sync Capacitor
+      - name: Install Node Dependencies
+        run: npm install --force
+
+      - name: Build Web Bundle
+        run: npm run build
+
+      - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Build Debug APK
+      - name: Decode Keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/velum-release.keystore
+          fi
+
+      - name: Build APKs with Gradle
         working-directory: ./android
         env:
-          APP_VERSION: '1.0.0'
-          BUILD_NUMBER: ${{ github.run_number }}
+          KEYSTORE_FILE: velum-release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          if [ -f "app/velum-release.keystore" ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: Velum-App
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Velum-APK
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn

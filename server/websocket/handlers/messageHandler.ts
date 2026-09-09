@@ -1,23 +1,29 @@
 import { WebSocket } from 'ws';
+import { randomUUID } from 'crypto';
 import type { ClientConnection } from '../types.js';
 import { connectedClients, roomMembers, broadcastToRoom, broadcastToUserDevices } from '../connectionManager.js';
 import { checkRateLimit } from '../rateLimiter.js';
 import {
   getLoungeIdFromRoomId,
-  getOrCreateDMLounge,
   resetUnread,
   incrementUnread,
-  markAllMessagesRead
+  markAllMessagesRead,
+  getPeerIdFromDmRoom,
+  getDmRoomAliases
 } from '../unreadManager.js';
 import { db, executeWithRetry } from '../../v2/db/client.js';
-import { users, messageReactions } from '../../v2/db/schema/index.js';
+import { users, messageReactions, dms, dmReactions } from '../../v2/db/schema/index.js';
 import { lounges, messages as dbMessages, loungeMembers } from '../../v2/db/schema/lounges.js';
+import { userReadCursors } from '../../v2/db/schema/read_cursors.js';
+import { userChatClears } from '../../v2/db/schema/chat_clears.js';
 import { eq, and, gt, sql } from 'drizzle-orm';
 import { getRedisClient } from '../../v2/db/redis.js';
 import { processReadReceipt } from '../../v2/services/messaging/readReceiptService.js';
 import { processDeliveryReceipt } from '../../v2/services/messaging/deliveryReceiptService.js';
 import { dispatchPushNotification } from '../../v2/services/notifications/pushGateway.js';
 import { typingDebouncer } from '../../v2/services/messaging/typingDebouncer.js';
+import { dmService } from '../../v2/services/dmService.js';
+import { isDmPeerMuted } from '../../v2/utils/dmMute.js';
 import { handleJoinRoom, handleLeaveRoom } from './roomHandler.js';
 
 export async function handleAddReaction(client: ClientConnection, message: any) {
@@ -25,8 +31,105 @@ export async function handleAddReaction(client: ClientConnection, message: any) 
     const messageId = parseInt(message.message_id, 10);
     const emoji = message.emoji;
     const roomId = message.room_id;
-    if (isNaN(messageId) || !emoji || !roomId) return;
-    
+    if (isNaN(messageId) || !emoji || !roomId || !client.userId) return;
+
+    // Resolve target message from dms or dbMessages
+    let dmMsg = null;
+    const isDmRoom = roomId.startsWith('dm_') && !roomId.startsWith('dm_velum_');
+    if (isDmRoom) {
+      [dmMsg] = await executeWithRetry(() =>
+        db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+      );
+    }
+    if (!dmMsg) {
+      [dmMsg] = await executeWithRetry(() =>
+        db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+      );
+    }
+
+    if (dmMsg) {
+      const [existing] = await executeWithRetry(() =>
+        db.select()
+          .from(dmReactions)
+          .where(and(
+            eq(dmReactions.messageId, messageId),
+            eq(dmReactions.userId, client.userId),
+            eq(dmReactions.emoji, emoji)
+          ))
+          .limit(1)
+      );
+
+      if (existing) {
+        await executeWithRetry(() =>
+          db.delete(dmReactions)
+            .where(eq(dmReactions.id, existing.id))
+        );
+      } else {
+        await executeWithRetry(() =>
+          db.insert(dmReactions)
+            .values({
+              messageId,
+              userId: client.userId,
+              emoji
+            })
+        );
+      }
+
+      const allReactions = await executeWithRetry(() =>
+        db.select({
+          emoji: dmReactions.emoji,
+          username: users.username
+        })
+        .from(dmReactions)
+        .innerJoin(users, eq(dmReactions.userId, users.id))
+        .where(eq(dmReactions.messageId, messageId))
+      );
+
+      const reactionsMap: Record<string, string[]> = {};
+      for (const react of allReactions) {
+        if (!reactionsMap[react.emoji]) {
+          reactionsMap[react.emoji] = [];
+        }
+        reactionsMap[react.emoji].push(react.username);
+      }
+
+      broadcastToRoom(roomId, {
+        type: 'reaction_update',
+        message_id: String(messageId),
+        reactions: reactionsMap
+      });
+
+      const otherUser = dmMsg.peer === client.userId ? dmMsg.sender : dmMsg.peer;
+      broadcastToUserDevices(client.userId, {
+        type: 'reaction_update',
+        message_id: String(messageId),
+        room_id: roomId,
+        reactions: reactionsMap
+      });
+      if (otherUser !== client.userId) {
+        broadcastToUserDevices(otherUser, {
+          type: 'reaction_update',
+          message_id: String(messageId),
+          room_id: `dm_${client.userId}`,
+          reactions: reactionsMap
+        });
+      }
+      return;
+    }
+
+    // Message is not a direct message; verify lounge message existence before modifying messageReactions
+    const [loungeMsg] = await executeWithRetry(() =>
+      db.select({ id: dbMessages.id })
+        .from(dbMessages)
+        .where(eq(dbMessages.id, messageId))
+        .limit(1)
+    );
+    if (!loungeMsg) {
+      console.warn(`[WS] Reaction target message ${messageId} not found in dms or messages`);
+      return;
+    }
+
+    // Lounge message reactions
     const [existing] = await executeWithRetry(() =>
       db.select()
         .from(messageReactions)
@@ -105,6 +208,56 @@ export async function handleEditMessage(client: ClientConnection, message: any) 
     );
 
     if (!originalMsg) {
+      const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+      const isDm = peerId !== null;
+      if (isDm) {
+        const [dmMsg] = await executeWithRetry(() =>
+          db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+        );
+        if (dmMsg) {
+          if (dmMsg.sender !== client.userId) {
+            client.ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized. You can only edit your own messages.' }));
+            return;
+          }
+          const timeDiffMinutes = (Date.now() - new Date(dmMsg.created).getTime()) / (1000 * 60);
+          if (timeDiffMinutes > 15) {
+            client.ws.send(JSON.stringify({ type: 'error', message: 'Message editing window (15 minutes) has expired.' }));
+            return;
+          }
+          await executeWithRetry(() =>
+            db.update(dms)
+              .set({ body: content })
+              .where(eq(dms.id, messageId))
+          );
+          broadcastToRoom(roomId, {
+            type: 'message_edit',
+            message_id: String(messageId),
+            room_id: roomId,
+            content,
+            is_edited: true,
+            edited_at: new Date().toISOString()
+          });
+          const otherUser = dmMsg.peer === client.userId ? dmMsg.sender : dmMsg.peer;
+          broadcastToUserDevices(client.userId, {
+            type: 'message_edit',
+            message_id: String(messageId),
+            room_id: roomId,
+            content,
+            is_edited: true,
+            edited_at: new Date().toISOString()
+          });
+          broadcastToUserDevices(otherUser, {
+            type: 'message_edit',
+            message_id: String(messageId),
+            room_id: `dm_${client.userId}`,
+            content,
+            is_edited: true,
+            edited_at: new Date().toISOString()
+          });
+          return;
+        }
+      }
+
       client.ws.send(JSON.stringify({ type: 'error', message: 'Message not found.' }));
       return;
     }
@@ -165,6 +318,46 @@ export async function handleDeleteMessage(client: ClientConnection, message: any
     );
 
     if (!originalMsg) {
+      const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+      const isDm = peerId !== null;
+      if (isDm) {
+        const [dmMsg] = await executeWithRetry(() =>
+          db.select().from(dms).where(eq(dms.id, messageId)).limit(1)
+        );
+        if (dmMsg) {
+          if (dmMsg.sender !== client.userId) {
+            client.ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized. You can only delete your own messages.' }));
+            return;
+          }
+          await executeWithRetry(() =>
+            db.delete(dms).where(eq(dms.id, messageId))
+          );
+          try {
+            const { mediaService } = await import('../../v2/services/media/mediaService.js');
+            const mediaUrls = mediaService.extractMediaPaths(dmMsg.body);
+            for (const mediaUrl of mediaUrls) {
+              if (mediaUrl.includes('/uploads/chat/') || mediaUrl.includes('/uploads/media/')) {
+                await mediaService.deleteAssetByPath(mediaUrl);
+              }
+            }
+          } catch (cleanErr) {
+            console.error('[WS Media Cleanup Error]:', cleanErr);
+          }
+
+          broadcastToUserDevices(client.userId, {
+            type: 'message_deleted',
+            message_id: String(messageId),
+            room_id: roomId
+          });
+          broadcastToUserDevices(dmMsg.peer, {
+            type: 'message_deleted',
+            message_id: String(messageId),
+            room_id: `dm_${client.userId}`
+          });
+          return;
+        }
+      }
+
       client.ws.send(JSON.stringify({ type: 'error', message: 'Message not found.' }));
       return;
     }
@@ -178,6 +371,20 @@ export async function handleDeleteMessage(client: ClientConnection, message: any
       db.delete(dbMessages)
         .where(eq(dbMessages.id, messageId))
     );
+
+    // Clean up any message-scoped media attachments from disk & database
+    try {
+      const { mediaService } = await import('../../v2/services/media/mediaService.js');
+      const mediaUrls = mediaService.extractMediaPaths(originalMsg.content);
+      for (const mediaUrl of mediaUrls) {
+        // Only delete message-scoped chat media, never avatars
+        if (mediaUrl.includes('/uploads/chat/') || mediaUrl.includes('/uploads/media/')) {
+          await mediaService.deleteAssetByPath(mediaUrl);
+        }
+      }
+    } catch (cleanErr) {
+      console.error('[WS Media Cleanup Error]:', cleanErr);
+    }
 
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (loungeId) {
@@ -203,6 +410,25 @@ export async function handlePinMessage(client: ClientConnection, message: any) {
     const roomId = message.room_id;
     const pin = !!message.pin;
     if (isNaN(messageId) || !roomId) return;
+
+    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+    if (peerId !== null && peerId > 0) {
+      await executeWithRetry(() =>
+        db.update(dms).set({ isPinned: pin }).where(eq(dms.id, messageId))
+      );
+
+      const payload = {
+        type: 'message_pinned',
+        message_id: String(messageId),
+        room_id: roomId,
+        is_pinned: pin
+      };
+      const aliases = getDmRoomAliases(peerId, client.userId);
+      for (const alias of aliases) {
+        broadcastToRoom(alias, { ...payload, room_id: alias });
+      }
+      return;
+    }
 
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (!loungeId) return;
@@ -238,6 +464,41 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
   if (!roomId) return;
 
   try {
+    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+    if (peerId !== null && peerId > 0) {
+      const dmMessages = await dmService.getConversation(client.userId, peerId, limit);
+      const sinceId = sinceSeq; // In DMs, sequence is the message id
+      const filtered = sinceId > 0 ? dmMessages.filter(d => d.id > sinceId) : dmMessages;
+      const formatted = filtered.map(d => ({
+        id: d.id,
+        message_id: String(d.id),
+        db_message_id: d.id,
+        room_id: roomId,
+        lounge_id: roomId,
+        user_id: d.sender,
+        username: d.sender === client.userId ? (client.username || 'You') : (d.sender === 999 ? 'Velum' : `User #${d.sender}`),
+        content: d.body,
+        sequence_id: d.id,
+        client_msg_id: undefined,
+        is_encrypted: !!d.encrypted,
+        reply_to: d.replyTo || null,
+        timestamp: d.created ? d.created.toISOString() : new Date().toISOString(),
+        status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent'),
+        is_pinned: !!d.isPinned
+      }));
+
+      const maxId = dmMessages.length > 0 ? Math.max(...dmMessages.map(d => d.id)) : 0;
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify({
+          type: 'sync_response',
+          room_id: roomId,
+          messages: formatted,
+          max_seq: maxId
+        }));
+      }
+      return;
+    }
+
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (!loungeId) {
       if (client.ws.readyState === WebSocket.OPEN) {
@@ -249,6 +510,42 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
     const [targetLounge] = await executeWithRetry(() =>
       db.select().from(lounges).where(eq(lounges.id, loungeId)).limit(1)
     );
+
+    let effectiveSince = isNaN(sinceSeq) ? 0 : sinceSeq;
+    let clearedAtTime: number = 0;
+
+    if (client.userId) {
+      const [cursor, clearRec] = await Promise.all([
+        executeWithRetry(() =>
+          db.select({ clearedSeq: userReadCursors.clearedSeq, clearedAt: userReadCursors.clearedAt })
+            .from(userReadCursors)
+            .where(and(eq(userReadCursors.userId, client.userId), eq(userReadCursors.loungeId, loungeId)))
+            .limit(1)
+        ),
+        executeWithRetry(() =>
+          db.select({ clearedAt: userChatClears.clearedAt })
+            .from(userChatClears)
+            .where(and(eq(userChatClears.userId, client.userId), eq(userChatClears.loungeId, loungeId)))
+            .limit(1)
+        )
+      ]);
+
+      if (cursor[0]?.clearedSeq && cursor[0].clearedSeq > effectiveSince) {
+        effectiveSince = cursor[0].clearedSeq;
+      }
+      const cTime = clearRec[0]?.clearedAt ? new Date(clearRec[0].clearedAt).getTime() : (cursor[0]?.clearedAt ? new Date(cursor[0].clearedAt).getTime() : 0);
+      if (cTime > 0) {
+        clearedAtTime = cTime;
+      }
+    }
+
+    const syncConditions = [eq(dbMessages.loungeId, loungeId)];
+    if (effectiveSince > 0) {
+      syncConditions.push(gt(dbMessages.sequenceId, effectiveSince));
+    }
+    if (clearedAtTime > 0) {
+      syncConditions.push(gt(dbMessages.createdAt, new Date(clearedAtTime)));
+    }
 
     const syncMsgs = await executeWithRetry(() =>
       db.select({
@@ -269,12 +566,13 @@ export async function handleSyncRequest(client: ClientConnection, message: any) 
       })
       .from(dbMessages)
       .leftJoin(users, eq(dbMessages.senderId, users.id))
-      .where(and(eq(dbMessages.loungeId, loungeId), gt(dbMessages.sequenceId, isNaN(sinceSeq) ? 0 : sinceSeq)))
+      .where(and(...syncConditions))
       .orderBy(dbMessages.sequenceId)
       .limit(limit)
     );
 
     const formattedMessages = syncMsgs.map(m => ({
+      id: m.id,
       message_id: String(m.id),
       db_message_id: m.id,
       room_id: roomId,
@@ -312,6 +610,13 @@ export async function handleMarkRead(client: ClientConnection, message: any) {
 
   await resetUnread(client.userId, roomId);
 
+  if (roomId.startsWith('dm_')) {
+    const peerId = getPeerIdFromDmRoom(roomId, client.userId);
+    if (peerId) {
+      await dmService.markAsRead(client.userId, peerId);
+    }
+  }
+
   try {
     const loungeId = await getLoungeIdFromRoomId(roomId);
     if (loungeId) {
@@ -331,15 +636,17 @@ export async function handleMarkRead(client: ClientConnection, message: any) {
     console.error('Failed to mark message as read:', err);
   }
 
-  broadcastToRoom(roomId, {
-    type: 'message_read',
-    message_id: message.message_id || message.db_message_id,
-    last_read_msg_id: message.db_message_id || message.last_read_msg_id,
-    last_read_seq: message.last_read_seq,
-    reader_id: client.userId,
-    user_id: client.userId,
-    room_id: roomId
-  }, client.ws);
+  if (roomId.startsWith('dm_')) {
+    broadcastToRoom(roomId, {
+      type: 'message_read',
+      message_id: message.message_id || message.db_message_id,
+      last_read_msg_id: message.db_message_id || message.last_read_msg_id,
+      last_read_seq: message.last_read_seq,
+      reader_id: client.userId,
+      user_id: client.userId,
+      room_id: roomId
+    }, client.ws);
+  }
 
   broadcastToUserDevices(client.userId, {
     type: 'multi_device_sync',
@@ -353,6 +660,8 @@ export async function handleMarkRead(client: ClientConnection, message: any) {
 
 export async function handleMarkDelivered(client: ClientConnection, message: any) {
   const roomId = message.room_id ? message.room_id.toString() : '';
+  if (!roomId.startsWith('dm_')) return;
+
   const dbMessageId = message.db_message_id ? parseInt(message.db_message_id.toString(), 10) : parseInt(message.message_id, 10);
 
   if (!isNaN(dbMessageId)) {
@@ -388,15 +697,29 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
   }
   members.add(client.ws);
 
-  let targetLoungeId: number | null = null;
-  let isDM = false;
-  if (roomId.startsWith('dm_')) {
-    targetLoungeId = await getOrCreateDMLounge(roomId);
-    isDM = true;
-  } else {
-    targetLoungeId = loungeId;
-    isDM = false;
+  const dmPeerId = getPeerIdFromDmRoom(roomId, client.userId);
+  if (dmPeerId !== null && dmPeerId > 0) {
+    await handleDirectMessage(client, {
+      to: dmPeerId,
+      body: message.content || '',
+      enc: message.is_encrypted,
+      reply_to: message.reply_to,
+      client_msg_id: clientMsgId
+    });
+    return;
   }
+
+  // Hard-block raw base64 data URIs from entering database storage
+  const contentStr = typeof message.content === 'string' ? message.content : '';
+  if (contentStr.includes('data:image/') || contentStr.includes('data:audio/') || contentStr.includes('data:video/')) {
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Raw data URI payloads are forbidden. Attachments must be uploaded via storage URLs.'
+    }));
+    return;
+  }
+
+  let targetLoungeId: number | null = loungeId;
 
   if (clientMsgId && targetLoungeId) {
     try {
@@ -409,6 +732,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
       if (existing) {
         const ackPayload = {
           type: 'message_ack',
+          id: existing.id,
           client_msg_id: clientMsgId,
           nonce: message.nonce || clientMsgId,
           message_id: String(existing.id),
@@ -427,7 +751,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
     }
   }
 
-  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const messageId = randomUUID();
   const enrichedMessage = {
     ...message,
     message_id: messageId,
@@ -440,18 +764,7 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
 
   try {
     if (targetLoungeId) {
-      let deliveredTo: number[] = [];
-      if (isDM) {
-        const roomSockets = roomMembers.get(roomId);
-        if (roomSockets && roomSockets.size > 1) {
-          roomSockets.forEach(ws => {
-            const memberClient = connectedClients.get(ws);
-            if (memberClient && memberClient.userId !== client.userId) {
-              deliveredTo.push(memberClient.userId);
-            }
-          });
-        }
-      }
+      const deliveredTo: number[] = [];
 
       const replyToVal = message.reply_to ? parseInt(message.reply_to.toString(), 10) : null;
       const validReplyTo = (replyToVal !== null && !isNaN(replyToVal)) ? replyToVal : null;
@@ -513,58 +826,29 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
         }
       });
 
+      const isoTime = insertedMessage.createdAt ? insertedMessage.createdAt.toISOString() : new Date().toISOString();
+      enrichedMessage.id = insertedMessage.id;
       enrichedMessage.db_message_id = insertedMessage.id;
+      enrichedMessage.message_id = String(insertedMessage.id);
       enrichedMessage.sequence_id = insertedMessage.sequenceId;
       enrichedMessage.reply_to = validReplyTo;
       enrichedMessage.reply_preview = replyPreview;
+      enrichedMessage.createdAt = isoTime;
+      enrichedMessage.timestamp = isoTime;
 
       const ackPayload = {
         type: 'message_ack',
+        id: insertedMessage.id,
         client_msg_id: clientMsgId,
         nonce: message.nonce || clientMsgId,
-        message_id: messageId,
+        message_id: String(insertedMessage.id),
         db_message_id: insertedMessage.id,
         sequence_id: insertedMessage.sequenceId,
         room_id: roomId,
-        timestamp: insertedMessage.createdAt ? insertedMessage.createdAt.toISOString() : new Date().toISOString()
+        timestamp: isoTime
       };
       if (client.ws.readyState === WebSocket.OPEN) {
         client.ws.send(JSON.stringify(ackPayload));
-      }
-
-      if (isDM && targetLoungeId) {
-        try {
-          const redis = await getRedisClient();
-          if (redis) {
-            const lastMsgPayload = {
-              id: String(insertedMessage.id),
-              message_id: String(insertedMessage.id),
-              content: insertedMessage.content,
-              senderId: insertedMessage.senderId,
-              user_id: insertedMessage.senderId,
-              is_encrypted: insertedMessage.encrypted,
-              deliveredTo: insertedMessage.deliveredTo,
-              createdAt: insertedMessage.createdAt?.toISOString() || new Date().toISOString()
-            };
-            await redis.set(`dm:last_msg:${targetLoungeId}`, JSON.stringify(lastMsgPayload));
-          }
-        } catch (e) {}
-      }
-
-      if (isDM) {
-        if (deliveredTo.length > 0) {
-          enrichedMessage.status = 'delivered';
-        } else {
-          enrichedMessage.status = 'sent';
-        }
-
-        const parts = roomId.replace('dm_', '').split('_');
-        if (parts.length >= 2) {
-          const uid1 = parseInt(parts[0], 10);
-          const uid2 = parseInt(parts[1], 10);
-          const recipientId = client.userId === uid1 ? uid2 : uid1;
-          await incrementUnread(recipientId, roomId);
-        }
       }
 
       if (roomId.includes('announce') || roomId.includes('ANNOUNCE')) {
@@ -572,39 +856,11 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
           const loungeList = await executeWithRetry(() => db.select().from(lounges));
           const currentLounge = loungeList.find(l => l.id === targetLoungeId);
           if (currentLounge && (currentLounge.accessLevel === 'ANNOUNCE' || currentLounge.name.toLowerCase().includes('announce'))) {
-            let broadcastContent = message.content || '';
-            if (message.is_encrypted) {
-              const roomIdKey = 'VELUM_E2EE_' + roomId;
-              try {
-                let decoded = '';
-                const cleanCipher = broadcastContent.startsWith('VEL_E2EE[') 
-                  ? broadcastContent.substring(9, broadcastContent.length - 1) 
-                  : broadcastContent;
-                const cipherBase64 = decodeURIComponent(escape(atob(cleanCipher)));
-                for (let i = 0; i < cipherBase64.length; i++) {
-                  const charCode = cipherBase64.charCodeAt(i) ^ roomIdKey.charCodeAt(i % roomIdKey.length);
-                  decoded += String.fromCharCode(charCode);
-                }
-                broadcastContent = decoded;
-              } catch (err) {
-                console.error('[WS Broadcast] Failed to decrypt message for broadcast:', err);
-                broadcastContent = message.content || '';
-              }
-            }
+            const broadcastContent = message.content || '';
 
             const allUsers = await executeWithRetry(() => db.select().from(users));
             for (const user of allUsers) {
-              const botDMRoomId = `dm_velum_${user.id}`;
-              const botLoungeId = await getOrCreateDMLounge(botDMRoomId);
-              if (botLoungeId) {
-                await executeWithRetry(() => db.insert(dbMessages).values({
-                  loungeId: botLoungeId,
-                  senderId: 999,
-                  content: broadcastContent,
-                  encrypted: false,
-                  deliveredTo: ''
-                }));
-              }
+              await dmService.sendMessage(999, user.id, broadcastContent, false).catch(() => {});
             }
           }
         })().catch(err => console.error('[WS Broadcast Error]:', err));
@@ -623,55 +879,26 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
     }
   }
 
-  if (roomId.startsWith('dm_')) {
-    const parts = roomId.replace('dm_', '').split('_');
-    if (parts.length >= 2) {
-      const uid1 = parseInt(parts[0], 10);
-      const uid2 = parseInt(parts[1], 10);
-      const targetId = client.userId === uid1 ? uid2 : uid1;
-      
-      const roomSockets = roomMembers.get(roomId);
-      for (const [c, clientData] of connectedClients.entries()) {
-        if (clientData && clientData.userId === targetId && c.readyState === WebSocket.OPEN) {
-          if (!roomSockets || !roomSockets.has(c)) {
-            c.send(JSON.stringify(enrichedMessage));
-          }
-        }
-      }
-    }
-  }
-
   (async () => {
     try {
-      if (isDM && targetLoungeId) {
-        const parts = roomId.replace('dm_', '').split('_');
-        if (parts.length >= 2) {
-          const uid1 = parseInt(parts[0], 10);
-          const uid2 = parseInt(parts[1], 10);
-          const recipientId = client.userId === uid1 ? uid2 : uid1;
-
-          await dispatchPushNotification(recipientId, targetLoungeId, {
-            title: `Direct Message from @${client.username}`,
-            body: message.content ? (message.content.length > 80 ? message.content.slice(0, 80) + '...' : message.content) : 'Sent a message',
-            roomId,
-            senderId: client.userId
-          }, message.content || '');
-        }
-      } else if (targetLoungeId) {
+      if (targetLoungeId) {
         const members = await executeWithRetry(() =>
           db.select({ userId: loungeMembers.userId })
             .from(loungeMembers)
             .where(and(eq(loungeMembers.loungeId, targetLoungeId!), eq(loungeMembers.status, 'active')))
         );
 
+        const isEncrypted = !!(message.is_encrypted || (typeof message.content === 'string' && (message.content.startsWith('e2ee:') || message.content.startsWith('ratchet:') || message.content.startsWith('VEL_E2EE['))));
+        const pushContent = isEncrypted ? 'New message' : (message.content || '');
+
         for (const m of members) {
           if (m.userId !== client.userId) {
             await dispatchPushNotification(m.userId, targetLoungeId, {
-              title: `#${roomId} - @${client.username}`,
-              body: message.content ? (message.content.length > 80 ? message.content.slice(0, 80) + '...' : message.content) : 'Sent a message',
+              title: roomId,
+              body: client.username ? `${client.username}: ${pushContent}` : pushContent,
               roomId,
               senderId: client.userId
-            }, message.content || '');
+            }, pushContent);
           }
         }
       }
@@ -679,6 +906,129 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
       console.error('[WS Push] Notification dispatch error:', err);
     }
   })();
+}
+
+export async function handleDirectMessage(client: ClientConnection, message: any) {
+  const to = parseInt(message.to, 10);
+  const body = typeof message.body === 'string' ? message.body.trim() : '';
+  const encrypted = !!message.enc || !!message.encrypted;
+  const replyTo = message.reply_to ? parseInt(message.reply_to, 10) : undefined;
+  const clientMsgId = message.client_msg_id || message.nonce;
+  const expiresInRaw = message.expires_in != null ? Number(message.expires_in) : null;
+  const expiresIn =
+    expiresInRaw != null && Number.isFinite(expiresInRaw) && expiresInRaw > 0
+      ? Math.min(expiresInRaw, 7 * 24 * 60 * 60)
+      : null;
+
+  if (isNaN(to) || to <= 0 || !body) {
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Invalid direct message payload'
+    }));
+    return;
+  }
+
+  // Hard-block raw base64 data URIs in direct messages
+  if (body.includes('data:image/') || body.includes('data:audio/') || body.includes('data:video/')) {
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Raw data URI payloads are forbidden. Attachments must be uploaded via storage URLs.'
+    }));
+    return;
+  }
+
+  try {
+    const created = await dmService.sendMessage(client.userId, to, body, encrypted, replyTo, expiresIn);
+
+    // 1. ACK to sender with canonical server ID
+    client.ws.send(JSON.stringify({
+      type: 'dm_ack',
+      id: created.id,
+      client_msg_id: clientMsgId,
+      message_id: String(created.id),
+      db_message_id: created.id,
+      sequence_id: created.id,
+      room_id: `dm_${to}`,
+      to,
+      nonce: clientMsgId,
+      created: created.created
+    }));
+
+    // Ensure sender display name is always populated
+    let senderName = client.username;
+    if (!senderName || senderName.startsWith('User #')) {
+      const [u] = await executeWithRetry(() =>
+        db.select({ username: users.username, displayName: users.displayName })
+          .from(users)
+          .where(eq(users.id, client.userId))
+          .limit(1)
+      );
+      if (u) {
+        senderName = u.displayName || u.username;
+        client.username = senderName;
+      }
+    }
+
+    const expiresAt =
+      expiresIn != null
+        ? new Date(
+            (created.created instanceof Date
+              ? created.created.getTime()
+              : Date.parse(String(created.created)) || Date.now()) +
+              expiresIn * 1000
+          ).toISOString()
+        : null;
+
+    // 2. Dispatch to recipient active connections
+    const outFrame = {
+      type: 'dm',
+      id: created.id,
+      client_msg_id: clientMsgId,
+      message_id: String(created.id),
+      db_message_id: created.id,
+      from: client.userId,
+      to,
+      body: created.body,
+      enc: created.encrypted,
+      reply_to: created.replyTo,
+      created: created.created,
+      sender_username: senderName || client.username || 'Direct Message',
+      expires_in: expiresIn,
+      expires_at: expiresAt,
+    };
+
+    broadcastToUserDevices(to, outFrame);
+
+    // 3. Push notification fallback (skip if recipient muted sender)
+    if (await isDmPeerMuted(to, client.userId)) {
+      return;
+    }
+
+    const isEncrypted = created.encrypted || (typeof body === 'string' && (body.startsWith('e2ee:') || body.startsWith('ratchet:') || body.startsWith('VEL_E2EE[')));
+    const pushBody = isEncrypted ? 'New message' : (body || 'New message');
+    const dmRoomId = `dm_${Math.min(client.userId, to)}_${Math.max(client.userId, to)}`;
+
+    dispatchPushNotification(to, 0, {
+      title: senderName || client.username || 'Direct Message',
+      body: pushBody,
+      roomId: dmRoomId,
+      senderId: client.userId
+    }, pushBody).catch(err => console.error('[Push Gateway Error]:', err));
+  } catch (err) {
+    const blocked = (err as Error & { code?: string })?.code === 'BLOCKED' || (err as Error)?.message === 'BLOCKED';
+    console.error('[WS Direct Message Error]:', err);
+    const reason = (err as Error & { blockReason?: string }).blockReason;
+    const { blockedSendErrorMessage } = await import('../../v2/utils/blockCopy.js');
+    const message = blocked
+      ? blockedSendErrorMessage(reason)
+      : 'Failed to deliver direct message';
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message,
+      code: blocked ? 'BLOCKED' : undefined,
+      blockReason: blocked ? reason || 'peer' : undefined,
+    }));
+  }
 }
 
 export async function handleClientMessage(client: ClientConnection, message: any) {
@@ -689,6 +1039,10 @@ export async function handleClientMessage(client: ClientConnection, message: any
   });
 
   switch (message.type) {
+    case 'dm':
+      await handleDirectMessage(client, message);
+      break;
+    case 'sync':
     case 'sync_request':
       await handleSyncRequest(client, message);
       break;

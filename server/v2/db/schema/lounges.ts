@@ -17,7 +17,7 @@ export const lounges = pgTable('lounges', {
   inviteCode: varchar('invite_code', { length: 64 }),
   accessLevel: varchar('access_level', { length: 32 }).default('ALL').notNull(),
   type: varchar('type', { length: 32 }).default('user_created').notNull(),
-  avatarUrl: varchar('avatar_url', { length: 512 }),
+  avatarUrl: text('avatar_url'),
   lastMessageAt: timestamp('last_message_at'),
   lastMessageText: text('last_message_text'),
   lastMessageSenderId: integer('last_message_sender_id').references(() => users.id, { onDelete: 'set null' }),
@@ -61,10 +61,10 @@ export const messages = pgTable('messages', {
   deliveredTo: text('delivered_to').default(''),
   readBy: text('read_by').default(''),
   isEdited: boolean('is_edited').default(false).notNull(),
-  editedAt: timestamp('edited_at'),
+  editedAt: timestamp('edited_at', { withTimezone: true, mode: 'date' }),
   isPinned: boolean('is_pinned').default(false).notNull(),
   replyTo: integer('reply_to'),
-  createdAt: timestamp('created_at').defaultNow().notNull()
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull()
 }, (table) => [
   index('idx_messages_lounge_id').on(table.loungeId),
   index('idx_messages_sender_id').on(table.senderId),

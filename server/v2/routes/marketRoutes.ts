@@ -2,26 +2,9 @@ import { Router } from 'express';
 import { marketController } from '../controllers/marketController.js';
 import { validate } from '../middleware/validate.js';
 import { createListingSchema, updateListingSchema, escrowActionSchema } from '../schemas/marketplace.js';
-import { createAuthMiddleware } from '../middleware/auth.js';
-import { userRepository } from '../repositories/userRepository.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 export const marketRouter = Router();
-
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
 
 marketRouter.get('/listings', (req, res, next) => {
   marketController.getListings(req, res).catch(next);
@@ -70,23 +53,17 @@ marketRouter.post('/coupons/validate', authMiddleware, (req, res) => {
   res.json({ valid: true, discount: 10, type: 'PERCENTAGE' });
 });
 
-marketRouter.post('/escrows', authMiddleware, (req, res) => {
-  res.json({ escrow: null });
+marketRouter.post('/escrows/:transactionId/release', authMiddleware, (req, res, next) => {
+  req.body = { transactionId: req.params.transactionId, action: 'RELEASE' };
+  marketController.processEscrowAction(req, res).catch(next);
 });
 
-marketRouter.post('/escrows/:transactionId/test-sandbox', authMiddleware, (req, res) => {
-  res.json({ success: true, message: 'Sandbox test triggered.' });
+marketRouter.post('/escrows/:transactionId/revert', authMiddleware, (req, res, next) => {
+  req.body = { transactionId: req.params.transactionId, action: 'REFUND' };
+  marketController.processEscrowAction(req, res).catch(next);
 });
 
-marketRouter.post('/escrows/:transactionId/release', authMiddleware, (req, res) => {
-  res.json({ success: true, message: 'Escrow released.' });
-});
-
-marketRouter.post('/escrows/:transactionId/revert', authMiddleware, (req, res) => {
-  res.json({ success: true, message: 'Escrow reverted.' });
-});
-
-marketRouter.get('/listings/:id/discussions', (req, res) => {
+marketRouter.get('/listings/:id/discussions', authMiddleware, (req, res) => {
   res.json({ discussions: [] });
 });
 
@@ -94,7 +71,7 @@ marketRouter.post('/listings/:id/discussions', authMiddleware, (req, res) => {
   res.status(201).json({ success: true });
 });
 
-marketRouter.get('/listings/:id/reviews', (req, res) => {
+marketRouter.get('/listings/:id/reviews', authMiddleware, (req, res) => {
   res.json({ reviews: [] });
 });
 
@@ -102,7 +79,7 @@ marketRouter.post('/listings/:id/reviews', authMiddleware, (req, res) => {
   res.status(201).json({ success: true });
 });
 
-marketRouter.get('/listings/:id/media', (req, res) => {
+marketRouter.get('/listings/:id/media', authMiddleware, (req, res) => {
   res.json({ media: [] });
 });
 

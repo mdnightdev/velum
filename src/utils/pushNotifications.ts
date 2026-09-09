@@ -1,3 +1,7 @@
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { getSessionId } from './auth';
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding)
@@ -14,6 +18,85 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export async function registerPushNotifications(): Promise<boolean> {
+  // Native Android/iOS via Capacitor
+  if (Capacitor.isNativePlatform()) {
+    try {
+      let permStatus = await PushNotifications.checkPermissions();
+
+      if (permStatus.receive === 'prompt') {
+        permStatus = await PushNotifications.requestPermissions();
+      }
+
+      if (permStatus.receive !== 'granted') {
+        console.warn('[Push] Push notification permission not granted');
+        return false;
+      }
+
+      // Create notification channel for Android 8+
+      await PushNotifications.createChannel({
+        id: 'velum_default',
+        name: 'General Notifications',
+        description: 'Velum general and direct message alerts',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+      });
+
+      // Listeners
+      await PushNotifications.removeAllListeners();
+
+      PushNotifications.addListener('registration', async (token) => {
+  console.log('[Push] FCM Registration Token:', token.value);
+  try {
+    const authToken = getSessionId();
+    await fetch('/api/v2/notifications/fcm/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({
+        token: token.value,
+        platform: Capacitor.getPlatform(),
+      })
+    });
+  } catch (err) {
+    console.error('[Push] Failed to register FCM token with server:', err);
+  }
+});
+
+      PushNotifications.addListener('registrationError', (err) => {
+        console.error('[Push] Registration error:', err);
+      });
+
+      PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        const data = notification?.data || {};
+        if (data.type === 'wallet_updated') {
+          window.dispatchEvent(new CustomEvent('velum-wallet-update', { detail: data }));
+        } else if (data.type === 'friend_request_received' || data.type === 'friend_request_accepted') {
+          window.dispatchEvent(new CustomEvent('velum-social-update', { detail: data }));
+        } else {
+          window.dispatchEvent(new CustomEvent('velum-notifications-update', { detail: data }));
+        }
+      });
+
+      PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        const data = action.notification?.data || {};
+        const targetRoom = data.roomId || data.room_id || data.room;
+        if (targetRoom) {
+          window.dispatchEvent(new CustomEvent('velum-open-room', { detail: { roomId: targetRoom } }));
+        }
+      });
+
+      await PushNotifications.register();
+      return true;
+    } catch (err) {
+      console.error('[Push] Failed to register native push:', err);
+      return false;
+    }
+  }
+
+  // Web fallback (Service Worker / VAPID)
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.warn('[Push] Push notifications not supported by browser');
     return false;
@@ -28,7 +111,6 @@ export async function registerPushNotifications(): Promise<boolean> {
 
     const reg = await navigator.serviceWorker.ready;
 
-    // Fetch public VAPID key
     const res = await fetch('/api/v2/notifications/vapid-key');
     if (!res.ok) throw new Error('Failed to fetch VAPID key');
     const { publicKey } = await res.json();
@@ -45,10 +127,9 @@ export async function registerPushNotifications(): Promise<boolean> {
       });
     }
 
-    // Register subscription on backend
     const subJson = subscription.toJSON();
-    const token = localStorage.getItem('velum_session_token');
-    
+    const token = getSessionId();
+
     await fetch('/api/v2/notifications/subscribe', {
       method: 'POST',
       headers: {
@@ -67,7 +148,7 @@ export async function registerPushNotifications(): Promise<boolean> {
 
 export async function setRoomMuteRule(roomId: string, muteRule: 'off' | 'mentions_only' | 'forever'): Promise<boolean> {
   try {
-    const token = localStorage.getItem('velum_session_token');
+    const token = getSessionId();
     const res = await fetch(`/api/v2/lounges/${encodeURIComponent(roomId)}/mute`, {
       method: 'POST',
       headers: {
@@ -85,7 +166,7 @@ export async function setRoomMuteRule(roomId: string, muteRule: 'off' | 'mention
 
 export async function getRoomMuteRule(roomId: string): Promise<'off' | 'mentions_only' | 'forever'> {
   try {
-    const token = localStorage.getItem('velum_session_token');
+    const token = getSessionId();
     const res = await fetch(`/api/v2/lounges/${encodeURIComponent(roomId)}/mute`, {
       headers: {
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
@@ -96,5 +177,20 @@ export async function getRoomMuteRule(roomId: string): Promise<'off' | 'mentions
     return data.mute_rule || 'off';
   } catch (err) {
     return 'off';
+  }
+}
+
+export async function unregisterPushNotifications(): Promise<void> {
+  try {
+    const authToken = getSessionId();
+    await fetch('/api/v2/notifications/fcm/unregister', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      }
+    });
+  } catch (err) {
+    console.error('[Push] Failed to unregister push notifications:', err);
   }
 }

@@ -1,26 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { auth } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
+import { loungeRepository } from '../repositories/loungeRepository.js';
+import { safeParseInt } from '../utils/validation.js';
 import { processReadReceipt } from '../services/messaging/readReceiptService.js';
 import { processDeliveryReceipt } from '../services/messaging/deliveryReceiptService.js';
 import { typingDebouncer } from '../services/messaging/typingDebouncer.js';
-import { db } from '../db/client.js';
-import { lounges } from '../db/schema/lounges.js';
 
-const auth = createAuthMiddleware(async (hashedToken) => {
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
 export const messagingRouter = Router();
 
 // POST /v2/lounges/:id/read - Read cursor synchronization endpoint
@@ -30,14 +16,14 @@ messagingRouter.post('/lounges/:id/read', auth, async (req: Request, res: Respon
     const currentUserId = req.user!.userId;
     const { last_read_msg_id, last_read_seq } = req.body;
 
-    const lastReadMsgId = parseInt(last_read_msg_id, 10);
-    const lastReadSeq = last_read_seq ? parseInt(last_read_seq, 10) : undefined;
+    const lastReadMsgId = safeParseInt(last_read_msg_id, 0);
+    const lastReadSeq = last_read_seq ? safeParseInt(last_read_seq, 0) : undefined;
 
-    if (isNaN(lastReadMsgId) && !lastReadSeq) {
+    if (lastReadMsgId <= 0 && (!lastReadSeq || lastReadSeq <= 0)) {
       return res.status(400).json({ error: 'Valid last_read_msg_id or last_read_seq is required.' });
     }
 
-    const allLounges = await db.select().from(lounges);
+    const allLounges = await loungeRepository.findAll();
     const targetLounge = allLounges.find(l => l.slug === rawId || l.id.toString() === rawId);
 
     if (!targetLounge) {

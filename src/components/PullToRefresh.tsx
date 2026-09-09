@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { createLogger } from '../utils/logger';
 
-const log = createLogger('PullToRefresh');
+const log = createLogger('');
 
 interface PullToRefreshProps {
   children: React.ReactNode;
@@ -125,10 +125,10 @@ export default function PullToRefresh({ children, disabled = false }: PullToRefr
             />
             <span className="text-[10px] font-bold uppercase tracking-widest text-text-primary font-mono">
               {isRefreshing 
-                ? 'Reloading...' 
+                ? '' 
                 : pullDistance >= threshold 
-                  ? 'Release to refresh' 
-                  : 'Pull to refresh'}
+                  ? '' 
+                  : ''}
             </span>
           </div>
         </div>

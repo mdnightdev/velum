@@ -1,10 +1,14 @@
 import { db } from '../db/client.js';
 import { lounges, loungeMembers, messages } from '../db/schema/lounges.js';
+import { dms, dmClears } from '../db/schema/dms.js';
 import { loungeMuteSettings } from '../db/schema/lounge_mutes.js';
 import { userReadCursors } from '../db/schema/read_cursors.js';
+import { userChatClears } from '../db/schema/chat_clears.js';
 import { users } from '../db/schema/users.js';
 import { userRepository } from '../repositories/userRepository.js';
-import { eq, gt, and, desc, like, inArray, sql } from 'drizzle-orm';
+import { loungeRepository } from '../repositories/loungeRepository.js';
+import { generateSecureInviteCode } from '../utils/crypto.js';
+import { eq, gt, and, or, desc, like, inArray, sql } from 'drizzle-orm';
 
 export const SYSTEM_ADMIN_ROLES = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
 export const SYSTEM_ADMIN_USERNAMES = ['lexie', 'midnight'];
@@ -29,70 +33,154 @@ export const OFFICIAL_SLUGS_ORDER = [
   'velum_executives'
 ];
 
+export function matchLounge(l: any, rawId: string): boolean {
+  if (!l || !rawId) return false;
+  if (l.slug === rawId || l.id.toString() === rawId) return true;
+  if ((rawId === 'velum_master_lounge' || rawId === 'velum_lounge') && (l.slug === 'velum_master_lounge' || l.slug === 'velum_lounge' || l.id === 1)) {
+    return true;
+  }
+  return false;
+}
+
 export async function getConversationsSummary(currentUserId?: number) {
   if (!currentUserId) {
     return { summary: {}, unreadCounts: {} };
   }
 
-  const allLounges = await db.select().from(lounges);
+  const allLounges = await loungeRepository.findAll();
+  if (allLounges.length === 0) {
+    return { summary: {}, unreadCounts: {} };
+  }
+
+  const loungeIds = allLounges.map(l => l.id);
   const summary: Record<string, any> = {};
   const unreadCounts: Record<string, number> = {};
 
+  // 1. Batch fetch latest messages for lounges lacking cached lastMessageText
+  const loungesNeedingMsg = allLounges.filter(l => l.lastMessageText === null);
+  const latestMsgMap = new Map<number, any>();
+
+  if (loungesNeedingMsg.length > 0) {
+    const needingIds = loungesNeedingMsg.map(l => l.id);
+    const latestMessages = await db
+      .select({
+        message_id: messages.id,
+        lounge_id: messages.loungeId,
+        user_id: messages.senderId,
+        content: messages.content,
+        is_encrypted: messages.encrypted,
+        deliveredTo: messages.deliveredTo,
+        readBy: messages.readBy,
+        createdAt: messages.createdAt,
+        username: users.username,
+        avatar: users.avatarUrl
+      })
+      .from(messages)
+      .leftJoin(users, eq(messages.senderId, users.id))
+      .where(inArray(messages.loungeId, needingIds))
+      .orderBy(desc(messages.createdAt));
+
+    for (const msg of latestMessages) {
+      if (!latestMsgMap.has(msg.lounge_id)) {
+        latestMsgMap.set(msg.lounge_id, msg);
+      }
+    }
+  }
+
+  // 2. Batch fetch unread messages across all lounges in ONE single query
+  // Fetch user read/cleared cursors and dedicated chat clears
+  const [cursors, clearRecords] = await Promise.all([
+    db.select().from(userReadCursors).where(eq(userReadCursors.userId, currentUserId)),
+    db.select().from(userChatClears).where(eq(userChatClears.userId, currentUserId))
+  ]);
+
+  const clearedSeqMap = new Map<number, number>();
+  const clearedAtMap = new Map<number, number>();
+  for (const c of cursors) {
+    if (c.clearedSeq > 0) clearedSeqMap.set(c.loungeId, c.clearedSeq);
+    if (c.clearedAt) clearedAtMap.set(c.loungeId, new Date(c.clearedAt).getTime());
+  }
+  for (const cr of clearRecords) {
+    const clearTime = new Date(cr.clearedAt).getTime();
+    const existing = clearedAtMap.get(cr.loungeId) || 0;
+    if (clearTime > existing) clearedAtMap.set(cr.loungeId, clearTime);
+  }
+
+  const unreadCandidateMsgs = await db
+    .select({
+      id: messages.id,
+      loungeId: messages.loungeId,
+      sequenceId: messages.sequenceId,
+      createdAt: messages.createdAt,
+      readBy: messages.readBy,
+      senderId: messages.senderId
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.loungeId, loungeIds),
+        sql`${messages.senderId} != ${currentUserId}`
+      )
+    );
+
+  const unreadPerLounge = new Map<number, number>();
+  for (const m of unreadCandidateMsgs) {
+    const clearedSeq = clearedSeqMap.get(m.loungeId) || 0;
+    const clearedAt = clearedAtMap.get(m.loungeId) || 0;
+    const msgTime = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+
+    if ((m.sequenceId && m.sequenceId <= clearedSeq) || (clearedAt > 0 && msgTime <= clearedAt)) {
+      continue;
+    }
+    const readByArr = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
+    if (!readByArr.includes(currentUserId)) {
+      unreadPerLounge.set(m.loungeId, (unreadPerLounge.get(m.loungeId) || 0) + 1);
+    }
+  }
+
+  // Fetch active memberships and ownerships for current user to restrict unread counts
+  const userMemberships = await db
+    .select({ loungeId: loungeMembers.loungeId })
+    .from(loungeMembers)
+    .where(and(eq(loungeMembers.userId, currentUserId), eq(loungeMembers.status, 'active')));
+  const activeLoungeIdSet = new Set(userMemberships.map(m => m.loungeId));
+  for (const l of allLounges) {
+    if (l.ownerId === currentUserId) activeLoungeIdSet.add(l.id);
+  }
+
+  // 3. Assemble response in memory
   for (const lounge of allLounges) {
     const roomId = lounge.slug || `lounge_${lounge.id}`;
+    const clearedSeq = clearedSeqMap.get(lounge.id) || 0;
+    const clearedAt = clearedAtMap.get(lounge.id) || 0;
+
+    const unread = unreadPerLounge.get(lounge.id) || 0;
+    if (unread > 0 && activeLoungeIdSet.has(lounge.id)) {
+      unreadCounts[roomId] = unread;
+    }
 
     let lastMsg: any = null;
     if (lounge.lastMessageText !== null) {
-      lastMsg = {
-        content: lounge.lastMessageText,
-        user_id: lounge.lastMessageSenderId,
-        createdAt: lounge.lastMessageAt || new Date(),
-        deliveredTo: '',
-        readBy: '',
-      };
+      const msgTime = lounge.lastMessageAt ? new Date(lounge.lastMessageAt).getTime() : 0;
+      const isCleared = (clearedSeq > 0 && lounge.currentSequenceId <= clearedSeq) || (clearedAt > 0 && msgTime <= clearedAt);
+      if (!isCleared) {
+        lastMsg = {
+          content: lounge.lastMessageText,
+          user_id: lounge.lastMessageSenderId,
+          createdAt: lounge.lastMessageAt || new Date(),
+          deliveredTo: '',
+          readBy: '',
+        };
+      }
     } else {
-      const [foundMsg] = await db
-        .select({
-          message_id: messages.id,
-          lounge_id: messages.loungeId,
-          user_id: messages.senderId,
-          content: messages.content,
-          is_encrypted: messages.encrypted,
-          deliveredTo: messages.deliveredTo,
-          readBy: messages.readBy,
-          createdAt: messages.createdAt,
-          username: users.username,
-          avatar: users.avatarUrl
-        })
-        .from(messages)
-        .leftJoin(users, eq(messages.senderId, users.id))
-        .where(eq(messages.loungeId, lounge.id))
-        .orderBy(desc(messages.createdAt))
-        .limit(1);
-      lastMsg = foundMsg;
-    }
-
-    const unreadMsgs = await db
-      .select({
-        id: messages.id,
-        readBy: messages.readBy,
-        senderId: messages.senderId
-      })
-      .from(messages)
-      .where(eq(messages.loungeId, lounge.id));
-
-    let unreadCount = 0;
-    for (const m of unreadMsgs) {
-      if (m.senderId !== currentUserId) {
-        const readByArr = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
-        if (!readByArr.includes(currentUserId)) {
-          unreadCount++;
+      const candidate = latestMsgMap.get(lounge.id) || null;
+      if (candidate) {
+        const candidateTime = candidate.createdAt ? new Date(candidate.createdAt).getTime() : 0;
+        const isCleared = (clearedSeq > 0 && candidate.sequenceId <= clearedSeq) || (clearedAt > 0 && candidateTime <= clearedAt);
+        if (!isCleared) {
+          lastMsg = candidate;
         }
       }
-    }
-
-    if (unreadCount > 0) {
-      unreadCounts[roomId] = unreadCount;
     }
 
     if (lastMsg) {
@@ -112,11 +200,51 @@ export async function getConversationsSummary(currentUserId?: number) {
     }
   }
 
+  if (currentUserId) {
+    const [clearRec] = await db
+      .select({ lastId: dmClears.lastId })
+      .from(dmClears)
+      .where(and(eq(dmClears.userId, currentUserId), eq(dmClears.peer, 999)))
+      .limit(1);
+    const cutoffId = clearRec?.lastId || 0;
+
+    const [velumDm] = await db
+      .select()
+      .from(dms)
+      .where(
+        and(
+          or(
+            and(eq(dms.sender, currentUserId), eq(dms.peer, 999)),
+            and(eq(dms.sender, 999), eq(dms.peer, currentUserId))
+          ),
+          gt(dms.id, cutoffId)
+        )
+      )
+      .orderBy(desc(dms.id))
+      .limit(1);
+
+    if (velumDm) {
+      const velumRoomId = `dm_velum_${currentUserId}`;
+      summary[velumRoomId] = {
+        message_id: velumDm.id.toString(),
+        room_id: velumRoomId,
+        lounge_id: velumRoomId,
+        user_id: velumDm.sender,
+        username: velumDm.sender === 999 ? 'Velum' : 'You',
+        content: velumDm.body,
+        is_encrypted: !!velumDm.encrypted,
+        deliveredTo: velumDm.deliveredAt ? velumDm.deliveredAt.toISOString() : '',
+        readBy: velumDm.readAt ? velumDm.readAt.toISOString() : '',
+        created_at: velumDm.created ? velumDm.created.toISOString() : new Date().toISOString()
+      };
+    }
+  }
+
   return { summary, unreadCounts };
 }
 
 export async function getUnreadSequenceCounts(currentUserId: number) {
-  const allLounges = await db.select().from(lounges);
+  const allLounges = await loungeRepository.findAll();
   const readCursors = await db.select()
     .from(userReadCursors)
     .where(eq(userReadCursors.userId, currentUserId));
@@ -141,7 +269,7 @@ export async function getUnreadSequenceCounts(currentUserId: number) {
 }
 
 export async function getMuteRule(currentUserId: number, rawId: string) {
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -161,7 +289,7 @@ export async function setMuteRule(currentUserId: number, rawId: string, muteRule
     return { error: 'Invalid mute rule. Allowed: off, mentions_only, forever', status: 400 };
   }
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -196,7 +324,7 @@ export async function listLounges(user?: any, searchQuery = '') {
     userJoinedIds = new Set(m.map(x => x.loungeId));
   }
 
-  const allLounges = (await db.select().from(lounges)).filter(l => l.type !== 'dm');
+  const allLounges = (await loungeRepository.findAll()).filter(l => l.type !== 'dm');
   const parentLounges = allLounges.filter(l => !l.parentLoungeId);
 
   const visibleParents = parentLounges.filter(parent => {
@@ -260,7 +388,7 @@ export async function listLounges(user?: any, searchQuery = '') {
 export async function getUserLounges(user?: any) {
   const currentUserId = user?.userId;
   const isAdmin = checkIsSystemAdmin(user);
-  const allLounges = (await db.select().from(lounges)).filter(l => l.type !== 'dm');
+  const allLounges = (await loungeRepository.findAll()).filter(l => l.type !== 'dm');
   
   if (!currentUserId) {
     const publicLounges = allLounges.filter(l => !l.isPrivate && !l.isHidden);
@@ -283,8 +411,8 @@ export async function getUserLounges(user?: any) {
 
 export async function getLoungeDetails(rawId: string, user?: any) {
   const isAdmin = checkIsSystemAdmin(user);
-  const all = await db.select().from(lounges);
-  const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  const all = await loungeRepository.findAll();
+  const target = all.find(l => matchLounge(l, rawId));
 
   if (!target) {
     return { error: `Lounge "${rawId}" not found.`, status: 404 };
@@ -297,7 +425,7 @@ export async function getLoungeDetails(rawId: string, user?: any) {
   const sublounges = all.filter(l => l.parentLoungeId === target.id);
   const visibleSublounges = isAdmin ? sublounges : sublounges.filter(l => !l.isHidden);
 
-  if (target.slug === 'velum_master_lounge') {
+  if (target.slug === 'velum_master_lounge' || target.id === 1) {
     visibleSublounges.sort((a, b) => {
       const idxA = OFFICIAL_SLUGS_ORDER.indexOf(a.slug || '');
       const idxB = OFFICIAL_SLUGS_ORDER.indexOf(b.slug || '');
@@ -328,8 +456,8 @@ export async function getLoungeRooms(rawId: string, user?: any) {
   const currentUserId = user?.userId;
   const isAdmin = checkIsSystemAdmin(user);
 
-  const all = await db.select().from(lounges);
-  const parent = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  const all = await loungeRepository.findAll();
+  const parent = all.find(l => matchLounge(l, rawId));
 
   if (!parent) {
     return { rooms: [] };
@@ -354,7 +482,7 @@ export async function getLoungeRooms(rawId: string, user?: any) {
     return false;
   });
 
-  if (parent.slug === 'velum_master_lounge') {
+  if (parent.slug === 'velum_master_lounge' || parent.id === 1) {
     visibleSubs.sort((a, b) => {
       const idxA = OFFICIAL_SLUGS_ORDER.indexOf(a.slug || '');
       const idxB = OFFICIAL_SLUGS_ORDER.indexOf(b.slug || '');
@@ -381,8 +509,8 @@ export async function getLoungeRooms(rawId: string, user?: any) {
 }
 
 export async function getLoungeMembersList(rawId: string) {
-  const all = await db.select().from(lounges);
-  const parent = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  const all = await loungeRepository.findAll();
+  const parent = all.find(l => matchLounge(l, rawId));
 
   if (!parent) {
     return { members: [] };
@@ -425,7 +553,7 @@ export async function getLoungeMembersList(rawId: string) {
 }
 
 export async function joinLounge(currentUserId: number, loungeId?: string, inviteCode?: string) {
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   let target;
 
   if (inviteCode) {
@@ -460,7 +588,7 @@ export async function createLounge(currentUserId: number, name: string, descript
 
   const cleanName = name.trim();
 
-  const existing = await db.select().from(lounges);
+  const existing = await loungeRepository.findAll();
   const dup = existing.find(
     l => !l.parentLoungeId &&
          l.ownerId === currentUserId &&
@@ -471,7 +599,7 @@ export async function createLounge(currentUserId: number, name: string, descript
   }
 
   const privateFlag = Boolean(isPrivate);
-  const inviteCode = privateFlag ? `VL/M-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
+  const inviteCode = privateFlag ? generateSecureInviteCode('VL/M') : null;
   const slug = `lounge_${Date.now()}`;
   const [created] = await db.insert(lounges).values({
     slug,
@@ -501,7 +629,7 @@ export async function createSublounge(user: any, rawId: string, name: string, de
     return { error: 'Sublounge name is required.', status: 400 };
   }
 
-  const allLounges = await db.select().from(lounges);
+  const allLounges = await loungeRepository.findAll();
   const parentLounge = allLounges.find(l => l.id.toString() === rawId || l.slug === rawId);
 
   if (!parentLounge) {
@@ -535,7 +663,7 @@ export async function createSublounge(user: any, rawId: string, name: string, de
   }
 
   const privateFlag = Boolean(isPrivate);
-  const inviteCode = privateFlag ? `VL/S-${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null;
+  const inviteCode = privateFlag ? generateSecureInviteCode('VL/S') : null;
   const slug = `sublounge_${Date.now()}`;
 
   const [created] = await db.insert(lounges).values({
@@ -565,7 +693,7 @@ export async function updateLoungeAvatar(currentUserId: number, rawId: string, a
     return { error: 'Avatar URL is required.', status: 400 };
   }
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -591,17 +719,10 @@ export async function searchLoungeMessages(rawId: string, query: string) {
   }
 
   let targetLoungeId: number | null = null;
-  if (rawId.startsWith('dm_')) {
-    const [dmLounge] = await db.select().from(lounges).where(eq(lounges.slug, rawId)).limit(1);
-    if (dmLounge) {
-      targetLoungeId = dmLounge.id;
-    }
-  } else {
-    const all = await db.select().from(lounges);
-    const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
-    if (target) {
-      targetLoungeId = target.id;
-    }
+  const all = await loungeRepository.findAll();
+  const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
+  if (target) {
+    targetLoungeId = target.id;
   }
 
   if (!targetLoungeId) {
@@ -631,12 +752,99 @@ export async function searchLoungeMessages(rawId: string, query: string) {
   return { messages: msgList };
 }
 
-export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit: number) {
-  const all = await db.select().from(lounges);
+export async function clearUserChatHistory(userId: number, loungeId: number) {
+  const [target] = await db.select().from(lounges).where(eq(lounges.id, loungeId)).limit(1);
+  if (!target) return { success: false, error: 'Lounge not found' };
+
+  const currentSeq = target.currentSequenceId || 0;
+  const now = new Date();
+
+  // Upsert userChatClears record
+  const [existingClear] = await db.select()
+    .from(userChatClears)
+    .where(and(eq(userChatClears.userId, userId), eq(userChatClears.loungeId, loungeId)))
+    .limit(1);
+
+  if (existingClear) {
+    await db.update(userChatClears)
+      .set({ clearedAt: now, updatedAt: now })
+      .where(eq(userChatClears.id, existingClear.id));
+  } else {
+    await db.insert(userChatClears).values({
+      userId,
+      loungeId,
+      clearedAt: now,
+      updatedAt: now
+    });
+  }
+
+  // Also update read cursor
+  const [existingCursor] = await db.select()
+    .from(userReadCursors)
+    .where(and(eq(userReadCursors.userId, userId), eq(userReadCursors.loungeId, loungeId)))
+    .limit(1);
+
+  if (existingCursor) {
+    await db.update(userReadCursors)
+      .set({
+        clearedSeq: currentSeq,
+        clearedAt: now,
+        lastReadSeq: currentSeq,
+        updatedAt: now
+      })
+      .where(and(eq(userReadCursors.userId, userId), eq(userReadCursors.loungeId, loungeId)));
+  } else {
+    await db.insert(userReadCursors).values({
+      userId,
+      loungeId,
+      lastReadSeq: currentSeq,
+      clearedSeq: currentSeq,
+      clearedAt: now,
+      updatedAt: now
+    });
+  }
+
+  return { success: true, clearedSeq: currentSeq, clearedAt: now };
+}
+
+export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit: number, currentUserId?: number) {
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
     return { room_id: rawId, lounge_id: null, messages: [], max_seq: 0 };
+  }
+
+  let effectiveSince = isNaN(sinceSeq) ? 0 : sinceSeq;
+  let clearedAtTime: number = 0;
+
+  if (currentUserId) {
+    const [cursor, clearRec] = await Promise.all([
+      db.select({ clearedSeq: userReadCursors.clearedSeq, clearedAt: userReadCursors.clearedAt })
+        .from(userReadCursors)
+        .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
+        .limit(1),
+      db.select({ clearedAt: userChatClears.clearedAt })
+        .from(userChatClears)
+        .where(and(eq(userChatClears.userId, currentUserId), eq(userChatClears.loungeId, target.id)))
+        .limit(1)
+    ]);
+
+    if (cursor[0]?.clearedSeq && cursor[0].clearedSeq > effectiveSince) {
+      effectiveSince = cursor[0].clearedSeq;
+    }
+    const cTime = clearRec[0]?.clearedAt ? new Date(clearRec[0].clearedAt).getTime() : (cursor[0]?.clearedAt ? new Date(cursor[0].clearedAt).getTime() : 0);
+    if (cTime > 0) {
+      clearedAtTime = cTime;
+    }
+  }
+
+  const syncConditions = [eq(messages.loungeId, target.id)];
+  if (effectiveSince > 0) {
+    syncConditions.push(gt(messages.sequenceId, effectiveSince));
+  }
+  if (clearedAtTime > 0) {
+    syncConditions.push(gt(messages.createdAt, new Date(clearedAtTime)));
   }
 
   const syncMsgs = await db.select({
@@ -654,7 +862,7 @@ export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit:
   })
   .from(messages)
   .leftJoin(users, eq(messages.senderId, users.id))
-  .where(and(eq(messages.loungeId, target.id), gt(messages.sequenceId, isNaN(sinceSeq) ? 0 : sinceSeq)))
+  .where(and(...syncConditions))
   .orderBy(messages.sequenceId)
   .limit(limit);
 
@@ -682,17 +890,48 @@ export async function syncLoungeMessages(rawId: string, sinceSeq: number, limit:
 }
 
 export async function getLoungeMessages(rawId: string, currentUserId: number | null, since?: Date | null) {
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
     return { messages: [] };
   }
 
-  const isDM = target.type === 'dm';
-  const whereClause = since && !isNaN(since.getTime())
-    ? and(eq(messages.loungeId, target.id), gt(messages.createdAt, since))
-    : eq(messages.loungeId, target.id);
+  let clearedSeq = 0;
+  let clearedAtTime = 0;
+
+  if (currentUserId) {
+    const [cursor, clearRec] = await Promise.all([
+      db.select({ clearedSeq: userReadCursors.clearedSeq, clearedAt: userReadCursors.clearedAt })
+        .from(userReadCursors)
+        .where(and(eq(userReadCursors.userId, currentUserId), eq(userReadCursors.loungeId, target.id)))
+        .limit(1),
+      db.select({ clearedAt: userChatClears.clearedAt })
+        .from(userChatClears)
+        .where(and(eq(userChatClears.userId, currentUserId), eq(userChatClears.loungeId, target.id)))
+        .limit(1)
+    ]);
+
+    if (cursor[0]?.clearedSeq) {
+      clearedSeq = cursor[0].clearedSeq;
+    }
+    const cTime = clearRec[0]?.clearedAt ? new Date(clearRec[0].clearedAt).getTime() : (cursor[0]?.clearedAt ? new Date(cursor[0].clearedAt).getTime() : 0);
+    if (cTime > 0) {
+      clearedAtTime = cTime;
+    }
+  }
+
+  const conditions = [eq(messages.loungeId, target.id)];
+  if (clearedAtTime > 0) {
+    conditions.push(gt(messages.createdAt, new Date(clearedAtTime)));
+  } else if (since && !isNaN(since.getTime())) {
+    conditions.push(gt(messages.createdAt, since));
+  }
+  if (clearedSeq > 0) {
+    conditions.push(gt(messages.sequenceId, clearedSeq));
+  }
+
+  const whereClause = and(...conditions);
 
   const msgList = await db.select({
     id: messages.id,
@@ -713,38 +952,24 @@ export async function getLoungeMessages(rawId: string, currentUserId: number | n
   .orderBy(desc(messages.createdAt))
   .limit(100);
 
-  const messagesWithStatus = msgList.reverse().map(m => {
-    let status = 'sent';
-    if (isDM && currentUserId) {
-      const deliveredTo = m.deliveredTo ? m.deliveredTo.split(',').map(Number).filter(id => !isNaN(id)) : [];
-      const readBy = m.readBy ? m.readBy.split(',').map(Number).filter(id => !isNaN(id)) : [];
-
-      if (m.senderId === currentUserId) {
-        if (readBy.length > 0) {
-          status = 'read';
-        } else if (deliveredTo.length > 0) {
-          status = 'delivered';
-        }
-      } else {
-        if (readBy.includes(currentUserId)) {
-          status = 'read';
-        } else if (deliveredTo.includes(currentUserId)) {
-          status = 'delivered';
-        }
-      }
-    }
-
+  const normalized = msgList.reverse().map(m => {
+    const isoCreatedAt = m.createdAt instanceof Date ? m.createdAt.toISOString() : (m.createdAt ? new Date(m.createdAt).toISOString() : new Date().toISOString());
     return {
       ...m,
       message_id: String(m.id),
       db_message_id: m.id,
+      room_id: rawId,
+      lounge_id: String(target.id),
+      user_id: m.senderId,
+      is_encrypted: !!(m as any).encrypted,
       sequence_id: m.sequenceId,
       client_msg_id: m.clientMsgId,
-      status: isDM ? status : undefined
+      createdAt: isoCreatedAt,
+      timestamp: isoCreatedAt
     };
   });
 
-  return { messages: messagesWithStatus };
+  return { messages: normalized };
 }
 
 export async function postLoungeMessage(user: any, rawId: string, content: string, clientMsgId?: string | null) {
@@ -753,7 +978,7 @@ export async function postLoungeMessage(user: any, rawId: string, content: strin
     return { error: 'Message content cannot be empty.', status: 400 };
   }
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -766,6 +991,24 @@ export async function postLoungeMessage(user: any, rawId: string, content: strin
 
   if (target.accessLevel === 'EXEC_ONLY' && !['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(user.role)) {
     return { error: 'Executive Lounge access restricted to system staff.', status: 403 };
+  }
+
+  if (target.type !== 'dm' && target.slug !== 'velum_master_lounge') {
+    const parentId = target.parentLoungeId || target.id;
+    const isOwner = target.ownerId === currentUserId;
+    const isSysAdmin = checkIsSystemAdmin(user);
+    if (!isOwner && !isSysAdmin) {
+      const mem = await db.select().from(loungeMembers)
+        .where(and(
+          eq(loungeMembers.loungeId, parentId),
+          eq(loungeMembers.userId, currentUserId),
+          eq(loungeMembers.status, 'active')
+        ))
+        .limit(1);
+      if (mem.length === 0) {
+        return { error: 'You must be a member of this lounge to post messages.', status: 403 };
+      }
+    }
   }
 
   if (clientMsgId) {
@@ -828,7 +1071,7 @@ export async function getLoungeInvites(rawId: string, user: any) {
   const currentUserId = user.userId;
   const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(user.role);
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
   if (!lounge) {
     return { error: 'Lounge not found.', status: 404 };
@@ -854,7 +1097,7 @@ export async function createLoungeInvite(rawId: string, user: any) {
   const currentUserId = user.userId;
   const isAdmin = ['ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN', 'CLI_ADMIN'].includes(user.role);
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
   if (!lounge) {
     return { error: 'Lounge not found.', status: 404 };
@@ -869,7 +1112,7 @@ export async function createLoungeInvite(rawId: string, user: any) {
   let code = lounge.inviteCode;
   if (!code) {
     const prefix = lounge.parentLoungeId ? 'VL/S' : 'VL/M';
-    code = `${prefix}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    code = generateSecureInviteCode(prefix);
     await db.update(lounges).set({ inviteCode: code }).where(eq(lounges.id, lounge.id));
   }
   return {
@@ -880,7 +1123,7 @@ export async function createLoungeInvite(rawId: string, user: any) {
 }
 
 export async function deleteLoungeInvite(rawId: string) {
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const lounge = all.find(l => l.slug === rawId || l.id.toString() === rawId);
   if (!lounge) {
     return { error: 'Lounge not found.', status: 404 };
@@ -890,7 +1133,7 @@ export async function deleteLoungeInvite(rawId: string) {
 }
 
 export async function getJoinRequests(rawId: string) {
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -950,7 +1193,7 @@ export async function updateMemberRole(user: any, rawId: string, targetUserId: n
     return { error: 'Valid target user ID and role are required.', status: 400 };
   }
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -977,7 +1220,7 @@ export async function removeMember(user: any, rawId: string, targetUserId: numbe
     return { error: 'Valid target user ID is required.', status: 400 };
   }
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -1003,7 +1246,7 @@ export async function applySanction(user: any, rawId: string, targetUserId: any,
     return { error: 'loungeId, targetUserId, and type are required.', status: 400 };
   }
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId.toString());
 
   if (!target) {
@@ -1040,7 +1283,7 @@ export async function addMemberDirect(user: any, rawId: string, username: string
     return { error: 'Username is required.', status: 400 };
   }
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -1078,7 +1321,7 @@ export async function addMemberDirect(user: any, rawId: string, username: string
 }
 
 export async function joinRoom(currentUserId: number, roomId: string, inviteCode?: string) {
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === roomId || l.id.toString() === roomId || (inviteCode && l.inviteCode === inviteCode));
 
   if (!target) {
@@ -1108,7 +1351,7 @@ export async function updateLoungeSettings(user: any, rawId: string, body: any) 
   const { name, description, icon_url, is_private } = body;
   const currentUserId = user.userId;
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -1153,7 +1396,7 @@ export async function updateLoungeSettings(user: any, rawId: string, body: any) 
 }
 
 export async function applyToLounge(currentUserId: number, rawId: string) {
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {
@@ -1198,7 +1441,7 @@ export async function deleteLounge(user: any, rawId: string) {
   const currentUserId = user.userId;
   const isAdmin = checkIsSystemAdmin(user);
 
-  const all = await db.select().from(lounges);
+  const all = await loungeRepository.findAll();
   const target = all.find(l => l.slug === rawId || l.id.toString() === rawId);
 
   if (!target) {

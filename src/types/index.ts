@@ -82,8 +82,9 @@ export interface IpAddress {
 }
 
 export interface Message {
-  id?: string;
-  message_id: string;
+  id: string | number;
+  client_msg_id?: string;
+  message_id?: string;
   room_id: string;
   user_id: number;
   username?: string;
@@ -92,11 +93,10 @@ export interface Message {
   timestamp: string | number;
   created_at?: string | number;
   nonce?: string;
-  client_msg_id?: string;
   sequence_id?: number;
   read_by?: string | string[];
   delivered_to?: string | string[];
-  status?: 'sent' | 'delivered' | 'read' | string;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | string;
   deleted?: boolean;
   reactions?: Record<string, string[]>;
   burn_seconds?: number | null;
@@ -107,6 +107,7 @@ export interface Message {
   reply_to?: string | null;
   reply_preview?: { username: string; content: string } | null;
   expires_in?: string | number | null;
+  expires_at?: string | null;
   is_edited?: boolean;
   edited_at?: string;
   is_pinned?: boolean;
@@ -223,7 +224,10 @@ export interface FriendRequest {
   status: 'pending' | 'accepted' | 'declined' | string;
   created_at: string | number;
   sender_name?: string;
+  sender_display_name?: string;
   sender_avatar?: string;
+  receiver_username?: string;
+  receiver_name?: string;
 }
 
 export interface PeerRelationship {
@@ -661,6 +665,7 @@ export interface ClientDiagnosticLog {
     serviceWorker_active: boolean;
     indexedDb_supported: boolean;
   };
+  state_snapshot?: any;
   error_buffer?: Array<{
     message: string;
     source?: string;

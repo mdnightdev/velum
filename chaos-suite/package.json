@@ -1,0 +1,33 @@
+{
+  "name": "velum-chaos-suite",
+  "version": "2.0.0",
+  "description": "Advanced chaos engineering suite for testing Velum platform with realistic user behavior simulation",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx src/index.ts",
+    "simple": "tsx src/simple-index.ts",
+    "build": "tsc",
+    "clean": "rm -rf dist chaos-logs chaos-data",
+    "help": "tsx src/index.ts --help",
+    "test": "tsx src/index.ts --agents 2 --duration 5000"
+  },
+  "keywords": [
+    "chaos-engineering",
+    "testing",
+    "load-testing",
+    "user-simulation",
+    "stress-testing"
+  ],
+  "author": "Velum Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.0"
+  }
+}

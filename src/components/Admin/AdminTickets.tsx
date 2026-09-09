@@ -1,6 +1,7 @@
 import React from 'react';
-import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key, Send } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, CheckCircle, Trash2, Key, Send, X, Image as ImageIcon } from 'lucide-react';
 import { Ticket } from '../../types';
+import { resolveMediaUrl } from '../../utils/mediaPipeline';
 
 interface AdminTicketsProps {
   tickets: Ticket[];
@@ -20,7 +21,6 @@ interface AdminTicketsProps {
   handleTicketReply: (close: boolean, escalate: boolean) => Promise<void>;
   restoreCode: string | null;
   user?: any;
-  c: any;
 }
 
 export default function AdminTickets({
@@ -41,7 +41,6 @@ export default function AdminTickets({
   handleTicketReply,
   restoreCode,
   user,
-  c,
 }: AdminTicketsProps) {
   // Filter tickets dynamically
   const safeTickets = Array.isArray(tickets) ? tickets : [];
@@ -57,121 +56,71 @@ export default function AdminTickets({
   });
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Top Level Audit KPI Oversight Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-text-secondary uppercase tracking-widest font-mono">
-            Total Tickets
+    <div className="space-y-4">
+      {/* KPI Cards Single Row */}
+      <div className="grid grid-cols-4 gap-2 sm:gap-3">
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-text-secondary font-medium truncate">
+            Total
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-text-primary">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-text-primary">
               {tickets.length}
             </span>
           </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div className="h-full bg-accent-secondary rounded-full" style={{ width: '100%' }}></div>
-          </div>
         </div>
 
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-status-dnd uppercase tracking-widest font-mono">
-            Open Tickets
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-status-dnd font-medium truncate">
+            Open
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-status-dnd">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-status-dnd">
               {tickets.filter((t) => t.status === 'open' || t.status === 'escalated').length}
             </span>
           </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-status-dnd rounded-full"
-              style={{
-                width: `${
-                  tickets.length
-                    ? (tickets.filter((t) => t.status === 'open' || t.status === 'escalated').length /
-                        tickets.length) *
-                      100
-                    : 0
-                }%`,
-              }}
-            ></div>
-          </div>
         </div>
 
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-status-away/80 uppercase tracking-widest font-mono">
-            Pending Tickets
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-status-away font-medium truncate">
+            Pending
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-status-away">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-status-away">
               {tickets.filter((t) => t.status === 'pending').length}
             </span>
           </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-status-away rounded-full"
-              style={{
-                width: `${
-                  tickets.length
-                    ? (tickets.filter((t) => t.status === 'pending').length / tickets.length) * 100
-                    : 0
-                }%`,
-              }}
-            ></div>
-          </div>
         </div>
 
-        <div className={`p-4 rounded-xl border ${c.bgPanel} flex flex-col justify-between shadow-md`}>
-          <span className="text-[9px] font-bold text-status-online/80 uppercase tracking-widest font-mono">
-            Resolved Tickets
+        <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between">
+          <span className="text-xs text-status-online font-medium truncate">
+            Resolved
           </span>
-          <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black font-mono text-status-online">
+          <div className="mt-0.5">
+            <span className="text-lg sm:text-xl font-bold text-status-online">
               {tickets.filter((t) => t.status === 'resolved' || t.status === 'approved').length}
             </span>
-          </div>
-          <div className="h-1 bg-text-primary/[0.04] mt-3 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-status-online rounded-full"
-              style={{
-                width: `${
-                  tickets.length
-                    ? (tickets.filter((t) => t.status === 'resolved' || t.status === 'approved')
-                        .length /
-                        tickets.length) *
-                      100
-                    : 0
-                }%`,
-              }}
-            ></div>
           </div>
         </div>
       </div>
 
-      {/* Central Auditing Controls & Registry Workspace */}
-      <div className="flex flex-col border-t border-white-5 pt-6 mt-4">
+      {/* Central Registry Workspace */}
+      <div className="flex flex-col border-t border-velum-600 pt-4 mt-2">
         {/* Header and Live Search Filters Panel */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white-5 pb-4 mb-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-velum-600 pb-3 mb-3">
           <div className="flex items-center gap-2">
-            <HelpCircle className="w-5 h-5 text-accent" />
-            <div>
-              <h3 className="font-extrabold text-[12px] uppercase tracking-wider text-text-primary">
-                Tickets
-              </h3>
-            </div>
-          </div>
+           </div>
 
           {/* Filtering Controllers */}
-          <div className="flex items-center gap-2.5 w-full md:w-auto">
-            <div className="relative flex-grow md:w-64">
-              <Search className="w-3.5 h-3.5 text-text-disabled absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-grow md:w-56">
+              <Search className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder=""
+                placeholder="Search tickets..."
                 value={ticketSearch}
                 onChange={(e) => setTicketSearch(e.target.value)}
-                className={`pl-8 pr-3 py-1.5 text-[11px] rounded-xl w-full outline-none font-mono ${c.bgInput}`}
+                className="pl-9 pr-3 py-1.5 text-xs rounded-xl w-full outline-none bg-velum-750 border border-velum-600 text-text-primary placeholder:text-text-disabled focus:border-accent/40"
               />
             </div>
 
@@ -179,39 +128,28 @@ export default function AdminTickets({
               <select
                 value={ticketFilter}
                 onChange={(e) => setTicketFilter(e.target.value as any)}
-                className={`pl-3 pr-8 py-1.5 text-[11px] rounded-xl outline-none font-mono cursor-pointer appearance-none ${c.bgInput} border border-white-5`}
+                className="pl-3 pr-7 py-1.5 text-xs rounded-xl outline-none cursor-pointer appearance-none bg-velum-750 border border-velum-600 text-text-primary focus:border-accent/40"
               >
-                <option value="all">ALL STATUSES</option>
-                <option value="open">OPEN CASES</option>
-                <option value="pending">PENDING</option>
-                <option value="escalated">ESCALATED</option>
-                <option value="resolved">RESOLVED</option>
+                <option value="all">All</option>
+                <option value="open">Open</option>
+                <option value="pending">Pending</option>
+                <option value="escalated">Escalated</option>
+                <option value="resolved">Resolved</option>
               </select>
-              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-40">
-                <svg
-                  className="w-3 h-3 text-text-secondary"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2.5"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                </svg>
-              </div>
             </div>
           </div>
         </div>
 
         {/* Audit Registry Main Data Table */}
-        <div className="overflow-x-auto rounded-xl border border-white-5 bg-velum-850/40">
+        <div className="overflow-x-auto rounded-xl border border-velum-600 bg-velum-800">
           <table className="w-full text-xs font-sans text-left border-collapse">
             <thead>
               <tr className="text-text-secondary/30 text-[9px] font-black uppercase tracking-widest border-b border-white-5">
-                <th className="py-3.5 pl-4">Ticket ID</th>
+                <th className="py-3.5 pl-4">ID</th>
                 <th className="py-3.5">User</th>
                 <th className="py-3.5">Subject</th>
-                <th className="py-3.5">Trust Score</th>
-                <th className="py-3.5">Created At</th>
+                <th className="py-3.5">Trust</th>
+                <th className="py-3.5">Date</th>
                 <th className="py-3.5">Status</th>
                 <th className="py-3.5 text-right pr-4">Action</th>
               </tr>
@@ -248,7 +186,7 @@ export default function AdminTickets({
                     <td className="py-3.5">
                       <div className="flex flex-col">
                         <span className="text-text-primary font-bold">
-                          @{ticket.username || 'Anonymous'}
+                         {ticket.username || 'User'}
                         </span>
                         <span className="text-[9px] font-mono text-text-secondary">
                           ID: {ticket.user_id}
@@ -297,7 +235,7 @@ export default function AdminTickets({
                         }}
                         className="inline-flex items-center gap-1 bg-accent-10 text-accent hover:bg-accent hover:text-text-primary px-3 py-1.5 rounded-lg text-[9.5px] font-black uppercase font-mono tracking-wider border border-accent-20 transition duration-150 cursor-pointer"
                       >
-                        <span>Inspect</span>
+                        <span>Open</span>
                         <ChevronRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
                       </button>
                     </td>
@@ -311,7 +249,7 @@ export default function AdminTickets({
                     colSpan={7}
                     className="py-20 text-center text-text-disabled font-mono text-[10px] uppercase font-bold tracking-widest bg-black/10"
                   >
-                    No tickets match filter criteria
+                   
                   </td>
                 </tr>
               )}
@@ -343,7 +281,7 @@ export default function AdminTickets({
                   </span>
                   <div
                     className={`w-2.5 h-2.5 rounded-full shadow-sm ${
-                      (activeTicket.status || '').toLowerCase() === 'open'
+                      (activeTicket.status || '').toLowerCase() === ''
                         ? 'bg-status-dnd shadow-status-dnd/20'
                         : (activeTicket.status || '').toLowerCase() === 'resolved'
                         ? 'bg-status-online shadow-status-online/20'
@@ -378,40 +316,15 @@ export default function AdminTickets({
 
             {/* Main Content Area (Split into Correspondence History Timeline, logs & details) */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0 flex flex-col">
-              {/* User Details & Trust Score */}
-              <div className="bg-velum-800 border border-white-5 p-4 rounded-xl mb-6">
-                <div className="flex flex-col sm:flex-row justify-between gap-4 font-mono text-xs">
-                  <div className="space-y-2 text-text-secondary">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">Tracking ID:</span>
-                      <span className="text-text-primary break-all">{activeTicket.tracking_id || activeTicket.tracking_id || 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">User:</span>
-                      <span className="text-text-primary">{activeTicket.user_id} (@{activeTicket.username || 'Anonymous'})</span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2 text-text-secondary sm:text-right">
-                    <div className="flex items-center sm:justify-end gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">Created:</span>
-                      <span className="text-text-primary">{new Date(activeTicket.created_at).toLocaleString()}</span>
-                    </div>
-                    <div className="flex items-center sm:justify-end gap-2">
-                      <span className="font-bold text-[9px] uppercase tracking-wider">Trust Score:</span>
-                      <span
-                        className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
-                          activeTicket.credibility_score !== undefined && activeTicket.credibility_score >= 85
-                            ? 'bg-status-online-bg text-status-online'
-                            : 'bg-status-dnd-bg text-status-dnd'
-                        }`}
-                      >
-                        {activeTicket.credibility_score !== undefined
-                          ? `${activeTicket.credibility_score}%`
-                          : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
+              {/* Ticket Meta Details */}
+              <div className="bg-velum-800 border border-white-5 p-3.5 rounded-xl mb-4 font-mono text-xs flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-[9px] uppercase tracking-wider text-text-secondary">Tracking ID:</span>
+                  <span className="text-text-primary text-[11px] font-bold">{activeTicket.tracking_id || activeTicket.ticket_id}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-[9px] uppercase tracking-wider text-text-secondary">Opened:</span>
+                  <span className="text-text-primary text-[11px]">{new Date(activeTicket.created_at).toLocaleString()}</span>
                 </div>
               </div>
 
@@ -449,6 +362,25 @@ export default function AdminTickets({
                         <p className="font-normal whitespace-pre-wrap font-sans">
                           {m.content}
                         </p>
+                        {m.attachments && Array.isArray(m.attachments) && m.attachments.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2 pt-1 border-t border-white-5">
+                            {m.attachments.map((att: string, aIdx: number) => (
+                              <a
+                                key={aIdx}
+                                href={resolveMediaUrl(att)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block w-20 h-20 rounded-lg overflow-hidden border border-velum-600 bg-velum-900 hover:opacity-80 transition cursor-pointer"
+                              >
+                                <img
+                                  src={resolveMediaUrl(att)}
+                                  alt="Report attachment"
+                                  className="w-full h-full object-cover"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -518,7 +450,7 @@ export default function AdminTickets({
                         }
                       }}
                       placeholder="Type a message..."
-                      className={`flex-1 text-sm rounded-xl py-3 pl-4 pr-12 outline-none resize-none transition-all ${c.bgInput} border border-white-5 focus:border-accent-40`}
+                      className="flex-1 text-sm rounded-xl py-2.5 pl-4 pr-12 outline-none resize-none transition-all bg-velum-750 border border-velum-600 text-text-primary placeholder:text-text-disabled focus:border-accent/40"
                     />
                     <button
                       onClick={() => handleTicketReply(false, false)}

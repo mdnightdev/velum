@@ -1,69 +1,194 @@
 import React, { RefObject } from 'react';
-import { streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
+import { streamFileDirectToCloudStorage, stripImageMetadataAndCompress, generateAnonymousFilename, sanitizeMediaExtension } from '../../../utils/mediaPipeline';
 import { Attachment } from './useMessageInput';
+import { ComposeMediaItem } from '../MediaComposeModal';
+import { velumToast } from '../../../utils/toast';
 
 export const MAX_ATTACHMENT_BATCH = 5;
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
+export const UPLOAD_CONCURRENCY = 3;
+
+/** Still images that can open the chat cropper (not GIF/SVG). */
+export function shouldOpenChatImageCropper(file: File): boolean {
+  if (!file.type.startsWith('image/')) return false;
+  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return false;
+  return true;
+}
+
+export function isComposeMediaFile(file: File): boolean {
+  return file.type.startsWith('image/') || file.type.startsWith('video/');
+}
 
 export function compressImageToBlob(file: File): Promise<Blob> {
+  return stripImageMetadataAndCompress(file, 1200, 0.85);
+}
+
+export function createComposeItemId(): string {
+  return `media_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        let width = img.width;
-        let height = img.height;
-        if (width > MAX_WIDTH) {
-          height = Math.round((height * MAX_WIDTH) / width);
-          width = MAX_WIDTH;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('Canvas compression failed'));
-        }, 'image/jpeg', 0.8);
-      };
-      img.onerror = reject;
-      img.src = e.target?.result as string;
+    reader.onload = (evt) => {
+      const src = evt.target?.result as string;
+      if (src) resolve(src);
+      else reject(new Error('Could not read file'));
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('Could not read file'));
     reader.readAsDataURL(file);
   });
 }
 
+export async function fileToComposeItem(file: File): Promise<ComposeMediaItem> {
+  const isImg = file.type.startsWith('image/');
+  const isVid = file.type.startsWith('video/');
+  const sizeStr = file.size > 1024 * 1024
+    ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+    : `${(file.size / 1024).toFixed(0)} KB`;
+  const data = await fileToDataUrl(file);
+  return {
+    id: createComposeItemId(),
+    name: file.name,
+    size: sizeStr,
+    type: file.type || (isImg ? 'image/webp' : isVid ? 'video/mp4' : 'application/octet-stream'),
+    data,
+  };
+}
+
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+  onProgress?: (done: number, total: number) => void
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  let completed = 0;
+  const limit = Math.max(1, Math.min(concurrency, items.length || 1));
+
+  async function runWorker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index], index);
+      completed += 1;
+      onProgress?.(completed, items.length);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => runWorker()));
+  return results;
+}
+
+export function dataUriToBlob(dataURI: string): Blob {
+  try {
+    const parts = dataURI.split(',');
+    const byteString = atob(parts[1] || parts[0]);
+    const mimeString = parts[0]?.split(':')[1]?.split(';')[0] || 'application/octet-stream';
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    return new Blob([ab], { type: mimeString });
+  } catch {
+    return new Blob([dataURI], { type: 'application/octet-stream' });
+  }
+}
+
+export async function uploadComposeItems(
+  items: ComposeMediaItem[],
+  onProgress?: (done: number, total: number) => void
+): Promise<string[]> {
+  return mapWithConcurrency(items, UPLOAD_CONCURRENCY, async (item) => {
+    const blob = item.data.startsWith('data:')
+      ? dataUriToBlob(item.data)
+      : await (await fetch(item.data)).blob();
+
+    let uploadBlob: Blob = blob;
+    if (item.type.startsWith('image/') && item.type !== 'image/gif' && item.type !== 'image/svg+xml') {
+      try {
+        uploadBlob = await stripImageMetadataAndCompress(blob, 1200, 0.85);
+      } catch {
+        uploadBlob = blob;
+      }
+    }
+
+    const ext = sanitizeMediaExtension(
+      uploadBlob.type || item.name.split('.').pop() || 'webp',
+      item.type.startsWith('video/') ? 'mp4' : item.type.startsWith('audio/') ? 'webm' : 'webp'
+    );
+    const anonymousName = generateAnonymousFilename(ext, item.type || uploadBlob.type);
+    const sizeStr = uploadBlob.size > 1024 * 1024
+      ? `${(uploadBlob.size / (1024 * 1024)).toFixed(1)} MB`
+      : `${(uploadBlob.size / 1024).toFixed(0)} KB`;
+    const url = await streamFileDirectToCloudStorage(uploadBlob, 'media', ext);
+    return `[Attachment: ${anonymousName} size:${sizeStr} type:${item.type || uploadBlob.type || 'image/webp'} url:${url}]`;
+  }, onProgress);
+}
+
+function stageFileAsAttachment(file: File, setSelectedAttachment: (att: Attachment | null) => void): void {
+  const isImg = file.type.startsWith('image/');
+  const isVid = file.type.startsWith('video/');
+  const sizeStr = file.size > 1024 * 1024
+    ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+    : `${(file.size / 1024).toFixed(0)} KB`;
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const src = evt.target?.result as string;
+    if (src) {
+      setSelectedAttachment({
+        name: file.name,
+        size: sizeStr,
+        type: file.type || (isImg ? 'image/webp' : isVid ? 'video/mp4' : 'application/octet-stream'),
+        data: src
+      });
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
 export function useAttachmentActions({
   photoInputRef,
+  videoInputRef,
+  audioInputRef,
   docInputRef,
   setSelectedAttachment,
-  setCroppingImage,
   setFileErrorAlert,
   onSendMessage,
+  onOpenMediaCompose,
 }: {
   photoInputRef?: RefObject<HTMLInputElement | null>;
+  videoInputRef?: RefObject<HTMLInputElement | null>;
+  audioInputRef?: RefObject<HTMLInputElement | null>;
   docInputRef?: RefObject<HTMLInputElement | null>;
   setSelectedAttachment: (att: Attachment | null) => void;
-  setCroppingImage?: (data: { src: string; fileName: string; file: File } | null) => void;
   setFileErrorAlert?: (msg: string | null) => void;
   onSendMessage: (content: string, peerUserId?: number | null, isVoice?: boolean, messageType?: string, replyToMessageId?: string | null) => void;
+  onOpenMediaCompose?: (items: ComposeMediaItem[]) => void;
 }) {
   const handleTriggerPhotoInput = () => {
-    if (setFileErrorAlert) setFileErrorAlert(null);
     photoInputRef?.current?.click();
   };
 
+  const handleTriggerVideoInput = () => {
+    videoInputRef?.current?.click();
+  };
+
+  const handleTriggerAudioInput = () => {
+    audioInputRef?.current?.click();
+  };
+
   const handleTriggerDocInput = () => {
-    if (setFileErrorAlert) setFileErrorAlert(null);
     docInputRef?.current?.click();
   };
 
   const handleDismissAttachment = () => {
     setSelectedAttachment(null);
     if (photoInputRef?.current) photoInputRef.current.value = '';
+    if (videoInputRef?.current) videoInputRef.current.value = '';
+    if (audioInputRef?.current) audioInputRef.current.value = '';
     if (docInputRef?.current) docInputRef.current.value = '';
   };
 
@@ -71,72 +196,86 @@ export function useAttachmentActions({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    if (setFileErrorAlert) setFileErrorAlert(null);
+    let fileList = Array.from(files);
 
-    // 1. Check batch count limit
-    if (files.length > MAX_ATTACHMENT_BATCH) {
-      if (setFileErrorAlert) {
-        setFileErrorAlert(
-          `Batch limit exceeded: You can select a maximum of ${MAX_ATTACHMENT_BATCH} attachments per message (selected ${files.length}). Please select fewer items.`
-        );
-      }
-      e.target.value = '';
-      return;
+    if (fileList.length > MAX_ATTACHMENT_BATCH) {
+      velumToast.error('Attachment limit exceeded. Keeping first 5 items.');
+      fileList = fileList.slice(0, MAX_ATTACHMENT_BATCH);
     }
 
-    const fileList = Array.from(files);
-
-    // 2. Check file size limits
+    const validFiles: File[] = [];
     for (const file of fileList) {
       if (file.size > MAX_FILE_SIZE_BYTES) {
-        if (setFileErrorAlert) {
-          setFileErrorAlert(
-            `File too large: '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 25 MB limit.`
-          );
-        }
-        e.target.value = '';
-        return;
+        velumToast.error(`'${file.name}' exceeds 25 MB limit.`);
+      } else {
+        validFiles.push(file);
       }
     }
 
-    // 3. If single image -> open ImageCropperModal
-    if (fileList.length === 1 && fileList[0].type.startsWith('image/')) {
-      const file = fileList[0];
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const src = evt.target?.result as string;
-        if (src && setCroppingImage) {
-          setCroppingImage({
-            src,
-            fileName: file.name,
-            file,
-          });
-        }
-      };
-      reader.readAsDataURL(file);
+    if (validFiles.length === 0) {
       e.target.value = '';
       return;
     }
 
-    // 4. Multiple files or documents (up to 5) -> process safely
-    const payloadParts: string[] = [];
+    const mediaFiles = validFiles.filter(isComposeMediaFile);
+    const otherFiles = validFiles.filter((f) => !isComposeMediaFile(f));
 
-    for (const file of fileList) {
+    if (mediaFiles.length > 0 && onOpenMediaCompose) {
+      try {
+        const items = await Promise.all(mediaFiles.map(fileToComposeItem));
+        onOpenMediaCompose(items);
+      } catch {
+        velumToast.error('Could not open media for preview.');
+      }
+      if (otherFiles.length > 0) {
+        velumToast.error('Documents were skipped. Send them separately.');
+      }
+      e.target.value = '';
+      return;
+    }
+
+    if (validFiles.length === 1) {
+      stageFileAsAttachment(validFiles[0], setSelectedAttachment);
+      e.target.value = '';
+      return;
+    }
+
+    const payloadParts: string[] = [];
+    let failureCount = 0;
+
+    const tokens = await mapWithConcurrency(validFiles, UPLOAD_CONCURRENCY, async (file) => {
       try {
         if (file.type.startsWith('image/')) {
           const blob = await compressImageToBlob(file);
-          const url = await streamFileDirectToCloudStorage(blob, 'media', 'jpg');
+          const ext = sanitizeMediaExtension(blob.type, 'webp');
+          const anonymousName = generateAnonymousFilename(ext, blob.type || 'image/webp');
+          const url = await streamFileDirectToCloudStorage(blob, 'media', ext);
           const sizeStr = `${(blob.size / 1024).toFixed(0)} KB`;
-          payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:image/jpeg url:${url}]`);
-        } else {
-          // Document / non-image attachment
-          const url = await streamFileDirectToCloudStorage(file, 'media', file.name.split('.').pop() || 'bin');
-          const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${(file.size / 1024).toFixed(0)} KB`;
-          payloadParts.push(`[Attachment: ${file.name} size:${sizeStr} type:${file.type || 'application/octet-stream'} url:${url}]`);
+          return `[Attachment: ${anonymousName} size:${sizeStr} type:${blob.type || 'image/webp'} url:${url}]`;
         }
+        const rawExt = sanitizeMediaExtension(
+          file.type || file.name.split('.').pop() || 'bin',
+          'bin'
+        );
+        const anonymousName = generateAnonymousFilename(rawExt, file.type || 'application/octet-stream');
+        const url = await streamFileDirectToCloudStorage(file, 'media', rawExt);
+        const sizeStr = file.size > 1024 * 1024
+          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${(file.size / 1024).toFixed(0)} KB`;
+        return `[Attachment: ${anonymousName} size:${sizeStr} type:${file.type || 'application/octet-stream'} url:${url}]`;
       } catch (err) {
-        console.error('Upload failed for file:', file.name, err);
+        console.error('Upload failed for attachment:', err);
+        failureCount++;
+        return null;
       }
+    });
+
+    for (const token of tokens) {
+      if (token) payloadParts.push(token);
+    }
+
+    if (failureCount > 0) {
+      velumToast.error(`${failureCount} attachment(s) failed to upload.`);
     }
 
     if (payloadParts.length > 0) {
@@ -148,6 +287,8 @@ export function useAttachmentActions({
 
   return {
     handleTriggerPhotoInput,
+    handleTriggerVideoInput,
+    handleTriggerAudioInput,
     handleTriggerDocInput,
     handleDismissAttachment,
     handleFileSelect,

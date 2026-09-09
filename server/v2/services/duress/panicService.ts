@@ -20,13 +20,13 @@ export interface PanicExecutionResult {
 }
 
 /**
- * Executes WAL Cascade Deletion and duress flag activation for a user.
- * Instantly purges sensitive user tables and registers a critical security ticket & audit event.
+ * Executes emergency data wipe and flags account.
+ * Deletes sensitive user data and creates support ticket and audit event.
  */
-export async function executePanicCascade(
+export async function executeEmergencyWipe(
   userId: number,
-  reason: string = 'PANIC_PROTOCOL_DURESS',
-  cvpScore: number = 95
+  reason: string = 'EMERGENCY_PHRASE_USED',
+  trustScore: number = 95
 ): Promise<PanicExecutionResult> {
   const trackingUuid = `TK-${generateRandomToken(12).toUpperCase()}`;
   const purgedTables: string[] = [];
@@ -66,39 +66,39 @@ export async function executePanicCascade(
         })
         .where(eq(users.id, userId));
 
-      // 8. Create critical security support ticket with initial guidance messages
+      // 8. Create support ticket with initial messages
       const initialMessages = [
         {
           sender_id: 0,
           sender_name: 'SYSTEM',
-          content: `MANUAL PANIC PROTOCOL ACTIVATED (${reason}). Immediate WAL cascade deletion executed across sensitive tables.`,
+          content: `Emergency mode activated (${reason}). Data deletion executed across sensitive tables.`,
           timestamp: new Date().toISOString()
         },
         {
           sender_id: 0,
           sender_name: 'SYSTEM',
-          content: 'To coordinate with central control administrators and obtain your restore code, please formulate details in the chat below.',
+          content: 'To coordinate with administrators and obtain your restore code, please provide details in the chat below.',
           timestamp: new Date().toISOString()
         }
       ];
 
       await tx.insert(tickets).values({
         userId,
-        subject: 'CRITICAL: WAL CASCADE DURESS PANIC PROTOCOL ACTIVATED',
-        description: `User ID ${userId} triggered panic protocol (${reason}). Immediate WAL cascade deletion executed across sensitive tables.`,
+        subject: 'Emergency data wipe triggered',
+        description: `User ID ${userId} triggered emergency mode (${reason}). Data deletion executed across sensitive tables.`,
         issueType: 'recovery_request',
         status: 'open',
-        credibilityScore: cvpScore,
+        credibilityScore: trustScore,
         trackingId: trackingUuid,
         messages: initialMessages
       });
 
       // 9. Record audit log entry
       await tx.insert(auditLogs).values({
-        logId: `LOG-PANIC-${generateRandomToken(8).toUpperCase()}`,
+        logId: `LOG-EMERGENCY-${generateRandomToken(8).toUpperCase()}`,
         adminId: userId,
         adminName: `USER-${userId}`,
-        action: 'PANIC_PROTOCOL_WAL_CASCADE',
+        action: 'EMERGENCY_DATA_WIPE',
         targetId: userId.toString(),
         reason: JSON.stringify({ reason, ticketId: trackingUuid, purgedTables })
       });

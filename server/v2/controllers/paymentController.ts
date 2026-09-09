@@ -10,6 +10,19 @@ import { wallets } from '../db/schema/wallets.js';
 import { eq, and } from 'drizzle-orm';
 import { currencyConverter } from '../services/currencyConverter.js';
 
+const broadcastUserWalletUpdate = async (userId: number, balance?: string) => {
+  try {
+    const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+    broadcastToUserDevices(userId, {
+      type: 'wallet_updated',
+      balance,
+      timestamp: new Date().toISOString()
+    });
+  } catch (wsErr) {
+    console.warn('[WS Payment Wallet Broadcast Error]:', wsErr);
+  }
+};
+
 export class PaymentController {
   async getPaymentMethods(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
@@ -118,6 +131,8 @@ export class PaymentController {
       return { transaction, newBalance };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -176,6 +191,8 @@ export class PaymentController {
       return { transaction, newBalance, updatedCard };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -200,11 +217,11 @@ export class PaymentController {
     }
 
     await ensureReservesSeeded();
-    const vcbReserve = await reserveRepository.getReserve('VELUM CENTRAL BANK');
-    const sbReserve = await reserveRepository.getReserve('SENTRY BANK');
+    const vcbReserve = await reserveRepository.getReserve('Main Account');
+    const sbReserve = await reserveRepository.getReserve('Reserve Account');
 
     if ((vcbReserve?.balanceCents || 0) <= 0 && (sbReserve?.balanceCents || 0) <= 0) {
-      throw new BadRequestError('No banking liquidity available (VCB and SB are empty).');
+      throw new BadRequestError('No banking liquidity available (Main Account and Reserve Account are empty).');
     }
 
     const result = await db.transaction(async (tx) => {
@@ -219,14 +236,14 @@ export class PaymentController {
 
       if (isBank || isDebit) {
         if ((sbReserve?.balanceCents || 0) < parsedAmount) {
-          throw new BadRequestError('Sentry Bank has insufficient liquidity for this transfer.');
+          throw new BadRequestError('Reserve Account has insufficient liquidity for this transfer.');
         }
-        await reserveRepository.updateBalance('SENTRY BANK', -parsedAmount, tx);
+        await reserveRepository.updateBalance('Reserve Account', -parsedAmount, tx);
       } else {
         if ((vcbReserve?.balanceCents || 0) < parsedAmount) {
-          throw new BadRequestError('Velum Central Bank has insufficient liquidity for this credit.');
+          throw new BadRequestError('Main Account has insufficient liquidity for this credit.');
         }
-        await reserveRepository.updateBalance('VELUM CENTRAL BANK', -parsedAmount, tx);
+        await reserveRepository.updateBalance('Main Account', -parsedAmount, tx);
       }
       
       if (card.limitCents < parsedAmount) {
@@ -265,6 +282,8 @@ export class PaymentController {
       return { transaction, newBalance };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -288,11 +307,11 @@ export class PaymentController {
     }
 
     await ensureReservesSeeded();
-    const vcbReserve = await reserveRepository.getReserve('VELUM CENTRAL BANK');
-    const sbReserve = await reserveRepository.getReserve('SENTRY BANK');
+    const vcbReserve = await reserveRepository.getReserve('Main Account');
+    const sbReserve = await reserveRepository.getReserve('Reserve Account');
 
     if ((vcbReserve?.balanceCents || 0) <= 0 && (sbReserve?.balanceCents || 0) <= 0) {
-      throw new BadRequestError('No banking liquidity available (VCB and SB are empty).');
+      throw new BadRequestError('No banking liquidity available (Main Account and Reserve Account are empty).');
     }
 
     const result = await db.transaction(async (tx) => {
@@ -323,9 +342,9 @@ export class PaymentController {
       const isDebit = card.cardType.toUpperCase().includes('DEBIT');
 
       if (isBank || isDebit) {
-        await reserveRepository.updateBalance('SENTRY BANK', parsedAmount, tx);
+        await reserveRepository.updateBalance('Reserve Account', parsedAmount, tx);
       } else {
-        await reserveRepository.updateBalance('VELUM CENTRAL BANK', parsedAmount, tx);
+        await reserveRepository.updateBalance('Main Account', parsedAmount, tx);
       }
       
       const transaction = await bankRepository.createTransaction({
@@ -340,6 +359,8 @@ export class PaymentController {
       return { transaction, newBalance };
     });
     
+    broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
+
     res.status(200).json({
       success: true,
       transaction: result.transaction,
@@ -512,6 +533,8 @@ export class PaymentController {
       return { newFromBalance, newToBalance };
     });
 
+    broadcastUserWalletUpdate(req.user!.userId);
+
     res.status(200).json({
       success: true,
       conversion_id: conversionId,
@@ -541,17 +564,17 @@ export class PaymentController {
 }
 
 async function ensureReservesSeeded() {
-  const vcb = await reserveRepository.getReserve('VELUM CENTRAL BANK');
+  const vcb = await reserveRepository.getReserve('Main Account');
   if (!vcb) {
-    await reserveRepository.updateBalance('VELUM CENTRAL BANK', 1000000000); 
+    await reserveRepository.updateBalance('Main Account', 1000000000);
   }
-  const sb = await reserveRepository.getReserve('SENTRY BANK');
+  const sb = await reserveRepository.getReserve('Reserve Account');
   if (!sb) {
-    await reserveRepository.updateBalance('SENTRY BANK', 500000000); 
+    await reserveRepository.updateBalance('Reserve Account', 500000000);
   }
-  const escrow = await reserveRepository.getReserve('VELUM TRADING ACCOUNT');
+  const escrow = await reserveRepository.getReserve('Trading Account');
   if (!escrow) {
-    await reserveRepository.updateBalance('VELUM TRADING ACCOUNT', 0);
+    await reserveRepository.updateBalance('Trading Account', 0);
   }
 }
 

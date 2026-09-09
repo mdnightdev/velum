@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getSessionId } from '../../../utils/auth';
+import { velumToast } from '../../../utils/toast';
 
 export interface UseSupportNominationOptions {
   activeChatPeer?: { userId: number } | null;
@@ -40,14 +41,14 @@ export function useSupportNomination({ activeChatPeer }: UseSupportNominationOpt
       });
 
       if (res.ok) {
-        alert(`Successfully ${action === 'accept' ? 'accepted' : 'declined'} support admin nomination.`);
+        velumToast.success(`Successfully ${action === 'accept' ? 'accepted' : 'declined'} support admin nomination.`);
         setHasPendingNomination(false);
       } else {
         const data = await res.json();
-        alert(data.error || `Failed to ${action} nomination.`);
+        velumToast.error(data.error || `Failed to ${action} nomination.`);
       }
     } catch {
-      alert("Network error.");
+      velumToast.error("Network error.");
     } finally {
       setIsSubmittingNominationAction(false);
     }

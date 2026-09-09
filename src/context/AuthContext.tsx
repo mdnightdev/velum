@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, startTransition } from 'react';
 import { createLogger } from '../utils/logger';
-import { purgeSkippedMessageKeys } from '../services/skippedKeysStore';
-import { purgeCryptoVault } from '../services/cryptoDbStore';
-import { purgeLocalMessages } from '../utils/indexedDb';
-import { doubleRatchetService } from '../services/doubleRatchetService';
+import { statelessE2eeService } from '../services/statelessE2eeService';
+import { storage } from '../services/storageService';
+import { clearBiometricSession } from '../hooks/useBiometricAuth';
 
 const log = createLogger('AuthContext');
 
@@ -14,6 +13,11 @@ interface AuthUser {
   role: 'CLI_ADMIN' | 'LOGIN_ADMIN' | 'SUPPORT_ADMIN' | 'ADMIN' | 'USER' | 'SYSTEM' | string;
   status: string;
   duress_active?: boolean;
+  displayName?: string;
+  avatar?: string;
+  avatarUrl?: string;
+  bio?: string;
+  location?: string;
 }
 
 interface AuthContextType {
@@ -23,6 +27,7 @@ interface AuthContextType {
   deviceId: string | null;
   handleLogout: () => void;
   handleLoginSuccess: (user: AuthUser, sessionId: string, deviceId: string, destination: string) => void;
+  updateUser: (partial: Partial<AuthUser>) => void;
   resetFormStates: () => void;
   isLoadingSession: boolean;
 }
@@ -32,40 +37,28 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
-      const cached = sessionStorage.getItem('velum-user');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed?.userId) {
-          doubleRatchetService.setLocalUserId(Number(parsed.userId));
-        }
-        return parsed;
-      }
-      return null;
+      return storage.getItem<AuthUser>('velum-user');
     } catch (_) { return null; }
   });
   const [sessionId, setSessionId] = useState<string | null>(() => {
-    return sessionStorage.getItem('velum-sessionId');
+    return storage.getItem<string>('velum-sessionId');
   });
   const [deviceId, setDeviceId] = useState<string | null>(() => {
-    return sessionStorage.getItem('velum-deviceId');
+    return storage.getItem<string>('velum-deviceId');
   });
   const [isLoadingSession, setIsLoadingSession] = useState<boolean>(() => {
-    const hasCachedUser = sessionStorage.getItem('velum-sessionId') &&
-                          sessionStorage.getItem('velum-user');
-    return !hasCachedUser;
+    try {
+      const hasCachedUser = storage.getItem('velum-sessionId') && storage.getItem('velum-user');
+      return !hasCachedUser;
+    } catch (_) { return true; }
   });
 
   const isAuthenticated = !!user && !!sessionId;
 
   const handleLoginSuccess = (loginUser: AuthUser, sId: string, dId: string, destination: string) => {
-    doubleRatchetService.setLocalUserId(Number(loginUser.userId));
-
     if (user && user.userId !== loginUser.userId) {
       log.warn('Cross-identity login detected. Purging crypto vault.');
-      purgeCryptoVault().catch(() => {});
-      purgeLocalMessages().catch(() => {});
-      doubleRatchetService.clearMemoryState();
-      doubleRatchetService.setLocalUserId(Number(loginUser.userId));
+      statelessE2eeService.clearCache();
     }
 
     setUser(loginUser);
@@ -73,12 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDeviceId(dId);
     
     try {
-      sessionStorage.setItem('velum-user', JSON.stringify(loginUser));
-      sessionStorage.setItem('velum-sessionId', sId);
-      sessionStorage.setItem('velum-deviceId', dId);
+      storage.setItem('velum-user', loginUser);
+      storage.setItem('velum-sessionId', sId);
+      storage.setItem('velum-deviceId', dId);
     } catch (e) {
       log.warn('Session storage write warning', { error: (e as Error).message });
     }
+
+    statelessE2eeService.setLocalUserId(loginUser.userId);
+
 
     if (window.velumDebug) {
       window.velumDebug.userId = loginUser.userId;
@@ -87,37 +83,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = () => {
-    // Purge E2EE decryption keys from IndexedDB
-    purgeSkippedMessageKeys().catch(() => {});
-    purgeCryptoVault().catch(() => {});
-    purgeLocalMessages().catch(() => {});
-    doubleRatchetService.clearMemoryState();
+    statelessE2eeService.clearCache();
 
     // Purge plaintext saved notes from localStorage for vault safety
     if (user?.userId) {
       try {
-        localStorage.removeItem(`velum-notes-${user.userId}`);
+        storage.removeItem(`velum-notes-${user.userId}`);
       } catch (e) {}
     }
 
-    startTransition(() => {
-      setUser(null);
-      setSessionId(null);
-      setDeviceId(null);
-    });
-
     try {
-      sessionStorage.removeItem('velum-user');
-      sessionStorage.removeItem('velum-sessionId');
-      sessionStorage.removeItem('velum-deviceId');
+      storage.clearSession();
     } catch (e) {
       log.warn('Session storage clear warning', { error: (e as Error).message });
     }
+
+    setUser(null);
+    setSessionId(null);
+    setDeviceId(null);
+    setIsLoadingSession(false);
 
     if (window.velumDebug) {
       window.velumDebug.userId = null;
       window.velumDebug.username = null;
     }
+  };
+
+  const updateUser = (partial: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next: AuthUser = { ...prev };
+      if (partial.userId !== undefined) next.userId = partial.userId;
+      if (partial.username !== undefined) next.username = partial.username;
+      if (partial.role !== undefined) next.role = partial.role;
+      if (partial.status !== undefined) next.status = partial.status;
+      if (partial.displayName !== undefined) next.displayName = partial.displayName;
+      if (partial.bio !== undefined) next.bio = partial.bio;
+      if (partial.location !== undefined) next.location = partial.location;
+      if (partial.duress_active !== undefined) next.duress_active = partial.duress_active;
+      if (partial.avatar !== undefined || partial.avatarUrl !== undefined) {
+        const avatarVal = partial.avatarUrl ?? partial.avatar ?? '';
+        next.avatar = avatarVal;
+        next.avatarUrl = avatarVal;
+      }
+      try {
+        storage.setItem('velum-user', next);
+        if (next.username) storage.setItem('velum-username', next.username);
+      } catch (e) {
+        log.warn('Profile storage write warning', { error: (e as Error).message });
+      }
+      if (window.velumDebug) {
+        window.velumDebug.userId = next.userId;
+        window.velumDebug.username = next.username;
+      }
+      return next;
+    });
   };
 
   const resetFormStates = () => {
@@ -127,9 +147,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Boot Session Verification Hook
   useEffect(() => {
     const verifySessionOnBoot = async () => {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = storage.getItem('velum-sessionId');
       if (!sId) {
-        handleLogout();
+        setUser(null);
+        setSessionId(null);
+        setDeviceId(null);
         setIsLoadingSession(false);
         return;
       }
@@ -138,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        const res = await fetch('/v2/auth/me', {
+        const res = await fetch('/api/v2/auth/me', {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${sId}`,
@@ -156,13 +178,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(verifiedUser);
             setSessionId(sId);
             try {
-              sessionStorage.setItem('velum-user', JSON.stringify(verifiedUser));
+              storage.setItem('velum-user', verifiedUser);
             } catch (_) {}
+            statelessE2eeService.setLocalUserId(verifiedUser.userId);
+           
             setIsLoadingSession(false);
             return;
           }
         } else if (res.status === 401 || res.status === 403) {
-          handleLogout();
+          try {
+            storage.clearSession();
+            clearBiometricSession();
+          } catch (_) {}
+          setUser(null);
+          setSessionId(null);
+          setDeviceId(null);
           setIsLoadingSession(false);
           return;
         }
@@ -170,17 +200,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (err?.name !== 'AbortError') {
           log.error('Session verification notice', { error: (err as Error).message });
         }
-        // Fall back to cached session user if server is slow or unreachable
-        const cachedUserStr = sessionStorage.getItem('velum-user');
-        if (cachedUserStr) {
+        const cachedUserRaw = storage.getItem('velum-user');
+        if (cachedUserRaw) {
           try {
-            const cachedUser = JSON.parse(cachedUserStr);
-            setUser(cachedUser);
-            setSessionId(sId);
-            setIsLoadingSession(false);
-            return;
+            const cachedUser = typeof cachedUserRaw === 'string' ? JSON.parse(cachedUserRaw) : cachedUserRaw;
+            if (cachedUser && cachedUser.userId) {
+              setUser(cachedUser);
+              setSessionId(sId);
+              statelessE2eeService.setLocalUserId(cachedUser.userId);
+              
+              setIsLoadingSession(false);
+              return;
+            }
           } catch (_) {}
         }
+        try {
+          storage.clearSession();
+          clearBiometricSession();
+        } catch (_) {}
+        setUser(null);
+        setSessionId(null);
+        setDeviceId(null);
         setIsLoadingSession(false);
       }
     };
@@ -204,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       deviceId,
       handleLogout,
       handleLoginSuccess,
+      updateUser,
       resetFormStates,
       isLoadingSession
     }}>

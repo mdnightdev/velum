@@ -1,198 +1,390 @@
-import { LocalVaultEncryption } from '../services/localVaultEncryption';
-const DB_NAME = 'velum_local_storage';
-const DB_VERSION = 25;
-const STORE_MEDIA = 'media_blobs';
-const STORE_MESSAGES = 'messages';
-const STORE_OUTBOX = 'outbox_messages';
+import { LocalVaultEncryption } from '../services/localVaultEncryption.js';
+import { getDexieDb } from '../services/dexieDb.js';
+import { purgeCryptoDatabase } from '../services/cryptoDbStore.js';
+import { isUsablePlaintext, mergeMessagePlaintext } from './messagePlaintext.js';
+import {
+  getMemoryPlaintext,
+  hashCiphertext,
+  setMemoryPlaintext,
+  warmMemoryPlaintexts,
+} from './plaintextCache.js';
 
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      return reject(new Error('IndexedDB is not supported on this platform.'));
+const MAX_MESSAGE_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — keep in sync with localCacheMaintenance
+
+export async function putPlaintextByCiphertext(
+  ciphertext: string,
+  plaintext: string,
+  userId?: number
+): Promise<void> {
+  if (!ciphertext || !isUsablePlaintext(plaintext)) return;
+  setMemoryPlaintext(ciphertext, plaintext);
+  try {
+    const db = getDexieDb(userId || 0);
+    await db.plaintext_cache.put({
+      hash: hashCiphertext(ciphertext),
+      plaintext,
+      updatedAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] putPlaintextByCiphertext error:', err);
+  }
+}
+
+export async function getPlaintextByCiphertext(
+  ciphertext: string,
+  userId?: number
+): Promise<string | null> {
+  if (!ciphertext) return null;
+  const mem = getMemoryPlaintext(ciphertext);
+  if (mem) return mem;
+  try {
+    const db = getDexieDb(userId || 0);
+    const row = await db.plaintext_cache.get(hashCiphertext(ciphertext));
+    if (row && isUsablePlaintext(row.plaintext)) {
+      setMemoryPlaintext(ciphertext, row.plaintext);
+      return row.plaintext;
     }
-
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => {
-      reject(new Error('Failed to open local storage database.'));
-    };
-
-    request.onsuccess = () => {
-      const db = request.result;
-      db.onversionchange = () => {
-        db.close();
-      };
-      resolve(db);
-    };
-
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_MEDIA)) {
-        db.createObjectStore(STORE_MEDIA);
-      }
-      if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
-        db.createObjectStore(STORE_MESSAGES);
-      }
-      if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
-        db.createObjectStore(STORE_OUTBOX, { keyPath: 'client_msg_id' });
-      }
-    };
-  });
-}
-
-/**
- * Saves messages array for a specific lounge/room in IndexedDB.
- */
-export async function saveLocalMessages(loungeId: string, messages: any[]): Promise<void> {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_MESSAGES], 'readwrite');
-    const store = transaction.objectStore(STORE_MESSAGES);
-    const request = store.put(messages, loungeId);
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(new Error(`Failed to save cached messages for lounge: ${loungeId}`));
-  });
-}
-
-/**
- * Retrieves cached messages for a lounge from IndexedDB.
- */
-export async function getLocalMessages(loungeId: string): Promise<any[] | null> {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_MESSAGES], 'readonly');
-      const store = transaction.objectStore(STORE_MESSAGES);
-      const request = store.get(loungeId);
-
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(new Error(`Failed to get cached messages for lounge: ${loungeId}`));
-    });
-  } catch (err) {
-    console.warn('[IndexedDB] Local database is unavailable:', err);
+    return null;
+  } catch {
     return null;
   }
 }
 
-/**
- * Saves a binary Blob locally in IndexedDB under a unique key.
- */
-export async function saveLocalMedia(key: string, blob: Blob): Promise<void> {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_MEDIA], 'readwrite');
-    const store = transaction.objectStore(STORE_MEDIA);
-    const request = store.put(blob, key);
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(new Error(`Failed to save local media asset: ${key}`));
-  });
-}
-
-/**
- * Retrieves a binary Blob from IndexedDB. Returns null if not found.
- */
-export async function getLocalMedia(key: string): Promise<Blob | null> {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_MEDIA], 'readonly');
-      const store = transaction.objectStore(STORE_MEDIA);
-      const request = store.get(key);
-
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(new Error(`Failed to retrieve local media asset: ${key}`));
-    });
-  } catch (err) {
-    console.warn('[IndexedDB] Local database is unavailable:', err);
-    return null;
+/** Batch resolve plaintexts: memory first, then one IndexedDB anyOf on hashes. */
+export async function resolvePlaintextsForContents(
+  ciphertexts: string[],
+  userId?: number
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const missing: string[] = [];
+  for (const ct of ciphertexts) {
+    if (!ct) continue;
+    const mem = getMemoryPlaintext(ct);
+    if (mem) {
+      out.set(ct, mem);
+    } else {
+      missing.push(ct);
+    }
   }
-}
+  if (missing.length === 0) return out;
 
-/**
- * Deletes a binary Blob from IndexedDB.
- */
-export async function deleteLocalMedia(key: string): Promise<void> {
   try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_MEDIA], 'readwrite');
-      const store = transaction.objectStore(STORE_MEDIA);
-      const request = store.delete(key);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(new Error(`Failed to delete local media asset: ${key}`));
-    });
+    const db = getDexieDb(userId || 0);
+    const hashToCt = new Map<string, string>();
+    for (const ct of missing) {
+      hashToCt.set(hashCiphertext(ct), ct);
+    }
+    const rows = await db.plaintext_cache.where('hash').anyOf([...hashToCt.keys()]).toArray();
+    for (const row of rows) {
+      const ct = hashToCt.get(row.hash);
+      if (!ct || !isUsablePlaintext(row.plaintext)) continue;
+      setMemoryPlaintext(ct, row.plaintext);
+      out.set(ct, row.plaintext);
+    }
   } catch (err) {
-    console.warn('[IndexedDB] Local database deletion failed:', err);
+    console.warn('[IndexedDB] resolvePlaintextsForContents error:', err);
   }
+  return out;
 }
 
-export async function rotateAndReEncryptLocalMessages(): Promise<void> {
+export async function saveLocalMessages(messages: any[], userId?: number): Promise<void> {
+  if (!messages || messages.length === 0) return;
   try {
-    const db = await openDatabase();
-    const allRecords = await new Promise<{ key: IDBValidKey, value: any }[]>((resolve, reject) => {
-      const tx = db.transaction([STORE_MESSAGES], 'readonly');
-      const store = tx.objectStore(STORE_MESSAGES);
-      const req = store.getAll();
-      const keysReq = store.getAllKeys();
-      
-      req.onsuccess = () => {
-        keysReq.onsuccess = () => {
-          const records = keysReq.result.map((key, i) => ({ key, value: req.result[i] }));
-          resolve(records);
-        };
-      };
-      req.onerror = () => reject(new Error('Failed to fetch messages for re-encryption'));
-    });
+    const db = getDexieDb(userId || 0);
+    const now = Date.now();
 
-    const decryptedData = [];
-    // Decrypt all possible records with the current key
-    for (const record of allRecords) {
-      if (record.value._encrypted) {
-        const str = await LocalVaultEncryption.decryptPayload(record.value);
-        if (str) {
-          decryptedData.push({ key: record.key, plaintext: str });
+    await db.transaction('rw', db.messages, db.plaintext_cache, async () => {
+      for (const msg of messages) {
+        if (!msg) continue;
+
+        const dbId = msg.db_message_id ?? (typeof msg.id === 'number' || (typeof msg.id === 'string' && /^\d+$/.test(msg.id)) ? Number(msg.id) : undefined);
+        const clientNonce = msg.client_msg_id || msg.nonce;
+        const canonicalId = dbId ? String(dbId) : String(clientNonce || msg.id || crypto.randomUUID());
+        const rawLounge = msg.loungeId ?? msg.room_id ?? msg.roomId ?? msg.lounge_id ?? '';
+        const loungeId = String(rawLounge);
+        const rawTime = msg.timestamp ?? msg.createdAt ?? msg.created_at ?? new Date().toISOString();
+        const msgTime = new Date(rawTime).getTime();
+
+        if (!isNaN(msgTime) && (now - msgTime) > MAX_MESSAGE_AGE_MS) {
+          continue;
         }
-      } else if (Array.isArray(record.value)) {
-        decryptedData.push({ key: record.key, plaintext: JSON.stringify(record.value) });
+
+        if (clientNonce && String(clientNonce) !== canonicalId) {
+          await db.messages.delete(String(clientNonce));
+        }
+
+        let storedPlaintext: string | undefined;
+        const existing = await db.messages.get(canonicalId);
+        if (isUsablePlaintext(existing?.plaintext)) {
+          storedPlaintext = existing.plaintext;
+        } else if (clientNonce) {
+          const optExisting = await db.messages.get(String(clientNonce));
+          if (isUsablePlaintext(optExisting?.plaintext)) {
+            storedPlaintext = optExisting.plaintext;
+          }
+        }
+
+        const mergedPlaintext = mergeMessagePlaintext(storedPlaintext, msg.plaintext);
+
+        const record = {
+          id: canonicalId,
+          db_message_id: dbId,
+          loungeId,
+          room_id: loungeId,
+          senderId: msg.senderId ?? msg.user_id,
+          user_id: msg.user_id ?? msg.senderId,
+          username: msg.username || '',
+          avatar: msg.avatar || '',
+          content: msg.content || '',
+          plaintext: mergedPlaintext,
+          is_encrypted: Boolean(msg.is_encrypted || msg.encrypted || msg.isEncrypted),
+          sequenceId: msg.sequenceId ?? msg.sequence_id ?? 0,
+          sequence_id: msg.sequenceId ?? msg.sequence_id ?? 0,
+          client_msg_id: clientNonce,
+          createdAt: rawTime,
+          timestamp: rawTime,
+        };
+
+        await db.messages.put(record);
+        if (record.content && isUsablePlaintext(mergedPlaintext)) {
+          setMemoryPlaintext(record.content, mergedPlaintext as string);
+          await db.plaintext_cache.put({
+            hash: hashCiphertext(record.content),
+            plaintext: mergedPlaintext as string,
+            updatedAt: now,
+          });
+        }
       }
-    }
-
-    // Now rotate the key
-    await LocalVaultEncryption.rotateVaultKey();
-
-    // Re-encrypt and overwrite
-    const tx = db.transaction([STORE_MESSAGES], 'readwrite');
-    const store = tx.objectStore(STORE_MESSAGES);
-
-    for (const data of decryptedData) {
-      const encrypted = await LocalVaultEncryption.encryptPayload(data.plaintext);
-      store.put({ _encrypted: true, ...encrypted }, data.key);
-    }
-    
-    // We can also return a promise for the transaction completion if needed.
+    });
   } catch (err) {
-    console.error('[IndexedDB] Failed to rotate and re-encrypt local messages', err);
+    console.warn('[IndexedDB] saveLocalMessages error:', err);
   }
 }
 
+export async function getLocalMessages(loungeId: string, limit = 100, userId?: number): Promise<any[]> {
+  try {
+    const db = getDexieDb(userId || 0);
+    const now = Date.now();
+    const targetRoom = String(loungeId || '');
+    const cleanTarget = targetRoom.replace(/^#\s*/, '');
+    const allowedSlugs = new Set<string>([cleanTarget]);
 
-export function purgeLocalMessages(): Promise<void> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const db = await openDatabase();
-      const tx = db.transaction([STORE_MESSAGES, STORE_MEDIA], 'readwrite');
-      const storeMsgs = tx.objectStore(STORE_MESSAGES);
-      const storeMedia = tx.objectStore(STORE_MEDIA);
-      storeMsgs.clear();
-      storeMedia.clear();
-      
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    } catch (e) {
-      reject(e);
+    if (cleanTarget.startsWith('dm_')) {
+      const parts = cleanTarget.replace('dm_', '').split('_');
+      if (parts.length === 2) {
+        allowedSlugs.add(`dm_${parts[1]}_${parts[0]}`);
+        allowedSlugs.add(`dm_${parts[0]}`);
+        allowedSlugs.add(`dm_${parts[1]}`);
+      } else if (parts.length === 1 && userId) {
+        const peerId = parseInt(parts[0], 10);
+        if (peerId) {
+          allowedSlugs.add(`dm_${Math.min(userId, peerId)}_${Math.max(userId, peerId)}`);
+          allowedSlugs.add(`dm_${userId}_${peerId}`);
+          allowedSlugs.add(`dm_${peerId}_${userId}`);
+        }
+      }
     }
-  });
+
+    const slugList = [...allowedSlugs].filter(Boolean);
+    let all: any[] = [];
+    if (slugList.length > 0) {
+      all = await db.messages.where('loungeId').anyOf(slugList).toArray();
+    }
+
+    const valid = all
+      .filter((m) => {
+        const msgTime = new Date(m.timestamp || m.createdAt || 0).getTime();
+        return isNaN(msgTime) || (now - msgTime) <= MAX_MESSAGE_AGE_MS;
+      })
+      .map((m) => ({
+        ...m,
+        plaintext: isUsablePlaintext(m.plaintext) ? m.plaintext : undefined,
+      }))
+      .sort((a, b) => {
+        const tA = new Date(a.timestamp || a.createdAt || 0).getTime();
+        const tB = new Date(b.timestamp || b.createdAt || 0).getTime();
+        return tA - tB;
+      });
+
+    warmMemoryPlaintexts(valid);
+    const seen = new Set<string>();
+    const deduplicated: any[] = [];
+    for (let i = valid.length - 1; i >= 0; i--) {
+      const m = valid[i];
+      const keys = [m.db_message_id, m.id, m.client_msg_id]
+        .filter(Boolean)
+        .map(String);
+      const isDuplicate = keys.some((k) => seen.has(k));
+      if (!isDuplicate) {
+        keys.forEach((k) => seen.add(k));
+        deduplicated.unshift(m);
+      }
+    }
+
+    return deduplicated.slice(-limit);
+  } catch (err) {
+    console.error('[IndexedDB] getLocalMessages error:', err);
+    return [];
+  }
+}
+
+export async function deleteLocalMessage(messageId: string | number, userId?: number): Promise<void> {
+  if (!messageId) return;
+  try {
+    const db = getDexieDb(userId || 0);
+    const target = String(messageId);
+
+    await db.transaction('rw', db.messages, async () => {
+      await db.messages.delete(target);
+      const all = await db.messages.toArray();
+      for (const rec of all) {
+        const candidateIds = [rec.id, rec.db_message_id, rec.client_msg_id]
+          .filter(Boolean)
+          .map(String);
+        if (candidateIds.includes(target)) {
+          await db.messages.delete(rec.id);
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] deleteLocalMessage error:', err);
+  }
+}
+
+export async function flushLoungeCache(loungeId: string, userId?: number): Promise<void> {
+  if (!loungeId) return;
+  try {
+    const db = getDexieDb(userId || 0);
+    const target = String(loungeId);
+
+    const candidateSlugs = new Set<string>([target]);
+    if (target.startsWith('dm_') && !target.startsWith('dm_velum_')) {
+      const parts = target.replace('dm_', '').split('_');
+      if (parts.length === 2) {
+        candidateSlugs.add(`dm_${parts[1]}_${parts[0]}`);
+        candidateSlugs.add(`dm_${parts[0]}`);
+        candidateSlugs.add(`dm_${parts[1]}`);
+      } else if (parts.length === 1 && userId) {
+        const peerId = Number(parts[0]);
+        if (peerId) {
+          candidateSlugs.add(`dm_${Math.min(userId, peerId)}_${Math.max(userId, peerId)}`);
+          candidateSlugs.add(`dm_${userId}_${peerId}`);
+          candidateSlugs.add(`dm_${peerId}_${userId}`);
+        }
+      }
+    }
+
+    await db.transaction('rw', db.messages, async () => {
+      const all = await db.messages.toArray();
+      for (const m of all) {
+        const mRoom = String(m.loungeId || m.room_id || m.roomId || '').replace(/^#\s*/, '');
+        if (candidateSlugs.has(mRoom)) {
+          await db.messages.delete(m.id);
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] flushLoungeCache error:', err);
+  }
+}
+
+export async function purgeDmMessages(peerId: number, userId?: number): Promise<void> {
+  if (!peerId) return;
+  try {
+    const db = getDexieDb(userId || 0);
+    const myId = userId || 0;
+
+    const targetSlugs = new Set<string>([
+      `dm_${peerId}`,
+      `dm_${Math.min(myId, peerId)}_${Math.max(myId, peerId)}`,
+      `dm_${myId}_${peerId}`,
+      `dm_${peerId}_${myId}`,
+    ]);
+
+    await db.transaction('rw', db.messages, async () => {
+      const all = await db.messages.toArray();
+      for (const m of all) {
+        const mRoom = String(m.loungeId || m.room_id || m.roomId || '').replace(/^#\s*/, '');
+        const sId = Number(m.senderId || m.user_id || 0);
+        const isPeer = sId === peerId || targetSlugs.has(mRoom);
+        if (isPeer) {
+          await db.messages.delete(m.id);
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] purgedDmMessages error:', err);
+  }
+}
+
+export async function purgeLocalUserStorage(userId?: number): Promise<void> {
+  await purgeCryptoDatabase(userId || 0);
+}
+
+export async function purgeLocalMessages(userId?: number): Promise<void> {
+  await purgeCryptoDatabase(userId || 0);
+}
+
+export async function saveLocalMedia(
+  id: string,
+  blob: Blob | ArrayBuffer,
+  mimeType?: string,
+  userId?: number
+): Promise<void> {
+  try {
+    const db = getDexieDb(userId || 0);
+    const resolvedMime = mimeType || (blob instanceof Blob ? blob.type : 'application/octet-stream');
+    await db.media_blobs.put({
+      id,
+      data: blob,
+      mimeType: resolvedMime,
+      createdAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] saveLocalMedia error:', err);
+  }
+}
+
+export async function getLocalMedia(id: string, userId?: number): Promise<Blob | null> {
+  try {
+    const db = getDexieDb(userId || 0);
+    const item = await db.media_blobs.get(id);
+    if (!item || !item.data) return null;
+    if (item.data instanceof Blob) {
+      return item.data;
+    }
+    return new Blob([item.data], { type: item.mimeType || 'application/octet-stream' });
+  } catch (err) {
+    console.warn('[IndexedDB] getLocalMedia error:', err);
+    return null;
+  }
+}
+
+export async function deleteLocalMedia(id: string, userId?: number): Promise<void> {
+  try {
+    const db = getDexieDb(userId || 0);
+    await db.media_blobs.delete(id);
+  } catch (err) {
+    console.warn('[IndexedDB] deleteLocalMedia error:', err);
+  }
+}
+
+export async function setLocalKV(key: string, value: any, userId?: number): Promise<void> {
+  try {
+    const db = getDexieDb(userId || 0);
+    await db.user_kv.put({ key, value, updatedAt: Date.now() });
+  } catch (err) {
+    console.warn('[IndexedDB] setLocalKV error:', err);
+  }
+}
+
+export async function getLocalKV<T = any>(key: string, userId?: number): Promise<T | null> {
+  try {
+    const db = getDexieDb(userId || 0);
+    const record = await db.user_kv.get(key);
+    return record ? (record.value as T) : null;
+  } catch (err) {
+    console.warn('[IndexedDB] getLocalKV error:', err);
+    return null;
+  }
 }

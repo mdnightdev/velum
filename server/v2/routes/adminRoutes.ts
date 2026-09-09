@@ -1,41 +1,149 @@
 import { Router } from 'express';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requireAdminRole } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users, supportAdminNominations } from '../db/schema/users.js';
 import { sessions } from '../db/schema/sessions.js';
-import { tickets } from '../db/schema/tickets.js';
+import { tickets, reports } from '../db/schema/tickets.js';
 import { eq, desc, and, inArray, or } from 'drizzle-orm';
 import { getRedisClient } from '../db/redis.js';
 import type { Request, Response } from 'express';
 import { clientDiagnosticsList } from './ticketRoutes.js';
 import { SystemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
+import { SupportAdminNominationService } from '../services/supportAdminNominationService.js';
 import { getAuditLogs, recordAuditEvent } from '../services/auditService.js';
 import { hashArgon2id, generateRandomToken } from '../utils/crypto.js';
 import crypto from 'node:crypto';
 
 export const adminRouter = Router();
 
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive
-    },
-    expiresAt: result.session.expiresAt
-  };
+adminRouter.use(authMiddleware);
+adminRouter.use(requireAdminRole());
+
+// GET /v2/admin/reports - Fetch all reports from database
+adminRouter.get('/reports', async (req: Request, res: Response) => {
+  try {
+    const allReports = await db
+      .select({
+        id: reports.id,
+        report_id: reports.id,
+        type: reports.type,
+        reporter_id: reports.reporterId,
+        target_user_id: reports.targetUserId,
+        reason: reports.reason,
+        priority: reports.priority,
+        status: reports.status,
+        attachments: reports.attachments,
+        created_at: reports.createdAt,
+        updated_at: reports.updatedAt
+      })
+      .from(reports)
+      .orderBy(desc(reports.createdAt));
+
+    const userList = await db.select({ id: users.id, username: users.username }).from(users);
+    const userMap = new Map(userList.map(u => [u.id, u.username]));
+
+    const formatted = allReports.map(r => ({
+      ...r,
+      reporter_name: userMap.get(r.reporter_id) || `User #${r.reporter_id}`,
+      target_username: userMap.get(r.target_user_id) || `User #${r.target_user_id}`
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch reports.' });
+  }
 });
 
-adminRouter.use(authMiddleware);
+// POST /v2/admin/reports/:id/status - Update report status
+adminRouter.post('/reports/:id/status', async (req: Request, res: Response) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    const { status } = req.body;
+    if (isNaN(reportId)) return res.status(400).json({ error: 'Invalid report ID' });
 
-// GET /v2/admin/diagnostics/logs - Get diagnostics logs
+    await db.update(reports).set({
+      status: status || 'closed',
+      updatedAt: new Date()
+    }).where(eq(reports.id, reportId));
+
+    res.json({ success: true, message: `Report #${reportId} status updated to ${status || 'closed'}.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update report status.' });
+  }
+});
+
+// POST /v2/admin/reports/:id/delete - Delete report
+adminRouter.post('/reports/:id/delete', async (req: Request, res: Response) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId)) return res.status(400).json({ error: 'Invalid report ID' });
+
+    await db.delete(reports).where(eq(reports.id, reportId));
+    res.json({ success: true, message: `Report #${reportId} deleted.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete report.' });
+  }
+});
+
+// POST /v2/admin/reports/:id/escalate - Escalate report to CLI desk
+adminRouter.post('/reports/:id/escalate', async (req: Request, res: Response) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId)) return res.status(400).json({ error: 'Invalid report ID' });
+
+    await db.update(reports).set({
+      status: 'escalated',
+      priority: 'critical',
+      updatedAt: new Date()
+    }).where(eq(reports.id, reportId));
+
+    res.json({ success: true, message: `Report #${reportId} escalated to CLI investigation.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to escalate report.' });
+  }
+});
+
+// GET /v2/admin/ops-errors - Durable amber/red ops events
+adminRouter.get('/ops-errors', async (req: Request, res: Response) => {
+  try {
+    const { listOpsErrors } = await import('../services/opsErrorService.js');
+    const limit = parseInt(String(req.query.limit || '50'), 10) || 50;
+    const offset = parseInt(String(req.query.offset || '0'), 10) || 0;
+    const severity = (req.query.severity as 'amber' | 'red' | 'all' | undefined) || 'all';
+    const resolved = (req.query.resolved as 'open' | 'resolved' | 'all' | undefined) || 'open';
+    const events = await listOpsErrors({ limit, offset, severity, resolved });
+    res.json({ events });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch ops error events.' });
+  }
+});
+
+// POST /v2/admin/ops-errors/:eventId/resolve
+adminRouter.post('/ops-errors/:eventId/resolve', async (req: Request, res: Response) => {
+  try {
+    const { resolveOpsError } = await import('../services/opsErrorService.js');
+    const eventId = String(req.params.eventId || '');
+    if (!eventId) {
+      return res.status(400).json({ error: 'eventId required.' });
+    }
+    const ok = await resolveOpsError(eventId);
+    if (!ok) {
+      return res.status(404).json({ error: 'Ops error event not found.' });
+    }
+    res.json({ success: true, message: 'Ops error resolved.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to resolve ops error event.' });
+  }
+});
+
+// GET /v2/admin/diagnostics/logs - Get diagnostics logs (Postgres)
 adminRouter.get('/diagnostics/logs', async (req: Request, res: Response) => {
   try {
-    res.json(clientDiagnosticsList);
+    const { listClientDiagnostics } = await import('../services/clientDiagnosticsService.js');
+    const logs = await listClientDiagnostics({ limit: 100, status: 'all' });
+    res.json(logs);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch diagnostics logs.' });
   }
@@ -45,15 +153,72 @@ adminRouter.get('/diagnostics/logs', async (req: Request, res: Response) => {
 adminRouter.post('/diagnostics/logs/:logId/resolve', async (req: Request, res: Response) => {
   try {
     const { logId } = req.params;
-    const log = clientDiagnosticsList.find(l => l.id === logId);
-    if (log) {
-      log.status = 'resolved';
+    const { resolveClientDiagnostic } = await import('../services/clientDiagnosticsService.js');
+    const ok = await resolveClientDiagnostic(logId);
+    const ram = clientDiagnosticsList.find(l => l.id === logId);
+    if (ram) ram.status = 'resolved';
+    if (!ok && !ram) {
+      return res.status(404).json({ error: 'Diagnostic log not found.' });
     }
     res.json({ success: true, message: 'Diagnostic log resolved.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to resolve diagnostic log.' });
   }
 });
+
+// DELETE /v2/admin/diagnostics/logs/:logId - Delete diagnostics log
+adminRouter.delete('/diagnostics/logs/:logId', async (req: Request, res: Response) => {
+  try {
+    const { logId } = req.params;
+    const { deleteClientDiagnostic } = await import('../services/clientDiagnosticsService.js');
+    await deleteClientDiagnostic(logId);
+    const index = clientDiagnosticsList.findIndex(l => l.id === logId);
+    if (index !== -1) {
+      clientDiagnosticsList.splice(index, 1);
+    }
+    res.json({ success: true, message: 'Diagnostic log deleted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete diagnostic log.' });
+  }
+});
+
+// GET /v2/admin/heal/reports
+adminRouter.get('/heal/reports', async (req: Request, res: Response) => {
+  try {
+    const { listHealReports } = await import('../services/healRunner.js');
+    const reports = await listHealReports(parseInt(String(req.query.limit || '20'), 10) || 20);
+    res.json({ reports });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch heal reports.' });
+  }
+});
+
+// GET /v2/admin/heal/latest
+adminRouter.get('/heal/latest', async (req: Request, res: Response) => {
+  try {
+    const { getLatestHealReport } = await import('../services/healRunner.js');
+    const report = await getLatestHealReport();
+    res.json({ report });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch latest heal report.' });
+  }
+});
+
+// POST /v2/admin/heal/run
+adminRouter.post('/heal/run', async (req: Request, res: Response) => {
+  try {
+    const mode = req.body?.mode === 'report' ? 'report' : 'fix';
+    const { runHeal } = await import('../services/healRunner.js');
+    const report = await runHeal({
+      mode,
+      triggeredBy: `admin:${req.user?.userId || 'unknown'}`,
+    });
+    res.json({ success: true, report });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to run heal.' });
+  }
+});
+
 
 // GET /v2/admin/audit-logs - Get database audit log records
 adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
@@ -113,7 +278,7 @@ function generateSecurePassword(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
   let password = '';
   for (let i = 0; i < 16; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
+    password += chars.charAt(crypto.randomInt(0, chars.length));
   }
   return password;
 }
@@ -216,76 +381,10 @@ adminRouter.post('/approve-nomination', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only CLI_ADMIN can approve nominations' });
     }
     
-    // Get nomination details
-    const [nomination] = await db.select().from(supportAdminNominations).where(eq(supportAdminNominations.id, nominationId)).limit(1);
-    if (!nomination) {
-      return res.status(404).json({ error: 'Nomination not found' });
+    const result = await SupportAdminNominationService.approveNomination(nominationId);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-    
-    if (nomination.status !== 'pending') {
-      return res.status(400).json({ error: 'Nomination is not in pending status' });
-    }
-    
-    // Get nominated user info
-    const [targetUser] = await db.select().from(users).where(eq(users.id, nomination.nominatedUserId)).limit(1);
-    if (!targetUser) {
-      return res.status(404).json({ error: 'Nominated user not found' });
-    }
-    
-    // Generate separate admin credentials (INACTIVE until user accepts)
-    const adminUsername = `Sa-${targetUser.username}`;
-    const adminPassword = `Sa-Vel-${generateSecurePassword()}`;
-    const adminSalt = crypto.randomBytes(16).toString('hex');
-    const adminPasswordHash = await hashArgon2id(adminPassword, Buffer.from(adminSalt, 'hex'));
-    const adminRecoveryKey = `Sa-Vel-Sup-${Math.floor(10000 + Math.random() * 90000)}`;
-    const adminRecoveryKeyHash = await hashArgon2id(adminRecoveryKey, Buffer.from(adminSalt, 'hex'));
-    const adminPanicPhrase = `Sa-P-${Math.floor(100000 + Math.random() * 900000)}`;
-    const adminPanicPhraseHash = await hashArgon2id(adminPanicPhrase, Buffer.from(adminSalt, 'hex'));
-    
-    // Create INACTIVE support admin account
-    const [newAdmin] = await db.insert(users).values({
-      username: adminUsername,
-      passwordHash: adminPasswordHash,
-      salt: adminSalt,
-      role: 'SUPPORT_ADMIN',
-      displayName: `${targetUser.displayName || targetUser.username} (Support)`,
-      recoveryKeyHash: adminRecoveryKeyHash,
-      panicPhraseHash: adminPanicPhraseHash,
-      duressActive: true // Mark as inactive/duress until accepted
-    }).returning();
-    
-    // Store credentials encrypted in nomination
-    const credentialsData = JSON.stringify({
-      username: adminUsername,
-      password: adminPassword,
-      recoveryKey: adminRecoveryKey,
-      panicPhrase: adminPanicPhrase
-    });
-    
-    // Update nomination with admin account and credentials
-    await db.update(supportAdminNominations)
-      .set({ 
-        status: 'approved',
-        adminAccountId: newAdmin.id,
-        credentials: credentialsData,
-        updatedAt: new Date()
-      })
-      .where(eq(supportAdminNominations.id, nominationId));
-    
-    // Send approval notification via Velum Bot (WITHOUT credentials yet)
-    const systemBot = SystemBot.getInstance();
-    await systemBot.sendToUser(nomination.nominatedUserId,
-      `You have been nominated and APPROVED for the Velum Support Administrator role.\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `NEXT STEPS:\n` +
-      `• Your support admin credentials have been generated\n` +
-      `• You must ACCEPT this role to activate your credentials\n` +
-      `• If you DECLINE, the credentials will be purged\n\n` +
-      `To ACCEPT or DECLINE this role, please respond to this message with:\n` +
-      `"!accept-support" or "!decline-support"\n\n` +
-      `This nomination will expire in 7 days if no action is taken.\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-    );
     
     res.json({ 
       success: true, 
@@ -302,36 +401,14 @@ adminRouter.post('/reject-nomination', async (req: Request, res: Response) => {
   try {
     const { nominationId, reason } = req.body;
     
-    // Verify only CLI_ADMIN can reject
     if (req.user!.role !== 'CLI_ADMIN') {
       return res.status(403).json({ error: 'Only CLI_ADMIN can reject nominations' });
     }
     
-    // Get nomination details
-    const [nomination] = await db.select().from(supportAdminNominations).where(eq(supportAdminNominations.id, nominationId)).limit(1);
-    if (!nomination) {
-      return res.status(404).json({ error: 'Nomination not found' });
+    const result = await SupportAdminNominationService.rejectNomination(nominationId, reason);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-    
-    if (nomination.status !== 'pending') {
-      return res.status(400).json({ error: 'Nomination is not in pending status' });
-    }
-    
-    // Update nomination status
-    await db.update(supportAdminNominations)
-      .set({ 
-        status: 'rejected',
-        updatedAt: new Date()
-      })
-      .where(eq(supportAdminNominations.id, nominationId));
-    
-    // Notify user via Velum Bot
-    const systemBot = SystemBot.getInstance();
-    await systemBot.sendToUser(nomination.nominatedUserId,
-      `Your nomination for the Velum Support Administrator role has been declined.\n\n` +
-      `Reason: ${reason || 'No reason provided'}\n\n` +
-      `Your regular user account remains unchanged and unaffected.`
-    );
     
     res.json({ 
       success: true, 
@@ -348,44 +425,14 @@ adminRouter.post('/demote-support', async (req: Request, res: Response) => {
   try {
     const { targetUserId } = req.body;
     
-    // Verify only CLI_ADMIN can demote
     if (req.user!.role !== 'CLI_ADMIN') {
       return res.status(403).json({ error: 'Only CLI_ADMIN can demote support admins' });
     }
     
-    // Get target user info
-    const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
-    if (!targetUser) {
-      return res.status(404).json({ error: 'User not found' });
+    const result = await SupportAdminNominationService.demoteSupportAdmin(targetUserId, 'Demoted by CLI_ADMIN');
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-    
-    // Find and delete support admin account
-    const adminUsername = `support_${targetUser.username}`;
-    const deletedAdmin = await db.delete(users).where(
-      and(
-        eq(users.username, adminUsername),
-        eq(users.role, 'SUPPORT_ADMIN')
-      )
-    ).returning();
-    
-    if (deletedAdmin.length === 0) {
-      return res.status(404).json({ error: 'Support admin account not found' });
-    }
-    
-    // Update any related nominations
-    await db.update(supportAdminNominations)
-      .set({ 
-        status: 'revoked',
-        updatedAt: new Date()
-      })
-      .where(eq(supportAdminNominations.nominatedUserId, targetUserId));
-    
-    // Notify user via Velum Bot
-    const systemBot = SystemBot.getInstance();
-    await systemBot.sendToUser(targetUserId,
-      `Your Support Administrator access has been revoked by CLI_ADMIN.\n\n` +
-      `Your regular user account remains unchanged and unaffected.`
-    );
     
     res.json({ 
       success: true, 
@@ -510,43 +557,84 @@ adminRouter.post('/broadcast', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v2/admin/users/:id/delete - Delete user (admin)
+// POST /v2/admin/users/:id/delete - Delete or schedule user deactivation based on admin tier
 adminRouter.post('/users/:id/delete', async (req: Request, res: Response) => {
   try {
     const targetUserId = parseInt(req.params.id, 10);
-    const currentUserRole = req.user!.role;
+    const currentUser = req.user!;
+    const { reason = 'Admin initiated action', forceInstant = false } = req.body || {};
     
     if (!targetUserId) {
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
     
-    const targetUser = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
-    if (!targetUser.length) {
+    const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+    if (!targetUser) {
       return res.status(404).json({ error: 'User not found.' });
     }
     
-    if (targetUser[0].role === 'CLI_ADMIN' && currentUserRole !== 'CLI_ADMIN') {
-      return res.status(403).json({ error: 'Cannot delete CLI_ADMIN users.' });
+    if (targetUser.id === 1 || targetUser.id === 2 || targetUser.id === 999) {
+      return res.status(403).json({ error: 'Cannot delete core system accounts.' });
     }
     
-    await db.transaction(async (tx) => {
-      await tx.delete(sessions).where(eq(sessions.userId, targetUserId));
-      await tx.delete(users).where(eq(users.id, targetUserId));
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+
+    // Tier 3: CLI_ADMIN or forceInstant purge (Instant 0-day)
+    if (currentUser.role === 'CLI_ADMIN' && forceInstant) {
+      const purgeRes = await UserDeletionService.executeInstantPurge(targetUserId, String(reason));
+      return res.json({
+        success: true,
+        type: 'INSTANT_PURGE',
+        purgedTables: purgeRes.purgedTables,
+        message: 'User permanently purged instantly.'
+      });
+    }
+
+    // Tier 2: LOGIN_ADMIN / Standard Admin (3-day grace period)
+    const deactRes = await UserDeletionService.scheduleAdminDeactivation(targetUserId, currentUser.userId, String(reason));
+    
+    res.json({
+      success: true,
+      type: 'SCHEDULED_DELETION',
+      scheduledDeletionAt: deactRes.scheduledDeletionAt.toISOString(),
+      daysRemaining: 3,
+      message: 'Account scheduled for deletion in 3 days.'
     });
-    
-    // Invalidate cache
-    const redis = await getRedisClient();
-    if (redis) {
-      await redis.del('users:all');
-    }
-    
-    res.json({ message: 'User deleted successfully.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user.' });
   }
 });
 
-// POST /v2/admin/users/:id/restore - Restore deleted user
+// POST /v2/admin/users/:id/fraud - Tier 4: Fraud Sanction & Asset Seizure
+adminRouter.post('/users/:id/fraud', async (req: Request, res: Response) => {
+  try {
+    const targetUserId = parseInt(req.params.id, 10);
+    const currentUser = req.user!;
+    const { reason = 'Platform Fraud & Security Violation' } = req.body || {};
+
+    if (!['CLI_ADMIN', 'LOGIN_ADMIN', 'ADMIN'].includes(currentUser.role)) {
+      return res.status(403).json({ error: 'Admin permission required.' });
+    }
+
+    if (targetUserId === 1 || targetUserId === 2 || targetUserId === 999) {
+      return res.status(403).json({ error: 'Cannot sanction core system accounts.' });
+    }
+
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+    const result = await UserDeletionService.executeFraudSeizure(targetUserId, currentUser.username, String(reason));
+
+    res.json({
+      success: true,
+      type: 'FRAUD_SEIZURE',
+      seizedAmount: result.seizedAmount,
+      message: 'User assets seized and identifiers blacklisted.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to execute fraud sanction.' });
+  }
+});
+
+// POST /v2/admin/users/:id/restore - Restore soft-deleted / pending deactivation user
 adminRouter.post('/users/:id/restore', async (req: Request, res: Response) => {
   try {
     const targetUserId = parseInt(req.params.id, 10);
@@ -554,9 +642,28 @@ adminRouter.post('/users/:id/restore', async (req: Request, res: Response) => {
     if (!targetUserId) {
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
-    
-    // Mock success - in production this would restore a soft-deleted user
-    res.json({ success: true, message: 'User restored successfully.' });
+
+    const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (targetUser.deletionInitiatedBy === 'FRAUD_SEIZURE') {
+      return res.status(403).json({ error: 'Fraud-seized accounts cannot be restored.' });
+    }
+
+    await db.update(users).set({
+      role: 'USER',
+      status: 'Active',
+      scheduledDeletionAt: null,
+      deletionReason: null,
+      deletionInitiatedBy: null,
+      isCompromised: false,
+      duressActive: false,
+      updatedAt: new Date()
+    }).where(eq(users.id, targetUserId));
+
+    res.json({ success: true, message: 'User restored to active status.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to restore user.' });
   }
@@ -794,7 +901,7 @@ adminRouter.post('/invites', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Lounge ID is required.' });
     }
     
-    const inviteCode = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+    const inviteCode = `INV-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
     res.status(201).json({ 
       invite_id: `inv_${Date.now()}`,
       code: inviteCode,

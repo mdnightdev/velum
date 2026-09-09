@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { getSessionId } from '../../utils/auth';
+import { velumToast } from '../../utils/toast';
 
 interface PrivateSubloungeBannerProps {
   activeRoom: any;
@@ -28,7 +30,7 @@ export default function PrivateSubloungeBanner({
     setIsApplying(true);
     setApplyMessage('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${activeRoom.lounge_id}/apply`, {
         method: 'POST',
         headers: {
@@ -57,7 +59,7 @@ export default function PrivateSubloungeBanner({
   };
 
   const handleRequestDeletion = () => {
-    alert(`System Admin Request Submitted: A request to delete private sublounge "${activeRoom.name}" has been logged for system administrator review.`);
+    velumToast.info(`System Admin Request Submitted: A request to delete private sublounge "${activeRoom.name}" has been logged for system administrator review.`);
   };
 
   // Only show invite code banner to the sublounge creator/owner or system admins
@@ -110,7 +112,7 @@ export default function PrivateSubloungeBanner({
         <div className="bg-velum-850/90 border-b border-white-10 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 select-none">
           <div className="flex items-center gap-2 text-xs min-w-0">
             <span className="font-bold text-accent uppercase tracking-wider text-[10px] shrink-0">
-              🔒 Private Sublounge
+               Private Sublounge
             </span>
             <span className="text-text-secondary truncate text-[11px]">
               Applications restricted. Joining is by invite link shared directly by the room creator.
@@ -124,7 +126,7 @@ export default function PrivateSubloungeBanner({
       <div className="bg-velum-850/90 border-b border-white-10 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 select-none">
         <div className="flex items-center gap-2 text-xs min-w-0">
           <span className="font-bold text-accent uppercase tracking-wider text-[10px] shrink-0">
-            🔒 Private Lounge
+            Private Lounge
           </span>
           <span className="text-text-secondary truncate text-[11px]">
             {applyMessage || 'This community requires approval to join.'}

@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Message } from '../../../types';
 import { parseAttachment } from '../../../utils/messageParser';
+import { velumToast } from '../../../utils/toast';
+import { getMessageKey, messagesMatch } from '../messageKey';
 
 export function useMessageActions() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [longPressedMsgId, setLongPressedMsgId] = useState<string | null>(null);
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
-  const [showEmojisForMsg, setShowEmojisForMsg] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
   const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
@@ -14,14 +14,14 @@ export function useMessageActions() {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFiredRef = useRef(false);
 
+  const clearActionMessage = () => setActionMessage(null);
+
   const handleTouchStart = (msg: Message) => {
     longPressFiredRef.current = false;
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
       longPressFiredRef.current = true;
-      setSelectedMessage((prev) => (prev?.message_id === msg.message_id ? null : msg));
-      setLongPressedMsgId((prev) => (prev === msg.message_id ? null : msg.message_id));
-      setShowEmojisForMsg(msg.message_id);
+      setActionMessage((prev) => (messagesMatch(prev, msg) ? null : msg));
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(15);
       }
@@ -35,44 +35,42 @@ export function useMessageActions() {
     }
   };
 
-  const handleSelectMessage = (msg: Message | null) => {
-    setSelectedMessage(msg);
-  };
-
   useEffect(() => {
-    if (!longPressedMsgId && !selectedMessage && !showEmojisForMsg) return;
+    if (!actionMessage) return;
     const dismiss = (e: TouchEvent | MouseEvent) => {
       const target = e.target as HTMLElement;
-      const container = target.closest('[data-message-id]') as HTMLElement | null;
-      const header = target.closest('.border-b') as HTMLElement | null;
-      const reactionPicker = target.closest('[data-reaction-picker]') as HTMLElement | null;
-      if (header || reactionPicker) return;
-      setLongPressedMsgId(null);
-      setShowEmojisForMsg(null);
-      setSelectedMessage(null);
+      if (target.closest('[data-message-action-sheet]')) return;
+      if (target.closest('[data-forward-sheet]')) return;
+      if (target.closest('[data-reaction-picker]')) return;
+      if (target.closest('[data-chat-selection-header]')) return;
+      if (target.closest('[data-image-lightbox]')) return;
+      if (target.closest('[data-video-lightbox]')) return;
+      if (longPressFiredRef.current) {
+        longPressFiredRef.current = false;
+        return;
+      }
+      setActionMessage(null);
     };
-    document.addEventListener('touchstart', dismiss);
-    document.addEventListener('mousedown', dismiss);
+    const t = window.setTimeout(() => {
+      document.addEventListener('touchstart', dismiss);
+      document.addEventListener('mousedown', dismiss);
+    }, 0);
     return () => {
+      window.clearTimeout(t);
       document.removeEventListener('touchstart', dismiss);
       document.removeEventListener('mousedown', dismiss);
     };
-  }, [longPressedMsgId, selectedMessage, showEmojisForMsg]);
-
-  const handleCopyMessage = (msgId: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedMessageId(msgId);
-    setTimeout(() => setCopiedMessageId(null), 2000);
-  };
+  }, [actionMessage]);
 
   const handleStartEdit = (msg: Message, activeContent: string, setInputText: (text: string) => void) => {
-    const timestampMs = typeof msg.timestamp === 'number' ? msg.timestamp : new Date(msg.timestamp).getTime();
+    const stamp = msg.timestamp ?? msg.created_at ?? Date.now();
+    const timestampMs = typeof stamp === 'number' ? stamp : new Date(stamp).getTime();
     const timeDiffMinutes = (Date.now() - timestampMs) / (1000 * 60);
     if (timeDiffMinutes > 15) {
-      alert('Message editing window (15 minutes) has expired.');
+      velumToast.error('Message editing window (15 minutes) has expired.');
       return;
     }
-    setEditingMessageId(msg.message_id);
+    setEditingMessageId(getMessageKey(msg) || String(msg.message_id));
     const attachment = activeContent.includes('[Attachment:') ? parseAttachment(activeContent) : null;
     const plainText = attachment && attachment.length > 0 ? (attachment[0].caption || '') : activeContent;
     setInputText(plainText);
@@ -86,13 +84,9 @@ export function useMessageActions() {
   return {
     editingMessageId,
     setEditingMessageId,
-    longPressedMsgId,
-    setLongPressedMsgId,
-    selectedMessage,
-    setSelectedMessage,
-    handleSelectMessage,
-    showEmojisForMsg,
-    setShowEmojisForMsg,
+    actionMessage,
+    setActionMessage,
+    clearActionMessage,
     copiedMessageId,
     setCopiedMessageId,
     replyingToMessage,
@@ -101,7 +95,6 @@ export function useMessageActions() {
     setForwardingMessage,
     handleTouchStart,
     handleTouchEnd,
-    handleCopyMessage,
     handleStartEdit,
     handleCancelEdit,
   };

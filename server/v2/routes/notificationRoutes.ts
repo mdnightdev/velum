@@ -1,24 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { createAuthMiddleware, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
+import { auth, extractSessionToken, hashSessionToken } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
-import { getVapidPublicKey, savePushSubscription, removePushSubscription } from '../services/notifications/pushGateway.js';
+import { getVapidPublicKey, savePushSubscription, removePushSubscription, saveFcmToken, removeFcmToken } from '../services/notifications/pushGateway.js';
 
 export const notificationRouter = Router();
-
-const auth = createAuthMiddleware(async (hashedToken) => {
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
 
 // GET /v2/notifications/vapid-key - Get public VAPID key for client registration
 notificationRouter.get('/vapid-key', (_req: Request, res: Response) => {
@@ -62,6 +47,38 @@ notificationRouter.post('/unsubscribe', auth, async (req: Request, res: Response
 
     await removePushSubscription(endpoint);
     res.json({ success: true, message: 'Push subscription removed successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Register FCM device token
+notificationRouter.post("/fcm/register", auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { token, deviceId, platform } = req.body;
+    const currentUserId = req.user!.userId;
+
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ error: "Token is required." });
+    }
+
+    await saveFcmToken(currentUserId, token, deviceId, platform);
+    res.json({ success: true, message: "FCM token registered successfully." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Unregister FCM device token
+notificationRouter.post("/fcm/unregister", auth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ error: "Token is required." });
+    }
+
+    await removeFcmToken(token);
+    res.json({ success: true, message: "FCM token removed successfully." });
   } catch (err) {
     next(err);
   }

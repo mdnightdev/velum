@@ -2,11 +2,12 @@ import type { Request, Response } from 'express';
 import { userRepository } from '../repositories/userRepository.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { db } from '../db/client.js';
-import { users, sessions } from '../db/schema/index.js';
+import { users, sessions, userNicknames } from '../db/schema/index.js';
 import { eq, or, and, count, desc } from 'drizzle-orm';
 import { loungeMembers } from '../db/schema/lounges.js';
 import { relationships } from '../db/schema/relationships.js';
 import { getRedisClient } from '../db/redis.js';
+import { DEFAULT_USER_BIO } from '../constants/profile.js';
 
 export class UserController {
   async getProfile(req: Request, res: Response): Promise<void> {
@@ -39,27 +40,40 @@ export class UserController {
       );
     const connectionsCount = Number(userConnections[0]?.value || 0);
 
+    const [nicknameRecord] = await db
+      .select({ nickname: userNicknames.nickname })
+      .from(userNicknames)
+      .where(and(
+        eq(userNicknames.ownerId, req.user.userId),
+        eq(userNicknames.targetId, targetUserId)
+      ))
+      .limit(1);
+
     const isRecentlyActive = user.updatedAt && (Date.now() - new Date(user.updatedAt).getTime() < 300000);
     const resolvedStatus = isRecentlyActive ? 'Online' : 'Offline';
 
     let isMuted = false;
+    let mutedUntil: string | null = null;
+    let muteDuration: string | null = null;
     const redis = await getRedisClient();
     if (redis) {
-      const exists = await redis.get(`user:${req.user.userId}:muted:${targetUserId}`);
-      isMuted = !!exists;
+      const muteKey = `user:${req.user.userId}:muted:${targetUserId}`;
+      const muteVal = await redis.get(muteKey);
+      isMuted = !!muteVal;
+      if (isMuted) {
+        muteDuration = typeof muteVal === 'string' ? muteVal : '24h';
+        const ttl = await redis.ttl(muteKey);
+        if (typeof ttl === 'number' && ttl > 0) {
+          mutedUntil = new Date(Date.now() + ttl * 1000).toISOString();
+        }
+      }
     }
 
     let isBlocked = false;
-    const blockRecord = await db.select().from(relationships).where(
-      and(
-        eq(relationships.status, 'blocked'),
-        or(
-          and(eq(relationships.userId, req.user.userId), eq(relationships.friendId, targetUserId)),
-          and(eq(relationships.userId, targetUserId), eq(relationships.friendId, req.user.userId))
-        )
-      )
-    ).limit(1);
-    isBlocked = blockRecord.length > 0;
+    if (req.user.userId !== targetUserId) {
+      const { hasBlocked } = await import('../services/blockService.js');
+      isBlocked = await hasBlocked(req.user.userId, targetUserId);
+    }
 
     res.status(200).json({
       userId: user.id,
@@ -67,12 +81,15 @@ export class UserController {
       displayName: user.displayName || user.username,
       avatar: user.avatarUrl || '',
       avatarUrl: user.avatarUrl || '',
-      bio: user.bio || '',
+      bio: user.bio || DEFAULT_USER_BIO,
+      nickname: nicknameRecord?.nickname || '',
       location: user.location || '',
       role: user.role,
       createdAt: user.createdAt,
       status: resolvedStatus,
       isMuted,
+      mutedUntil,
+      muteDuration,
       isBlocked,
       stats: {
         loungesCount,
@@ -235,27 +252,64 @@ export class UserController {
   async reportUser(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
 
-    const { targetUserId, reason } = req.body;
+    const { targetUserId, reason, attachments } = req.body;
     
     if (!targetUserId || !reason) {
       throw new BadRequestError('Target user ID and reason are required.');
     }
 
-    const targetUser = await userRepository.findById(targetUserId);
+    const PROTECTED_SYSTEM_IDS = [1, 2, 999];
+    if (PROTECTED_SYSTEM_IDS.includes(Number(targetUserId))) {
+      throw new BadRequestError('Cannot report system staff accounts.');
+    }
+
+    const targetUser = await userRepository.findById(Number(targetUserId));
     if (!targetUser) {
       throw new NotFoundError('Target user not found.');
     }
 
-    // Create a support ticket for the report
-    const { tickets } = await import('../db/schema/tickets.js');
-    await db.insert(tickets).values({
-      userId: req.user.userId,
-      subject: `User Report: ${targetUser.username}`,
-      description: `User ${req.user.username} reported ${targetUser.username} for: ${reason}`,
-      status: 'open'
-    });
+    const { moderationService } = await import('../services/moderationService.js');
+    const { getRedisClient } = await import('../db/redis.js');
 
-    res.status(200).json({ message: 'User reported successfully. Support ticket created.' });
+    // Automatically analyze report and execute progressive strike / ecosystem harvest
+    const modResult = await moderationService.processReportAndEscalate(
+      req.user.userId,
+      targetUser.id,
+      'user_misconduct',
+      String(reason).trim(),
+      'medium'
+    );
+
+    // Broadcast report event to admin channels via Redis
+    try {
+      const redis = await getRedisClient();
+      if (redis) {
+        await redis.publish('admin:reports', JSON.stringify({
+          type: 'new_report',
+          report: {
+            reporterId: req.user.userId,
+            reporterUsername: req.user.username,
+            targetUserId: targetUser.id,
+            targetUsername: targetUser.username,
+            reason: String(reason).trim(),
+            attachments: Array.isArray(attachments) ? attachments : [],
+            moderationAction: modResult.action,
+            strikeCount: modResult.strikeCount
+          }
+        }));
+      }
+    } catch {
+      // Non-fatal if Redis broadcast fails
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Report submitted successfully.',
+      moderation: {
+        action: modResult.action,
+        strikeCount: modResult.strikeCount
+      }
+    });
   }
 }
 

@@ -2,46 +2,24 @@ import { Router, Request, Response, NextFunction } from 'express';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createAuthMiddleware, hashSessionToken } from '../middleware/auth.js';
-import { userRepository } from '../repositories/userRepository.js';
+import crypto from 'crypto';
+import { auth } from '../middleware/auth.js';
 import {
   validateUploadParameters,
   generatePresignedUpload,
+  validatePresignedToken,
   verifyFileSha256
 } from '../services/media/presignedUploadService.js';
+import { mediaService } from '../services/media/mediaService.js';
+import { getS3Config } from '../services/media/s3Client.js';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { logger } from '../utils/logger.js';
 
-const auth = createAuthMiddleware(async (hashedToken) => {
-  if (process.env.NODE_ENV === 'test' && hashedToken === hashSessionToken('mock-token')) {
-    return {
-      user: {
-        userId: 1,
-        username: 'testuser',
-        role: 'USER',
-        duress_active: false
-      },
-      expiresAt: new Date(Date.now() + 3600 * 1000)
-    };
-  }
-  const result = await userRepository.findSessionByTokenHash(hashedToken);
-  if (!result) return null;
-  const { session, user } = result;
-  return {
-    user: {
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      duress_active: user.duressActive
-    },
-    expiresAt: session.expiresAt
-  };
-});
 export const mediaRouter = Router();
 
-// ---------------------------------------------------------------------------
 // Upload validation helpers
-// ---------------------------------------------------------------------------
 
-const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'webm', 'mp4']);
+const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'webm', 'mp4', 'pdf', 'txt', 'csv', 'json', 'doc', 'docx', 'xls', 'xlsx']);
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -54,15 +32,10 @@ const MAGIC_BYTES: Record<string, MagicSignature[]> = {
   gif: [{ bytes: [0x47, 0x49, 0x46, 0x38] }],
   webp: [{ bytes: [0x52, 0x49, 0x46, 0x46] }], // 'RIFF' — WEBP marker sits at offset 8, checked below
   mp4: [{ bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }], // 'ftyp' at offset 4
-  webm: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3] }]
+  webm: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3] }],
+  pdf: [{ bytes: [0x25, 0x50, 0x44, 0x46] }] // '%PDF'
 };
 
-/**
- * Returns the extension (no dot, lowercased) if it's on the whitelist, else null.
- * Using path.extname on the basename means a double-extension trick like
- * "invoice.pdf.php" naturally resolves to "php" and gets rejected — no
- * special-casing needed for that bypass.
- */
 function getSafeExtension(rawFilename: string): string | null {
   const base = path.basename((rawFilename || '').replace(/\0/g, ''));
   const ext = path.extname(base).replace('.', '').toLowerCase();
@@ -72,7 +45,7 @@ function getSafeExtension(rawFilename: string): string | null {
 
 function matchesMagicBytes(buffer: Buffer, ext: string): boolean {
   const signatures = MAGIC_BYTES[ext];
-  if (!signatures) return false;
+  if (!signatures) return true; // Plaintext or unconstrained doc types pass through
 
   const basicMatch = signatures.some(({ bytes, offset = 0 }) => {
     if (buffer.length < offset + bytes.length) return false;
@@ -80,8 +53,7 @@ function matchesMagicBytes(buffer: Buffer, ext: string): boolean {
   });
   if (!basicMatch) return false;
 
-  // WEBP needs a second check: RIFF is a shared container header, the actual
-  // WEBP marker lives at offset 8.
+  // WEBP needs a second check: RIFF is a shared container header, the actual WEBP marker lives at offset 8.
   if (ext === 'webp') {
     if (buffer.length < 12) return false;
     const marker = buffer.subarray(8, 12).toString('ascii');
@@ -91,35 +63,45 @@ function matchesMagicBytes(buffer: Buffer, ext: string): boolean {
   return true;
 }
 
-/**
- * Cheap guard against HTML/JS/PHP polyglots that happen to start with a
- * valid magic-byte prefix (a crafted GIF/PNG can still carry a script tag
- * further into the file). Scans only the first slice of the buffer.
- */
 function containsScriptContent(buffer: Buffer): boolean {
   const sample = buffer.subarray(0, Math.min(buffer.length, 4096)).toString('utf8').toLowerCase();
   return /<script[\s>]/.test(sample) || /<\?php/.test(sample) || /<html[\s>]/.test(sample);
 }
 
-function safeUploadFolder(rawFolder: string | undefined): string {
-  const cleaned = (rawFolder || 'media').replace(/[^a-zA-Z0-9_-]/g, '');
-  return cleaned || 'media';
+function sanitizeStorageFolder(rawFolder: string | undefined): string {
+  const parts = (rawFolder || 'chat')
+    .split('/')
+    .map(p => p.replace(/[^a-zA-Z0-9_-]/g, ''))
+    .filter(Boolean);
+  return parts.join('/') || 'chat';
 }
 
-// ---------------------------------------------------------------------------
 // POST /v2/media/presigned-upload & /api/v2/media/presigned-upload
-// ---------------------------------------------------------------------------
 
 const handlePresignedUpload = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
-    const { filename, mime_type, file_size_bytes, sha256_checksum, folder } = req.body;
+    const rawExt = (req.body.extension || 'bin').replace(/^\./, '');
+    let defaultPrefix = 'doc';
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(rawExt)) defaultPrefix = 'img';
+    else if (['webm', 'ogg', 'mp3', 'm4a'].includes(rawExt)) defaultPrefix = 'aud';
+    else if (['mp4', 'mov'].includes(rawExt)) defaultPrefix = 'vid';
+    const filename = req.body.filename || `${defaultPrefix}_${crypto.randomBytes(5).toString('hex')}.${rawExt}`;
+    const rawMime = req.body.mime_type || req.body.mimeType || (
+      rawExt === 'webp' ? 'image/webp' :
+      rawExt === 'png' ? 'image/png' :
+      rawExt === 'jpg' || rawExt === 'jpeg' ? 'image/jpeg' :
+      rawExt === 'webm' ? 'audio/webm' :
+      rawExt === 'mp4' ? 'video/mp4' : 'image/webp'
+    );
+    const fileSizeBytes = Number(req.body.file_size_bytes || req.body.fileSizeBytes || 1024 * 1024);
+    const folder = req.body.folder || req.body.type || 'chat';
 
     const validation = validateUploadParameters({
       filename,
-      mimeType: mime_type || req.body.mimeType,
-      fileSizeBytes: Number(file_size_bytes || req.body.fileSizeBytes),
-      sha256Checksum: sha256_checksum || req.body.sha256Checksum,
+      mimeType: rawMime,
+      fileSizeBytes,
+      sha256Checksum: req.body.sha256_checksum || req.body.sha256Checksum,
       folder
     });
 
@@ -131,9 +113,9 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
     const presignedData = await generatePresignedUpload(
       {
         filename,
-        mimeType: mime_type || req.body.mimeType,
-        fileSizeBytes: Number(file_size_bytes || req.body.fileSizeBytes),
-        sha256Checksum: sha256_checksum || req.body.sha256Checksum,
+        mimeType: rawMime,
+        fileSizeBytes,
+        sha256Checksum: req.body.sha256_checksum || req.body.sha256Checksum,
         folder
       },
       userId,
@@ -142,7 +124,9 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
 
     res.json({
       status: 'ok',
-      presigned: presignedData
+      presigned: presignedData,
+      uploadUrl: presignedData.uploadUrl,
+      relativeDbPath: presignedData.relativePath
     });
   } catch (err) {
     next(err);
@@ -152,61 +136,109 @@ const handlePresignedUpload = async (req: Request, res: Response, next: NextFunc
 mediaRouter.post('/media/presigned-upload', auth, handlePresignedUpload);
 mediaRouter.post('/storage/upload-token', auth, handlePresignedUpload);
 
-// ---------------------------------------------------------------------------
 // PUT/POST /v2/media/upload - Direct binary stream upload with SHA-256 check
-// ---------------------------------------------------------------------------
 
 const handleDirectUpload = async (req: Request, res: Response, next: NextFunction) => {
+  const correlationId = (req as any).correlationId || 'NO-CORR-ID';
+  
   try {
     const contentLength = Number(req.headers['content-length'] || 0);
+    const rawFilename = (req.query.filename as string) || `upload_${Date.now()}.bin`;
+    const folderParam = (req as any).presignedFolder || (req.query.folder as string);
+    const folder = sanitizeStorageFolder(folderParam);
+    const expectedSha = (req.headers['x-amz-checksum-sha256'] as string) || (req.query.sha256 as string);
+
     if (contentLength > MAX_UPLOAD_BYTES) {
+      logger.warn('Payload exceeds maximum size', { correlationId, contentLength, maxSize: MAX_UPLOAD_BYTES });
       return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
     }
 
-    const rawFilename = (req.query.filename as string) || `upload_${Date.now()}.bin`;
-    const folder = safeUploadFolder(req.query.folder as string);
-    const expectedSha = (req.headers['x-amz-checksum-sha256'] as string) || (req.query.sha256 as string);
-
     const bodyBuffer = req.body as Buffer;
     if (!bodyBuffer || !Buffer.isBuffer(bodyBuffer) || bodyBuffer.length === 0) {
+      logger.warn('No binary payload received', { correlationId });
       return res.status(400).json({ error: 'No binary payload received.' });
     }
 
     if (bodyBuffer.length > MAX_UPLOAD_BYTES) {
+      logger.warn('Body buffer exceeds maximum size', { correlationId, bodyLength: bodyBuffer.length, maxSize: MAX_UPLOAD_BYTES });
       return res.status(413).json({ error: 'Payload exceeds maximum allowed size.' });
     }
 
     const ext = getSafeExtension(rawFilename);
     if (!ext) {
+      logger.warn('File type not allowed', { correlationId, rawFilename });
       return res.status(400).json({ error: 'File type not allowed.' });
     }
 
     if (!matchesMagicBytes(bodyBuffer, ext)) {
+      logger.warn('Magic bytes mismatch', { correlationId, ext, bufferLength: bodyBuffer.length });
       return res.status(400).json({ error: 'File content does not match a valid file of this type.' });
     }
 
     if (containsScriptContent(bodyBuffer)) {
+      logger.warn('Script content detected', { correlationId, ext });
       return res.status(400).json({ error: 'File content rejected: embedded script content detected.' });
     }
 
     if (expectedSha && !verifyFileSha256(bodyBuffer, expectedSha)) {
+      logger.warn('SHA-256 checksum mismatch', { correlationId, expectedSha });
       return res.status(422).json({ error: 'SHA-256 checksum mismatch. Payload corrupted during transit.' });
     }
 
-    const publicUploadDir = path.join(process.cwd(), 'public', 'uploads', folder);
-    if (!fs.existsSync(publicUploadDir)) {
-      fs.mkdirSync(publicUploadDir, { recursive: true });
+    // Use presigned filename if available, otherwise generate anonymous server filename
+    const presignedFilename = (req as any).presignedFilename;
+    let prefix = 'doc';
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) {
+      prefix = 'img';
+    } else if (['webm', 'ogg', 'mp3', 'm4a', 'wav'].includes(ext)) {
+      prefix = 'aud';
+    } else if (['mp4', 'mov', 'mkv'].includes(ext)) {
+      prefix = 'vid';
+    }
+    const generatedFilename = presignedFilename || `${prefix}_${crypto.randomBytes(5).toString('hex')}.${ext}`;
+    const storageKey = `${folder}/${generatedFilename}`;
+    const contentType = (req.headers['content-type'] as string) || 'application/octet-stream';
+
+    // Object storage is the durable target; local disk is wiped on every redeploy.
+    const s3 = getS3Config();
+    if (s3.isConfigured && s3.client && s3.bucket) {
+      await s3.client.send(new PutObjectCommand({
+        Bucket: s3.bucket,
+        Key: storageKey,
+        Body: bodyBuffer,
+        ContentType: contentType,
+        Metadata: { uploader: String(req.user!.userId) }
+      }));
+    } else {
+      const publicUploadDir = path.join(process.cwd(), 'public', 'uploads', folder);
+      if (!fs.existsSync(publicUploadDir)) {
+        fs.mkdirSync(publicUploadDir, { recursive: true });
+      }
+      await fs.promises.writeFile(path.join(publicUploadDir, generatedFilename), bodyBuffer);
     }
 
-    // Server-generated filename — only the validated extension survives from
-    // client input. Removes any residual filename-based attack surface.
-    const generatedFilename = `upload_${req.user!.userId}_${Date.now()}_${Math.random()
-      .toString(36)
-      .slice(2, 8)}.${ext}`;
-    const targetPath = path.join(publicUploadDir, generatedFilename);
-    await fs.promises.writeFile(targetPath, bodyBuffer);
+    const relativeUrl = `/uploads/${storageKey}`;
+    const category: 'avatar' | 'chat' | 'general' = (req as any).presignedCategory || (folder.startsWith('avatars') ? 'avatar' : 'chat');
 
-    const relativeUrl = `/uploads/${folder}/${generatedFilename}`;
+    // Register media asset tracking record
+    await mediaService.recordAsset({
+      uploaderId: req.user!.userId,
+      storageKey,
+      relativePath: relativeUrl,
+      mimeType: contentType,
+      byteSize: bodyBuffer.length,
+      category,
+      sha256: expectedSha || crypto.createHash('sha256').update(bodyBuffer).digest('hex')
+    }).catch(err => {
+      logger.error('[MEDIA] Failed to track asset in database', { relativeUrl, error: (err as Error).message });
+    });
+
+    logger.info('Upload successful', {
+      correlationId,
+      userId: req.user!.userId,
+      relativeUrl,
+      bytesReceived: bodyBuffer.length
+    });
 
     res.json({
       status: 'ok',
@@ -215,9 +247,42 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
       bytes_received: bodyBuffer.length
     });
   } catch (err) {
+    logger.error('Upload handler error', {
+      correlationId,
+      error: (err as Error).message,
+      stack: (err as Error).stack
+    });
     next(err);
   }
 };
 
-mediaRouter.put('/media/upload', auth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
-mediaRouter.post('/media/upload', auth, express.raw({ type: '*/*', limit: '50mb' }), handleDirectUpload);
+const uploadAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const queryToken = req.query.token as string;
+  const correlationId = (req as any).correlationId || 'NO-CORR-ID';
+  
+  if (queryToken) {
+    const tokenResult = await validatePresignedToken(queryToken);
+    if (tokenResult.valid) {
+      req.user = {
+        userId: tokenResult.userId || 1,
+        username: 'uploader',
+        role: 'USER',
+        duress_active: false
+      };
+      (req as any).presignedFilename = tokenResult.filename;
+      (req as any).presignedFolder = tokenResult.folder;
+      (req as any).presignedCategory = tokenResult.category;
+      return next();
+    } else {
+      logger.warn('Presigned token validation failed, falling back to session auth', {
+        correlationId,
+        reason: 'Token not found or expired'
+      });
+    }
+  }
+  
+  return auth(req, res, next);
+};
+
+mediaRouter.put('/media/upload', express.raw({ type: '*/*', limit: '50mb' }), uploadAuth, handleDirectUpload);
+mediaRouter.post('/media/upload', express.raw({ type: '*/*', limit: '50mb' }), uploadAuth, handleDirectUpload);

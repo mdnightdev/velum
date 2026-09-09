@@ -1,40 +1,29 @@
 import { Router } from 'express';
 import { authController } from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
-import { registerSchema, loginSchema, updateProfileSchema } from '../schemas/auth.js';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import { registerSchema, loginSchema, updateProfileSchema, cancelDeletionSchema } from '../schemas/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { eq } from 'drizzle-orm';
-import { hashArgon2id, generateRandomToken } from '../utils/crypto.js';
+import { hashArgon2id, generateRandomToken, generateRecoveryKey } from '../utils/crypto.js';
 import { systemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
 
-import { executePanicCascade } from '../services/duress/panicService.js';
+import { executeEmergencyWipe } from '../services/duress/panicService.js';
 
 export const authRouter = Router();
-
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
 
 authRouter.get('/user-salt', (req, res, next) => {
   authController.getUserSalt(req, res).catch(next);
 });
 
 authRouter.get('/login-nonce', (req, res, next) => {
+  authController.getLoginNonce(req, res).catch(next);
+});
+
+authRouter.get('/challenge', (req, res, next) => {
   authController.getLoginNonce(req, res).catch(next);
 });
 
@@ -78,15 +67,15 @@ authRouter.post('/purge-data', authMiddleware, (req, res, next) => {
   authController.purgeUserData(req, res).catch(next);
 });
 
-// POST /v2/auth/panic - Instant WAL Cascade Deletion Panic Protocol Trigger
+// POST /v2/auth/panic - Emergency data wipe trigger
 authRouter.post('/panic', authMiddleware, async (req, res, next) => {
   try {
     const currentUserId = req.user!.userId;
-    const result = await executePanicCascade(currentUserId, 'MANUAL_PANIC_TRIGGER');
+    const result = await executeEmergencyWipe(currentUserId, 'MANUAL_EMERGENCY_TRIGGER');
     res.json({
       success: true,
       ticketId: result.ticketId,
-      message: 'Panic protocol executed. Instant WAL cascade deletion completed.'
+      message: 'Emergency wipe executed.'
     });
   } catch (err) {
     next(err);
@@ -99,6 +88,10 @@ authRouter.post('/register', validate({ body: registerSchema }), (req, res, next
 
 authRouter.post('/login', validate({ body: loginSchema }), (req, res, next) => {
   authController.login(req, res).catch(next);
+});
+
+authRouter.post('/cancel-deletion', validate({ body: cancelDeletionSchema }), (req, res, next) => {
+  authController.cancelDeletion(req, res).catch(next);
 });
 
 authRouter.post('/logout', authMiddleware, (req, res, next) => {
@@ -146,7 +139,7 @@ authRouter.post('/promote-to-support-admin', authMiddleware, async (req, res, ne
     const saPassword = `SA-${generateRandomToken(16)}`;
     const saPasscode = `SA-${generateRandomToken(8)}`;
     const saPanicPhrase = `SA-${generateRandomToken(12)}`;
-    const saRecoveryKey = `SA-REC-${Math.floor(10000 + Math.random() * 90000)}`;
+    const saRecoveryKey = generateRecoveryKey('SA-REC');
     const salt = generateRandomToken(16);
 
     const saPasswordHash = await hashArgon2id(saPassword, Buffer.from(salt, 'hex'));
@@ -169,8 +162,13 @@ authRouter.post('/promote-to-support-admin', authMiddleware, async (req, res, ne
     }).returning();
 
     // Send credentials to original user's VELUM bot DM
-    const credentialMessage = `Congratulations! You have been promoted to Support Admin.\n\nYour new SUPPORT_ADMIN account credentials:\n\nUsername: ${saUsername}\nPassword: ${saPassword}\nPasscode: ${saPasscode}\nPanic Phrase: ${saPanicPhrase}\nRecovery Key: ${saRecoveryKey}\n\nUse these credentials to access the admin panel. Your original user account remains active. Store these credentials securely.`;
-    await systemBot.sendToUser(targetUserId, credentialMessage);
+    await systemBot.sendToUser(targetUserId, BotTemplates.supportCredentialsDelivered({
+      username: saUsername,
+      password: saPassword,
+      passcode: saPasscode,
+      recoveryKey: saRecoveryKey,
+      panicPhrase: saPanicPhrase
+    }));
 
     res.status(201).json({
       message: 'User promoted to SUPPORT_ADMIN successfully',

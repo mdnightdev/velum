@@ -26,6 +26,10 @@
   "exclude": [
     "DEAD ENGINE",
     "node_modules",
-    "dist"
+    "dist",
+    "patches"
+  ],
+  "include": [
+    "src"
   ]
 }

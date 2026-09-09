@@ -3,6 +3,26 @@ import { collectDeviceFingerprint } from '../../../utils/deviceFingerprint.js';
 import { computeClientHash, checkPasswordStrength } from '../utils/crypto';
 import { LegalDocType } from '../../LegalDocModal';
 import { RecoveryViewMode } from '../AccountRecovery';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+import { Capacitor } from '@capacitor/core';
+import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
+import { saveBiometricSession, getBiometricSession } from '../../../hooks/useBiometricAuth';
+import { statelessE2eeService } from '../../../services/statelessE2eeService';
+import { velumToast } from '../../../utils/toast';
+
+async function initE2eeKeysSafe(
+  userId: number,
+  password: string,
+  salt?: string,
+  sessionToken?: string | null
+): Promise<void> {
+  try {
+    await statelessE2eeService.initLocalIdentityKeys(userId, password, salt, sessionToken);
+  } catch (e) {
+    console.error('[StatelessE2EE] Key init / publish failed:', e);
+    velumToast.error('Message keys could not be published. Try signing in again.');
+  }
+}
 
 interface UseAuthFormOptions {
   onLoginSuccess: (user: any, sessionId: string, deviceId: string, activeView: string) => void;
@@ -34,6 +54,7 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
   const [ticketTrackingId, setTicketTrackingId] = useState('');
   const [activeTicket, setActiveTicket] = useState<any | null>(null);
   const [hasAgreedToTerms, setHasAgreedToTerms] = useState(false);
+  const [enableBiometrics, setEnableBiometrics] = useState(true);
   const [ticketReplyText, setTicketReplyText] = useState('');
   const [recoveryView, setRecoveryView] = useState<RecoveryViewMode>('options');
   const [redeemUsername, setRedeemUsername] = useState('');
@@ -41,6 +62,115 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
   const [redeemNewPassword, setRedeemNewPassword] = useState('');
   const [deviceFingerprint, setDeviceFingerprint] = useState('');
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType | null>(null);
+  const [isScheduledForDeletion, setIsScheduledForDeletion] = useState(false);
+  const [scheduledDeletionDetails, setScheduledDeletionDetails] = useState<{
+    scheduledDeletionAt: string;
+    timeRemainingMs: number;
+    cancelToken: string;
+    username: string;
+  } | null>(null);
+  const [isCancellingDeletion, setIsCancellingDeletion] = useState(false);
+
+  // Security: Wipe unsubmitted credentials if user switches apps or minimizes the tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        setUsername('');
+        setPassword('');
+        setAdminToken('');
+        setSafeWord('');
+        setPanicPhrase('');
+        setInviteCode('');
+        setRecoveryUsername('');
+        setRecoverySafeWord('');
+        setRecoveryCodeInput('');
+        setRecoveryNewPassword('');
+        setRedeemUsername('');
+        setRedeemCode('');
+        setRedeemNewPassword('');
+        setAuthError(null);
+        setIsScheduledForDeletion(false);
+        setScheduledDeletionDetails(null);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  const handlePasskeyLogin = async () => {
+    setAuthError(null);
+
+    if (Capacitor.isNativePlatform()) {
+      const session = getBiometricSession();
+      if (!session || !session.token) {
+        setAuthError('No saved biometric credentials found. Please sign in with your password first to enable biometric unlock.');
+        return;
+      }
+      try {
+        await BiometricAuth.authenticate({
+          reason: `Verify identity to sign in as ${session.user?.username || 'user'}`,
+          cancelTitle: 'Cancel',
+          allowDeviceCredential: true
+        });
+
+        onLoginSuccess(session.user, session.token, session.deviceId || 'native-biometric', 'chat');
+        return;
+      } catch (err: any) {
+        console.warn('[Biometrics] Unlock cancelled or failed:', err);
+        const errMsg = err?.message || String(err || '');
+        if (errMsg && !errMsg.toLowerCase().includes('cancel') && !errMsg.toLowerCase().includes('user')) {
+          setAuthError(`Biometric authentication failed: ${errMsg}`);
+        }
+        return;
+      }
+    }
+
+    try {
+      const optsRes = await fetch('/api/v2/webauthn/authenticate/options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim() || undefined }),
+      });
+  
+      if (!optsRes.ok) {
+        const data = await optsRes.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to get passkey options');
+      }
+  
+      const options = await optsRes.json();
+      if (options.allowCredentials && options.allowCredentials.length === 0 && username.trim()) {
+        throw new Error(`No passkey registered for ${username.trim()}. Please sign in with password first to add a Passkey in Settings.`);
+      }
+
+      const authResp = await startAuthentication({ optionsJSON: options });
+  
+      const verifyRes = await fetch('/api/v2/webauthn/authenticate/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          response: authResp,
+          username: username.trim() || undefined,
+        }),
+      });
+  
+      const verifyData = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok || !verifyData.verified) {
+        throw new Error(verifyData.error || 'Passkey authentication failed');
+      }
+  
+      const sessionToken = verifyData.sessionId || verifyData.sessionToken || '';
+      const deviceId = verifyData.deviceId || deviceFingerprint || 'passkey-auth';
+      onLoginSuccess(verifyData.user, sessionToken, deviceId, 'main');
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        setAuthError('Passkey prompt cancelled. If you have not registered a Passkey yet, sign in with your password and add one in Settings -> Privacy.');
+      } else {
+        setAuthError(err.message || 'Passkey verification failed');
+      }
+    }
+  };
 
   useEffect(() => {
     collectDeviceFingerprint().then(({ deviceId }) => {
@@ -57,44 +187,25 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     setInviteCode('');
     setAuthError(null);
     setRecoverySuccessMessage(null);
+    setShowRecoveryOptions(false);
     setIsAdminPortal(false);
-    setRequiresRegisterPermanentOtp(false);
-    setIsPermanentOtp(false);
-    setRecoveryView('options');
-    setRedeemUsername('');
-    setRedeemCode('');
-    setRedeemNewPassword('');
-  }, [authTab, showRecoveryOptions]);
+  }, [authTab]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
-    if (!username.trim() || !password.trim()) {
-      setAuthError('Please fill in all standard credentials.');
-      return;
-    }
+    setRecoverySuccessMessage(null);
 
     try {
-      const saltRes = await fetch(`/v2/auth/user-salt?username=${encodeURIComponent(username.trim())}`);
-      if (!saltRes.ok) {
-        setAuthError('Connection error resolving security salt.');
-        return;
-      }
-      const { salt } = await saltRes.json();
-      if (!salt) {
-        setAuthError('Authentication failed.');
-        return;
-      }
-
-      const nonceRes = await fetch('/v2/auth/login-nonce');
-      if (!nonceRes.ok) {
-        setAuthError('Connection error fetching security challenge.');
-        return;
-      }
-      const { nonce } = await nonceRes.json();
-      if (!nonce) {
-        setAuthError('Authentication failed.');
-        return;
+      let nonce = '';
+      try {
+        const challengeRes = await fetch('/v2/auth/login-nonce');
+        if (challengeRes.ok) {
+          const data = await challengeRes.json();
+          nonce = data.nonce || '';
+        }
+      } catch {
+        nonce = `fallback_${Date.now()}`;
       }
 
       if (requiresRegisterPermanentOtp) {
@@ -131,31 +242,24 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
       const res = await fetch('/v2/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
-
       const data = await res.json();
+
       if (res.ok) {
-        if (data.compromised) {
-          setIsCompromised(true);
-          setCompromiseTicketId(data.ticketId);
-          setShowCompromisedFlow(false);
-          if (data.ticketId) {
-            setTicketTrackingId(data.ticketId);
-            try {
-              const tRes = await fetch(`/v2/public/tickets/${data.ticketId}`);
-              if (tRes.ok) {
-                const tData = await tRes.json();
-                if (tData && (tData.ticket || tData.ticket_id || tData.id)) {
-                  setActiveTicket(tData.ticket || tData);
-                }
-              }
-            } catch (err) {
-              // Silently ignore fetch errors
-            }
-            setRecoveryView('track');
-            setShowRecoveryOptions(true);
-          }
+        if (data.scheduledDeletion) {
+          setScheduledDeletionDetails({
+            scheduledDeletionAt: data.scheduledDeletionAt,
+            timeRemainingMs: data.timeRemainingMs,
+            cancelToken: data.cancelToken,
+            username: data.username || username.trim()
+          });
+          setIsScheduledForDeletion(true);
+          return;
+        }
+        if (data.showCompromisedFlow) {
+          setShowCompromisedFlow(true);
+          setCompromiseTicketId(data.compromiseTicketId || '');
           return;
         }
         if (data.needsMigration) {
@@ -179,10 +283,21 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
         else if (data.user?.role === 'LOGIN_ADMIN' || data.user?.role === 'SUPPORT_ADMIN' || data.user?.role === 'ADMIN') destination = 'admin';
         
         const deviceId = data.deviceId || (await collectDeviceFingerprint()).deviceId;
-        
-        onLoginSuccess(data.user, data.token || data.sessionId, deviceId, destination);
+        const sessionToken = data.token || data.sessionId;
+
+        if (data.user?.userId && password) {
+          await initE2eeKeysSafe(data.user.userId, password, data.user.salt, sessionToken);
+        }
+
+        if (Capacitor.isNativePlatform() && sessionToken && data.user) {
+          saveBiometricSession(data.user, sessionToken, deviceId);
+        }
+
+        onLoginSuccess(data.user, sessionToken, deviceId, destination);
       } else {
-        if (data.compromisedPortalActive && data.ticket) {
+        if (data.deletionExpired) {
+          setAuthError(data.error || 'Account deletion period has expired.');
+        } else if (data.compromisedPortalActive && data.ticket) {
           setAuthError(data.error);
           setActiveTicket(data.ticket);
           setShowRecoveryOptions(true);
@@ -250,12 +365,80 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
 
       const data = await res.json();
       if (res.ok) {
-        setRecoverySuccessMessage('Registration complete.');
-        setUsername('');
-        setPassword('');
-        setSafeWord('');
-        setPanicPhrase('');
-        setInviteCode('');
+        // Automatic login after registration
+        const loginPayload = {
+          username: formattedUsername,
+          password: password,
+          fingerprint: deviceFingerprint,
+          nonce: data.nonce || `reg_${Date.now()}`
+        };
+
+        const loginRes = await fetch('/v2/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(loginPayload)
+        });
+
+        if (loginRes.ok) {
+          const loginData = await loginRes.json();
+          const sessionToken = loginData.token || loginData.sessionId;
+
+          // If biometrics/passkey requested
+          if (enableBiometrics && sessionToken) {
+            if (Capacitor.isNativePlatform()) {
+              const deviceId = loginData.deviceId || (await collectDeviceFingerprint()).deviceId;
+              if (loginData.user) {
+                saveBiometricSession(loginData.user, sessionToken, deviceId);
+              }
+            } else {
+              try {
+                const optRes = await fetch('/api/v2/webauthn/register/options', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionToken}`
+                  }
+                });
+
+                if (optRes.ok) {
+                  const options = await optRes.json();
+                  const regResponse = await startRegistration({ optionsJSON: options });
+                  await fetch('/api/v2/webauthn/register/verify', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${sessionToken}`
+                    },
+                    body: JSON.stringify({
+                      response: regResponse,
+                      nickname: `Primary Passkey (${new Date().toLocaleDateString()})`
+                    })
+                  });
+                }
+              } catch (bioErr) {
+                console.warn('[WebAuthn] Initial passkey enrollment skipped or cancelled:', bioErr);
+              }
+            }
+          }
+
+          const deviceId = loginData.deviceId || (await collectDeviceFingerprint()).deviceId;
+          if (loginData.user?.userId && password) {
+            void initE2eeKeysSafe(
+              loginData.user.userId,
+              password,
+              loginData.user.salt || salt,
+              sessionToken
+            );
+          }
+          if (Capacitor.isNativePlatform() && sessionToken && loginData.user) {
+            saveBiometricSession(loginData.user, sessionToken, deviceId);
+          }
+          onLoginSuccess(loginData.user, sessionToken, deviceId, 'chat');
+          return;
+        }
+
+        setRecoverySuccessMessage('Registration complete. You can now sign in.');
+        setAuthTab('login');
       } else {
         setAuthError(data.error || 'Registration failed.');
       }
@@ -408,6 +591,56 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     setActiveTicket(null);
   };
 
+  const handleCancelDeletion = async () => {
+    if (!scheduledDeletionDetails) return;
+    setIsCancellingDeletion(true);
+    setAuthError(null);
+    try {
+      const res = await fetch('/v2/auth/cancel-deletion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: scheduledDeletionDetails.username,
+          cancelToken: scheduledDeletionDetails.cancelToken,
+          password: password || undefined
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        let destination = 'chat';
+        if (data.user?.role === 'CLI_ADMIN') destination = 'cli';
+        else if (data.user?.role === 'LOGIN_ADMIN' || data.user?.role === 'SUPPORT_ADMIN' || data.user?.role === 'ADMIN') destination = 'admin';
+
+        const deviceId = (await collectDeviceFingerprint()).deviceId;
+        const sessionToken = data.token || data.sessionId;
+
+        if (data.user?.userId && password) {
+          await initE2eeKeysSafe(data.user.userId, password, data.user.salt, sessionToken);
+        }
+
+        if (Capacitor.isNativePlatform() && sessionToken && data.user) {
+          saveBiometricSession(data.user, sessionToken, deviceId);
+        }
+
+        setIsScheduledForDeletion(false);
+        setScheduledDeletionDetails(null);
+        onLoginSuccess(data.user, sessionToken, deviceId, destination);
+      } else {
+        setAuthError(data.error || 'Failed to cancel deletion request.');
+      }
+    } catch {
+      setAuthError('Connection failure while cancelling deletion.');
+    } finally {
+      setIsCancellingDeletion(false);
+    }
+  };
+
+  const handleDismissDeletionNotice = () => {
+    setIsScheduledForDeletion(false);
+    setScheduledDeletionDetails(null);
+    setPassword('');
+  };
+
   return {
     authTab,
     setAuthTab,
@@ -449,6 +682,8 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     activeTicket,
     hasAgreedToTerms,
     setHasAgreedToTerms,
+    enableBiometrics,
+    setEnableBiometrics,
     ticketReplyText,
     setTicketReplyText,
     recoveryView,
@@ -461,7 +696,13 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     setRedeemNewPassword,
     activeLegalDoc,
     setActiveLegalDoc,
+    isScheduledForDeletion,
+    scheduledDeletionDetails,
+    isCancellingDeletion,
+    handleCancelDeletion,
+    handleDismissDeletionNotice,
     handleLoginSubmit,
+    handlePasskeyLogin,
     handleRegisterSubmit,
     handleRestoreAccountSubmit,
     handleRedeemRestoreCode,
@@ -471,3 +712,4 @@ export function useAuthForm({ onLoginSuccess, onMigrationRequired }: UseAuthForm
     resetRecoveryState,
   };
 }
+

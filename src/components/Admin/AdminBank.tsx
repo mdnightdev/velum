@@ -129,86 +129,83 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
     <div className="flex flex-col h-full text-text-primary max-w-7xl mx-auto w-full">
       
       {/* Header & Tabs */}
-      <div className="flex justify-end mb-6 shrink-0 w-full overflow-hidden">
-        <div className="flex items-center gap-1.5 bg-velum-850 p-1.5 rounded-lg border border-white-5 shadow-inner overflow-x-auto scrollbar-none max-w-full">
+      <div className="flex justify-end mb-4 shrink-0 w-full overflow-hidden">
+        <div className="flex items-center gap-1.5 bg-velum-800 p-1 rounded-xl border border-velum-600 overflow-x-auto scrollbar-none max-w-full">
           <button 
             onClick={() => { setActiveTab('BALANCES'); setSelectedTx(null); setSelectedAccount(null); setSelectedWithdrawal(null); }}
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'BALANCES' 
-                ? 'bg-velum-750 text-text-primary shadow-sm border border-white-10' 
+                ? 'bg-accent/15 text-accent border border-accent/30' 
                 : 'text-text-secondary hover:text-text-primary border border-transparent'
             }`}
           >
-            <PieChart className="w-4 h-4" />
+            <PieChart className="w-3.5 h-3.5" />
             Balances
           </button>
           <button 
             onClick={() => { setActiveTab('LEDGER'); setSelectedTx(null); setSelectedAccount(null); setSelectedWithdrawal(null); }}
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'LEDGER' 
-                ? 'bg-velum-750 text-text-primary shadow-sm border border-white-10' 
+                ? 'bg-accent/15 text-accent border border-accent/30' 
                 : 'text-text-secondary hover:text-text-primary border border-transparent'
             }`}
           >
-            <Database className="w-4 h-4" />
-            Audit Ledger
+            <Database className="w-3.5 h-3.5" />
+            Ledger
           </button>
           <button 
             onClick={() => { setActiveTab('PAYMENT_QUEUE'); setSelectedTx(null); setSelectedAccount(null); setSelectedWithdrawal(null); }}
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'PAYMENT_QUEUE' 
-                ? 'bg-velum-750 text-text-primary shadow-sm border border-white-10' 
+                ? 'bg-accent/15 text-accent border border-accent/30' 
                 : 'text-text-secondary hover:text-text-primary border border-transparent'
             }`}
           >
-            <ListChecks className="w-4 h-4" />
-            Payment Queue
+            <ListChecks className="w-3.5 h-3.5" />
+            Withdrawals
           </button>
-          
           <button 
             onClick={() => { setActiveTab('LIMITS_MONITORING'); setSelectedTx(null); setSelectedAccount(null); setSelectedWithdrawal(null); }}
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'LIMITS_MONITORING' 
-                ? 'bg-velum-750 text-text-primary shadow-sm border border-white-10' 
+                ? 'bg-accent/15 text-accent border border-accent/30' 
                 : 'text-text-secondary hover:text-text-primary border border-transparent'
             }`}
           >
-            <Activity className="w-4 h-4" />
+            <Activity className="w-3.5 h-3.5" />
             Limits
           </button>
           <button 
             onClick={() => { setActiveTab('LIQUIDITY'); setSelectedTx(null); setSelectedAccount(null); setSelectedWithdrawal(null); }}
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'LIQUIDITY' 
-                ? 'bg-velum-750 text-text-primary shadow-sm border border-white-10' 
+                ? 'bg-accent/15 text-accent border border-accent/30' 
                 : 'text-text-secondary hover:text-text-primary border border-transparent'
             }`}
           >
-            <PieChart className="w-4 h-4" />
+            <PieChart className="w-3.5 h-3.5" />
             Mint / Burn
           </button>
-          
           <button 
             onClick={() => { setActiveTab('ISSUED_CARDS'); setSelectedTx(null); setSelectedAccount(null); setSelectedWithdrawal(null); }}
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'ISSUED_CARDS' 
-                ? 'bg-velum-750 text-text-primary shadow-sm border border-white-10' 
+                ? 'bg-accent/15 text-accent border border-accent/30' 
                 : 'text-text-secondary hover:text-text-primary border border-transparent'
             }`}
           >
-            <CreditCard className="w-4 h-4" />
-            Issued Cards
+            <CreditCard className="w-3.5 h-3.5" />
+            Cards
           </button>
-
         </div>
       </div>
       
       {/* KPI Ribbon */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 shrink-0">
-         <KpiCard title="Consolidated Liquidity" value={`NT$ ${totalLiquidity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="Total Available Balance" />
-         <KpiCard title="24H Settlement Volume" value={`NT$ ${volume24h.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle={`${recentTxs.length} Transactions Settled`} />
-         <KpiCard title="Active Reserves" value={bankAccounts.length.toString()} subtitle={`${frozenCount} Accounts Frozen`} />
-         <KpiCard title="System Alerts" value={frozenCount.toString()} subtitle={frozenCount > 0 ? "Requires Attention" : "All Clear"} alert={frozenCount > 0} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-4 shrink-0">
+         <KpiCard title="Total Liquidity" value={`NT$ ${totalLiquidity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="Available Balance" />
+         <KpiCard title="24H Volume" value={`NT$ ${volume24h.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle={`${recentTxs.length} Transactions`} />
+         <KpiCard title="Total Accounts" value={bankAccounts.length.toString()} subtitle={`${frozenCount} Frozen`} />
+         <KpiCard title="Frozen Accounts" value={frozenCount.toString()} subtitle={frozenCount > 0 ? "Requires Attention" : "All Operational"} alert={frozenCount > 0} />
       </div>
       
       {/* Error Messages */}
@@ -686,19 +683,18 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
 
 function KpiCard({ title, value, subtitle, trend, alert = false }: any) {
   return (
-    <div className="bg-velum-850 border border-white-5 rounded-xl p-5 flex flex-col justify-between shadow-sm relative overflow-hidden min-w-0">
-      {alert && <div className="absolute top-0 right-0 w-16 h-16 bg-status-dnd/10 rounded-bl-full pointer-events-none" />}
-      <div className="flex items-start justify-between mb-4">
-        <p className="text-[10px] font-black text-text-secondary uppercase tracking-[0.15em] leading-snug w-2/3 truncate">{title}</p>
+    <div className="bg-velum-800 border border-velum-600 rounded-xl p-3.5 flex flex-col justify-between shadow-sm relative overflow-hidden min-w-0">
+      {alert && <div className="absolute top-0 right-0 w-12 h-12 bg-status-dnd/10 rounded-bl-full pointer-events-none" />}
+      <div className="flex items-start justify-between mb-2">
+        <p className="text-xs text-text-secondary font-medium truncate">{title}</p>
         {alert && <ShieldAlert className="w-4 h-4 text-status-dnd shrink-0" />}
       </div>
       <div className="min-w-0">
-        <div className="text-2xl font-medium text-text-primary tracking-tight font-mono mb-1 flex items-baseline gap-2 truncate" title={value}>
+        <div className="text-lg sm:text-xl font-bold text-text-primary tracking-tight font-mono mb-0.5 flex items-baseline gap-2 truncate" title={value}>
           <span className="truncate">{value}</span>
-          {trend && <span className="text-[10px] font-sans text-text-secondary tracking-widest uppercase shrink-0">{trend}</span>}
+          {trend && <span className="text-xs text-text-secondary font-sans shrink-0">{trend}</span>}
         </div>
-        <p className={`text-[11px] uppercase tracking-wider font-bold truncate ${alert ? 'text-status-dnd' : 'text-text-secondary'}`} title={subtitle}>{subtitle}</p>
-      
+        <p className={`text-xs truncate ${alert ? 'text-status-dnd' : 'text-text-secondary'}`} title={subtitle}>{subtitle}</p>
       </div>
     </div>
   );

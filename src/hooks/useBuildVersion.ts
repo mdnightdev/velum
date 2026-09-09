@@ -16,15 +16,15 @@ export interface BuildVersionInfo {
 }
 
 const DEFAULT_VERSION: BuildVersionInfo = {
-  version: '1.0.0',
-  buildNumber: 1,
-  fullVersion: 'v1.0.0.b1',
-  displayVersion: 'v1.0.0.1',
+  version: '2.1.51',
+  buildNumber: 1052,
+  fullVersion: 'v2.1.51-b1052',
+  displayVersion: 'v2.1.51.1052',
   status: 'OPTIMAL',
-  buildStage: 'Release Stream',
+  buildStage: 'Release Candidate Stream',
   buildChannel: 'Production',
   timestamp: new Date().toISOString(),
-  isLoading: false,
+  isLoading: true,
 };
 
 export function useBuildVersion() {
@@ -35,15 +35,13 @@ export function useBuildVersion() {
       const res = await fetch('/v2/public/version');
       if (res.ok) {
         const data = await res.json();
-        const ver = data.version || '1.0.0';
-        const num = data.buildNumber || data.latestIncrement || 1;
         setVersionInfo({
-          version: ver,
-          buildNumber: num,
-          fullVersion: data.fullVersion || `v${ver}.b${num}`,
-          displayVersion: data.displayVersion || `v${ver}.${num}`,
+          version: data.version || '2.1.51',
+          buildNumber: data.buildNumber || 1052,
+          fullVersion: data.fullVersion || `v${data.version || '2.1.51'}-b${data.buildNumber || 1052}`,
+          displayVersion: data.displayVersion || `v${data.version || '2.1.51'}.${data.buildNumber || 1052}`,
           status: data.status || 'OPTIMAL',
-          buildStage: data.buildStage || 'Release Stream',
+          buildStage: data.buildStage || 'Release Candidate Stream',
           buildChannel: data.buildChannel || 'Production',
           timestamp: data.timestamp || new Date().toISOString(),
           isLoading: false,

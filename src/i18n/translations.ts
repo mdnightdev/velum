@@ -4,17 +4,16 @@ export interface LanguageOption {
   code: SupportedLanguage;
   name: string;
   nativeName: string;
-  flag: string;
 }
 
 export const SUPPORTED_LANGUAGES: LanguageOption[] = [
-  { code: 'en', name: 'English (US)', nativeName: 'English', flag: '🇺🇸' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸' },
-  { code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch', flag: '🇩🇪' },
-  { code: 'zh', name: 'Chinese (Simplified)', nativeName: '中文 (简体)', flag: '🇨🇳' },
-  { code: 'pl', name: 'Polish', nativeName: 'Polski', flag: '🇵🇱' },
-  { code: 'fil', name: 'Filipino', nativeName: 'Wikang Filipino', flag: '🇵🇭' }
+  { code: 'en', name: 'English (US)', nativeName: 'English'},
+  { code: 'es', name: 'Spanish', nativeName: 'Español'},
+  { code: 'fr', name: 'French', nativeName: 'Français',},
+  { code: 'de', name: 'German', nativeName: 'Deutsch'},
+  { code: 'zh', name: 'Chinese (Simplified)', nativeName: '中文 (简体)'},
+  { code: 'pl', name: 'Polish', nativeName: 'Polski'},
+  { code: 'fil', name: 'Filipino', nativeName: 'Wikang Filipino'}
 ];
 
 export const translations: Record<SupportedLanguage, Record<string, string>> = {

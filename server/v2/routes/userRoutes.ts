@@ -1,67 +1,49 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createAuthMiddleware } from '../middleware/auth.js';
+import crypto from 'node:crypto';
+import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
-import { users, supportAdminNominations } from '../db/schema/users.js';
+import { users, supportAdminNominations, userNicknames } from '../db/schema/index.js';
+import { DEFAULT_USER_BIO, MAX_USER_BIO_LENGTH, MAX_USER_NICKNAME_LENGTH } from '../constants/profile.js';
 import { userPrekeys } from '../db/schema/keys.js';
 import { relationships } from '../db/schema/relationships.js';
 import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema/lounges.js';
+import { dms, dmClears } from '../db/schema/dms.js';
+import { getPeerIdFromDmRoom, getDmRoomAliases } from '../../websocket/unreadManager.js';
 import { getRedisClient } from '../db/redis.js';
 import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
-import type { Request, Response } from 'express';
 import { SystemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
+import { clearUserChatHistory } from '../services/loungeService.js';
+import { dmService } from '../services/dmService.js';
 
 export const userRouter = Router();
 
-const authMiddleware = createAuthMiddleware(async (tokenHash) => {
-  const result = await userRepository.findSessionByTokenHash(tokenHash);
-  if (!result) return null;
-  return {
-    user: {
-      userId: result.user.id,
-      username: result.user.username,
-      role: result.user.role,
-      duress_active: result.user.duressActive,
-      displayName: result.user.displayName,
-      avatarUrl: result.user.avatarUrl
-    },
-    expiresAt: result.session.expiresAt
-  };
-});
+
+import { publishPrekeyBundle, fetchPrekeyBundle } from '../services/crypto/prekeyVaultService.js';
 
 userRouter.post('/keys/prekey-bundle', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { identityKey, signedPrekey, signedPrekeySignature, oneTimePrekeys } = req.body;
+    const { identityKey, signedPrekey, signedPrekeySignature, oneTimePrekeys, registrationId, deviceId, signedPrekeyId } = req.body;
 
-    if (!identityKey || !signedPrekey || !signedPrekeySignature) {
+    if (!identityKey || !signedPrekey) {
       return res.status(400).json({ error: 'Missing required prekey parameters.' });
     }
 
-    const existing = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, userId)).limit(1);
-    const oneTimeStr = typeof oneTimePrekeys === 'string' ? oneTimePrekeys : JSON.stringify(oneTimePrekeys || []);
-
-    if (existing.length === 0) {
-      await db.insert(userPrekeys).values({
-        userId,
-        identityKey,
-        signedPrekey,
-        signedPrekeySignature,
-        oneTimePrekeys: oneTimeStr,
-        updatedAt: new Date()
-      });
-    } else {
-      await db.update(userPrekeys).set({
-        identityKey,
-        signedPrekey,
-        signedPrekeySignature,
-        oneTimePrekeys: oneTimeStr,
-        updatedAt: new Date()
-      }).where(eq(userPrekeys.userId, userId));
-    }
+    await publishPrekeyBundle(userId, {
+      identityKey,
+      signedPrekey,
+      signedPrekeySignature,
+      signedPrekeyId,
+      registrationId,
+      deviceId,
+      oneTimePrekeys
+    });
 
     res.json({ message: 'Prekey bundle uploaded successfully.' });
   } catch (err) {
@@ -76,25 +58,22 @@ userRouter.get('/:id/prekey-bundle', authMiddleware, async (req: Request, res: R
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
 
-    const prekeyRecord = await db.select().from(userPrekeys).where(eq(userPrekeys.userId, targetUserId)).limit(1);
-    if (prekeyRecord.length === 0) {
+    const bundle = await fetchPrekeyBundle(targetUserId);
+    if (!bundle) {
       return res.status(404).json({ error: 'Prekey bundle not found for user.' });
     }
 
-    let parsedOneTime = [];
-    try {
-      parsedOneTime = JSON.parse(prekeyRecord[0].oneTimePrekeys || '[]');
-    } catch (e) {
-      parsedOneTime = [];
-    }
-
     res.json({
-      userId: prekeyRecord[0].userId,
-      identityKey: prekeyRecord[0].identityKey,
-      signedPrekey: prekeyRecord[0].signedPrekey,
-      signedPrekeySignature: prekeyRecord[0].signedPrekeySignature,
-      oneTimePrekeys: parsedOneTime,
-      updatedAt: prekeyRecord[0].updatedAt
+      userId: bundle.userId,
+      registrationId: bundle.registrationId,
+      deviceId: bundle.deviceId,
+      identityKey: bundle.identityKey,
+      signingIdentityKey: bundle.signingIdentityKey,
+      signedPrekeyId: bundle.signedPrekeyId,
+      signedPrekey: bundle.signedPrekey,
+      signedPrekeySignature: bundle.signedPrekeySignature,
+      oneTimePrekey: bundle.oneTimePrekey,
+      oneTimePrekeysLeft: bundle.oneTimePrekeysLeft
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch prekey bundle.' });
@@ -143,34 +122,47 @@ userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Re
   }
 });
 
-// GET /v2/user - Directory user listing for authenticated users
-userRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const dbUsers = await db.select({
-      id: users.id,
-      userId: users.id,
-      username: users.username,
-      displayName: users.displayName,
-      avatarUrl: users.avatarUrl,
-      avatar: users.avatarUrl,
-      bio: users.bio,
-      location: users.location,
-      role: users.role,
-      createdAt: users.createdAt
-    }).from(users)
-    .where(eq(users.role, "USER"))
-    .orderBy(desc(users.createdAt))
-    .limit(100);
-
-    res.json(dbUsers);
-  } catch (err) {
-    console.error('[UserRoutes] Error fetching users directory:', err);
-    res.status(500).json({ error: 'Failed to fetch users directory.' });
-  }
-});
-
 userRouter.get('/:id/profile', authMiddleware, (req, res, next) => {
   userController.getProfile(req, res).catch(next);
+});
+
+userRouter.put('/:id/nickname', authMiddleware, async (req: Request, res: Response) => {
+  const targetUserId = Number(req.params.id);
+  const nickname = typeof req.body?.nickname === 'string' ? req.body.nickname.trim() : '';
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'Invalid user ID.' });
+  }
+  if (targetUserId === req.user!.userId) {
+    return res.status(400).json({ error: 'Use your profile name instead.' });
+  }
+  if (nickname.length > MAX_USER_NICKNAME_LENGTH) {
+    return res.status(400).json({ error: `Nickname cannot exceed ${MAX_USER_NICKNAME_LENGTH} characters.` });
+  }
+  const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, targetUserId)).limit(1);
+  if (!target) return res.status(404).json({ error: 'User not found.' });
+
+  if (!nickname) {
+    await db.delete(userNicknames).where(and(
+      eq(userNicknames.ownerId, req.user!.userId),
+      eq(userNicknames.targetId, targetUserId)
+    ));
+    return res.json({ nickname: '' });
+  }
+
+  const [saved] = await db
+    .insert(userNicknames)
+    .values({
+      ownerId: req.user!.userId,
+      targetId: targetUserId,
+      nickname,
+    })
+    .onConflictDoUpdate({
+      target: [userNicknames.ownerId, userNicknames.targetId],
+      set: { nickname, updatedAt: new Date() },
+    })
+    .returning({ nickname: userNicknames.nickname });
+
+  return res.json({ nickname: saved.nickname });
 });
 
 userRouter.get('/admin/all', authMiddleware, (req, res, next) => {
@@ -193,12 +185,43 @@ userRouter.delete('/me', authMiddleware, (req, res, next) => {
   userController.deleteOwnAccount(req, res).catch(next);
 });
 
+// GET /v2/user/me/mutes — all timed DM mutes for the current user
+userRouter.get('/me/mutes', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const redis = await getRedisClient();
+    const mutes: Array<{ peerId: number; duration: string | null; mutedUntil: string | null }> = [];
+    if (!redis) {
+      return res.json({ mutes });
+    }
+    const pattern = `user:${currentUserId}:muted:*`;
+    for await (const key of redis.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+      const keyStr = String(key);
+      const peerId = parseInt(keyStr.slice(keyStr.lastIndexOf(':') + 1), 10);
+      if (!Number.isFinite(peerId) || peerId <= 0) continue;
+      const durationRaw = await redis.get(keyStr);
+      const ttl = await redis.ttl(keyStr);
+      mutes.push({
+        peerId,
+        duration: typeof durationRaw === 'string' ? durationRaw : null,
+        mutedUntil:
+          typeof ttl === 'number' && ttl > 0
+            ? new Date(Date.now() + ttl * 1000).toISOString()
+            : null,
+      });
+    }
+    res.json({ mutes });
+  } catch {
+    res.status(500).json({ error: 'Failed to load mutes.' });
+  }
+});
+
 userRouter.post('/report', authMiddleware, (req, res, next) => {
   userController.reportUser(req, res).catch(next);
 });
 
-// POST /v2/user/:id/mute - Mute or unmute user
-userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response) => {
+// GET /v2/user/:id/media-prefs — per-peer media visibility
+userRouter.get('/:id/media-prefs', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
     const targetUserId = parseInt(req.params.id, 10);
@@ -206,25 +229,135 @@ userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response)
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
     const redis = await getRedisClient();
+    const defaults = { autoDownload: true, saveToDevice: true };
+    if (!redis) {
+      return res.json(defaults);
+    }
+    const raw = await redis.get(`user:${currentUserId}:media_prefs:${targetUserId}`);
+    if (!raw) return res.json(defaults);
+    try {
+      const parsed = JSON.parse(String(raw)) as Partial<typeof defaults>;
+      return res.json({
+        autoDownload: parsed.autoDownload !== false,
+        saveToDevice: parsed.saveToDevice !== false,
+      });
+    } catch {
+      return res.json(defaults);
+    }
+  } catch {
+    res.status(500).json({ error: 'Failed to load media prefs.' });
+  }
+});
+
+// PUT /v2/user/:id/media-prefs — persist Auto download / Save to device
+userRouter.put('/:id/media-prefs', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const targetUserId = parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+    const autoDownload = req.body?.autoDownload !== false;
+    const saveToDevice = req.body?.saveToDevice !== false;
+    const prefs = { autoDownload, saveToDevice };
+    const redis = await getRedisClient();
+    if (redis) {
+      await redis.set(`user:${currentUserId}:media_prefs:${targetUserId}`, JSON.stringify(prefs));
+    }
+    res.json({ success: true, ...prefs });
+  } catch {
+    res.status(500).json({ error: 'Failed to save media prefs.' });
+  }
+});
+
+// POST /v2/user/:id/mute - Mute (timed) or unmute user
+// Body: { duration?: '24h' | '72h' | '30d' | 'off' } — omit duration to toggle
+userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const currentUserId = req.user!.userId;
+    const targetUserId = parseInt(req.params.id, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+
+    const durationRaw = typeof req.body?.duration === 'string' ? req.body.duration : null;
+    const DURATION_SECONDS: Record<string, number> = {
+      '24h': 24 * 60 * 60,
+      '72h': 72 * 60 * 60,
+      '30d': 30 * 24 * 60 * 60,
+      off: 0,
+    };
+
+    const redis = await getRedisClient();
     const muteKey = `user:${currentUserId}:muted:${targetUserId}`;
     let isMuted = false;
-    if (redis) {
+    let mutedUntil: string | null = null;
+    let duration: string | null = null;
+
+    const resolveDuration =
+      durationRaw && DURATION_SECONDS[durationRaw] != null ? durationRaw : '24h';
+
+    if (!redis) {
+      // Client still applies mute locally; push gate requires Redis.
+      if (durationRaw === 'off' || durationRaw === '0') {
+        return res.json({
+          success: true,
+          isMuted: false,
+          duration: 'off',
+          mutedUntil: null,
+          persisted: false,
+          message: 'User unmuted.',
+        });
+      }
+      const seconds = DURATION_SECONDS[resolveDuration] || DURATION_SECONDS['24h'];
+      return res.json({
+        success: true,
+        isMuted: true,
+        duration: resolveDuration,
+        mutedUntil: new Date(Date.now() + seconds * 1000).toISOString(),
+        persisted: false,
+        message: 'User muted.',
+      });
+    }
+
+    if (durationRaw === 'off' || durationRaw === '0') {
+      await redis.del(muteKey);
+      isMuted = false;
+      duration = 'off';
+    } else if (durationRaw && DURATION_SECONDS[durationRaw] != null) {
+      const seconds = DURATION_SECONDS[durationRaw];
+      await redis.set(muteKey, durationRaw, { EX: seconds });
+      isMuted = true;
+      duration = durationRaw;
+      mutedUntil = new Date(Date.now() + seconds * 1000).toISOString();
+    } else {
       const exists = await redis.get(muteKey);
       if (exists) {
         await redis.del(muteKey);
         isMuted = false;
+        duration = 'off';
       } else {
-        await redis.set(muteKey, '1');
+        const seconds = DURATION_SECONDS['24h'];
+        await redis.set(muteKey, '24h', { EX: seconds });
         isMuted = true;
+        duration = '24h';
+        mutedUntil = new Date(Date.now() + seconds * 1000).toISOString();
       }
     }
-    res.json({ success: true, isMuted, message: isMuted ? 'User muted.' : 'User unmuted.' });
+
+    res.json({
+      success: true,
+      isMuted,
+      duration,
+      mutedUntil,
+      message: isMuted ? 'User muted.' : 'User unmuted.',
+    });
   } catch (err) {
     res.status(500).json({ error: 'Failed to toggle mute status.' });
   }
 });
 
-// POST /v2/user/:id/block - Block or unblock user
+// POST /v2/user/:id/block - Toggle directional block (does not destroy friendship)
 userRouter.post('/:id/block', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
@@ -232,32 +365,12 @@ userRouter.post('/:id/block', authMiddleware, async (req: Request, res: Response
     if (isNaN(targetUserId)) {
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
-    
-    const existing = await db.select().from(relationships).where(
-      or(
-        and(eq(relationships.userId, currentUserId), eq(relationships.friendId, targetUserId)),
-        and(eq(relationships.userId, targetUserId), eq(relationships.friendId, currentUserId))
-      )
-    ).limit(1);
-
-    let isBlocked = false;
-    if (existing.length > 0) {
-      if (existing[0].status === 'blocked') {
-        await db.update(relationships).set({ status: 'accepted', updatedAt: new Date() }).where(eq(relationships.id, existing[0].id));
-        isBlocked = false;
-      } else {
-        await db.update(relationships).set({ status: 'blocked', updatedAt: new Date() }).where(eq(relationships.id, existing[0].id));
-        isBlocked = true;
-      }
-    } else {
-      await db.insert(relationships).values({
-        userId: currentUserId,
-        friendId: targetUserId,
-        status: 'blocked',
-        updatedAt: new Date()
-      });
-      isBlocked = true;
+    if (currentUserId === targetUserId) {
+      return res.status(400).json({ error: 'Cannot block yourself.' });
     }
+
+    const { toggleBlock } = await import('../services/blockService.js');
+    const isBlocked = await toggleBlock(currentUserId, targetUserId);
 
     const redis = await getRedisClient();
     if (redis) {
@@ -284,20 +397,26 @@ userRouter.delete('/:id/chat', authMiddleware, async (req: Request, res: Respons
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
 
-    const dmLounges = await db.select().from(lounges).where(eq(lounges.type, 'dm'));
-    const members = await db.select().from(loungeMembers).where(inArray(loungeMembers.userId, [currentUserId, targetUserId]));
-    
-    const userLounges = new Set(members.filter(m => m.userId === currentUserId).map(m => m.loungeId));
-    const targetLounges = new Set(members.filter(m => m.userId === targetUserId).map(m => m.loungeId));
-    const commonDmLounge = dmLounges.find(l => userLounges.has(l.id) && targetLounges.has(l.id));
+    const { lastId } = await dmService.clearConversation(currentUserId, targetUserId);
 
-    if (commonDmLounge) {
-      await db.delete(messages).where(eq(messages.loungeId, commonDmLounge.id));
+    try {
+      const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+      const aliases = getDmRoomAliases(targetUserId, currentUserId);
+      for (const room_id of aliases) {
+        broadcastToUserDevices(currentUserId, {
+          type: 'room_cleared',
+          room_id,
+          peer_id: targetUserId,
+          cleared_till_id: lastId
+        });
+      }
+    } catch (wsErr) {
+      console.warn('[WS Clear Broadcast Error]:', wsErr);
     }
 
-    res.json({ success: true, message: 'Chat history cleared.' });
+    res.json({ success: true, clearedTillId: lastId, message: 'Chat history cleared for your account.' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to delete chat history.' });
+    res.status(500).json({ error: 'Failed to clear chat history.' });
   }
 });
 
@@ -332,108 +451,198 @@ userRouter.get('/:id/status', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v2/user/profile - Update user profile (frontend expects this)
+// POST /v2/user/profile - Update user profile
 userRouter.post('/profile', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
-    const { displayName, bio, avatar, location, email, phone, settings } = req.body;
+    const { username, displayName, bio, avatar, avatarUrl, location } = req.body;
     
-    const updateData: any = {};
-    if (displayName !== undefined) updateData.displayName = displayName;
-    if (bio !== undefined) updateData.bio = bio;
-    if (avatar !== undefined) updateData.avatarUrl = avatar;
-    if (location !== undefined) updateData.location = location;
-    if (email !== undefined) updateData.email = email;
-    if (phone !== undefined) updateData.phone = phone;
-    if (settings !== undefined) updateData.settings = settings;
-    
-    if (Object.keys(updateData).length > 0) {
-      await db.update(users).set(updateData).where(eq(users.id, currentUserId));
+    const updateData: any = { updatedAt: new Date() };
+    if (username !== undefined) {
+      const cleanUsername = String(username).replace(/^@+/, '').trim();
+      if (!cleanUsername) {
+        return res.status(400).json({ error: 'Username cannot be empty.' });
+      }
+      if (cleanUsername.length < 3 || cleanUsername.length > 32) {
+        return res.status(400).json({ error: 'Username must be between 3 and 32 characters.' });
+      }
+      if (!/^[a-zA-Z0-9_]+$/.test(cleanUsername)) {
+        return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores.' });
+      }
+      const existing = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(sql`LOWER(${users.username}) = LOWER(${cleanUsername})`, sql`${users.id} != ${currentUserId}`))
+        .limit(1);
+      if (existing.length > 0) {
+        return res.status(409).json({ error: 'Username is already taken.' });
+      }
+      updateData.username = cleanUsername;
     }
+    if (displayName !== undefined) updateData.displayName = displayName ? String(displayName).trim() : null;
+    if (bio !== undefined) {
+      const normalizedBio = String(bio).trim();
+      if (normalizedBio.length > MAX_USER_BIO_LENGTH) {
+        return res.status(400).json({ error: `Bio cannot exceed ${MAX_USER_BIO_LENGTH} characters.` });
+      }
+      updateData.bio = normalizedBio || DEFAULT_USER_BIO;
+    }
+    if (avatar !== undefined || avatarUrl !== undefined) updateData.avatarUrl = avatar || avatarUrl || null;
+    if (location !== undefined) updateData.location = location ? String(location).trim() : null;
+    
+    await db.update(users).set(updateData).where(eq(users.id, currentUserId));
     
     const updatedUser = await db.select().from(users).where(eq(users.id, currentUserId)).limit(1);
+    if (!updatedUser[0]) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
     
-    res.json({
+    const userPayload = {
+      type: 'user_profile_updated',
+      userId: currentUserId,
       user: {
         userId: updatedUser[0].id,
+        id: updatedUser[0].id,
         username: updatedUser[0].username,
         displayName: updatedUser[0].displayName,
         avatar: updatedUser[0].avatarUrl,
+        avatarUrl: updatedUser[0].avatarUrl,
         bio: updatedUser[0].bio,
         location: updatedUser[0].location,
         role: updatedUser[0].role,
         createdAt: updatedUser[0].createdAt
       }
+    };
+
+    try {
+      const { broadcastToUserDevices } = await import('../../websocket/connectionManager.js');
+      broadcastToUserDevices(currentUserId, userPayload);
+      const friendRows = await db.select({
+        userId: relationships.userId,
+        friendId: relationships.friendId
+      }).from(relationships).where(
+        and(
+          eq(relationships.status, 'accepted'),
+          or(
+            eq(relationships.userId, currentUserId),
+            eq(relationships.friendId, currentUserId)
+          )
+        )
+      );
+      for (const row of friendRows) {
+        const friendId = row.userId === currentUserId ? row.friendId : row.userId;
+        broadcastToUserDevices(friendId, userPayload);
+      }
+    } catch (wsErr) {
+      console.warn('[WS Profile Broadcast Error]:', wsErr);
+    }
+
+    res.json({
+      success: true,
+      user: userPayload.user
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update profile.' });
   }
 });
 
-userRouter.post('/upload-avatar', authMiddleware, (req, res, next) => {
-  const chunks: Buffer[] = [];
-  req.on('data', (chunk) => chunks.push(chunk));
-  req.on('end', async () => {
-    try {
-      const buffer = Buffer.concat(chunks);
-      if (buffer.length === 0) {
-        return res.status(400).json({ error: 'Empty file payload' });
-      }
-      
-      const uploadsDir = path.join(process.cwd(), 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-      
-      const filename = `avatar-${req.user!.userId}-${Date.now()}.webp`;
-      const filepath = path.join(uploadsDir, filename);
-      fs.writeFileSync(filepath, buffer);
-      
-      res.status(200).json({ url: `/uploads/${filename}` });
-    } catch (err) {
-      next(err);
+userRouter.post('/upload-avatar', authMiddleware, express.raw({ type: '*/*', limit: '50mb' }), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const buffer: Buffer = Buffer.isBuffer(req.body) 
+      ? req.body 
+      : (typeof req.body === 'string' ? Buffer.from(req.body) : Buffer.alloc(0));
+
+    if (buffer.length === 0) {
+      return res.status(400).json({ error: 'Empty file payload' });
     }
-  });
+    
+    const userId = req.user!.userId;
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars', String(userId));
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    
+    // Consistent partitioned avatar storage per user, overwritten on update
+    const filename = `avatar.webp`;
+    const filepath = path.join(uploadsDir, filename);
+    await fs.promises.writeFile(filepath, buffer);
+    
+    const relativeUrl = `/uploads/avatars/${userId}/${filename}`;
+    const { mediaService } = await import('../services/media/mediaService.js');
+    await mediaService.recordAsset({
+      uploaderId: userId,
+      storageKey: `avatars/${userId}/${filename}`,
+      relativePath: relativeUrl,
+      mimeType: 'image/webp',
+      byteSize: buffer.length,
+      category: 'avatar'
+    }).catch(err => console.error('[MEDIA] Failed to track avatar asset:', err));
+
+    res.status(200).json({ url: relativeUrl });
+  } catch (err) {
+    next(err);
+  }
 });
 
-userRouter.post('/upload-media', authMiddleware, (req, res, next) => {
-  const chunks: Buffer[] = [];
-  req.on('data', (chunk) => chunks.push(chunk));
-  req.on('end', async () => {
-    try {
-      const buffer = Buffer.concat(chunks);
-      if (buffer.length === 0) {
-        return res.status(400).json({ error: 'Empty file payload' });
-      }
+userRouter.post('/upload-media', authMiddleware, express.raw({ type: '*/*', limit: '50mb' }), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const buffer: Buffer = Buffer.isBuffer(req.body) 
+      ? req.body 
+      : (typeof req.body === 'string' ? Buffer.from(req.body) : Buffer.alloc(0));
 
-      const uploadsDir = path.join(process.cwd(), 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-
-      const contentType = req.headers['content-type'] || '';
-      let extension = 'webp';
-      if (contentType.includes('audio/webm') || contentType.includes('video/webm')) {
-        extension = 'webm';
-      } else if (contentType.includes('audio/mp4') || contentType.includes('video/mp4') || contentType.includes('audio/m4a')) {
-        extension = 'mp4';
-      } else if (contentType.includes('image/png')) {
-        extension = 'png';
-      } else if (contentType.includes('image/jpeg')) {
-        extension = 'jpg';
-      } else if (contentType.includes('image/gif')) {
-        extension = 'gif';
-      }
-
-      const filename = `media-${req.user!.userId}-${Date.now()}.${extension}`;
-      const filepath = path.join(uploadsDir, filename);
-      fs.writeFileSync(filepath, buffer);
-
-      res.status(200).json({ url: `/uploads/${filename}` });
-    } catch (err) {
-      next(err);
+    if (buffer.length === 0) {
+      return res.status(400).json({ error: 'Empty file payload' });
     }
-  });
+
+    const userId = req.user!.userId;
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'chat', yearMonth);
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const contentType = req.headers['content-type'] || '';
+    let extension = 'webp';
+    if (contentType.includes('audio/webm') || contentType.includes('video/webm')) {
+      extension = 'webm';
+    } else if (contentType.includes('audio/mp4') || contentType.includes('video/mp4') || contentType.includes('audio/m4a')) {
+      extension = 'mp4';
+    } else if (contentType.includes('image/png')) {
+      extension = 'png';
+    } else if (contentType.includes('image/jpeg')) {
+      extension = 'jpg';
+    } else if (contentType.includes('image/gif')) {
+      extension = 'gif';
+    }
+
+    let prefix = 'doc';
+    if (contentType.includes('image/') || ['webp', 'png', 'jpg', 'gif'].includes(extension)) {
+      prefix = 'img';
+    } else if (contentType.includes('audio/') || ['webm', 'm4a'].includes(extension)) {
+      prefix = 'aud';
+    } else if (contentType.includes('video/')) {
+      prefix = 'vid';
+    }
+    const filename = `${prefix}_${crypto.randomBytes(5).toString('hex')}.${extension}`;
+    const filepath = path.join(uploadsDir, filename);
+    await fs.promises.writeFile(filepath, buffer);
+
+    const relativeUrl = `/uploads/chat/${yearMonth}/${filename}`;
+    const { mediaService } = await import('../services/media/mediaService.js');
+    await mediaService.recordAsset({
+      uploaderId: userId,
+      storageKey: `chat/${yearMonth}/${filename}`,
+      relativePath: relativeUrl,
+      mimeType: contentType || 'application/octet-stream',
+      byteSize: buffer.length,
+      category: 'chat'
+    }).catch(err => console.error('[MEDIA] Failed to track chat asset:', err));
+
+    res.status(200).json({ url: relativeUrl });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Get unread counts from Redis (with persistent Postgres fallback)
@@ -453,7 +662,37 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
           const roomId = key.split(':')[2];
           const count = await redis.get(key);
           if (count && typeof count === 'string') {
-            counts[roomId] = parseInt(count, 10);
+            const numCount = parseInt(count, 10);
+            if (roomId.startsWith('dm_')) {
+              const peerId = getPeerIdFromDmRoom(roomId, userId);
+              if (peerId) {
+                const [unreadRow] = await db
+                  .select({ count: sql<number>`count(*)::int` })
+                  .from(dms)
+                  .where(
+                    and(
+                      eq(dms.sender, peerId),
+                      eq(dms.peer, userId),
+                      sql`${dms.readAt} IS NULL`
+                    )
+                  );
+                const actualCount = unreadRow?.count || 0;
+                if (actualCount === 0) {
+                  await redis.del(key);
+                  continue;
+                } else {
+                  counts[roomId] = actualCount;
+                  if (peerId === 999) {
+                    counts[`dm_velum_${userId}`] = actualCount;
+                    counts['dm_999'] = actualCount;
+                  }
+                  continue;
+                }
+              }
+            }
+            if (numCount > 0) {
+              counts[roomId] = numCount;
+            }
           }
         }
       }
@@ -477,6 +716,34 @@ userRouter.get('/unread-counts', authMiddleware, async (req: Request, res: Respo
           const key = `unread:${userId}:${roomId}`;
           await redis.set(key, String(row.unreadCount));
           await redis.expire(key, 86400); // 24 hours cache TTL
+        }
+      }
+
+      // Recover DM unread counts from dms table (exclude expired)
+      const { dmNotExpiredClause } = await import('../services/dmService.js');
+      const unreadDms = await db
+        .select({
+          sender: dms.sender,
+          count: sql<number>`count(*)::int`
+        })
+        .from(dms)
+        .where(
+          and(
+            eq(dms.peer, userId),
+            sql`${dms.readAt} IS NULL`,
+            dmNotExpiredClause()
+          )
+        )
+        .groupBy(dms.sender);
+
+      for (const row of unreadDms) {
+        if (row.count > 0) {
+          if (row.sender === 999) {
+            counts[`dm_velum_${userId}`] = row.count;
+            counts['dm_999'] = row.count;
+          } else {
+            counts[`dm_${row.sender}`] = row.count;
+          }
         }
       }
     }
@@ -544,21 +811,12 @@ userRouter.post('/nomination/accept', authMiddleware, async (req: Request, res: 
     const credentials = JSON.parse(nomination.credentials || '{}');
     
     // Deliver credentials via bot
-    await systemBot.sendToUser(userId,
-      `You have ACCEPTED the Velum Support Administrator role.\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `YOUR SUPPORT ADMIN CREDENTIALS:\n` +
-      `Username: ${credentials.username}\n` +
-      `Password: ${credentials.password}\n` +
-      `Recovery Key: ${credentials.recoveryKey}\n` +
-      `Panic Phrase: ${credentials.panicPhrase || 'N/A'}\n\n` +
-      `IMPORTANT:\n` +
-      `• This is a SEPARATE account from your regular user account\n` +
-      `• Use these credentials to access the Support Admin Panel\n` +
-      `• Your regular user account remains unchanged\n` +
-      `• Keep these credentials secure\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-    );
+    await systemBot.sendToUser(userId, BotTemplates.supportCredentialsDelivered({
+      username: credentials.username,
+      password: credentials.password,
+      recoveryKey: credentials.recoveryKey,
+      panicPhrase: credentials.panicPhrase
+    }));
     
     // Notify other admins
     const [userObj] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -569,12 +827,7 @@ userRouter.post('/nomination/accept', authMiddleware, async (req: Request, res: 
       )
     );
     for (const admin of admins) {
-      await systemBot.sendToUser(admin.id,
-        `Support Role ACCEPTED\n\n` +
-        `User: ${userObj?.username} (ID: ${userId})\n` +
-        `Status: Active support admin account initialized\n` +
-        `Time: ${new Date().toISOString()}`
-      );
+      await systemBot.sendToUser(admin.id, BotTemplates.supportNominationStatusToAdmin(userObj?.username || 'Unknown', userId, 'ACCEPTED'));
     }
     
     res.json({ success: true, message: 'Nomination accepted successfully.' });
@@ -616,11 +869,7 @@ userRouter.post('/nomination/decline', authMiddleware, async (req: Request, res:
     const systemBot = SystemBot.getInstance();
     
     // Notify user via bot
-    await systemBot.sendToUser(userId,
-      `You have DECLINED the Velum Support Administrator role.\n\n` +
-      `The support admin credentials have been purged from the system.\n\n` +
-      `Your regular user account remains unchanged and unaffected.`
-    );
+    await systemBot.sendToUser(userId, BotTemplates.supportNominationDeclinedUser());
     
     // Notify other admins
     const [userObj] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -631,17 +880,50 @@ userRouter.post('/nomination/decline', authMiddleware, async (req: Request, res:
       )
     );
     for (const admin of admins) {
-      await systemBot.sendToUser(admin.id,
-        `Support Role DECLINED\n\n` +
-        `User: ${userObj?.username} (ID: ${userId})\n` +
-        `Status: Nominated credentials purged\n` +
-        `Time: ${new Date().toISOString()}`
-      );
+      await systemBot.sendToUser(admin.id, BotTemplates.supportNominationStatusToAdmin(userObj?.username || 'Unknown', userId, 'DECLINED'));
     }
     
     res.json({ success: true, message: 'Nomination declined successfully.' });
   } catch (err) {
-    console.error('Failed to decline nomination:', err);
     res.status(500).json({ error: 'Failed to decline nomination.' });
   }
 });
+
+// POST /v2/user/deactivate - Schedule account deactivation (Tier 1: 7-day grace period)
+userRouter.post('/deactivate', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { reason = 'Self-deactivation' } = req.body || {};
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+    const result = await UserDeletionService.requestUserDeactivation(userId, String(reason));
+
+    res.json({
+      success: true,
+      scheduledDeletionAt: result.scheduledDeletionAt.toISOString(),
+      daysRemaining: 7,
+      message: 'Account scheduled for deletion in 7 days.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to schedule account deactivation.' });
+  }
+});
+
+// POST /v2/user/delete - Alias for self-deactivation request
+userRouter.post('/delete', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { reason = 'Self-deactivation' } = req.body || {};
+    const { UserDeletionService } = await import('../services/userDeletionService.js');
+    const result = await UserDeletionService.requestUserDeactivation(userId, String(reason));
+
+    res.json({
+      success: true,
+      scheduledDeletionAt: result.scheduledDeletionAt.toISOString(),
+      daysRemaining: 7,
+      message: 'Account scheduled for deletion in 7 days.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to schedule account deactivation.' });
+  }
+});
+

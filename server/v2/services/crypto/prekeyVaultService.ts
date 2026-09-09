@@ -1,110 +1,214 @@
 import { db, executeWithRetry } from '../../db/client.js';
 import { userPrekeys } from '../../db/schema/keys.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 
+export interface OneTimePrekeyItem {
+  keyId: number;
+  publicKey: string;
+}
+
 export interface PrekeyBundlePayload {
+  registrationId?: number;
+  deviceId?: number;
   identityKey: string;
+  /** Ed25519 identity public key used to verify signedPrekeySignature */
+  signingIdentityKey?: string;
+  signedPrekeyId?: number;
+  signedPrekey: string | { keyId: number; publicKey: string; signature: string };
+  signedPrekeySignature?: string;
+  oneTimePrekeys?: any[] | string;
+}
+
+export interface SignalPrekeyBundleDTO {
+  userId: number;
+  registrationId: number;
+  deviceId: number;
+  identityKey: string;
+  signingIdentityKey: string | null;
+  signedPrekeyId: number;
   signedPrekey: string;
   signedPrekeySignature: string;
-  oneTimePrekeys: string[] | string;
+  oneTimePrekey: {
+    keyId: number;
+    publicKey: string;
+  } | null;
+  oneTimePrekeysLeft: number;
+}
+
+/** Persist DH + optional Ed25519 identity without a schema migration. */
+export function packIdentityKeyColumn(dhHex: string, signingIdentityKeyHex?: string): string {
+  if (signingIdentityKeyHex && signingIdentityKeyHex.length > 0) {
+    return `${dhHex}|${signingIdentityKeyHex}`;
+  }
+  return dhHex;
+}
+
+export function unpackIdentityKeyColumn(stored: string): { dh: string; ed: string | null } {
+  const idx = stored.indexOf('|');
+  if (idx === -1) {
+    return { dh: stored, ed: null };
+  }
+  return { dh: stored.slice(0, idx), ed: stored.slice(idx + 1) || null };
 }
 
 export async function publishPrekeyBundle(
   userId: number,
   bundle: PrekeyBundlePayload
 ): Promise<void> {
+  const deviceId = bundle.deviceId ? String(bundle.deviceId) : '1';
+  const registrationId = Number(bundle.registrationId) || 1;
+
+  let signedPrekeyId = Number(bundle.signedPrekeyId) || 1;
+  let signedPrekeyPub = '';
+  let signedPrekeySig = '';
+
+  if (typeof bundle.signedPrekey === 'object' && bundle.signedPrekey !== null) {
+    signedPrekeyId = Number(bundle.signedPrekey.keyId) || signedPrekeyId;
+    signedPrekeyPub = String(bundle.signedPrekey.publicKey);
+    signedPrekeySig = String(bundle.signedPrekey.signature);
+  } else {
+    signedPrekeyPub = String(bundle.signedPrekey);
+    signedPrekeySig = String(bundle.signedPrekeySignature || '');
+  }
+
   const oneTimeStr = typeof bundle.oneTimePrekeys === 'string'
     ? bundle.oneTimePrekeys
     : JSON.stringify(bundle.oneTimePrekeys || []);
 
-  const existing = await executeWithRetry(() =>
-    db.select({ id: userPrekeys.id })
-      .from(userPrekeys)
-      .where(eq(userPrekeys.userId, userId))
-      .limit(1)
+  const packedIdentityKey = packIdentityKeyColumn(
+    String(bundle.identityKey),
+    bundle.signingIdentityKey ? String(bundle.signingIdentityKey) : undefined
   );
 
-  if (existing.length === 0) {
-    await executeWithRetry(() =>
-      db.insert(userPrekeys).values({
+  await executeWithRetry(async () => {
+    const existing = await db.select({ id: userPrekeys.id })
+      .from(userPrekeys)
+      .where(and(eq(userPrekeys.userId, userId), eq(userPrekeys.deviceId, deviceId)))
+      .limit(1);
+
+    if (existing.length === 0) {
+      await db.insert(userPrekeys).values({
         userId,
-        identityKey: bundle.identityKey,
-        signedPrekey: bundle.signedPrekey,
-        signedPrekeySignature: bundle.signedPrekeySignature,
+        deviceId,
+        registrationId,
+        identityKey: packedIdentityKey,
+        signedPrekeyId,
+        signedPrekey: signedPrekeyPub,
+        signedPrekeySignature: signedPrekeySig,
         oneTimePrekeys: oneTimeStr,
         updatedAt: new Date()
-      })
-    );
-  } else {
-    await executeWithRetry(() =>
-      db.update(userPrekeys)
+      });
+    } else {
+      await db.update(userPrekeys)
         .set({
-          identityKey: bundle.identityKey,
-          signedPrekey: bundle.signedPrekey,
-          signedPrekeySignature: bundle.signedPrekeySignature,
+          registrationId,
+          identityKey: packedIdentityKey,
+          signedPrekeyId,
+          signedPrekey: signedPrekeyPub,
+          signedPrekeySignature: signedPrekeySig,
           oneTimePrekeys: oneTimeStr,
           updatedAt: new Date()
         })
-        .where(eq(userPrekeys.userId, userId))
-    );
-  }
+        .where(eq(userPrekeys.id, existing[0].id));
+    }
+  });
 }
 
-export async function fetchPrekeyBundle(targetUserId: number): Promise<{
-  userId: number;
-  identityKey: string;
-  signedPrekey: string;
-  signedPrekeySignature: string;
-  oneTimePrekey?: string;
-  oneTimePrekeysLeft: number;
-} | null> {
-  const [record] = await executeWithRetry(() =>
-    db.select()
-      .from(userPrekeys)
-      .where(eq(userPrekeys.userId, targetUserId))
-      .limit(1)
-  );
+export async function fetchPrekeyBundle(
+  targetUserId: number,
+  deviceId: string | number = '1'
+): Promise<SignalPrekeyBundleDTO | null> {
+  const deviceIdStr = String(deviceId);
+  return await executeWithRetry(async () => {
+    return await db.transaction(async (tx) => {
+      let record;
+      try {
+        const query = tx
+          .select()
+          .from(userPrekeys)
+          .where(and(eq(userPrekeys.userId, targetUserId), eq(userPrekeys.deviceId, deviceIdStr)))
+          .limit(1);
 
-  if (!record) return null;
+        if (typeof (query as any).for === 'function') {
+          [record] = await (query as any).for('update');
+        } else {
+          [record] = await query;
+        }
+      } catch {
+        [record] = await tx
+          .select()
+          .from(userPrekeys)
+          .where(and(eq(userPrekeys.userId, targetUserId), eq(userPrekeys.deviceId, deviceIdStr)))
+          .limit(1);
+      }
 
-  let pool: string[] = [];
-  try {
-    pool = JSON.parse(record.oneTimePrekeys || '[]');
-  } catch {
-    pool = [];
-  }
+      if (!record) return null;
 
-  let consumedOneTimePrekey: string | undefined = undefined;
+      let pool: any[] = [];
+      try {
+        if (Array.isArray(record.oneTimePrekeys)) {
+          pool = [...record.oneTimePrekeys];
+        } else if (typeof record.oneTimePrekeys === 'string') {
+          pool = JSON.parse(record.oneTimePrekeys || '[]');
+        }
+      } catch {
+        pool = [];
+      }
 
-  // Consume 1 one-time prekey from pool atomically for single-use X3DH
-  if (pool.length > 0) {
-    consumedOneTimePrekey = pool.shift();
-    await executeWithRetry(() =>
-      db.update(userPrekeys)
-        .set({
-          oneTimePrekeys: JSON.stringify(pool),
-          updatedAt: new Date()
-        })
-        .where(eq(userPrekeys.userId, targetUserId))
-    );
-  }
+      let consumedOneTimePrekey: { keyId: number; publicKey: string } | null = null;
 
-  return {
-    userId: targetUserId,
-    identityKey: record.identityKey,
-    signedPrekey: record.signedPrekey,
-    signedPrekeySignature: record.signedPrekeySignature,
-    oneTimePrekey: consumedOneTimePrekey,
-    oneTimePrekeysLeft: pool.length
-  };
+      if (pool.length > 0) {
+        const rawOtp = pool.shift();
+        if (rawOtp) {
+          if (typeof rawOtp === 'object' && rawOtp.keyId !== undefined && rawOtp.publicKey !== undefined) {
+            consumedOneTimePrekey = {
+              keyId: Number(rawOtp.keyId),
+              publicKey: String(rawOtp.publicKey)
+            };
+          } else if (typeof rawOtp === 'string') {
+            consumedOneTimePrekey = {
+              keyId: 1,
+              publicKey: rawOtp
+            };
+          }
+        }
+
+        await tx
+          .update(userPrekeys)
+          .set({
+            oneTimePrekeys: JSON.stringify(pool),
+            updatedAt: new Date()
+          })
+          .where(eq(userPrekeys.id, record.id));
+      }
+
+      const { dh: identityKey, ed: signingIdentityKey } = unpackIdentityKeyColumn(record.identityKey);
+
+      return {
+        userId: record.userId,
+        registrationId: record.registrationId,
+        deviceId: record.deviceId,
+        identityKey,
+        signingIdentityKey,
+        signedPrekeyId: record.signedPrekeyId,
+        signedPrekey: record.signedPrekey,
+        signedPrekeySignature: record.signedPrekeySignature,
+        oneTimePrekey: consumedOneTimePrekey,
+        oneTimePrekeysLeft: pool.length
+      };
+    });
+  });
 }
 
 /**
  * Generates a Signal-style Safety Number (6 5-digit decimal blocks) from two public identity keys.
  */
 export function generateSafetyNumber(identityKeyA: string, identityKeyB: string): string {
-  const sortedKeys = [identityKeyA, identityKeyB].sort();
+  const sortedKeys = [
+    unpackIdentityKeyColumn(identityKeyA).dh,
+    unpackIdentityKeyColumn(identityKeyB).dh
+  ].sort();
   const combined = sortedKeys.join('::');
   const hash = crypto.createHash('sha256').update(combined).digest();
 

@@ -1,6 +1,4 @@
-const DB_NAME = 'velum_local_storage';
-const DB_VERSION = 25;
-const STORE_OUTBOX = 'outbox_messages';
+import { getDexieDb } from './dexieDb.js';
 
 export interface OutboxPayload {
   client_msg_id: string;
@@ -13,51 +11,15 @@ export interface OutboxPayload {
   retryCount: number;
 }
 
-function openOutboxDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      return reject(new Error('IndexedDB is not supported.'));
-    }
-
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(new Error('Failed to open outbox database.'));
-    request.onsuccess = () => {
-      const db = request.result;
-      db.onversionchange = () => {
-        db.close();
-      };
-      resolve(db);
-    };
-
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('media_blobs')) {
-        db.createObjectStore('media_blobs');
-      }
-      if (!db.objectStoreNames.contains('messages')) {
-        db.createObjectStore('messages');
-      }
-      if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
-        db.createObjectStore(STORE_OUTBOX, { keyPath: 'client_msg_id' });
-      }
-    };
-  });
-}
+let isDraining = false;
 
 /**
  * Enqueue an outgoing message frame into the offline persistent outbox
  */
-export async function enqueueOutboxMessage(payload: OutboxPayload): Promise<void> {
+export async function enqueueOutboxMessage(payload: OutboxPayload, userId?: number): Promise<void> {
   try {
-    const db = await openOutboxDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORE_OUTBOX], 'readwrite');
-      const store = tx.objectStore(STORE_OUTBOX);
-      const req = store.put(payload);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(new Error(`Failed to enqueue outbox message ${payload.client_msg_id}`));
-    });
+    const db = getDexieDb(userId || 0);
+    await db.outbox_messages.put(payload);
   } catch (err) {
     console.warn('[OUTBOX] Failed to enqueue message:', err);
   }
@@ -66,20 +28,12 @@ export async function enqueueOutboxMessage(payload: OutboxPayload): Promise<void
 /**
  * Get all queued pending outbox messages sorted by timestamp
  */
-export async function getQueuedOutboxMessages(): Promise<OutboxPayload[]> {
+export async function getQueuedOutboxMessages(userId?: number): Promise<OutboxPayload[]> {
   try {
-    const db = await openOutboxDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORE_OUTBOX], 'readonly');
-      const store = tx.objectStore(STORE_OUTBOX);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const items: OutboxPayload[] = req.result || [];
-        items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-        resolve(items);
-      };
-      req.onerror = () => reject(new Error('Failed to read outbox messages'));
-    });
+    const db = getDexieDb(userId || 0);
+    const items: OutboxPayload[] = await db.outbox_messages.toArray();
+    items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    return items;
   } catch (err) {
     console.warn('[OUTBOX] Failed to read outbox:', err);
     return [];
@@ -89,16 +43,10 @@ export async function getQueuedOutboxMessages(): Promise<OutboxPayload[]> {
 /**
  * Remove an acknowledged or sent message from the outbox queue
  */
-export async function removeOutboxMessage(clientMsgId: string): Promise<void> {
+export async function removeOutboxMessage(clientMsgId: string, userId?: number): Promise<void> {
   try {
-    const db = await openOutboxDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORE_OUTBOX], 'readwrite');
-      const store = tx.objectStore(STORE_OUTBOX);
-      const req = store.delete(clientMsgId);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(new Error(`Failed to remove outbox item ${clientMsgId}`));
-    });
+    const db = getDexieDb(userId || 0);
+    await db.outbox_messages.delete(clientMsgId);
   } catch (err) {
     console.warn('[OUTBOX] Failed to remove outbox message:', err);
   }
@@ -107,20 +55,49 @@ export async function removeOutboxMessage(clientMsgId: string): Promise<void> {
 /**
  * Drains and re-transmits outbox messages sequentially over an active WebSocket connection
  */
-export async function drainOutboxQueue(sendWebSocketFrame: (payload: OutboxPayload) => boolean): Promise<number> {
-  const pending = await getQueuedOutboxMessages();
-  if (pending.length === 0) return 0;
+export async function drainOutboxQueue(
+  sendWebSocketFrame: (payload: OutboxPayload) => boolean,
+  userId?: number,
+  onPermanentFailure?: (clientMsgId: string) => void
+): Promise<number> {
+  if (isDraining) return 0;
+  isDraining = true;
+  try {
+    const pending = await getQueuedOutboxMessages(userId);
+    if (pending.length === 0) return 0;
 
-  let drainedCount = 0;
-  for (const item of pending) {
-    const success = sendWebSocketFrame(item);
-    if (success) {
-      await removeOutboxMessage(item.client_msg_id);
-      drainedCount++;
-    } else {
-      break; // Socket unable to send, stop draining
+    const now = Date.now();
+    const MAX_STALE_MS = 5 * 60 * 1000; // 5 minutes max age
+    const MAX_RETRIES = 5;
+
+    let drainedCount = 0;
+    for (const item of pending) {
+      const itemAge = now - new Date(item.timestamp).getTime();
+      const currentRetries = (item.retryCount || 0) + 1;
+
+      if (itemAge > MAX_STALE_MS || currentRetries > MAX_RETRIES) {
+        await removeOutboxMessage(item.client_msg_id, userId);
+        if (onPermanentFailure) {
+          onPermanentFailure(item.client_msg_id);
+        }
+        continue;
+      }
+
+      try {
+        const db = getDexieDb(userId || 0);
+        await db.outbox_messages.put({ ...item, retryCount: currentRetries });
+      } catch {}
+
+      const success = sendWebSocketFrame(item);
+      if (success) {
+        drainedCount++;
+      } else {
+        break;
+      }
     }
-  }
 
-  return drainedCount;
+    return drainedCount;
+  } finally {
+    isDraining = false;
+  }
 }

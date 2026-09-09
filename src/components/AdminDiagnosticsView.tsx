@@ -2,17 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, Activity, Monitor, CheckCircle2, AlertTriangle, Cpu, Terminal, RefreshCw } from 'lucide-react';
 import { SuspiciousEvent, AuditLog, ClientDiagnosticLog } from '../types';
 import { APP_VERSION, FULL_BUILD_VERSION } from '../version';
+import { getSessionId } from '../utils/auth';
 
 interface AdminDiagnosticsViewProps {
   suspicious: SuspiciousEvent[];
   logs: AuditLog[];
   initialDiagLogs?: ClientDiagnosticLog[];
   adminFetch?: (url: string, options?: RequestInit) => Promise<Response>;
-  c: {
-    bgPanel: string;
-    border: string;
-    textMuted: string;
-  };
 }
 
 export default function AdminDiagnosticsView({
@@ -20,11 +16,35 @@ export default function AdminDiagnosticsView({
   logs,
   initialDiagLogs = [],
   adminFetch,
-  c
 }: AdminDiagnosticsViewProps) {
   const [diagLogs, setDiagLogs] = useState<ClientDiagnosticLog[]>(Array.isArray(initialDiagLogs) ? initialDiagLogs : []);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<ClientDiagnosticLog | null>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'alerts' | 'audits' | 'debug' | 'errors' | 'heal'>('all');
+  const [opsErrors, setOpsErrors] = useState<Array<{
+    eventId: string;
+    severity: string;
+    code: string;
+    message: string;
+    route?: string | null;
+    statusCode?: number | null;
+    userId?: number | null;
+    correlationId?: string | null;
+    resolved: string;
+    createdAt: string;
+  }>>([]);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [healReports, setHealReports] = useState<Array<{
+    reportId: string;
+    mode: string;
+    status: string;
+    summary: string;
+    findings: Array<{ check: string; severity: string; message: string }>;
+    actions: string[];
+    triggeredBy?: string | null;
+    createdAt: string;
+  }>>([]);
+  const [healRunning, setHealRunning] = useState(false);
 
   useEffect(() => {
     if (Array.isArray(initialDiagLogs) && initialDiagLogs.length > 0) {
@@ -42,7 +62,7 @@ export default function AdminDiagnosticsView({
       if (adminFetch) {
         res = await adminFetch('/v2/admin/diagnostics/logs');
       } else {
-        const token = sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || '';
+        const token = getSessionId();
         res = await fetch('/v2/admin/diagnostics/logs', {
           headers: { 
             Authorization: `Bearer ${token}`,
@@ -53,7 +73,7 @@ export default function AdminDiagnosticsView({
 
       if (res.ok) {
         const data = await res.json();
-        const logsArray = Array.isArray(data) ? data : (data && Array.isArray(data.logs) ? data.logs : []);
+        const logsArray = Array.isArray(data) ? data : (data && Array.isArray(data.diagnostic_logs) ? data.diagnostic_logs : (data.logs || []));
         setDiagLogs(logsArray);
         if (logsArray.length > 0 && !selectedLog) {
           setSelectedLog(logsArray[0]);
@@ -70,6 +90,124 @@ export default function AdminDiagnosticsView({
     fetchDiagLogs();
   }, []);
 
+  const fetchOpsErrors = async () => {
+    setOpsLoading(true);
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch('/v2/admin/ops-errors?resolved=open&limit=100');
+      } else {
+        const token = getSessionId();
+        res = await fetch('/v2/admin/ops-errors?resolved=open&limit=100', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+        });
+      }
+      if (res.ok) {
+        const data = await res.json();
+        setOpsErrors(Array.isArray(data.events) ? data.events : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch ops errors:', err);
+    } finally {
+      setOpsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'errors' || activeTab === 'all') {
+      fetchOpsErrors();
+    }
+  }, [activeTab]);
+
+  const handleResolveOps = async (eventId: string) => {
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch(`/v2/admin/ops-errors/${encodeURIComponent(eventId)}/resolve`, {
+          method: 'POST',
+        });
+      } else {
+        const token = getSessionId();
+        res = await fetch(`/v2/admin/ops-errors/${encodeURIComponent(eventId)}/resolve`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+        });
+      }
+      if (res.ok) {
+        setOpsErrors((prev) => prev.filter((e) => e.eventId !== eventId));
+      }
+    } catch (err) {
+      console.error('Failed to resolve ops error:', err);
+    }
+  };
+
+  const fetchHealReports = async () => {
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch('/v2/admin/heal/reports?limit=20');
+      } else {
+        const token = getSessionId();
+        res = await fetch('/v2/admin/heal/reports?limit=20', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+        });
+      }
+      if (res.ok) {
+        const data = await res.json();
+        setHealReports(Array.isArray(data.reports) ? data.reports : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch heal reports:', err);
+    }
+  };
+
+  const runHealNow = async (mode: 'fix' | 'report' = 'fix') => {
+    setHealRunning(true);
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch('/v2/admin/heal/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        });
+      } else {
+        const token = getSessionId();
+        res = await fetch('/v2/admin/heal/run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token || '',
+          },
+          body: JSON.stringify({ mode }),
+        });
+      }
+      if (res.ok) {
+        await fetchHealReports();
+      }
+    } catch (err) {
+      console.error('Failed to run heal:', err);
+    } finally {
+      setHealRunning(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'heal' || activeTab === 'all') {
+      fetchHealReports();
+    }
+  }, [activeTab]);
+
   const handleResolve = async (logId: string) => {
     try {
       let res: Response;
@@ -80,7 +218,7 @@ export default function AdminDiagnosticsView({
           body: JSON.stringify({ status: 'resolved' })
         });
       } else {
-        const token = sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum_token') || '';
+        const token = getSessionId();
         res = await fetch(`/v2/admin/diagnostics/logs/${logId}/resolve`, {
           method: 'POST',
           headers: {
@@ -103,32 +241,307 @@ export default function AdminDiagnosticsView({
     }
   };
 
+  const handleDelete = async (logId: string) => {
+    try {
+      let res: Response;
+      if (adminFetch) {
+        res = await adminFetch(`/v2/admin/diagnostics/logs/${logId}`, {
+          method: 'DELETE',
+        });
+      } else {
+        const token = getSessionId();
+        res = await fetch(`/v2/admin/diagnostics/logs/${logId}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'x-session-id': token
+          }
+        });
+      }
+
+      if (res.ok) {
+        setDiagLogs(prev => prev.filter(l => l.id !== logId));
+        if (selectedLog?.id === logId) {
+          setSelectedLog(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete log:', err);
+    }
+  };
+
   return (
-    <div className={`p-6 rounded-2xl border ${c.bgPanel} shadow-xl animate-fadeIn space-y-6`}>
-      <div className="flex items-center justify-between border-b border-white-5 pb-4">
-        <div className="flex items-center gap-2.5">
-          <BookOpen className="w-5 h-5 text-accent" />
-          <div>
-            <h4 className="font-extrabold text-sm uppercase tracking-wider">Signals Audit Surveillance & Client Diagnostics</h4>
-          </div>
+    <div className={`w-full h-full animate-fadeIn flex flex-col overflow-hidden`}>
+      
+      <div className="flex-none flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white-5 pb-3 mb-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'all'
+                ? 'bg-accent-20 text-text-primary border-accent-40'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setActiveTab('alerts')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'alerts'
+                ? 'bg-status-dnd-bg text-status-dnd border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Alerts
+          </button>
+          <button
+            onClick={() => setActiveTab('audits')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'audits'
+                ? 'bg-status-online-bg text-status-online border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Audits
+          </button>
+          <button
+            onClick={() => setActiveTab('debug')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'debug'
+                ? 'bg-status-sky-bg text-status-sky border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Debug
+          </button>
+          <button
+            onClick={() => setActiveTab('errors')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'errors'
+                ? 'bg-status-away-bg text-status-away border-transparent'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Errors
+          </button>
+          <button
+            onClick={() => setActiveTab('heal')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono uppercase border transition cursor-pointer ${
+              activeTab === 'heal'
+                ? 'bg-accent-20 text-accent border-accent-40'
+                : 'bg-transparent border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            Heal
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeTab === 'errors') fetchOpsErrors();
+              else if (activeTab === 'heal') fetchHealReports();
+              else fetchDiagLogs();
+            }}
+            className="ml-1 p-1.5 rounded-lg text-text-secondary hover:text-text-primary cursor-pointer"
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading || opsLoading || healRunning ? 'animate-spin' : ''}`} />
+          </button>
         </div>
-        <button
-          onClick={fetchDiagLogs}
-          disabled={isLoading}
-          className="px-3 py-1.5 bg-velum-750 hover:bg-velum-700 text-xs font-mono font-bold text-accent border border-accent/20 rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>Refresh Bundles</span>
-        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Left side box: anomalous activity catalog */}
-        <div className="p-5 rounded-xl border bg-velum-850/60 border-white-5">
+      <div className="flex-1 overflow-hidden w-full h-full">
+      {activeTab === 'all' && (
+        <div className="w-full h-full overflow-y-auto space-y-2 pr-1">
+          {(() => {
+            const feed = [
+              ...opsErrors.map(e => ({ ...e, _type: 'ops' as const, _ts: new Date(e.createdAt || 0).getTime() })),
+              ...healReports.map(h => ({ ...h, _type: 'heal' as const, _ts: new Date(h.createdAt || 0).getTime() })),
+              ...suspicious.map(s => ({ ...s, _type: 'alert' as const, _ts: new Date(s.created_at || s.timestamp || 0).getTime() })),
+              ...logs.map(l => ({ ...l, _type: 'audit' as const, _ts: new Date(l.timestamp || 0).getTime() })),
+              ...diagLogs.map(d => ({ ...d, _type: 'debug' as const, _ts: new Date(d.created_at || 0).getTime() }))
+            ].sort((a, b) => b._ts - a._ts);
+
+            if (feed.length === 0) {
+              return <div className="text-center py-10 font-mono text-xs uppercase text-text-disabled">Mailbox is empty</div>;
+            }
+
+            return feed.map((item, i) => {
+              if (item._type === 'ops') {
+                const ops = item as typeof opsErrors[number] & { _type: 'ops'; _ts: number };
+                return (
+                  <div key={`ops-${ops.eventId}-${i}`} onClick={() => setActiveTab('errors')} className="p-3 border border-status-away/20 bg-status-away-bg/50 hover:bg-status-away-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${ops.severity === 'red' ? 'bg-status-dnd' : 'bg-status-away'}`} />
+                      <span className="text-status-away font-bold font-mono text-[10px] uppercase">[{ops.severity}]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{ops.code}: {ops.message}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
+              if (item._type === 'heal') {
+                const heal = item as typeof healReports[number] & { _type: 'heal'; _ts: number };
+                return (
+                  <div key={`heal-${heal.reportId}-${i}`} onClick={() => setActiveTab('heal')} className="p-3 border border-accent/20 bg-accent-20/40 hover:bg-accent-20 rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2 h-2 rounded-full bg-accent" />
+                      <span className="text-accent font-bold font-mono text-[10px] uppercase">[HEAL]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{heal.summary}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
+              if (item._type === 'alert') {
+                return (
+                  <div key={`alert-${i}`} onClick={() => setActiveTab('alerts')} className="p-3 border border-status-dnd/20 bg-status-dnd-bg/50 hover:bg-status-dnd-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2 h-2 rounded-full bg-status-dnd animate-pulse" />
+                      <span className="text-status-dnd font-bold font-mono text-[10px] uppercase">[ALERT]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).description || (item as any).details || (item as any).reason || 'Anomalous Activity'}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
+              if (item._type === 'audit') {
+                return (
+                  <div key={`audit-${i}`} onClick={() => setActiveTab('audits')} className="p-3 border border-status-online/20 bg-status-online-bg/50 hover:bg-status-online-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2 h-2 rounded-full bg-status-online" />
+                      <span className="text-status-online font-bold font-mono text-[10px] uppercase">[AUDIT]</span>
+                      <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).action} {(item as any).target_id ? `target user #${(item as any).target_id}` : ''}</span>
+                    </div>
+                    <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                  </div>
+                );
+              }
+              return (
+                <div key={`debug-${i}`} onClick={() => setActiveTab('debug')} className="p-3 border border-status-sky/20 bg-status-sky-bg/50 hover:bg-status-sky-bg rounded-xl cursor-pointer flex items-center justify-between transition">
+                  <div className="flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full bg-status-sky" />
+                    <span className="text-status-sky font-bold font-mono text-[10px] uppercase">[DEBUG]</span>
+                    <span className="text-text-primary text-xs truncate max-w-[200px] md:max-w-md">{(item as any).username || `User #${(item as any).user_id}`} telemetry report</span>
+                  </div>
+                  <span className="text-text-secondary text-[10px] font-mono">{new Date(item._ts).toLocaleString()}</span>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
+
+      {(activeTab === 'errors') && (
+        <div className="w-full h-full overflow-y-auto space-y-2 pr-1">
+          <div className="text-[10px] font-mono font-black text-status-away uppercase mb-3 border-b border-white-5 pb-2 tracking-widest flex items-center gap-2">
+            <AlertTriangle className="w-3 h-3" />
+            <span>Errors ({opsErrors.length})</span>
+          </div>
+          {opsErrors.length === 0 ? (
+            <div className="text-text-disabled text-center py-16 font-mono text-[10.5px] font-black uppercase tracking-wider">
+              No open ops errors
+            </div>
+          ) : (
+            opsErrors.map((ev) => (
+              <div key={ev.eventId} className="p-3 border border-white-5 rounded-xl space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[9px] uppercase px-2 py-0.5 rounded font-mono font-bold ${
+                      ev.severity === 'red' ? 'text-status-dnd bg-status-dnd-bg' : 'text-status-away bg-status-away-bg'
+                    }`}>
+                      {ev.severity}
+                    </span>
+                    <span className="text-text-primary font-mono text-[11px] font-bold truncate">{ev.code}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleResolveOps(ev.eventId)}
+                    className="px-2.5 py-1 bg-status-online-bg text-status-online rounded text-[10px] font-bold uppercase cursor-pointer shrink-0"
+                  >
+                    Resolve
+                  </button>
+                </div>
+                <p className="text-text-primary text-xs font-mono break-words">{ev.message}</p>
+                <div className="text-text-disabled font-mono text-[9px] flex flex-wrap gap-x-3 gap-y-1">
+                  {ev.route && <span>{ev.route}</span>}
+                  {ev.statusCode != null && <span>HTTP {ev.statusCode}</span>}
+                  {ev.userId != null && <span>user #{ev.userId}</span>}
+                  {ev.correlationId && <span>{ev.correlationId}</span>}
+                  <span className="ml-auto">{ev.createdAt ? new Date(ev.createdAt).toLocaleString() : ''}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {(activeTab === 'heal') && (
+        <div className="w-full h-full overflow-y-auto space-y-3 pr-1">
+          <div className="flex items-center justify-between gap-2 border-b border-white-5 pb-2">
+            <div className="text-[10px] font-mono font-black text-accent uppercase tracking-widest flex items-center gap-2">
+              <Cpu className="w-3 h-3" />
+              <span>Heal ({healReports.length})</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={healRunning}
+                onClick={() => runHealNow('report')}
+                className="px-2.5 py-1 rounded text-[10px] font-bold uppercase border border-white-5 text-text-secondary cursor-pointer disabled:opacity-50"
+              >
+                Report
+              </button>
+              <button
+                type="button"
+                disabled={healRunning}
+                onClick={() => runHealNow('fix')}
+                className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-accent-20 text-accent cursor-pointer disabled:opacity-50"
+              >
+                {healRunning ? 'Running…' : 'Run heal'}
+              </button>
+            </div>
+          </div>
+          {healReports.length === 0 ? (
+            <div className="text-text-disabled text-center py-16 font-mono text-[10.5px] font-black uppercase tracking-wider">
+              No heal reports yet
+            </div>
+          ) : (
+            healReports.map((r) => (
+              <div key={r.reportId} className="p-3 border border-white-5 rounded-xl space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[9px] uppercase px-2 py-0.5 rounded font-mono font-bold ${
+                    r.status === 'critical' ? 'text-status-dnd bg-status-dnd-bg'
+                      : r.status === 'degraded' ? 'text-status-away bg-status-away-bg'
+                      : 'text-status-online bg-status-online-bg'
+                  }`}>
+                    {r.status}
+                  </span>
+                  <span className="text-text-disabled font-mono text-[9px]">{r.mode} · {r.triggeredBy}</span>
+                </div>
+                <p className="text-text-primary text-xs font-mono">{r.summary}</p>
+                {Array.isArray(r.findings) && r.findings.length > 0 && (
+                  <ul className="text-[10px] font-mono text-text-secondary space-y-1">
+                    {r.findings.slice(0, 8).map((f, idx) => (
+                      <li key={`${r.reportId}-${idx}`}>[{f.severity}] {f.check}: {f.message}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="text-text-disabled font-mono text-[9px] text-right">
+                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Left side box: anomalous activity catalog */}
+        {(activeTab === 'alerts') && (
+        <div className="w-full">
           <div className="text-[10px] font-mono font-black text-status-dnd uppercase mb-3 border-b border-white-5 pb-2 tracking-widest flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-status-dnd animate-pulse" />
-            <span>Anomalous Events Diagnosed ({suspicious.length})</span>
+            <span>Alerts ({suspicious.length})</span>
           </div>
           <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
             {suspicious.map((ev, idx) => {
@@ -160,12 +573,14 @@ export default function AdminDiagnosticsView({
             )}
           </div>
         </div>
+        )}
 
         {/* Right side box: administrative actions */}
-        <div className="p-5 rounded-xl border bg-velum-850/60 border-white-5">
+        {(activeTab === 'audits') && (
+        <div className="w-full">
           <div className="text-[10px] font-mono font-black text-accent-hover uppercase mb-3 border-b border-white-5 pb-2 tracking-widest flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-accent-hover" />
-            <span>Oversight Audit Commits ({logs.length})</span>
+            <span>Audits ({logs.length})</span>
           </div>
           <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
             {logs.map((log, idx) => (
@@ -185,63 +600,38 @@ export default function AdminDiagnosticsView({
             )}
           </div>
         </div>
-      </div>
-
+        )}
       {/* Full-width Section: User Client Diagnostic Bundles */}
-      <div className="p-5 rounded-xl border bg-velum-850/60 border-white-10 space-y-4">
-        <div className="flex items-center justify-between border-b border-white-5 pb-3">
-          <div className="flex items-center gap-2">
-            <Monitor className="w-4 h-4 text-accent" />
-            <span className="text-xs font-mono font-bold text-text-primary uppercase tracking-wider">Client Diagnostic Telemetry Submissions ({diagLogs.length})</span>
-          </div>
-          <span className="text-[10px] font-mono text-text-disabled uppercase">Cloud DB Link Active</span>
-        </div>
-
+      {(activeTab === 'debug') && (
+      <div className="flex-1 overflow-hidden w-full h-full flex flex-col">
         {diagLogs.length === 0 ? (
-          <div className="text-text-disabled text-center py-10 font-mono text-xs uppercase tracking-wider">
+          <div className="text-text-disabled text-center py-10 font-mono text-xs uppercase tracking-wider flex-1">
             No client diagnostic reports submitted yet
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+          <div className="flex-1 flex flex-col md:flex-row w-full h-full divide-y md:divide-y-0 md:divide-x divide-white-5 border-t border-white-5">
+            <div className="flex-1 overflow-y-auto w-full md:w-1/2 bg-black/10">
               {diagLogs.map((diag) => (
                 <div
                   key={diag.id}
                   onClick={() => setSelectedLog(diag)}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition select-none ${
-                    selectedLog?.id === diag.id
-                      ? 'bg-velum-750 border-accent/60 text-text-primary shadow-lg'
-                      : 'bg-velum-800/80 border-white-5 text-text-secondary hover:bg-velum-800'
-                  }`}
+                  className={`px-3 py-2 border-b border-white-5 cursor-pointer transition select-none flex items-center justify-between ${selectedLog?.id === diag.id ? 'bg-velum-750 text-text-primary' : 'bg-transparent text-text-secondary hover:bg-velum-800/50'}`}
                 >
-                  <div className="flex items-center justify-between text-xs font-mono mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-accent">{diag.username || `User #${diag.user_id}`}</span>
-                      <span className="px-1.5 py-0.2 bg-white-5 border border-white-10 rounded text-[9px] text-text-secondary">
-                        {diag.app_version || FULL_BUILD_VERSION}
-                      </span>
-                    </div>
-                    <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded ${
+                  <div className="flex items-center gap-3 text-[11px] font-mono w-full overflow-hidden">
+                    <span className="font-bold text-accent whitespace-nowrap min-w-[80px] truncate">{diag.username || `User #${diag.user_id}`}</span>
+                    <span className="hidden lg:inline text-text-disabled min-w-[120px] whitespace-nowrap truncate">{new Date(diag.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' })}</span>
+                    <span className="truncate flex-1 text-text-primary min-w-0">{diag.error_buffer?.length ? diag.error_buffer[0].message : diag.notes || 'No crash reported'}</span>
+                    <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase rounded ${
                       diag.status === 'resolved' ? 'bg-status-online-bg text-status-online' : 'bg-status-away-bg text-status-away'
                     }`}>
                       {diag.status}
                     </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-text-secondary flex items-center justify-between mt-2">
-                    <span>IP: {diag.ip_address}</span>
-                    <span>{new Date(diag.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                  </div>
-                  {diag.notes && (
-                    <div className="mt-2 text-[10px] text-text-primary italic font-sans bg-black/20 p-2 rounded border border-white-5 truncate">
-                      "{diag.notes}"
-                    </div>
-                  )}
-                </div>
+                  </div></div>
               ))}
             </div>
 
             {/* Detailed Inspector Panel */}
-            <div className="p-4 rounded-xl bg-velum-900 border border-white-10 font-mono text-xs space-y-3 overflow-y-auto max-h-[360px]">
+            <div className="p-4 font-mono text-xs space-y-3 overflow-y-auto flex-1 w-full md:w-1/2">
               {selectedLog ? (
                 <>
                   <div className="flex items-center justify-between border-b border-white-5 pb-2">
@@ -249,13 +639,20 @@ export default function AdminDiagnosticsView({
                       <span className="text-accent font-bold uppercase text-[11px] block">{selectedLog.id}</span>
                       <span className="text-[10px] text-text-secondary">{new Date(selectedLog.created_at).toLocaleString()}</span>
                     </div>
-                    {selectedLog.status !== 'resolved' && (
+                    {selectedLog.status !== 'resolved' ? (
                       <button
                         onClick={() => handleResolve(selectedLog.id)}
                         className="px-2.5 py-1 bg-status-online-bg hover:bg-status-online-bg text-status-online rounded text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition"
                       >
                         <CheckCircle2 className="w-3 h-3" />
                         Resolve
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleDelete(selectedLog.id)}
+                        className="px-2.5 py-1 bg-status-dnd-bg hover:bg-status-dnd text-status-dnd rounded text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition border border-status-dnd/20"
+                      >
+                        Delete
                       </button>
                     )}
                   </div>
@@ -306,6 +703,8 @@ export default function AdminDiagnosticsView({
             </div>
           </div>
         )}
+      </div>
+      )}
       </div>
     </div>
   );

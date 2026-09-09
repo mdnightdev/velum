@@ -19,7 +19,6 @@ import {
   getWebSocketDiagnostics
 } from './connectionManager.js';
 import { handleClientMessage, handleSendMessage } from './handlers/messageHandler.js';
-import { getOrCreateDMLounge } from './unreadManager.js';
 
 export { SystemBot };
 export {
@@ -29,8 +28,7 @@ export {
   broadcastToUserDevices,
   recordServerEventTimestamp,
   incrementReconnectCount,
-  getWebSocketDiagnostics,
-  getOrCreateDMLounge
+  getWebSocketDiagnostics
 };
 
 // Message batching for performance
@@ -120,28 +118,37 @@ export function setupWebSocketServer(httpServer: Server) {
         return;
       }
 
+      const sessionUserId = Number(sessionResult[0].session.userId || sessionResult[0].user.id);
+      if (!sessionUserId || userId !== sessionUserId) {
+        ws.close(1008, 'userId mismatch');
+        return;
+      }
+      const boundUserId = sessionUserId;
+
       const userConns = Array.from(connectedClients.entries())
-        .filter(([_, c]) => c.userId === userId);
+        .filter(([_, c]) => c.userId === boundUserId);
       if (userConns.length >= 50) {
         const toRemoveCount = userConns.length - 49;
         for (let i = 0; i < toRemoveCount; i++) {
           const [id, conn] = userConns[i];
           try {
             conn.ws.close(1000, 'Session superseded by newer connection');
-          } catch (e) {}
+          } catch (e) {
+            console.debug('[WS] Error closing superseded socket:', (e as Error).message);
+          }
           connectedClients.delete(id);
         }
       }
       
       try {
-        await executeWithRetry(() => db.update(users).set({ updatedAt: new Date() }).where(eq(users.id, userId)));
+        await executeWithRetry(() => db.update(users).set({ updatedAt: new Date() }).where(eq(users.id, boundUserId)));
       } catch (dbErr) {
         console.error('[WS] Failed to update user last active timestamp:', dbErr);
       }
 
       const client: ClientConnection = {
         ws,
-        userId,
+        userId: boundUserId,
         username: sessionResult[0].user.username,
         avatarUrl: sessionResult[0].user.avatarUrl || '',
         sessionId,
@@ -152,7 +159,7 @@ export function setupWebSocketServer(httpServer: Server) {
 
       getRedisClient().then(redis => {
         if (redis) {
-          redis.set(`user:${userId}:active`, sessionId, { EX: 300 }).catch(() => {});
+          redis.set(`user:${boundUserId}:active`, sessionId, { EX: 300 }).catch(() => {});
         }
       });
 

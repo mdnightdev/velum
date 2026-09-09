@@ -4,16 +4,16 @@ import { eq, sql } from 'drizzle-orm';
 import { deduplicateSublounges } from './loungeDeduplicator.js';
 
 export const OFFICIAL_SUBLOUNGES = [
-  { slug: 'velum_general', name: 'General', description: 'Main community chat & general discussion', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_market', name: 'Marketplace', description: 'Official trading & commerce discussions', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_escrow', name: 'Escrow Operations', description: 'Escrow status & secure trade support', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_offtopic', name: 'Offtopic', description: 'Casual banter, games, & off-topic chatter', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_bugs', name: 'Bug Reports', description: 'Report system bugs & technical issues', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_support', name: 'Support', description: 'Velum customer support & ticket assistance', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_suggestions', name: 'Suggestions', description: 'Propose new features & platform improvements', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_events', name: 'Live Events', description: 'Community events & scheduled discussions', accessLevel: 'ALL', isLocked: false, isHidden: false },
-  { slug: 'velum_announcements', name: 'Announcements', description: 'Official Velum platform updates & news', accessLevel: 'ANNOUNCE', isLocked: true, isHidden: true },
-  { slug: 'velum_executives', name: 'Executive Lounge', description: 'Restricted executive & governance channel', accessLevel: 'EXEC_ONLY', isLocked: true, isHidden: true }
+  { id: 2, slug: 'velum_general', name: 'General', description: 'Main community chat & general discussion', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 3, slug: 'velum_market', name: 'Marketplace', description: 'Official trading & commerce discussions', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 4, slug: 'velum_escrow', name: 'Escrow Operations', description: 'Escrow status & secure trade support', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 5, slug: 'velum_offtopic', name: 'Offtopic', description: 'Casual banter, games, & off-topic chatter', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 6, slug: 'velum_bugs', name: 'Bug Reports', description: 'Report system bugs & technical issues', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 7, slug: 'velum_support', name: 'Support', description: 'Velum customer support & ticket assistance', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 8, slug: 'velum_suggestions', name: 'Suggestions', description: 'Propose new features & platform improvements', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 9, slug: 'velum_events', name: 'Live Events', description: 'Community events & scheduled discussions', accessLevel: 'ALL', isLocked: false, isHidden: false },
+  { id: 10, slug: 'velum_announcements', name: 'Announcements', description: 'Official Velum platform updates & news', accessLevel: 'ANNOUNCE', isLocked: true, isHidden: true },
+  { id: 11, slug: 'velum_executives', name: 'Executive Lounge', description: 'Restricted executive & governance channel', accessLevel: 'EXEC_ONLY', isLocked: true, isHidden: true }
 ];
 
 let isSeeded = false;
@@ -92,26 +92,60 @@ export async function ensureVelumLoungeSeeded() {
         encrypted BOOLEAN DEFAULT false NOT NULL,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS media_assets (
+        id SERIAL PRIMARY KEY,
+        uploader_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        storage_key TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        mime_type VARCHAR(128) NOT NULL,
+        byte_size INTEGER NOT NULL,
+        category VARCHAR(32) NOT NULL,
+        sha256 VARCHAR(64),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_media_assets_uploader ON media_assets (uploader_id);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_category ON media_assets (category);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_storage_key ON media_assets (storage_key);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_relative_path ON media_assets (relative_path);
+
+      CREATE TABLE IF NOT EXISTS dm_reactions (
+        id SERIAL PRIMARY KEY,
+        message_id INTEGER REFERENCES dms(id) ON DELETE CASCADE NOT NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        emoji VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS unique_dm_user_emoji ON dm_reactions (message_id, user_id, emoji);
+      CREATE INDEX IF NOT EXISTS idx_dm_reactions_message ON dm_reactions (message_id);
     `);
 
-    let [master] = await db.select().from(lounges).where(eq(lounges.slug, 'velum_master_lounge'));
+    await db.execute(sql`
+      UPDATE lounges SET slug = 'velum_master_lounge' WHERE id = 1 AND (slug = 'velum_lounge' OR slug IS NULL);
+    `);
+
+    let [master] = await db.select().from(lounges).where(eq(lounges.id, 1));
     if (!master) {
-      [master] = await db.insert(lounges).values({
+      const [inserted] = await db.insert(lounges).values({
+        id: 1,
         slug: 'velum_master_lounge',
         name: 'Velum Lounge',
-        description: 'Official Velum Master Network Lounge',
+        description: 'Velum Lounge',
         isOfficial: true,
         isSystem: true,
         isPrivate: false,
         type: 'official',
         accessLevel: 'ALL'
-      }).returning();
+      }).onConflictDoNothing().returning();
+      master = inserted || (await db.select().from(lounges).where(eq(lounges.id, 1)))[0];
     }
 
     for (const sub of OFFICIAL_SUBLOUNGES) {
-      const [existing] = await db.select().from(lounges).where(eq(lounges.slug, sub.slug));
+      const [existing] = await db.select().from(lounges).where(eq(lounges.id, sub.id));
       if (!existing && master) {
         await db.insert(lounges).values({
+          id: sub.id,
           slug: sub.slug,
           name: sub.name,
           description: sub.description,
@@ -122,11 +156,15 @@ export async function ensureVelumLoungeSeeded() {
           isHidden: (sub as any).isHidden || false,
           type: sub.accessLevel === 'EXEC_ONLY' ? 'private_sublounge' : 'official',
           accessLevel: sub.accessLevel
-        });
+        }).onConflictDoNothing();
       }
     }
 
-    // Run self-healing deduplication to purge any spammed duplicates
+    // Advance sequence past reserved official lounge IDs (1-11) so user-created lounges start at 1000+
+    await db.execute(sql`
+      SELECT setval(pg_get_serial_sequence('lounges', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM lounges), 1000), true);
+    `);
+
     await deduplicateSublounges();
 
     isSeeded = true;

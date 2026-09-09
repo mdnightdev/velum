@@ -2,7 +2,7 @@
 process.removeAllListeners('warning');
 process.on('warning', (warning) => {
   if (warning.message && warning.message.includes('SSL modes')) return;
-  console.warn(warning.stack || warning.message);
+  // We'll handle this through the logger later
 });
 
 import express from 'express';
@@ -14,11 +14,16 @@ import helmet from 'helmet';
 import { app as v2App } from './v2/app.js';
 import { config } from './v2/config.js';
 import { ensureAdminSeeded } from './v2/services/adminSeeder.js';
+import { ensureVelumLoungeSeeded } from './v2/services/loungeSeeder.js';
 import { setupWebSocketServer } from './websocket.js';
 import { currencyConverter } from './v2/services/currencyConverter.js';
 import { SystemBot } from './v2/services/systemBot.js';
+import { logger } from './v2/utils/logger.js';
 
 export const app = express();
+
+// Trust proxy to get real client IP behind reverse proxies
+app.set('trust proxy', true);
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -51,9 +56,6 @@ app.get('/privacy', (_req, res) => {
 // Bind V2 Engine API
 app.use(v2App);
 
-// Serve uploads statically
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-
 export const server = createHttpServer(app);
 
 export async function startServer() {
@@ -63,11 +65,11 @@ export async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production' && fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'));
 
   if (!isProduction) {
-    console.log('[SERVER V2] Mounting Vite Dev Server middleware...');
+    logger.info('Mounting Vite Dev Server middleware');
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
-        hmr: false // Explicitly disable HMR
+        hmr: true // Enable HMR for development
       },
       appType: 'spa'
     });
@@ -85,7 +87,7 @@ export async function startServer() {
       }
     });
   } else {
-    console.log('[SERVER V2] Serving pre-compiled production build from dist/ directory...');
+    logger.info('Serving pre-compiled production build');
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath, { 
       index: false,
@@ -109,19 +111,20 @@ export async function startServer() {
 
   const PORT = config.PORT || 3000;
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SERVER] [Velum V2 Engine] Active on port: ${PORT}`);
+    logger.info('Velum V2 Engine started', { port: PORT });
     
-    // Asynchronously initialize database seeding & exchange rates without blocking server start
+    // Asynchronously initialize database seeding, background sweeper & exchange rates without blocking server start
     (async () => {
       try {
         await ensureAdminSeeded();
-        const { ensureVelumLoungeSeeded } = await import('./v2/services/loungeSeeder.js');
         await ensureVelumLoungeSeeded();
         SystemBot.getInstance();
-        console.log('[Server] Velum Bot system activated');
+        logger.info('Velum Bot system activated');
         await currencyConverter.loadRatesFromDb();
+        const { UserDeletionService } = await import('./v2/services/userDeletionService.js');
+        UserDeletionService.startBackgroundSweeper();
       } catch (err) {
-        console.error('[SERVER V2] Background DB initialization warning:', err);
+        logger.warn('Background DB initialization warning', { error: err });
       }
     })();
   });

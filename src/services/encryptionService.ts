@@ -1,4 +1,19 @@
-import { doubleRatchetService } from './doubleRatchetService';
+import { statelessE2eeService } from './statelessE2eeService.js';
+import { getPlaintextByCiphertext } from '../utils/indexedDb.js';
+import { isUsablePlaintext } from '../utils/messagePlaintext.js';
+import { getMemoryPlaintext } from '../utils/plaintextCache.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import {
+  toBase64,
+  fromBase64,
+  utf8ToBytes,
+  bytesToUtf8,
+  getRandomBytes,
+  toHex,
+  encryptAesGcm,
+  decryptAesGcm
+} from './cryptoPrimitives.js';
 
 export type EncryptionContext = {
   type: 'direct' | 'lounge';
@@ -7,133 +22,130 @@ export type EncryptionContext = {
   isEncrypted?: boolean;
 };
 
-/**
- * Centralized encryption service - single source of truth for all encryption/decryption
- */
+const IV_LENGTH = 12;
 
 /**
- * Low-level XOR encryption (for lounge/room messages) - UTF-8 byte safe
+ * Derives a 256-bit symmetric cipher key for a lounge using HMAC-SHA256
  */
-function encryptXOR(content: string, key: string): string {
+function getCipherKey(roomKey?: string): Uint8Array {
+  const envMaster =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_LOUNGE_MASTER_KEY) ||
+    (typeof process !== 'undefined' && process.env?.LOUNGE_ENCRYPTION_KEY) ||
+    'velum-auth-master-seed';
+  const keyBytes = utf8ToBytes(envMaster);
+  const msgBytes = utf8ToBytes(roomKey || 'default-room');
+  return hmac(sha256, keyBytes, msgBytes);
+}
+
+/**
+ * Lounge encryption - AES-256-GCM via WebCrypto with HMAC-derived key
+ */
+async function encryptLounge(content: string, key?: string): Promise<string> {
   if (!content) return '';
-  const encoder = new TextEncoder();
-  const textBytes = encoder.encode(content);
-  const keyBytes = encoder.encode(key || 'VELUM_KEY');
-  const xorBytes = new Uint8Array(textBytes.length);
+  const cipherKey = getCipherKey(key);
+  const iv = getRandomBytes(IV_LENGTH);
+  const plaintextBytes = utf8ToBytes(content);
+  const { ciphertext, tag } = await encryptAesGcm(cipherKey, plaintextBytes, iv);
 
-  for (let i = 0; i < textBytes.length; i++) {
-    xorBytes[i] = textBytes[i] ^ keyBytes[i % keyBytes.length];
-  }
+  // Pack IV (12B) + Tag (16B) + Ciphertext into Base64
+  const packed = new Uint8Array(iv.length + tag.length + ciphertext.length);
+  packed.set(iv, 0);
+  packed.set(tag, iv.length);
+  packed.set(ciphertext, iv.length + tag.length);
 
-  // Convert Uint8Array to base64
-  let binary = '';
-  for (let i = 0; i < xorBytes.length; i++) {
-    binary += String.fromCharCode(xorBytes[i]);
-  }
-  return btoa(binary);
+  return toBase64(packed);
 }
 
 /**
- * Low-level XOR decryption (for lounge/room messages) - UTF-8 byte safe
+ * Lounge decryption - AES-256-GCM via WebCrypto with HMAC-derived key
  */
-function decryptXOR(cipher: string, key: string): string {
-  if (!cipher) return '';
+async function decryptLounge(cipherText: string, key?: string): Promise<string> {
+  if (!cipherText) return '';
   try {
-    const binary = atob(cipher);
-    const cipherBytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      cipherBytes[i] = binary.charCodeAt(i);
-    }
+    const data = fromBase64(cipherText);
+    if (data.length < 28) return cipherText;
 
-    const encoder = new TextEncoder();
-    const keyBytes = encoder.encode(key || 'VELUM_KEY');
-    const textBytes = new Uint8Array(cipherBytes.length);
+    const iv = data.slice(0, IV_LENGTH);
+    const tag = data.slice(IV_LENGTH, IV_LENGTH + 16);
+    const ciphertext = data.slice(IV_LENGTH + 16);
+    const cipherKey = getCipherKey(key);
 
-    for (let i = 0; i < cipherBytes.length; i++) {
-      textBytes[i] = cipherBytes[i] ^ keyBytes[i % keyBytes.length];
-    }
-
-    const decoder = new TextDecoder('utf-8', { fatal: false });
-    return decoder.decode(textBytes);
-  } catch (e) {
-    return cipher;
+    const decrypted = await decryptAesGcm(cipherKey, ciphertext, tag, iv);
+    return bytesToUtf8(decrypted);
+  } catch {
+    return cipherText;
   }
 }
 
 /**
- * Encrypt message based on context
- * - Direct messages: Double Ratchet E2EE
- * - Lounge messages: XOR encryption with room key
+ * Encrypt message based on context:
+ * - Direct messages: Pure Stateless Ephemeral ECDH + AES-256-GCM
+ * - Lounge messages: Room HMAC + AES-256-GCM
  */
 export async function encryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
   if (context.type === 'direct' && context.peerUserId) {
     try {
-      return await doubleRatchetService.encryptDirectMessage(content, context.peerUserId);
+      return await statelessE2eeService.encryptDirectMessage(content, context.peerUserId);
     } catch (err) {
       console.error('[encryptionService] Direct message encryption failed:', err);
-      return content; // Fallback to plaintext on error
+      return content;
     }
   }
 
   if (context.type === 'lounge' && context.roomId) {
-    return `VEL_E2EE[${encryptXOR(content, 'VELUM_E2EE_' + context.roomId)}]`;
+    const encrypted = await encryptLounge(content, 'VELUM_E2EE_' + context.roomId);
+    return `VEL_E2EE[${encrypted}]`;
   }
 
-  return content; // Default to plaintext
+  return content;
 }
 
 /**
- * Decrypt message based on content format and context
- * Handles: Double Ratchet (ratchet:v2), Legacy Ratchet (ratchet:v1), Room XOR (VEL_E2EE), Plain text
+ * Decrypt message based on content format:
+ * - Stateless E2EE (e2ee:v2:... and e2ee:v1:...)
+ * - Lounge HMAC-GCM (VEL_E2EE[...])
+ * - Plaintext
  */
-const activeHeals = new Set<number>();
-
 export async function decryptMessage(content: string, context: EncryptionContext): Promise<string> {
   if (!content) return '';
 
-  // Double Ratchet v2 (current direct messages)
-  if (content.startsWith('ratchet:v2:')) {
-    if (context.peerUserId) {
-      try {
-        const decrypted = await doubleRatchetService.decryptDirectMessage(content, context.peerUserId);
-        
-        // Trap decryption errors to trigger auto-healing
-        if (
-          decrypted === '[Encrypted Message - Skipped Key Not Found]' ||
-          decrypted === '[Decryption Error - Integrity Check Failed]' ||
-          decrypted === '[Encrypted Message - No Prekey]'
-        ) {
-          const peerId = context.peerUserId;
-          if (!activeHeals.has(peerId)) {
-            activeHeals.add(peerId);
-            console.warn(`[encryptionService] Trapped decryption failure for peer ${peerId}, triggering auto-heal force rekey`);
-            
-            // Trigger background auto-heal
-            doubleRatchetService.forceRekey(peerId)
-              .catch(e => console.error(`[encryptionService] Auto-heal failed for peer ${peerId}:`, e))
-              .finally(() => {
-                setTimeout(() => activeHeals.delete(peerId), 5000); // 5 second cooldown
-              });
-          }
-        }
-        
-        return decrypted;
-      } catch (err) {
-        console.error('[encryptionService] Double Ratchet decryption error:', err);
-        return '[Encrypted Message]';
-      }
+  // Session memory first — never touch Dexie/crypto if we already know the plaintext.
+  const mem = getMemoryPlaintext(content);
+  if (mem) return mem;
+
+  // Device plaintext cache (indexed) — never re-derive if already stored.
+  try {
+    const uid = statelessE2eeService.getLocalUserId() || undefined;
+    const localPt = await getPlaintextByCiphertext(content, uid);
+    if (isUsablePlaintext(localPt)) {
+      return localPt as string;
     }
-    return '[Encrypted Message - No Peer]';
+  } catch {}
+
+  // 1. Stateless Direct Message (v3 Static DH, v2 Dual-Recipient & v1 Legacy)
+  if (content.startsWith('e2ee:v3:') || content.startsWith('e2ee:v2:') || content.startsWith('e2ee:v1:') || content.startsWith('e2ee:')) {
+    try {
+      return await statelessE2eeService.decryptDirectMessage(content, context.peerUserId);
+    } catch (err) {
+      console.error('[encryptionService] Stateless E2EE decryption error:', {
+        error: err instanceof Error ? err.message : err,
+        stack: err instanceof Error ? err.stack : undefined,
+        peerUserId: context.peerUserId,
+        roomId: context.roomId,
+      });
+      // Empty — never return poison placeholders that get written back to device DB.
+      return '';
+    }
   }
 
-  // Legacy Double Ratchet v1
-  if (content.startsWith('ratchet:v1:')) {
-    return '[Legacy Encrypted Message]';
+  // 2. Legacy ratchet payload fallback
+  if (content.startsWith('ratchet:v2:') || content.startsWith('ratchet:v1:')) {
+    return '';
   }
 
-  // Room XOR encryption (lounge messages)
+  // 3. Lounge Room HMAC-GCM encryption
   if (content.startsWith('VEL_E2EE[')) {
     if (context.roomId) {
       try {
@@ -141,44 +153,38 @@ export async function decryptMessage(content: string, context: EncryptionContext
         if (cleanCipher.endsWith(']')) {
           cleanCipher = cleanCipher.slice(0, -1);
         }
-        return decryptXOR(cleanCipher, 'VELUM_E2EE_' + context.roomId);
+        const unwrapped = await decryptLounge(cleanCipher, 'VELUM_E2EE_' + context.roomId);
+        if (unwrapped.startsWith('e2ee:') || unwrapped.startsWith('ratchet:v2:') || unwrapped.startsWith('ratchet:v1:') || unwrapped.startsWith('VEL_E2EE[')) {
+          return await decryptMessage(unwrapped, context);
+        }
+        return unwrapped;
       } catch (err) {
-        console.error('[encryptionService] Room XOR decryption error:', err);
-        return '[Encrypted Message]';
+        console.error('[encryptionService] Room decryption error:', err);
+        return '';
       }
     }
-    return '[Encrypted Message - No Room]';
+    return '';
   }
 
-  // Plain text (no encryption)
   return content;
 }
 
 /**
- * Legacy synchronous decryption for backward compatibility
- * @deprecated Use decryptMessage instead
+ * Synchronous decryption fallback (returns cipher for async resolution)
  */
-export function decryptMessageSync(content: string, roomId: string, isEncryptedHeader?: boolean): string {
+export function decryptMessageSync(content: string, _roomId: string, isEncryptedHeader?: boolean): string {
   if (!content) return '';
   const isEncrypted = !!(isEncryptedHeader || content.startsWith('VEL_E2EE['));
   if (!isEncrypted) return content;
-
-  let cleanCipher = content;
-  if (cleanCipher.startsWith('VEL_E2EE[')) {
-    cleanCipher = cleanCipher.substring(9, cleanCipher.length - 1);
-  }
-  return decryptXOR(cleanCipher, 'VELUM_E2EE_' + roomId);
+  return content;
 }
 
 /**
- * Computes SHA-256 client hash using Web Cryptography API.
- * Uses fallback to globalThis.crypto for Node-based test runners.
+ * Computes client hash using HMAC-SHA256
  */
 export async function computeClientHash(secret: string, salt: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(salt + secret);
-  const cryptoProvider = typeof window !== 'undefined' ? window.crypto : (globalThis as any).crypto;
-  const hashBuffer = await cryptoProvider.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const keyBytes = utf8ToBytes(salt);
+  const dataBytes = utf8ToBytes(secret);
+  const mac = hmac(sha256, keyBytes, dataBytes);
+  return toHex(mac);
 }

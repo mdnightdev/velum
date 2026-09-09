@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { captureAndCompressPhoto, streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
+import { getSessionId } from '../../../utils/auth';
 
 interface UseLoungeSettingsOptions {
   loungeId: string | number;
@@ -42,7 +43,7 @@ export function useLoungeSettings({
     setSettingsError('');
     setSettingsSuccess('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}`, {
         method: 'PUT',
         headers: {
@@ -61,7 +62,7 @@ export function useLoungeSettings({
         throw new Error(err.error || 'Failed to update lounge settings.');
       }
 
-      setSettingsSuccess('Lounge parameters updated successfully.');
+      setSettingsSuccess('updated.');
       if (onSuccess) onSuccess();
     } catch (err: any) {
       setSettingsError(err.message || 'Error updating settings.');
@@ -84,7 +85,7 @@ export function useLoungeSettings({
       };
       reader.readAsDataURL(compressedBlob);
 
-      const uploadedUrl = await streamFileDirectToCloudStorage(compressedBlob, 'avatars', 'webp');
+      const uploadedUrl = await streamFileDirectToCloudStorage(compressedBlob, 'avatars', compressedBlob.type.split('/')[1] || 'webp');
       if (uploadedUrl) {
         setEditIconUrl(uploadedUrl);
       }

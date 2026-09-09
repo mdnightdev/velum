@@ -17,3 +17,20 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
 
 export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscriptionRow = typeof pushSubscriptions.$inferInsert;
+
+export const fcmTokens = pgTable('fcm_tokens', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  token: text('token').notNull().unique(),
+  deviceId: text('device_id'),
+  platform: text('platform').default('android').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  lastUsedAt: timestamp('last_used_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_fcm_tokens_user').on(table.userId),
+]);
+
+export type FcmTokenRow = typeof fcmTokens.$inferSelect;
+export type NewFcmTokenRow = typeof fcmTokens.$inferInsert;

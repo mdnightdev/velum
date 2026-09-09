@@ -1,6 +1,7 @@
-import { broadcastToRoom, connectedClients, getOrCreateDMLounge } from '../../websocket.js';
-import { db } from '../db/client.js';
-import { messages as dbMessages } from '../db/schema/lounges.js';
+import { broadcastToRoom, connectedClients, broadcastToUserDevices } from '../../websocket.js';
+import { dmService } from './dmService.js';
+import { BotTemplates } from './botTemplates.js';
+import { incrementUnread } from '../../websocket/unreadManager.js';
 
 export class SystemBot {
   private static instance: SystemBot;
@@ -73,7 +74,7 @@ export class SystemBot {
       timestamp: new Date().toISOString()
     };
     this.sendSystemAlert('admin_control_desk', `[DURESS_ALERT] User ${userId} triggered panic protocol. Ticket: ${ticketId}`);
-    this.sendToUser(userId, `[SECURITY_SYSTEM] Emergency panic protocol executed. Reference ticket: ${ticketId}`);
+    this.sendToUser(userId, BotTemplates.emergencyPanicExecuted());
   }
 
   dispatchAdminEscalation(ticketId: string, priority: string, details: string) {
@@ -89,33 +90,39 @@ export class SystemBot {
   
   async sendToUser(userId: number, message: string) {
     const roomId = `dm_velum_${userId}`;
-    const messageData = {
-      room_id: roomId,
-      content: message,
-      user_id: 999,
-      username: 'Velum',
-      timestamp: new Date().toISOString()
-    };
-    
-    connectedClients.forEach((client) => {
-      if (client.userId === userId && client.ws.readyState === 1) {
-        client.ws.send(JSON.stringify(messageData));
-      }
-    });
+    let created: Awaited<ReturnType<typeof dmService.sendMessage>> | null = null;
 
     try {
-      const loungeId = await getOrCreateDMLounge(roomId);
-      if (loungeId) {
-        await db.insert(dbMessages).values({
-          loungeId,
-          senderId: 999,
-          content: message,
-          encrypted: false
-        });
-      }
+      created = await dmService.sendMessage(999, userId, message, false);
     } catch (err) {
       console.error('[SystemBot] Failed to persist bot message:', err);
     }
+
+    try {
+      await incrementUnread(userId, roomId);
+    } catch (err) {
+      console.error('[SystemBot] Failed to increment unread:', err);
+    }
+
+    const createdAt = created?.created
+      ? (created.created instanceof Date ? created.created.toISOString() : String(created.created))
+      : new Date().toISOString();
+
+    const outFrame = {
+      type: 'dm',
+      id: created?.id,
+      message_id: created?.id != null ? String(created.id) : undefined,
+      db_message_id: created?.id,
+      from: 999,
+      to: userId,
+      body: created?.body || message,
+      enc: false,
+      created: createdAt,
+      sender_username: 'Velum',
+      room_id: roomId
+    };
+
+    broadcastToUserDevices(userId, outFrame);
   }
 }
 

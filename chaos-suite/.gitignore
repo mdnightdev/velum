@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Chaos suite generated data
+chaos-logs/
+chaos-data/
+*.log
+metrics-*.json
+metrics-*.txt
+
+# Credentials and sensitive data
+credentials.json
+agent-states.json
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Temporary files
+tmp/
+temp/

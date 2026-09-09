@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
+import { logger } from './logger.js';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -59,11 +60,23 @@ export class InternalServerError extends AppError {
 
 export const globalErrorHandler: ErrorRequestHandler = (
   err: Error | AppError,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void => {
+  const correlationId =
+    (req as Request & { correlationId?: string }).correlationId ||
+    (req.headers?.['x-correlation-id'] as string | undefined);
+
   if (err instanceof AppError) {
+    if (err.statusCode >= 500 || !err.isOperational) {
+      logger.error(err.message, {
+        correlationId,
+        statusCode: err.statusCode,
+        stack: err.stack,
+        route: req.originalUrl || req.url,
+      });
+    }
     res.status(err.statusCode).json({
       error: err.message,
       ...(err.details ? { details: err.details } : {})
@@ -84,7 +97,7 @@ export const globalErrorHandler: ErrorRequestHandler = (
     (err as any)?.code === 'ECONNREFUSED';
 
   if (isDbConnError) {
-    console.error('[DATABASE CONNECTIVITY ERROR]', err.message || err);
+    logger.error('Database connectivity error', { error: err.message || err, correlationId });
     res.status(503).json({
       error: 'Database connection is temporarily unavailable. Please try again shortly.',
       code: 'DB_CONNECTIVITY_ERROR'
@@ -92,7 +105,7 @@ export const globalErrorHandler: ErrorRequestHandler = (
     return;
   }
 
-  console.error('[SERVER UNHANDLED ERROR]', err);
+  logger.error('Unhandled server error', { error: err.message || err, stack: err.stack, correlationId });
   res.status(500).json({
     error: 'An internal server error occurred.'
   });

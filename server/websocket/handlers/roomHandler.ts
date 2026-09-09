@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import type { ClientConnection } from '../types.js';
 import { roomMembers } from '../connectionManager.js';
-import { markAllMessagesRead, getOrCreateDMLounge, getLoungeIdFromRoomId } from '../unreadManager.js';
+import { markAllMessagesRead, getLoungeIdFromRoomId } from '../unreadManager.js';
 import { db, executeWithRetry } from '../../v2/db/client.js';
 import { lounges, messages as dbMessages } from '../../v2/db/schema/lounges.js';
 import { users, messageReactions } from '../../v2/db/schema/index.js';
@@ -22,19 +22,17 @@ export async function handleJoinRoom(client: ClientConnection, roomId: string) {
 
   await markAllMessagesRead(client.userId, roomId);
 
+  // If DM room, direct message sync happens via /v2/dm/:peerId, no lounge lookup needed
+  if (roomId.startsWith('dm_')) {
+    return;
+  }
+
   try {
     let targetLoungeId: number | null = null;
-    let isDM = false;
-    if (roomId.startsWith('dm_')) {
-      targetLoungeId = await getOrCreateDMLounge(roomId);
-      isDM = true;
-    } else {
-      const loungeList = await executeWithRetry(() => db.select().from(lounges));
-      const targetLounge = loungeList.find(l => l.slug === roomId || l.id.toString() === roomId);
-      if (targetLounge) {
-        targetLoungeId = targetLounge.id;
-        isDM = targetLounge.type === 'dm';
-      }
+    const loungeList = await executeWithRetry(() => db.select().from(lounges));
+    const targetLounge = loungeList.find(l => l.slug === roomId || l.id.toString() === roomId);
+    if (targetLounge) {
+      targetLoungeId = targetLounge.id;
     }
 
     if (targetLoungeId) {
@@ -117,42 +115,19 @@ export async function handleJoinRoom(client: ClientConnection, roomId: string) {
       client.ws.send(JSON.stringify({
         type: 'history',
         room_id: roomId,
-        messages: msgList.reverse().map(m => {
-          const deliveredTo = m.delivered_to ? m.delivered_to.split(',').map(Number).filter(id => !isNaN(id)) : [];
-          const readBy = m.read_by ? m.read_by.split(',').map(Number).filter(id => !isNaN(id)) : [];
-          let status = 'sent';
-          if (isDM) {
-            if (m.user_id === client.userId) {
-              const receiverId = deliveredTo.find(id => id !== client.userId) || readBy.find(id => id !== client.userId);
-              if (receiverId && readBy.includes(receiverId)) {
-                status = 'read';
-              } else if (receiverId && deliveredTo.includes(receiverId)) {
-                status = 'delivered';
-              }
-            } else {
-              if (readBy.includes(client.userId)) {
-                status = 'read';
-              } else if (deliveredTo.includes(client.userId)) {
-                status = 'delivered';
-              }
-            }
-          }
-          
-          return {
-            ...m,
-            message_id: String(m.message_id),
-            room_id: roomId,
-            lounge_id: targetLoungeId!.toString(),
-            sequence_id: m.sequence_id,
-            client_msg_id: m.client_msg_id,
-            is_encrypted: !!m.is_encrypted,
-            is_edited: !!m.is_edited,
-            edited_at: m.edited_at,
-            reactions: m.reactions || {},
-            status: isDM ? status : undefined,
-            db_message_id: m.message_id
-          };
-        })
+        messages: msgList.reverse().map(m => ({
+          ...m,
+          message_id: String(m.message_id),
+          room_id: roomId,
+          lounge_id: targetLoungeId!.toString(),
+          sequence_id: m.sequence_id,
+          client_msg_id: m.client_msg_id,
+          is_encrypted: !!m.is_encrypted,
+          is_edited: !!m.is_edited,
+          edited_at: m.edited_at,
+          reactions: m.reactions || {},
+          db_message_id: m.message_id
+        }))
       }));
     }
   } catch (err) {

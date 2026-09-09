@@ -1,23 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, Menu, ChevronLeft, Search, Clock, Info } from 'lucide-react';
+import { Plus, Send, MessageSquare, Tag, Trash2, ChevronDown, Check, ChevronUp, MessageCircle, ChevronLeft, Search, Clock } from 'lucide-react';
+import { velumToast } from '../../utils/toast';
 import { Ticket } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
-import { useResponsiveLayout } from '../../hooks/useResponsive';
+import { getSessionId } from '../../utils/auth';
 
 interface TicketsMainDashboardProps {
   currentUserId: number;
   isDark?: boolean;
-  onToggleSidebar?: () => void;
 }
 
 export default function TicketsMainDashboard({
   currentUserId,
-  isDark = true,
-  onToggleSidebar
+  isDark = true
 }: TicketsMainDashboardProps) {
   const { t } = useLanguage();
-  const { isMobile: _isMobile, isTablet } = useResponsiveLayout();
-  const isMobile = _isMobile || isTablet;
+  const isMobile = true;
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
@@ -31,12 +29,10 @@ export default function TicketsMainDashboard({
   const [loading, setLoading] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  
   const dropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchSessionId = () => sessionStorage.getItem('velum-sessionId') || localStorage.getItem('velum-sessionId') || '';
+  const fetchSessionId = () => getSessionId();
 
   const categories = [
     { value: 'general_support', label: 'General Support' },
@@ -49,11 +45,6 @@ export default function TicketsMainDashboard({
   const stripSystemTags = (str?: string | null): string => {
     if (!str) return '';
     return str.replace(/\[Forwarded Details \/ Encrypted Metadata\]:\s*/gi, '').trim();
-  };
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
   };
 
   const loadTickets = async () => {
@@ -119,15 +110,15 @@ export default function TicketsMainDashboard({
         setReason('');
         setCredentials('');
         setIssueType('general_support');
-        showToast('Support ticket submitted successfully.');
+        velumToast.success('Support ticket submitted successfully.');
         await loadTickets();
         setIsCreating(false);
       } else {
         const data = await res.json();
-        showToast(data.error || 'Failed to submit ticket.');
+        velumToast.error(data.error || 'Failed to submit ticket.');
       }
     } catch (err) {
-      showToast('Network error occurred while submitting ticket.');
+      velumToast.error('Network error occurred while submitting ticket.');
     } finally {
       setIsSubmitting(false);
     }
@@ -148,10 +139,10 @@ export default function TicketsMainDashboard({
           loadTickets();
         } else {
           const data = await res.json();
-          alert(data.error || 'Failed to submit reply.');
+          velumToast.error(data.error || 'Failed to submit reply.');
         }
       } catch (err) {
-        alert('Network error occurred while submitting reply.');
+        velumToast.error('Network error occurred while submitting reply.');
       }
     }
   };
@@ -166,32 +157,23 @@ export default function TicketsMainDashboard({
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
-        showToast('Ticket deleted permanently.');
+        velumToast.success('Ticket deleted permanently.');
         if (activeTicketId === ticketId) setActiveTicketId(null);
         loadTickets();
       } else {
         const data = await res.json();
-        showToast(data.error || 'Failed to delete ticket.');
+        velumToast.error(data.error || 'Failed to delete ticket.');
       }
     } catch (err) {
-      showToast('Network error occurred while deleting ticket.');
+      velumToast.error('Network error occurred while deleting ticket.');
     }
   };
 
-  // --- RENDERING ---
 
   const renderTicketList = () => (
     <div className={`flex flex-col h-full bg-velum-850 border-r border-white/5 ${isMobile && (activeTicketId || isCreating) ? 'hidden' : 'w-full md:w-80 flex-shrink-0'}`}>
       <div className="p-4 border-b border-white/5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          {onToggleSidebar && isMobile && (
-            <button 
-              onClick={onToggleSidebar} 
-              className="p-1.5 -ml-1.5 rounded-lg text-text-secondary hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-          )}
           <h2 className="text-sm font-bold uppercase tracking-widest text-text-primary">Support Tickets</h2>
         </div>
         <button 
@@ -493,14 +475,6 @@ export default function TicketsMainDashboard({
 
   return (
     <div className="flex h-full w-full bg-velum-900 overflow-hidden relative">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-velum-800 border border-white/10 shadow-2xl rounded-full px-5 py-2.5 flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
-          <Info className="w-4 h-4 text-accent" />
-          <span className="text-xs font-semibold text-text-primary">{toastMessage}</span>
-        </div>
-      )}
-
       {renderTicketList()}
       {renderActiveTicket()}
     </div>

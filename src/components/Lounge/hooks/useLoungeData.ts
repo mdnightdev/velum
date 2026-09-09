@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useLoungeSettings } from './useLoungeSettings';
 import { streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
+import { getSessionId } from '../../../utils/auth';
+import { storage } from '../../../services/storageService';
+import { velumToast } from '../../../utils/toast';
 
 interface UseLoungeDataOptions {
   loungeId: string;
@@ -21,8 +24,7 @@ export function useLoungeData({
 }: UseLoungeDataOptions) {
   const getLoungeCache = (id: string) => {
     try {
-      const raw = localStorage.getItem(`velum_cache_lounge_${id}`);
-      if (raw) return JSON.parse(raw);
+      return storage.getItem<any>(`velum_cache_lounge_${id}`) || storage.getCache<any>(id);
     } catch {}
     return null;
   };
@@ -103,7 +105,7 @@ export function useLoungeData({
 
   const fetchRooms = async () => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/rooms`, {
         headers: { 'Authorization': `Bearer ${sid}` }
       });
@@ -122,7 +124,7 @@ export function useLoungeData({
 
   const fetchJoinRequests = async () => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/requests`, {
         headers: { 'Authorization': `Bearer ${sid}` }
       });
@@ -140,7 +142,7 @@ export function useLoungeData({
 
   const fetchInvites = async () => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/invites`, {
         headers: { 'Authorization': `Bearer ${sid}` }
       });
@@ -166,14 +168,14 @@ export function useLoungeData({
     try {
       let finalIconUrl = editIconUrl;
       if (iconFile) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(iconFile, 'avatars', 'webp');
+        const uploadedUrl = await streamFileDirectToCloudStorage(iconFile, 'avatars', iconFile.type.split('/')[1] || 'webp');
         if (uploadedUrl) {
           finalIconUrl = uploadedUrl;
           setEditIconUrl(uploadedUrl);
         }
       }
 
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}`, {
         method: 'PUT',
         headers: {
@@ -202,7 +204,7 @@ export function useLoungeData({
 
   const handleReviewRequest = async (requestId: string, approve: boolean) => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch('/v2/lounges/apply/review', {
         method: 'POST',
         headers: {
@@ -228,7 +230,7 @@ export function useLoungeData({
 
   const handleUpdateRole = async (targetUserId: number, newRole: string) => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/members/${targetUserId}`, {
         method: 'PUT',
         headers: {
@@ -254,7 +256,7 @@ export function useLoungeData({
   const handleApplySanction = async () => {
     if (!activeSanctionUserId || !showSanctionDialog) return;
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch('/v2/lounges/sanction', {
         method: 'POST',
         headers: {
@@ -281,7 +283,7 @@ export function useLoungeData({
         }
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to apply sanction.');
+        velumToast.error(err.error || 'Failed to apply sanction.');
       }
     } catch (err) {
       console.error('Error sanctioning member:', err);
@@ -293,7 +295,7 @@ export function useLoungeData({
     setDirectAddError('');
     setDirectAddSuccess('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/members/add`, {
         method: 'POST',
         headers: {
@@ -327,7 +329,7 @@ export function useLoungeData({
 
   const handleCreateInviteCode = async () => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/invites`, {
         method: 'POST',
         headers: {
@@ -353,7 +355,7 @@ export function useLoungeData({
 
   const handleRevokeInviteCode = async (inviteId: string) => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/invites/${inviteId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${sid}` }
@@ -375,7 +377,7 @@ export function useLoungeData({
     setIsCreatingRoom(true);
     setStatusMessage('');
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${loungeId}/sublounges`, {
         method: 'POST',
         headers: {
@@ -425,7 +427,7 @@ export function useLoungeData({
 
     const loadWorkspace = async () => {
       try {
-        const sid = sessionStorage.getItem('velum-sessionId') || '';
+        const sid = getSessionId();
         const headers = { 'Authorization': `Bearer ${sid}` };
 
         const [roomsRes, membersRes, detailsRes, listRes] = await Promise.allSettled([
@@ -472,11 +474,11 @@ export function useLoungeData({
         }
 
         try {
-          localStorage.setItem(`velum_cache_lounge_${loungeId}`, JSON.stringify({
+          storage.setItem(`velum_cache_lounge_${loungeId}`, {
             rooms: fetchedRooms,
             members: fetchedMembers,
             details: fetchedDetails
-          }));
+          });
         } catch {}
 
       } catch (err) {
@@ -498,8 +500,7 @@ export function useLoungeData({
   const sysAdminRoles = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
   const storedUser = (() => {
     try {
-      const u = sessionStorage.getItem('velum_user');
-      return u ? JSON.parse(u) : null;
+      return storage.getItem<any>('velum-user') || storage.getItem<any>('velum_user');
     } catch {
       return null;
     }
@@ -525,7 +526,7 @@ export function useLoungeData({
   const handleDeleteLounge = async (targetId?: string | number): Promise<boolean> => {
     const idToDelete = targetId || loungeId;
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${idToDelete}`, {
         method: 'DELETE',
         headers: {
@@ -543,19 +544,19 @@ export function useLoungeData({
         return true;
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to delete lounge.');
+        velumToast.error(err.error || 'Failed to delete lounge.');
         return false;
       }
     } catch (err) {
       console.error('Error deleting lounge:', err);
-      alert('Error deleting lounge.');
+      velumToast.error('Error deleting lounge.');
       return false;
     }
   };
 
   const handleDeleteRoom = async (roomId: string | number): Promise<boolean> => {
     try {
-      const sid = sessionStorage.getItem('velum-sessionId') || '';
+      const sid = getSessionId();
       const res = await fetch(`/v2/lounges/${roomId}`, {
         method: 'DELETE',
         headers: {
@@ -573,12 +574,12 @@ export function useLoungeData({
         return true;
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to delete room.');
+        velumToast.error(err.error || 'Failed to delete room.');
         return false;
       }
     } catch (err) {
       console.error('Error deleting room:', err);
-      alert('Error deleting room.');
+      velumToast.error('Error deleting room.');
       return false;
     }
   };
@@ -586,6 +587,7 @@ export function useLoungeData({
   return {
     rooms,
     members,
+    setMembers,
     loungeDetails,
     loungeList,
     isLoadingLounge,

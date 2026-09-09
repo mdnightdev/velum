@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Search, Filter, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { getSessionId } from '../utils/auth';
+import { velumToast } from '../utils/toast';
 
 interface AdminVerificationViewProps {
   adminRole: 'SUPPORT_ADMIN' | 'LOGIN_ADMIN' | 'CLI_ADMIN';
-  c: any;
 }
 
-export default function AdminVerificationView({ adminRole, c }: AdminVerificationViewProps) {
+export default function AdminVerificationView({ adminRole }: AdminVerificationViewProps) {
   const [activeTab, setActiveTab] = useState<'LISTINGS' | 'DISPUTES'>('LISTINGS');
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +22,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
   const loadVerificationQueue = async () => {
     try {
       setLoading(true);
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch('/v2/admin/verifications', {
         headers: { 'Authorization': `Bearer ${sId}` }
       });
@@ -59,7 +60,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
   const handleReview = async (listingId: string, decision: 'APPROVED' | 'REJECTED') => {
     if (!window.confirm(`Are you sure you want to mark this listing as ${decision}?`)) return;
     try {
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch(`/v2/admin/verifications/${listingId}/review`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
@@ -67,18 +68,20 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
       });
       if (res.ok) {
         loadVerificationQueue();
+        velumToast.success(`Listing marked as ${decision}.`);
       } else {
-        alert('Failed to submit review');
+        velumToast.error('Failed to submit review');
       }
     } catch (e) {
       console.error(e);
+      velumToast.error('Network error submitting review');
     }
   };
 
   const handleResolveDispute = async (chatId: string, resolution: string, penalty: string) => {
     try {
       setLoading(true);
-      const sId = sessionStorage.getItem('velum-sessionId');
+      const sId = getSessionId();
       const res = await fetch(`/v2/marketplace/support-chats/${chatId}/resolve`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
@@ -86,14 +89,15 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || 'Failed to resolve dispute');
+        velumToast.error(data.error || 'Failed to resolve dispute');
       } else {
         loadVerificationQueue();
         setSelectedDispute(null);
+        velumToast.success('Dispute resolved successfully');
       }
     } catch (e) {
       console.error(e);
-      alert('Network error resolving dispute');
+      velumToast.error('Network error resolving dispute');
     } finally {
       setLoading(false);
     }
@@ -144,18 +148,15 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
 
       {activeTab === 'LISTINGS' && (
         <>
-          <div className={c.bgCard}>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="bg-velum-800 border border-velum-600 rounded-xl p-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-sans font-black tracking-tight text-white uppercase flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-alert-success" />
-                  Listing Verification Queue
+                <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-accent" />
+                  Listing Verifications
                 </h2>
-                <p className="text-[10px] font-mono text-text-secondary mt-1">
-                  REVIEW AND AUDIT MARKETPLACE ASSETS
-                </p>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
                   <input
@@ -163,13 +164,13 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
                     placeholder="Search listings..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9 pr-4 py-1.5 text-xs bg-velum-900 border border-white-10 rounded-xl text-white outline-none focus:border-accent w-48"
+                    className="pl-9 pr-3 py-1.5 text-xs bg-velum-750 border border-velum-600 rounded-xl text-text-primary outline-none focus:border-accent/40 w-48"
                   />
                 </div>
                 <select
                   value={filter}
                   onChange={(e) => setFilter(e.target.value as any)}
-                  className="px-3 py-1.5 text-xs bg-velum-900 border border-white-10 rounded-xl text-white outline-none focus:border-accent"
+                  className="px-3 py-1.5 text-xs bg-velum-750 border border-velum-600 rounded-xl text-text-primary outline-none focus:border-accent/40 cursor-pointer"
                 >
                   <option value="PENDING_REVIEW">Pending Review</option>
                   <option value="APPROVED">Approved</option>
@@ -178,7 +179,7 @@ export default function AdminVerificationView({ adminRole, c }: AdminVerificatio
               </div>
             </div>
           </div>
-          <div className={c.bgCard + " flex-1 overflow-auto scrollbar-thin scrollbar-thumb-white-10 scrollbar-track-transparent"}>
+          <div className="bg-velum-800 border border-velum-600 rounded-xl p-4 flex-1 overflow-auto">
             {loading ? (
               <div className="p-8 text-center text-xs font-mono text-text-secondary animate-pulse">Loading queue...</div>
             ) : filteredListings.length === 0 ? (

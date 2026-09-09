@@ -22,6 +22,8 @@ import AdminBank from './Admin/AdminBank';
 import AdminProfile from './Admin/AdminProfile';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import SystemHealthTab from '../views/AdminControlDesk/SystemHealthTab';
+import { getSessionId } from '../utils/auth';
+import { velumToast } from '../utils/toast';
 
 import logoSvg from '../assets/logo.svg?raw';
 import { Ticket, AuditLog, SuspiciousEvent, Invite, stripAt, Report, ClientDiagnosticLog } from '../types';
@@ -61,20 +63,6 @@ export default function AdminPanel({
   activeRoomId,
   setActiveRoomId
 }: AdminPanelProps) {
-  // Design theme variables
-  const c = {
-    bgPanel: "bg-white/[0.03] backdrop-blur-[var(--blur-backdrop-xl)] border border-white-10 rounded-2xl shadow-xl",
-    bgSubPanel: "bg-white/[0.01] backdrop-blur-[var(--blur-backdrop-md)] border border-white-5 rounded-xl shadow-md",
-    bgInput: "bg-white/[0.04] border border-white-10 text-text-primary focus:border-accent/40 placeholder:text-text-disabled rounded-lg p-2.5 outline-none transition-all",
-    border: "border-white-10",
-    textMain: "text-text-primary",
-    textMuted: "text-text-secondary",
-    statusResolved: "bg-status-online-bg text-status-online",
-    statusOpen: "bg-status-dnd-bg text-status-dnd",
-    statusPending: "bg-status-away-bg text-status-away",
-    statusEscalated: "bg-accent-10 text-accent border border-accent-20"
-  };
-
   // Sidebar controls
   const { isMobile: _isMobile, isTablet } = useResponsiveLayout();
   const isMobile = _isMobile || isTablet;
@@ -122,10 +110,6 @@ export default function AdminPanel({
   // Profile status
   const [adminProfile, setAdminProfile] = useState<any>(null);
 
-  const getSessionId = (): string => {
-    if (typeof window === 'undefined') return '';
-    return sessionStorage.getItem('velum-sessionId') || '';
-  };
 
   const adminFetch = async (url: string, options: RequestInit = {}) => {
     const sId = getSessionId();
@@ -255,7 +239,7 @@ export default function AdminPanel({
         fetchData();
       }
     } catch {
-      alert('Failed to send reply.');
+      velumToast.error('Failed to send reply.');
     }
   };
 
@@ -300,14 +284,14 @@ export default function AdminPanel({
         if (action === 'approve') {
           setRestoreCode(data.tempCode);
         } else {
-          alert('Ticket denied.');
+          velumToast.info('Ticket denied.');
         }
         fetchData();
       } else {
-        alert(data.error || 'Operation denied.');
+        velumToast.error(data.error || 'Operation denied.');
       }
     } catch {
-      alert('Connection lost.');
+      velumToast.error('Connection lost.');
     }
   };
 
@@ -530,7 +514,7 @@ export default function AdminPanel({
       )}
 
       {/* Main Workspace Frame */}
-      <main className={`flex-1 min-w-0 min-h-0 h-full bg-velum-900 flex flex-col overflow-hidden relative ${activeTab === 'velum_lounge' ? 'p-0' : 'p-6'}`}>
+      <main className={`flex-1 min-w-0 min-h-0 h-full bg-velum-800 flex flex-col overflow-hidden relative ${activeTab === 'velum_lounge' ? 'p-0' : 'p-3 sm:p-4'}`}>
         {activeTab === 'velum_lounge' ? (
           <LoungeWorkspace
             currentUserId={user?.userId}
@@ -554,20 +538,17 @@ export default function AdminPanel({
           />
         ) : (
           <PullToRefresh>
-            <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none pr-1">
-              <div className="lg:hidden flex items-center justify-between pb-4 mb-4 border-b border-white-5 shrink-0">
-                <div className="flex items-center gap-3">
+            <div className="flex-grow w-full overflow-x-hidden overflow-y-auto scrollbar-none">
+              <div className="lg:hidden flex items-center justify-between pt-[env(safe-area-inset-top,0px)] pb-2 mb-2 border-b border-velum-600 shrink-0">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsMobileDrawerOpen(true)}
-                    className="p-2 rounded-xl bg-white-5 text-text-secondary hover:text-white hover:bg-white-10 transition cursor-pointer"
+                    className="p-1.5 rounded-lg bg-velum-800 text-text-secondary hover:text-text-primary hover:bg-velum-700 transition cursor-pointer"
                     aria-label="Open admin sidebar menu"
                     title="Open Navigation"
                   >
-                    <Menu className="w-5 h-5" />
+                    <Menu className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-bold text-text-primary capitalize font-mono tracking-wider">
-                    {activeTab?.replace('_', ' ')}
-                  </span>
                 </div>
               </div>
 
@@ -576,7 +557,6 @@ export default function AdminPanel({
                   adminRole={adminRole as any}
                   adminFetch={adminFetch}
                   onTabChange={selectTab}
-                  c={c}
                 />
               )}
 
@@ -591,7 +571,6 @@ export default function AdminPanel({
                 adminRole={adminRole as any}
                 adminFetch={adminFetch}
                 fetchData={fetchData}
-                c={c}
                 isLoading={isLoadingData}
               />
             )}
@@ -615,7 +594,6 @@ export default function AdminPanel({
                 handleTicketReply={handleTicketReply}
                 restoreCode={restoreCode}
                 user={user}
-                c={c}
               />
             )}
 
@@ -638,21 +616,18 @@ export default function AdminPanel({
                 applyQuickSanction={applyQuickSanction}
                 adminFetch={adminFetch}
                 fetchData={fetchData}
-                c={c}
               />
             )}
 
             {activeTab === 'verifications' && (
               <AdminVerificationView
                 adminRole={adminRole as any}
-                c={c}
               />
             )}
 
             {activeTab === 'health' && (
               <SystemHealthTab
                 adminFetch={adminFetch}
-                c={c}
               />
             )}
 
@@ -663,7 +638,6 @@ export default function AdminPanel({
                 adminFetch={adminFetch}
                 fetchData={fetchData}
                 approveQuarantineAccess={approveQuarantineAccess}
-                c={c}
               />
             )}
 
@@ -673,7 +647,6 @@ export default function AdminPanel({
                 logs={logs}
                 initialDiagLogs={diagnosticLogs}
                 adminFetch={adminFetch}
-                c={c}
               />
             )}
 
@@ -693,7 +666,6 @@ export default function AdminPanel({
                 adminProfile={adminProfile}
                 adminFetch={adminFetch}
                 fetchData={fetchData}
-                c={c}
               />
             )}
           </div>

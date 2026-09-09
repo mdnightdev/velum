@@ -2,96 +2,85 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import { SecureStorage } from './utils/SecureStorage.ts';
+import { installDiagnosticBuffers } from './utils/diagnostics';
 
-// Sync sessionStorage with localStorage for velum- keys securely
-SecureStorage.initializeOverrides();
+installDiagnosticBuffers();
 
+// Automatically route relative API and WebSocket requests to local node backend on port 3000 when inside Capacitor APK
+if (typeof window !== 'undefined') {
+  const nativeFetch = window.fetch;
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    let url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    const isCapacitorOrLocalApk =
+      (window as any).Capacitor?.isNativePlatform?.() ||
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'ionic:' ||
+      (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173');
 
-// Programmatic site cache reset handler (very helpful for mobile devices)
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.has('clear') || urlParams.has('reset')) {
-  localStorage.clear();
-  sessionStorage.clear();
-  
-  const reload = () => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        const unregisterPromises = registrations.map(reg => reg.unregister());
-        Promise.all(unregisterPromises).then(() => {
-          if (window.caches) {
-            caches.keys().then((keys) => {
-              Promise.all(keys.map(key => caches.delete(key))).then(() => {
-                window.location.href = window.location.origin;
-              });
-            });
-          } else {
-            window.location.href = window.location.origin;
-          }
-        });
-      });
-    } else {
-      window.location.href = window.location.origin;
+    const backendBase = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+    if (isCapacitorOrLocalApk && (url.startsWith('/v2/') || url.startsWith('/api/') || url.startsWith('/uploads/'))) {
+      const cleanBase = backendBase.replace(/\/+$/, '');
+      const targetUrl = `${cleanBase}${url.startsWith('/') ? '' : '/'}${url}`;
+      if (typeof input === 'string' || input instanceof URL) {
+        input = targetUrl;
+      } else {
+        input = new Request(targetUrl, input);
+      }
     }
+    return nativeFetch.call(window, input, init);
   };
-
-  try {
-    let completed = 0;
-    const checkDone = () => {
-      completed++;
-      if (completed === 2) reload();
-    };
-    const r1 = window.indexedDB.deleteDatabase('velum_local_storage');
-    const r2 = window.indexedDB.deleteDatabase('velum_crypto_vault');
-    r1.onsuccess = checkDone;
-    r1.onerror = checkDone;
-    r1.onblocked = checkDone;
-    r2.onsuccess = checkDone;
-    r2.onerror = checkDone;
-    r2.onblocked = checkDone;
-  } catch (e) {
-    console.error('Failed to delete indexedDB', e);
-    reload();
-  }
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// Programmatic site cache & storage reset handler
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('clear') || urlParams.has('reset')) {
+  (async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+  
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
 
-if ('serviceWorker' in navigator) {
-  if (import.meta.env.PROD) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then((reg) => console.log('Service Worker registered successfully:', reg.scope))
-        .catch((err) => console.error('Service Worker registration failed:', err));
-    });
-  } else {
-    // In development mode, unregister any existing service worker and clear caches to prevent stale caching issues
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      let needsReload = false;
-      const unregisterPromises = registrations.map((registration) => {
-        return registration.unregister().then((success) => {
-          if (success) {
-            console.log('[DEV] Service Worker unregistered successfully to prevent stale caching.');
-            needsReload = true;
-          }
-        });
-      });
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
 
-      Promise.all(unregisterPromises).then(() => {
-        if (window.caches) {
-          caches.keys().then((keys) => {
-            Promise.all(keys.map(key => caches.delete(key))).then(() => {
-              if (needsReload) {
-                console.log('[DEV] Caches cleared. New assets will be fetched directly.');
-              }
-            });
-          });
-        }
+    if (window.indexedDB && window.indexedDB.databases) {
+      const dbs = await window.indexedDB.databases();
+      for (const db of dbs) {
+        if (db.name) window.indexedDB.deleteDatabase(db.name);
+      }
+    }
+
+    window.location.replace(window.location.origin);
+  })().catch(() => {
+    window.location.replace(window.location.origin);
+  });
+} else {
+  // Service worker registration
+  if ('serviceWorker' in navigator) {
+    if (import.meta.env.PROD) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(console.error);
       });
-    });
+    } else {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(r => r.unregister());
+      });
+    }
+  }
+
+  const rootElement = document.getElementById('root');
+  if (rootElement) {
+    const root = (rootElement as any)._reactRoot || ReactDOM.createRoot(rootElement);
+    (rootElement as any)._reactRoot = root;
+    root.render(
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
   }
 }
