@@ -17,6 +17,19 @@ const isValidPgUrl = (str?: string) => {
 
 const defaultLocalDbUrl = 'postgres://postgres:postgres@localhost:5432/velum';
 
+/**
+ * Railway injects RAILWAY_PUBLIC_DOMAIN, but the public hostname is not known
+ * until the service exists. Fill the URL-shaped settings from it so the first
+ * deploy boots without a manual round trip. Explicit values always win.
+ */
+const railwayDomain = (process.env.RAILWAY_PUBLIC_DOMAIN || '').trim();
+if (railwayDomain) {
+  const origin = `https://${railwayDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '')}`;
+  process.env.APP_URL ||= origin;
+  process.env.WEBAUTHN_ORIGIN ||= origin;
+  process.env.WEBAUTHN_RP_ID ||= new URL(origin).hostname;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform((val) => parseInt(val, 10)).default(3000),

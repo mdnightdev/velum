@@ -39,14 +39,21 @@ async function packageOta() {
   const buildTime = new Date().toISOString();
 
   // 2. Create bundle.zip using zip CLI or python fallback
+  let bundled = false;
   try {
     if (fs.existsSync(ZIP_PATH)) {
       fs.unlinkSync(ZIP_PATH);
     }
     execSync(`cd "${DIST_DIR}" && zip -r -q "${ZIP_PATH}" .`, { stdio: 'pipe' });
-  } catch (err) {
-    // Fallback using python zip
-    execSync(`python3 -c "import shutil; shutil.make_archive('${path.join(OTA_DIR, 'bundle')}', 'zip', '${DIST_DIR}')"`, { stdio: 'pipe' });
+    bundled = true;
+  } catch {
+    try {
+      execSync(`python3 -c "import shutil; shutil.make_archive('${path.join(OTA_DIR, 'bundle')}', 'zip', '${DIST_DIR}')"`, { stdio: 'pipe' });
+      bundled = true;
+    } catch {
+      // OTA is an optional delivery channel; a missing archiver must not fail the deploy build.
+      console.warn('[OTA] No zip or python3 archiver available. Skipping bundle; the web build is unaffected.');
+    }
   }
 
   // 3. Write manifest.json
@@ -59,10 +66,10 @@ async function packageOta() {
   };
 
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf-8');
-  console.log(`[OTA] Live update bundle created successfully:`);
+  console.log(bundled ? '[OTA] Live update bundle created successfully:' : '[OTA] Manifest written without a bundle:');
   console.log(`      Build Time: ${buildTime}`);
   console.log(`      Bundle Hash: ${bundleHash.substring(0, 12)}...`);
-  console.log(`      Output: ${ZIP_PATH}`);
+  if (bundled) console.log(`      Output: ${ZIP_PATH}`);
 }
 
 packageOta().catch(console.error);

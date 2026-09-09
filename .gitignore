@@ -5,6 +5,7 @@ node_modules/
 .env.encrypted
 set_secrets.sh
 **/set_secrets.sh
+.agents/
 .secrets.key
 dist/
 logs/

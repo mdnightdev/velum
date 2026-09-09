@@ -2,6 +2,9 @@
   "name": "velum",
   "version": "2.2.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx watch --exclude 'server/db/**' --exclude 'server/logs/**' server/index.ts",
     "start": "node dist/server.cjs",
