@@ -18,13 +18,15 @@ export const dms = pgTable('dms', {
   readAt: timestamp('read_at', { withTimezone: true, mode: 'date' }),
   deliveredAt: timestamp('delivered_at', { withTimezone: true, mode: 'date' }),
   isPinned: boolean('is_pinned').default(false).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
   created: timestamp('created', { withTimezone: true, mode: 'date' })
     .defaultNow()
     .notNull()
 }, (table) => [
   index('idx_dms_pair').on(table.sender, table.peer),
   index('idx_dms_peer_sender').on(table.peer, table.sender),
-  index('idx_dms_created').on(table.created)
+  index('idx_dms_created').on(table.created),
+  index('idx_dms_expires_at').on(table.expiresAt)
 ]);
 
 /**

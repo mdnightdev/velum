@@ -3,6 +3,15 @@ import { persist, createJSONStorage, type StateStorage } from 'zustand/middlewar
 import { Message } from '../types';
 import { isTabSessionScope } from '../services/storageService';
 import { isUsablePlaintext, mergeMessagePlaintext } from '../utils/messagePlaintext';
+import {
+  collectRoomKeysForMessage,
+  decrementUnreadForAliases,
+  isUnreadIncoming,
+  messageIdentityKeys,
+  messageRefEquals,
+  purgeExpiredChatState,
+  recomputeLastMessagesAfterRemoval,
+} from '../utils/roomPreview';
 
 /** Tab-scoped chat persist so multi-account tabs do not share lastMessages/unreads. */
 const tabAwareChatStorage: StateStorage = {
@@ -32,6 +41,8 @@ export interface ChatStoreState {
   lastMessages: Record<string, Message>;
   unreadCounts: Record<string, number>;
   roomMaxSeq: Record<string, number>;
+  /** Session-only: purged/deleted ids so relationships last_message cannot resurrect them. */
+  forgottenPreviewIds: Record<string, true>;
 
   // Actions
   setActiveRoomId: (roomId: string) => void;
@@ -44,6 +55,14 @@ export interface ChatStoreState {
   updateMessage: (matcher: (m: Message) => boolean, updater: (m: Message) => Message) => void;
   updatePlaintexts: (keyToPlaintext: Record<string, string>) => void;
   removeMessage: (idOrClientMsgId: string | number) => void;
+  /** Remove message and recompute lastMessages (+ optional unread) for its room. */
+  removeMessageRecompute: (
+    idOrClientMsgId: string | number,
+    opts?: { currentUserId?: number | null; roomId?: string | null; adjustUnread?: boolean }
+  ) => Message | null;
+  /** Purge expired disappearing messages from list + lastMessages; fix unread. */
+  purgeExpired: (nowMs?: number, currentUserId?: number | null) => Message[];
+  forgetPreviewIds: (ids: Array<string | number | null | undefined>) => void;
   clearRoomMessages: (roomId: string) => void;
   setLastMessage: (roomId: string, message: Message) => void;
   setLastMessages: (messages: Record<string, Message> | ((prev: Record<string, Message>) => Record<string, Message>)) => void;
@@ -65,6 +84,7 @@ export const useChatStore = create<ChatStoreState>()(
       lastMessages: {},
       unreadCounts: {},
       roomMaxSeq: {},
+      forgottenPreviewIds: {},
 
       setActiveRoomId: (roomId) => set({ activeRoomId: roomId }),
       setActiveChatPeer: (peer) => set({ activeChatPeer: peer }),
@@ -194,13 +214,108 @@ export const useChatStore = create<ChatStoreState>()(
       removeMessage: (idOrClientMsgId) => {
         const targetStr = String(idOrClientMsgId);
         set((state) => ({
-          messages: state.messages.filter(
-            (m) =>
-              String(m.id) !== targetStr &&
-              String(m.client_msg_id) !== targetStr &&
-              String(m.message_id) !== targetStr
-          )
+          messages: state.messages.filter((m) => !messageRefEquals(m, targetStr))
         }));
+      },
+
+      removeMessageRecompute: (idOrClientMsgId, opts) => {
+        const targetStr = String(idOrClientMsgId);
+        const currentUserId = opts?.currentUserId;
+        let removed: Message | null = null;
+
+        set((state) => {
+          removed =
+            state.messages.find((m) => messageRefEquals(m, targetStr)) ||
+            Object.values(state.lastMessages).find((m) => messageRefEquals(m, targetStr)) ||
+            null;
+
+          if (!removed && opts?.roomId) {
+            removed = {
+              id: targetStr,
+              message_id: targetStr,
+              room_id: opts.roomId,
+            } as Message;
+          }
+          if (!removed) {
+            return {
+              messages: state.messages.filter((m) => !messageRefEquals(m, targetStr)),
+            };
+          }
+
+          const messages = state.messages.filter((m) => !messageRefEquals(m, targetStr));
+          const lastMessages = recomputeLastMessagesAfterRemoval(
+            state.lastMessages,
+            messages,
+            removed,
+            currentUserId,
+            opts?.roomId
+          );
+
+          let unreadCounts = state.unreadCounts;
+          if (opts?.adjustUnread && isUnreadIncoming(removed, currentUserId)) {
+            unreadCounts = decrementUnreadForAliases(
+              unreadCounts,
+              collectRoomKeysForMessage(removed, currentUserId, opts?.roomId),
+              1
+            );
+          }
+
+          const forgottenPreviewIds = { ...state.forgottenPreviewIds };
+          for (const id of messageIdentityKeys(removed)) {
+            forgottenPreviewIds[id] = true;
+          }
+          forgottenPreviewIds[targetStr] = true;
+
+          return { messages, lastMessages, unreadCounts, forgottenPreviewIds };
+        });
+
+        return removed;
+      },
+
+      purgeExpired: (nowMs = Date.now(), currentUserId) => {
+        let purged: Message[] = [];
+        set((state) => {
+          const result = purgeExpiredChatState(
+            {
+              messages: state.messages,
+              lastMessages: state.lastMessages,
+              unreadCounts: state.unreadCounts,
+            },
+            nowMs,
+            currentUserId
+          );
+          purged = result.purged as Message[];
+          if (purged.length === 0) return state;
+          const forgottenPreviewIds = { ...state.forgottenPreviewIds };
+          for (const msg of purged) {
+            for (const id of messageIdentityKeys(msg)) {
+              forgottenPreviewIds[id] = true;
+            }
+          }
+          return {
+            messages: result.messages as Message[],
+            lastMessages: result.lastMessages as Record<string, Message>,
+            unreadCounts: result.unreadCounts,
+            forgottenPreviewIds,
+          };
+        });
+        return purged;
+      },
+
+      forgetPreviewIds: (ids) => {
+        set((state) => {
+          const forgottenPreviewIds = { ...state.forgottenPreviewIds };
+          let changed = false;
+          for (const raw of ids) {
+            if (raw == null || raw === '') continue;
+            const id = String(raw);
+            if (!forgottenPreviewIds[id]) {
+              forgottenPreviewIds[id] = true;
+              changed = true;
+            }
+          }
+          return changed ? { forgottenPreviewIds } : state;
+        });
       },
 
       clearRoomMessages: (roomId) => {
@@ -220,12 +335,19 @@ export const useChatStore = create<ChatStoreState>()(
       },
 
       setLastMessage: (roomId, message) => {
-        set((state) => ({
-          lastMessages: {
-            ...state.lastMessages,
-            [roomId]: message
+        set((state) => {
+          const forgottenPreviewIds = { ...state.forgottenPreviewIds };
+          for (const id of messageIdentityKeys(message)) {
+            delete forgottenPreviewIds[id];
           }
-        }));
+          return {
+            lastMessages: {
+              ...state.lastMessages,
+              [roomId]: message
+            },
+            forgottenPreviewIds,
+          };
+        });
       },
 
       setLastMessages: (updater) => {

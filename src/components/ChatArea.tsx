@@ -27,6 +27,7 @@ import { requestNotificationPermission, dismissDeliveredNotification } from '../
 import { createLogger } from '../utils/logger';
 import { getSessionId } from '../utils/auth';
 import { useMessageSearch } from './Chat/hooks/useMessageSearch';
+import { getPeerDisappearSeconds } from '../utils/dmPeerPrefs';
 
 const log = createLogger('ChatArea');
 
@@ -97,6 +98,21 @@ export default function ChatArea({
   onRequestForward,
 }: ChatAreaProps) {
   const { t } = useLanguage();
+
+  const resolveBurnSeconds = (): number | null =>
+    activeChatPeer?.userId ? getPeerDisappearSeconds(activeChatPeer.userId) : null;
+
+  const sendWithDisappear: typeof onSendMessage = (
+    content,
+    burnSeconds,
+    isEncrypted,
+    targetRoomId,
+    replyTo,
+    clientPlaintext
+  ) => {
+    const burn = burnSeconds != null ? burnSeconds : resolveBurnSeconds();
+    onSendMessage(content, burn, isEncrypted, targetRoomId, replyTo, clientPlaintext);
+  };
 
   const {
     inputText,
@@ -274,7 +290,7 @@ export default function ChatArea({
     docInputRef,
     setSelectedAttachment,
     setFileErrorAlert,
-    onSendMessage,
+    onSendMessage: sendWithDisappear,
     onOpenMediaCompose: (items) => {
       setComposeItems(items);
       setComposeProgress(null);
@@ -298,7 +314,7 @@ export default function ChatArea({
           const voicePayload = `[Voice Note duration:${durationSeconds}s url:${url}]`;
           const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
           const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
-          onSendMessage(voicePayload, null, isEnc, targetRoom, undefined, voicePayload);
+          sendWithDisappear(voicePayload, resolveBurnSeconds(), isEnc, targetRoom, undefined, voicePayload);
         } catch (err) {
           log.error('Audio upload failed', { error: (err as Error).message });
           velumToast.error('Voice note upload failed. Please try again.');
@@ -376,7 +392,7 @@ export default function ChatArea({
 
       const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
       const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
-      onSendMessage(textToSend, null, isEnc, targetRoom, replyMsgId, textToSend);
+      sendWithDisappear(textToSend, resolveBurnSeconds(), isEnc, targetRoom, replyMsgId, textToSend);
       setReplyingToMessage(null);
       setInputText('');
       setSelectedAttachment(null);
@@ -673,7 +689,7 @@ export default function ChatArea({
               const textToSend = `${tokens.join(' ')}${caption ? ` ${caption}` : ''}`.trim();
               const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
               const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
-              onSendMessage(textToSend, null, isEnc, targetRoom, undefined, textToSend);
+              sendWithDisappear(textToSend, resolveBurnSeconds(), isEnc, targetRoom, undefined, textToSend);
               setComposeItems(null);
               setComposeProgress(null);
             } catch (err) {

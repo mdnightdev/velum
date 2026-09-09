@@ -169,3 +169,7 @@ CREATE INDEX IF NOT EXISTS "idx_user_blocks_blocked" ON "user_blocks" USING btre
 
 -- Keep dms.is_pinned in sync if an older dms table lacked it
 ALTER TABLE "dms" ADD COLUMN IF NOT EXISTS "is_pinned" boolean DEFAULT false NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "dms" ADD COLUMN IF NOT EXISTS "expires_at" timestamp with time zone;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_dms_expires_at" ON "dms" USING btree ("expires_at");

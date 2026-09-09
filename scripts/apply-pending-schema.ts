@@ -78,6 +78,9 @@ async function main() {
       ON dm_reactions (message_id, user_id, emoji)
     `);
 
+    await client.query(`ALTER TABLE dms ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_dms_expires_at ON dms (expires_at)`);
+
     console.log('[apply-pending-schema] ok — ops/dm_reactions/blocks applied without truncate');
   } finally {
     await client.end();

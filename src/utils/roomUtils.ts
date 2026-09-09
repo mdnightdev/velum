@@ -1,3 +1,5 @@
+import { isMessageExpired } from './disappearModes';
+
 /**
  * Resolves the target peer user ID from a DM roomId (e.g., 'dm_1022', 'dm_1001_1022', 'dm_velum_123').
  */
@@ -85,23 +87,57 @@ export function messageTimestamp(m: any): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** True latest DM preview across relationship payload + all room-id aliases. */
+function previewIdentityKeys(msg: any): string[] {
+  if (!msg) return [];
+  return [msg.db_message_id, msg.id, msg.message_id, msg.client_msg_id]
+    .filter((v) => v != null && v !== '')
+    .map(String);
+}
+
+function isPreviewIgnored(
+  msg: any,
+  ignoredIds?: ReadonlySet<string> | Record<string, true> | null
+): boolean {
+  if (!msg || !ignoredIds) return false;
+  const keys = previewIdentityKeys(msg);
+  if (keys.length === 0) return false;
+  if (ignoredIds instanceof Set) return keys.some((id) => ignoredIds.has(id));
+  return keys.some((id) => Boolean((ignoredIds as Record<string, true>)[id]));
+}
+
+/**
+ * True latest DM preview. Live store lastMessages win over relationships payload
+ * (server last_message often lacks expires_at and would resurrect purged previews).
+ */
 export function selectLatestDmMessage(
   friendId: number,
   currentUserId: number,
   lastMessages: Record<string, any> | undefined,
-  relationshipLast?: any
+  relationshipLast?: any,
+  ignoredIds?: ReadonlySet<string> | Record<string, true> | null,
+  nowMs: number = Date.now()
 ): any | null {
-  const candidates: any[] = [];
-  if (relationshipLast) candidates.push(relationshipLast);
+  const storeCandidates: any[] = [];
   for (const k of getDmRoomAliases(friendId, currentUserId)) {
     const msg = lastMessages?.[k];
-    if (msg) candidates.push(msg);
+    if (msg && !isMessageExpired(msg, nowMs) && !isPreviewIgnored(msg, ignoredIds)) {
+      storeCandidates.push(msg);
+    }
   }
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, cur) =>
-    messageTimestamp(cur) >= messageTimestamp(best) ? cur : best
-  );
+  if (storeCandidates.length > 0) {
+    return storeCandidates.reduce((best, cur) =>
+      messageTimestamp(cur) >= messageTimestamp(best) ? cur : best
+    );
+  }
+
+  if (
+    relationshipLast &&
+    !isMessageExpired(relationshipLast, nowMs) &&
+    !isPreviewIgnored(relationshipLast, ignoredIds)
+  ) {
+    return relationshipLast;
+  }
+  return null;
 }
 
 /**
@@ -110,11 +146,15 @@ export function selectLatestDmMessage(
  */
 export function mergeLastMessagesMap(
   external: Record<string, any> | undefined,
-  messages: any[] | undefined
+  messages: any[] | undefined,
+  nowMs: number = Date.now()
 ): Record<string, any> {
-  const map: Record<string, any> = { ...(external || {}) };
+  const map: Record<string, any> = {};
+  for (const [k, m] of Object.entries(external || {})) {
+    if (m && !isMessageExpired(m, nowMs)) map[k] = m;
+  }
   for (const m of messages || []) {
-    if (!m) continue;
+    if (!m || isMessageExpired(m, nowMs)) continue;
     const rId = m.room_id || m.lounge_id;
     if (!rId) continue;
     const existing = map[rId];

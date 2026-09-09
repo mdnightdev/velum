@@ -154,6 +154,7 @@ function DirectMainDashboard({
   onLogout
 }: DirectMainDashboardProps) {
   const { t } = useLanguage();
+  const forgottenPreviewIds = useChatStore((s) => s.forgottenPreviewIds);
 
   const relationshipsArray: any[] = (() => {
     let raw: any[] = [];
@@ -254,7 +255,7 @@ function DirectMainDashboard({
     for (const [peerIdStr, delTime] of Object.entries(deletedDms)) {
       const peerId = parseInt(peerIdStr, 10);
       if (!Number.isFinite(peerId)) continue;
-      const last = selectLatestDmMessage(peerId, currentUserId, lastMessages);
+      const last = selectLatestDmMessage(peerId, currentUserId, lastMessages, undefined, forgottenPreviewIds);
       if (last && messageTimestamp(last) > delTime) {
         delete nextMap[peerId];
         changed = true;
@@ -299,11 +300,25 @@ function DirectMainDashboard({
       });
     };
 
+    const onPreviewChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      const peerId = Number(detail.peerId);
+      if (!Number.isFinite(peerId)) return;
+      setDecryptedPreviews((prev) => {
+        if (!(peerId in prev)) return prev;
+        const copy = { ...prev };
+        delete copy[peerId];
+        return copy;
+      });
+    };
+
     window.addEventListener('velum-dm-deleted', onDeleted);
     window.addEventListener('velum-dm-cleared', onCleared);
+    window.addEventListener('velum-dm-preview-changed', onPreviewChanged);
     return () => {
       window.removeEventListener('velum-dm-deleted', onDeleted);
       window.removeEventListener('velum-dm-cleared', onCleared);
+      window.removeEventListener('velum-dm-preview-changed', onPreviewChanged);
     };
   }, [currentUserId]);
 
@@ -407,7 +422,7 @@ function DirectMainDashboard({
         const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
         if (!Number.isFinite(friendId)) continue;
         const candidateKeys = getDmRoomAliases(friendId, currentUserId);
-        const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message);
+        const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message, forgottenPreviewIds);
         if (!last) continue;
 
         const raw = last.content || last.message || last.body || last.text || '';
@@ -485,7 +500,7 @@ function DirectMainDashboard({
     };
     processPreviews();
     return () => { isMounted = false; };
-  }, [relationshipsArray, lastMessages, currentUserId]);
+  }, [relationshipsArray, lastMessages, currentUserId, forgottenPreviewIds]);
 
   const velumRoomIdKey = `dm_velum_${currentUserId}`;
   const velumLastForEffect = lastMessages[velumRoomIdKey];
@@ -714,7 +729,7 @@ function DirectMainDashboard({
       {/* Directory List */}
       <div className="flex-1 overflow-y-auto w-full flex flex-col relative">
         {/* Default Secure VELUM System Contact (only in active tab) */}
-        {filterTab === 'active' && !shouldHideDeletedDm(deletedDms[999], selectLatestDmMessage(999, currentUserId, lastMessages)) && (
+        {filterTab === 'active' && !shouldHideDeletedDm(deletedDms[999], selectLatestDmMessage(999, currentUserId, lastMessages, undefined, forgottenPreviewIds)) && (
           <div
             onClick={() => {
               if (contextPeer?.userId === 999) return;
@@ -795,7 +810,7 @@ function DirectMainDashboard({
             if (!Number.isFinite(friendId)) return false;
             const delTime = deletedDms[friendId];
             if (delTime) {
-              const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message);
+              const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message, forgottenPreviewIds);
               if (shouldHideDeletedDm(delTime, last)) return false;
             }
             const isArchived = archivedUserIds.includes(friendId);
@@ -804,8 +819,8 @@ function DirectMainDashboard({
           .sort((a, b) => {
             const idA = Number(a.friendId || a.userId || a.user_id || a.id);
             const idB = Number(b.friendId || b.userId || b.user_id || b.id);
-            const lastA = selectLatestDmMessage(idA, currentUserId, lastMessages, a.last_message);
-            const lastB = selectLatestDmMessage(idB, currentUserId, lastMessages, b.last_message);
+            const lastA = selectLatestDmMessage(idA, currentUserId, lastMessages, a.last_message, forgottenPreviewIds);
+            const lastB = selectLatestDmMessage(idB, currentUserId, lastMessages, b.last_message, forgottenPreviewIds);
             return messageTimestamp(lastB) - messageTimestamp(lastA);
           })
           .map(r => {
@@ -823,7 +838,7 @@ function DirectMainDashboard({
               typeof r.unread_count === 'number' ? r.unread_count : 0
             );
 
-            const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message);
+            const last = selectLatestDmMessage(friendId, currentUserId, lastMessages, r.last_message, forgottenPreviewIds);
 
             let lastTxt = '';
             let lastTimeStr = '';
@@ -833,21 +848,22 @@ function DirectMainDashboard({
 
             if (last) {
               isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-              const raw = last.content || last.message || last.body || last.text || '';
               const isEnc = !!(last.is_encrypted || last.isEncrypted);
               const actualRoomId = last.room_id || dmRoomId;
               const cachedPreview = decryptedPreviews[friendId];
-              const displayTxt = cachedPreview || (function() {
-                if (last.plaintext || last.client_plaintext) {
-                  return last.plaintext || last.client_plaintext;
-                }
-                if (isStatelessDmEnvelope(raw)) {
+              const displayTxt =
+                last.plaintext ||
+                last.client_plaintext ||
+                cachedPreview ||
+                (function () {
+                const rawInner = last.content || last.message || last.body || last.text || '';
+                if (isStatelessDmEnvelope(rawInner)) {
                   return '';
                 }
                 try {
-                  return decryptMessageSync(raw, actualRoomId, isEnc) || raw || '';
+                  return decryptMessageSync(rawInner, actualRoomId, isEnc) || rawInner || '';
                 } catch {
-                  return raw || '';
+                  return rawInner || '';
                 }
               })();
               lastTxt = getCleanPreview(displayTxt) || '';

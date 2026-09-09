@@ -19,6 +19,18 @@ export class DmService {
    */
   async getConversation(userId: number, peerId: number, limit = 100): Promise<Dm[]> {
     return executeWithRetry(async () => {
+      await this.ensureExpiresAtColumn();
+
+      // Drop expired rows for this pair (best-effort)
+      await db.execute(sql`
+        DELETE FROM dms
+        WHERE expires_at IS NOT NULL AND expires_at <= NOW()
+          AND (
+            (sender = ${userId} AND peer = ${peerId})
+            OR (sender = ${peerId} AND peer = ${userId})
+          )
+      `);
+
       // 1. Fetch requesting user's clear cutoff
       const [clearRecord] = await db
         .select({ lastId: dmClears.lastId })
@@ -68,10 +80,14 @@ export class DmService {
         }
       }
 
-      return messages.map(m => ({
-        ...m,
-        reactions: reactionsMap[m.id] || {}
-      })) as any[];
+      const now = Date.now();
+      return messages
+        .filter((m) => !m.expiresAt || m.expiresAt.getTime() > now)
+        .map(m => ({
+          ...m,
+          expires_at: m.expiresAt ? m.expiresAt.toISOString() : null,
+          reactions: reactionsMap[m.id] || {}
+        })) as any[];
     });
   }
 
@@ -83,7 +99,8 @@ export class DmService {
     peerId: number,
     body: string,
     encrypted = false,
-    replyTo?: number
+    replyTo?: number,
+    expiresInSeconds?: number | null
   ): Promise<Dm> {
     if (await this.isBlockedBetween(senderId, peerId)) {
       const state = await getBlockPairState(senderId, peerId);
@@ -93,6 +110,13 @@ export class DmService {
       throw err;
     }
 
+    await this.ensureExpiresAtColumn();
+
+    const expiresAt =
+      expiresInSeconds != null && Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+        ? new Date(Date.now() + expiresInSeconds * 1000)
+        : null;
+
     return executeWithRetry(async () => {
       const [created] = await db
         .insert(dms)
@@ -101,12 +125,28 @@ export class DmService {
           peer: peerId,
           body,
           encrypted,
-          replyTo: replyTo || null
+          replyTo: replyTo || null,
+          expiresAt,
         })
         .returning();
 
       return created;
     });
+  }
+
+  private expiresColReady: Promise<void> | null = null;
+
+  private async ensureExpiresAtColumn(): Promise<void> {
+    if (!this.expiresColReady) {
+      this.expiresColReady = executeWithRetry(async () => {
+        await db.execute(sql`ALTER TABLE dms ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+        await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_dms_expires_at ON dms (expires_at)`);
+      }).catch((err) => {
+        this.expiresColReady = null;
+        throw err;
+      });
+    }
+    await this.expiresColReady;
   }
 
   /**

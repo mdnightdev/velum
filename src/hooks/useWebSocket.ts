@@ -37,7 +37,7 @@ export function useWebSocket({
   const appendMessage = useChatStore((state) => state.appendMessage);
   const mergeMessages = useChatStore((state) => state.mergeMessages);
   const updateMessage = useChatStore((state) => state.updateMessage);
-  const removeMessage = useChatStore((state) => state.removeMessage);
+  const removeMessageRecompute = useChatStore((state) => state.removeMessageRecompute);
   const clearRoomMessages = useChatStore((state) => state.clearRoomMessages);
   const lastMessages = useChatStore((state) => state.lastMessages);
   const setLastMessage = useChatStore((state) => state.setLastMessage);
@@ -129,7 +129,9 @@ export function useWebSocket({
               is_encrypted: !!d.encrypted,
               reply_to: d.replyTo || null,
               timestamp: d.created,
-              status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent')
+              status: d.readAt ? 'read' : (d.deliveredAt ? 'delivered' : 'sent'),
+              expires_at: d.expires_at || (d.expiresAt ? new Date(d.expiresAt).toISOString() : null),
+              expires_in: null,
             };
           }) : data.messages.map((m: any) => {
             if (!m.plaintext && m.content && globalDecryptionCache.has(m.content)) {
@@ -563,6 +565,15 @@ export function useWebSocket({
             }
           }
           const cachedPt = data.body && globalDecryptionCache.has(data.body) ? globalDecryptionCache.get(data.body) : undefined;
+          const expireSec =
+            data.expires_in != null && Number.isFinite(Number(data.expires_in))
+              ? Number(data.expires_in)
+              : null;
+          const createdMs = data.created ? Date.parse(String(data.created)) : Date.now();
+          const expiresAt =
+            expireSec && expireSec > 0 && Number.isFinite(createdMs)
+              ? new Date(createdMs + expireSec * 1000).toISOString()
+              : data.expires_at || null;
           const dmMsg: Message = {
             id: canonicalId,
             client_msg_id: clientMsgId,
@@ -577,7 +588,9 @@ export function useWebSocket({
             is_encrypted: !!data.enc,
             reply_to: data.reply_to || null,
             timestamp: data.created,
-            status: 'sent'
+            status: 'sent',
+            expires_in: expireSec,
+            expires_at: expiresAt,
           };
 
           const viewing = uid && Number.isFinite(peerId)
@@ -666,19 +679,20 @@ export function useWebSocket({
           );
         } else if (data.type === 'message_deleted') {
           const targetId = String(data.message_id);
-          removeMessage(targetId);
+          removeMessageRecompute(targetId, {
+            currentUserId: userId,
+            roomId: data.room_id || null,
+            adjustUnread: false,
+          });
           deleteLocalMessage(targetId, userId || undefined);
           removeOutboxMessage(targetId, userId || undefined);
-          if (data.room_id) {
-            setLastMessages(prev => {
-              const current = prev[data.room_id];
-              if (current && (String(current.id) === targetId || String(current.message_id) === targetId || String(current.db_message_id) === targetId || String(current.client_msg_id) === targetId)) {
-                const next = { ...prev };
-                delete next[data.room_id];
-                return next;
-              }
-              return prev;
-            });
+          if (data.room_id && userId) {
+            const peer = parseDmPeerId(String(data.room_id), userId);
+            if (peer != null) {
+              window.dispatchEvent(
+                new CustomEvent('velum-dm-preview-changed', { detail: { peerId: peer } })
+              );
+            }
           }
         } else if (data.type === 'message_pinned') {
           updateMessage(
@@ -961,6 +975,10 @@ export function useWebSocket({
     }
     
     const clientMsgId = crypto.randomUUID();
+    const expiresAt =
+      burnSeconds != null && Number.isFinite(burnSeconds) && burnSeconds > 0
+        ? new Date(Date.now() + burnSeconds * 1000).toISOString()
+        : null;
     const optMessage: Message = {
       id: clientMsgId,
       client_msg_id: clientMsgId,
@@ -974,7 +992,9 @@ export function useWebSocket({
       is_encrypted: shouldEncrypt,
       status: 'sending',
       reply_to: replyTo ? String(replyTo) : null,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      expires_in: burnSeconds,
+      expires_at: expiresAt,
     };
     
     const isDirectMatch = destRoomId === activeRoomId;
@@ -1024,7 +1044,8 @@ export function useWebSocket({
             body: finalContent,
             enc: shouldEncrypt,
             reply_to: replyTo || null,
-            client_msg_id: clientMsgId
+            client_msg_id: clientMsgId,
+            expires_in: burnSeconds,
           }));
         }
       } else {
@@ -1100,7 +1121,8 @@ export function useWebSocket({
             body: finalContent,
             enc: shouldEncrypt,
             reply_to: (targetMsg as Message).reply_to || null,
-            client_msg_id: nonce
+            client_msg_id: nonce,
+            expires_in: expiresIn,
           }));
         }
       } else {

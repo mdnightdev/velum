@@ -43,7 +43,7 @@ dmRouter.post('/:peer', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
     const peerId = parseInt(req.params.peer, 10);
-    const { body, encrypted, replyTo } = req.body;
+    const { body, encrypted, replyTo, expires_in: expiresInBody } = req.body;
 
     if (isNaN(peerId) || peerId <= 0) {
       return res.status(400).json({ error: 'Invalid peer user ID' });
@@ -53,12 +53,19 @@ dmRouter.post('/:peer', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Message body cannot be empty' });
     }
 
+    const expiresInRaw = expiresInBody != null ? Number(expiresInBody) : null;
+    const expiresIn =
+      expiresInRaw != null && Number.isFinite(expiresInRaw) && expiresInRaw > 0
+        ? Math.min(expiresInRaw, 7 * 24 * 60 * 60)
+        : null;
+
     const message = await dmService.sendMessage(
       userId,
       peerId,
       body.trim(),
       !!encrypted,
-      replyTo ? parseInt(replyTo, 10) : undefined
+      replyTo ? parseInt(replyTo, 10) : undefined,
+      expiresIn
     );
 
     res.status(201).json({ message });

@@ -1,7 +1,13 @@
 import type { MuteDurationId } from '../constants/notificationSounds';
+import {
+  type DisappearMode,
+  disappearModeToSeconds,
+  secondsToDisappearMode,
+} from './disappearModes';
 
 const MUTE_KEY = 'velum-dm-mutes';
 const MEDIA_KEY = 'velum-dm-media-prefs';
+const DISAPPEAR_KEY = 'velum-dm-disappear';
 
 export type DmMediaPrefs = {
   autoDownload: boolean;
@@ -157,3 +163,53 @@ export function shouldSaveMediaToDevice(peerId: number | null | undefined): bool
   if (peerId == null || !Number.isFinite(peerId)) return true;
   return getDmMediaPrefs(peerId).saveToDevice;
 }
+
+type DisappearMap = Record<string, number>; // peerId -> seconds (0/absent = Off)
+
+function readDisappearMap(): DisappearMap {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(DISAPPEAR_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as DisappearMap;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDisappearMap(map: DisappearMap): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DISAPPEAR_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getPeerDisappearSeconds(peerId: number): number | null {
+  if (!Number.isFinite(peerId) || peerId <= 0) return null;
+  const sec = readDisappearMap()[String(peerId)];
+  if (!sec || !Number.isFinite(sec) || sec <= 0) return null;
+  return sec;
+}
+
+export function getPeerDisappearMode(peerId: number): DisappearMode {
+  return secondsToDisappearMode(getPeerDisappearSeconds(peerId));
+}
+
+export function setPeerDisappearMode(peerId: number, mode: DisappearMode): DisappearMode {
+  if (!Number.isFinite(peerId) || peerId <= 0) return mode;
+  const map = readDisappearMap();
+  const key = String(peerId);
+  const seconds = disappearModeToSeconds(mode);
+  if (seconds == null) {
+    delete map[key];
+  } else {
+    map[key] = seconds;
+  }
+  writeDisappearMap(map);
+  return mode;
+}
+
+export type { DisappearMode };

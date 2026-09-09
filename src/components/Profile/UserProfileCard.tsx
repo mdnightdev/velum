@@ -34,10 +34,8 @@ import {
   type MuteDurationId,
   type NotificationSoundId,
 } from '../../constants/notificationSounds';
-import { getDmMediaPrefs, setDmMediaPrefs } from '../../utils/dmPeerPrefs';
-
-const DISAPPEAR_MODES = ['Off', '24 hours', '7 days'] as const;
-type DisappearMode = (typeof DISAPPEAR_MODES)[number];
+import { getDmMediaPrefs, setDmMediaPrefs, getPeerDisappearMode, setPeerDisappearMode } from '../../utils/dmPeerPrefs';
+import { DISAPPEAR_MODES, type DisappearMode } from '../../utils/disappearModes';
 
 const SYSTEM_IDS = new Set([1, 2, 999]);
 
@@ -53,7 +51,9 @@ export default function UserProfileCard({
   currentUserId,
 }: ProfileCardProps) {
   const [isMutedLocal, setIsMutedLocal] = React.useState(!!user?.isMuted);
-  const [disappearingMode, setDisappearingMode] = React.useState<DisappearMode>('Off');
+  const [disappearingMode, setDisappearingMode] = React.useState<DisappearMode>(() =>
+    user?.userId ? getPeerDisappearMode(user.userId) : 'Off'
+  );
   const [showDisappearPicker, setShowDisappearPicker] = React.useState(false);
   const [showMediaVisibility, setShowMediaVisibility] = React.useState(false);
   const [showNotificationsSheet, setShowNotificationsSheet] = React.useState(false);
@@ -147,6 +147,14 @@ export default function UserProfileCard({
   React.useEffect(() => {
     setLocalNickname(user?.nickname || '');
   }, [user?.userId, user?.nickname]);
+
+  React.useEffect(() => {
+    if (user?.userId) {
+      setDisappearingMode(getPeerDisappearMode(user.userId));
+    } else {
+      setDisappearingMode('Off');
+    }
+  }, [user?.userId]);
 
   React.useEffect(() => {
     const el = scrollRef.current;
@@ -505,6 +513,7 @@ export default function UserProfileCard({
                 }`}
                 onClick={() => {
                   setDisappearingMode(mode);
+                  if (user?.userId) setPeerDisappearMode(user.userId, mode);
                   setShowDisappearPicker(false);
                   triggerFeedback(`Disappearing messages: ${mode}`);
                 }}

@@ -107,6 +107,7 @@ export interface Message {
   reply_to?: string | null;
   reply_preview?: { username: string; content: string } | null;
   expires_in?: string | number | null;
+  expires_at?: string | null;
   is_edited?: boolean;
   edited_at?: string;
   is_pinned?: boolean;

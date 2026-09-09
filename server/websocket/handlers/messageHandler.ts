@@ -914,6 +914,11 @@ export async function handleDirectMessage(client: ClientConnection, message: any
   const encrypted = !!message.enc || !!message.encrypted;
   const replyTo = message.reply_to ? parseInt(message.reply_to, 10) : undefined;
   const clientMsgId = message.client_msg_id || message.nonce;
+  const expiresInRaw = message.expires_in != null ? Number(message.expires_in) : null;
+  const expiresIn =
+    expiresInRaw != null && Number.isFinite(expiresInRaw) && expiresInRaw > 0
+      ? Math.min(expiresInRaw, 7 * 24 * 60 * 60)
+      : null;
 
   if (isNaN(to) || to <= 0 || !body) {
     client.ws.send(JSON.stringify({
@@ -933,7 +938,7 @@ export async function handleDirectMessage(client: ClientConnection, message: any
   }
 
   try {
-    const created = await dmService.sendMessage(client.userId, to, body, encrypted, replyTo);
+    const created = await dmService.sendMessage(client.userId, to, body, encrypted, replyTo, expiresIn);
 
     // 1. ACK to sender with canonical server ID
     client.ws.send(JSON.stringify({
@@ -964,6 +969,16 @@ export async function handleDirectMessage(client: ClientConnection, message: any
       }
     }
 
+    const expiresAt =
+      expiresIn != null
+        ? new Date(
+            (created.created instanceof Date
+              ? created.created.getTime()
+              : Date.parse(String(created.created)) || Date.now()) +
+              expiresIn * 1000
+          ).toISOString()
+        : null;
+
     // 2. Dispatch to recipient active connections
     const outFrame = {
       type: 'dm',
@@ -977,7 +992,9 @@ export async function handleDirectMessage(client: ClientConnection, message: any
       enc: created.encrypted,
       reply_to: created.replyTo,
       created: created.created,
-      sender_username: senderName || client.username || 'Direct Message'
+      sender_username: senderName || client.username || 'Direct Message',
+      expires_in: expiresIn,
+      expires_at: expiresAt,
     };
 
     broadcastToUserDevices(to, outFrame);

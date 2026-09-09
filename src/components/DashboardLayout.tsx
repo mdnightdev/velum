@@ -21,6 +21,7 @@ import { mergeLastMessagesMap, getPrimaryDmRoomId, getDmRoomAliases } from '../u
 import { stripAt } from '../types';
 import { useChatStore } from '../stores/chatStore';
 import { setPeerMutedLocal } from '../utils/dmPeerPrefs';
+import { useDisappearingMessages } from './Chat/hooks/useDisappearingMessages';
 
 interface DashboardLayoutProps {
   user: any;
@@ -96,6 +97,9 @@ export default function DashboardLayout({
   const clearRoomMessages = useChatStore((s) => s.clearRoomMessages);
   const setLastMessages = useChatStore((s) => s.setLastMessages);
   const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
+
+  // Runs even when ChatArea is unmounted (DM list / other tabs)
+  useDisappearingMessages(user?.userId ?? null);
 
   const handleLoadProfileCard = async (profUser: any) => {
     try {
