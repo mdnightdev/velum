@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import ChatArea from './ChatArea';
-import MarketMainDashboard from './SidebarTabs/MarketMainDashboard';
 import TicketsMainDashboard from './SidebarTabs/TicketsMainDashboard';
 import SavedMainDashboard from './SidebarTabs/SavedMainDashboard';
 import PeopleMainDashboard from './SidebarTabs/PeopleMainDashboard';
@@ -8,7 +7,7 @@ import NotificationsMainDashboard from './SidebarTabs/NotificationsMainDashboard
 import LoungeMainDashboard from './SidebarTabs/LoungeMainDashboard';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import DirectMainDashboard from './SidebarTabs/DirectMainDashboard';
-import WalletMainDashboard from './SidebarTabs/WalletMainDashboard';
+import UnderDevelopment from './UnderDevelopment';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
 import ProfileCard, { toUserProfileData } from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
@@ -452,20 +451,11 @@ export default function DashboardLayout({
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">
-
-              <WalletMainDashboard
-                currentUserId={user ? user.userId : 0}
-                isDark={isDark}
-              />
+              <UnderDevelopment title="Wallet" />
             </div>
           ) : activeCategory === 'market' ? (
             <div className="flex-1 overflow-y-auto relative flex flex-col">
-
-              <MarketMainDashboard
-                currentUserId={user?.userId || 0}
-                currentUserRole={user?.role || 'USER'}
-                isDark={isDark}
-              />
+              <UnderDevelopment title="Market" />
             </div>
           ) : activeCategory === 'tickets' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">

@@ -161,7 +161,7 @@ html, body {
 .chat-bubble-me {
   background-color: var(--color-bubble-me);
   color: var(--color-bubble-me-text);
-  border: 1px solid var(--color-bubble-me-border);
+  border: none;
   border-top-right-radius: 0;
   box-shadow: none !important;
   filter: none !important;
@@ -172,7 +172,7 @@ html, body {
 .chat-bubble-peer {
   background-color: var(--color-bubble-peer);
   color: var(--color-bubble-peer-text);
-  border: 1px solid var(--color-bubble-peer-border);
+  border: none;
   border-top-right-radius: 0;
   box-shadow: none !important;
   filter: none !important;
@@ -311,11 +311,11 @@ html[data-reduced-motion="true"] *::after {
   --radius-xl:  24px;
 
   /* ---- Chat Bubble Color System ---- */
-  --color-bubble-me: #2a2e36; /* solid grey — no rose glass */
-  --color-bubble-me-border: rgba(255, 255, 255, 0.06);
+  --color-bubble-me: #1C1F24;
+  --color-bubble-me-border: transparent;
   --color-bubble-me-text: #F5F2EB;
-  --color-bubble-peer: #1a1d24;
-  --color-bubble-peer-border: rgba(255, 255, 255, 0.05);
+  --color-bubble-peer: #7A8FA6;
+  --color-bubble-peer-border: transparent;
   --color-bubble-peer-text: #F5F2EB;
 
   /* ---- Payment Card Custom Gradients ---- */

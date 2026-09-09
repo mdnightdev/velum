@@ -92,6 +92,7 @@ import { userPublicRouter } from './routes/userPublicRoutes.js';
 import { utilityRouter } from './routes/utilityRoutes.js';
 import { messagingRouter } from './routes/messagingRoutes.js';
 import { mediaRouter } from './routes/mediaRoutes.js';
+import { uploadsRouter } from './routes/uploadsRoutes.js';
 import { cryptoRouter } from './routes/cryptoRoutes.js';
 import { notificationRouter } from './routes/notificationRoutes.js';
 import { healthRouter } from './routes/healthRoutes.js';
@@ -151,6 +152,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
+      workerSrc: ["'self'", "blob:"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       connectSrc: ["'self'", "ws:", "wss:", "http:", "https:"],
       objectSrc: ["'none'"],
@@ -239,12 +241,8 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// Serve uploads statically
-app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads'), {
-  setHeaders: (res) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-  }
-}));
+// Serve uploads from local disk, then object storage
+app.use('/uploads', uploadsRouter);
 
 // Metrics endpoint for Prometheus scraping (only in production or when enabled)
 if (process.env.NODE_ENV === 'production' || process.env.ENABLE_METRICS === 'true') {

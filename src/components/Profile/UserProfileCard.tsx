@@ -231,6 +231,10 @@ export default function UserProfileCard({
     displayName: user.displayName,
     username: user.username,
   });
+  const baseName = resolveContactName({
+    displayName: user.displayName,
+    username: user.username,
+  });
   const isAdminMode = type === 'admin' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_OPERATOR';
   const isSystemPeer = SYSTEM_IDS.has(user.userId || 0) || user.username?.toLowerCase() === 'velum';
   const bioText = (user.bio || '').trim();

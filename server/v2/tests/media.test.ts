@@ -4,6 +4,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { mediaRouter } from '../routes/mediaRoutes';
+import { uploadsRouter } from '../routes/uploadsRoutes';
 
 const app = express();
 
@@ -19,12 +20,8 @@ vi.mock('../middleware/auth.js', () => ({
 }));
 
 
-// Serve uploads statically for positive control tests
-app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads'), {
-  setHeaders: (res) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-  }
-}));
+// Same serving path as production: local disk first, then object storage
+app.use('/uploads', uploadsRouter);
 
 app.use('/v2', mediaRouter);
 
@@ -35,9 +32,19 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 const uploadsRoot = path.join(process.cwd(), 'public', 'uploads');
 
+/**
+ * Only remove folders this suite created. Wiping the whole uploads root would
+ * destroy real user media on any machine that runs the tests.
+ */
+const preexistingUploadEntries = fs.existsSync(uploadsRoot)
+  ? new Set(fs.readdirSync(uploadsRoot))
+  : new Set<string>();
+
 function cleanupUploads() {
-  if (fs.existsSync(uploadsRoot)) {
-    fs.rmSync(uploadsRoot, { recursive: true, force: true });
+  if (!fs.existsSync(uploadsRoot)) return;
+  for (const entry of fs.readdirSync(uploadsRoot)) {
+    if (preexistingUploadEntries.has(entry)) continue;
+    fs.rmSync(path.join(uploadsRoot, entry), { recursive: true, force: true });
   }
 }
 

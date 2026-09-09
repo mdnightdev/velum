@@ -56,9 +56,6 @@ app.get('/privacy', (_req, res) => {
 // Bind V2 Engine API
 app.use(v2App);
 
-// Serve uploads statically
-app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
-
 export const server = createHttpServer(app);
 
 export async function startServer() {

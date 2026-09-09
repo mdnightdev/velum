@@ -11,6 +11,8 @@ import {
   verifyFileSha256
 } from '../services/media/presignedUploadService.js';
 import { mediaService } from '../services/media/mediaService.js';
+import { getS3Config } from '../services/media/s3Client.js';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { logger } from '../utils/logger.js';
 
 export const mediaRouter = Router();
@@ -183,11 +185,6 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
       return res.status(422).json({ error: 'SHA-256 checksum mismatch. Payload corrupted during transit.' });
     }
 
-    const publicUploadDir = path.join(process.cwd(), 'public', 'uploads', folder);
-    if (!fs.existsSync(publicUploadDir)) {
-      fs.mkdirSync(publicUploadDir, { recursive: true });
-    }
-
     // Use presigned filename if available, otherwise generate anonymous server filename
     const presignedFilename = (req as any).presignedFilename;
     let prefix = 'doc';
@@ -199,18 +196,36 @@ const handleDirectUpload = async (req: Request, res: Response, next: NextFunctio
       prefix = 'vid';
     }
     const generatedFilename = presignedFilename || `${prefix}_${crypto.randomBytes(5).toString('hex')}.${ext}`;
-    const targetPath = path.join(publicUploadDir, generatedFilename);
-    await fs.promises.writeFile(targetPath, bodyBuffer);
+    const storageKey = `${folder}/${generatedFilename}`;
+    const contentType = (req.headers['content-type'] as string) || 'application/octet-stream';
 
-    const relativeUrl = `/uploads/${folder}/${generatedFilename}`;
+    // Object storage is the durable target; local disk is wiped on every redeploy.
+    const s3 = getS3Config();
+    if (s3.isConfigured && s3.client && s3.bucket) {
+      await s3.client.send(new PutObjectCommand({
+        Bucket: s3.bucket,
+        Key: storageKey,
+        Body: bodyBuffer,
+        ContentType: contentType,
+        Metadata: { uploader: String(req.user!.userId) }
+      }));
+    } else {
+      const publicUploadDir = path.join(process.cwd(), 'public', 'uploads', folder);
+      if (!fs.existsSync(publicUploadDir)) {
+        fs.mkdirSync(publicUploadDir, { recursive: true });
+      }
+      await fs.promises.writeFile(path.join(publicUploadDir, generatedFilename), bodyBuffer);
+    }
+
+    const relativeUrl = `/uploads/${storageKey}`;
     const category: 'avatar' | 'chat' | 'general' = (req as any).presignedCategory || (folder.startsWith('avatars') ? 'avatar' : 'chat');
 
     // Register media asset tracking record
     await mediaService.recordAsset({
       uploaderId: req.user!.userId,
-      storageKey: `${folder}/${generatedFilename}`,
+      storageKey,
       relativePath: relativeUrl,
-      mimeType: (req.headers['content-type'] as string) || 'application/octet-stream',
+      mimeType: contentType,
       byteSize: bodyBuffer.length,
       category,
       sha256: expectedSha || crypto.createHash('sha256').update(bodyBuffer).digest('hex')

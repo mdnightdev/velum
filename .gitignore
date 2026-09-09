@@ -1,6 +1,7 @@
 node_modules/
 *.sqlite
 .env
+.env.example
 .env.encrypted
 .secrets.key
 dist/
