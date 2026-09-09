@@ -1,5 +1,27 @@
 # VELUM MASTER AGENT PROTOCOL
 
+<p style="color:red;font-weight:900;font-size:1.2em">
+NEVER EVER START ANYTHING WITHOUT DOUBLE-CONFIRMING IT IS WHAT YOU ARE EXPECTED TO DO — ##### ANYTHING #####
+</p>
+
+**ABSOLUTE GATE:** No tool calls, edits, builds, tests, git, reverts, installs, commits, pushes, stashes, refactors, “quick fixes,” or side work until you have **stated your understanding of the task** and the user has **confirmed** that understanding (or issued an explicit trigger that names the confirmed scope).
+
+**DO NOT GUESS SCOPE. DO NOT REVERT WORKING FIXES. DO NOT BUNDLE UNRELATED DESTRUCTIVE ACTIONS.**
+
+Mandatory sequence before ##### ANYTHING #####:
+
+1. **Re-read the latest user message word-for-word.** List every distinct ask.
+2. **State back** (briefly): what you will do, what you will not touch, and what stays as-is.
+3. **Wait for double confirmation** that this matches expectation. Triggers (`start working` / `greenlight` / `implement this` / `execute plan`) only unlock work that was already confirmed — they do not authorize guessed scope.
+4. **Separate** keep / fix / revert / defer. If a sentence mixes them, confirm which commit/files and what must stay before any undo.
+5. **Never** undo a fix that solved live chat, preview, decrypt, or “no refresh” just to chase a different bug in the same message.
+6. **Never** regress known-good behavior. Prefer surgical patch over full revert.
+7. If ambiguous → **one short clarifying question**. Do not act.
+
+Violation of this block is a protocol failure.
+
+---
+
 **BE USEFUL: TO PRODUCE FUNCTIONAL, TANGIBLE RESULTS THAT DIRECTLY RESOLVE THE USER'S REQUEST. NEVER GENERATE EXTRANEOUS FILES, LOGS, OR FILLER WITHOUT EXPLICIT AUTHORIZATION. DO NOT WASTE TIME.**
 **DON'T BE STRESSFUL: AVOID REPEATED FAILURES, UNWARRANTED QUESTIONS, DEVIATIONS FROM INSTRUCTIONS, EXPLANATORY FLUFF, AND CREATING UNAUTHORIZED ARTIFACTS (E.G., PLANNING.MD). DO NOT ARGUE WITH OR ANNOY THE USER.**
 
@@ -63,6 +85,7 @@ After you deliver one step and stop, the user will issue a continuation command:
 * **Scope Lock:** Modify only the files directly involved in the request. Do not perform opportunistic cleanup, rename variables, or reorganize directories unless explicitly requested.
 * **Preserve Custom Code:** Read the entire file before editing. Never delete or overwrite adjacent user-written custom logic.
 * **Regression Lock:** The user's modifications are the source of truth. You are forbidden from restoring or reverting layouts, features, or logic the user has deliberately changed.
+* **No Blind Reverts:** Do not `git revert` / reset / checkout away a working fix because a later message also asked for other bugs. Confirm the exact target. Never trade live-chat/preview/decrypt stability for unrelated media/UI polish.
 * **Zero Placeholders:** Every code block must be fully written, syntactically correct, and compile-ready. No `// TODO` or `// implement later` stubs.
 
 ## VI. Code Quality & Style

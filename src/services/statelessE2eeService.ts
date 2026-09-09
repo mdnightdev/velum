@@ -106,6 +106,7 @@ class StatelessE2eeService {
   private peerKeyCache = new Map<number, PeerPrekeyBundle & { timestamp: number }>();
   /** Keep peer DH keys warm across room opens — 1m was too short and re-hit the network. */
   private readonly CACHE_TTL_MS = 30 * 60 * 1000;
+  private readonly FETCH_TIMEOUT_MS = 4000;
 
     public setLocalUserId(userId: number | null): void {
     this.localUserId = userId;
@@ -262,7 +263,8 @@ class StatelessE2eeService {
       headers: {
         'Authorization': `Bearer ${sid}`,
         'x-session-id': sid
-      }
+      },
+      signal: AbortSignal.timeout(this.FETCH_TIMEOUT_MS),
     });
 
     if (!res.ok) {

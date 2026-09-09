@@ -15,6 +15,7 @@ import { globalDecryptionCache, cachePlaintext } from '../components/Chat/hooks/
 import { hydrateMutesFromServer } from '../utils/dmPeerPrefs';
 import { isUsablePlaintext, getNotificationBodyText, mergeMessagePlaintext } from '../utils/messagePlaintext';
 import { getMemoryPlaintext } from '../utils/plaintextCache';
+import { getCleanPreview } from '../utils/messageParser';
 
 interface UseWebSocketParams {
   userId: number | null;
@@ -627,8 +628,9 @@ export function useWebSocket({
           const notifyInbound = (body: string) => {
             if (isFromMe) return;
             const senderName = (data.sender_username || dmMsg.username || `User #${data.from}`).replace(/^@/, '');
-            const notifyBody = getNotificationBodyText(body);
-            if (!notifyBody) return;
+            const usable = getNotificationBodyText(body);
+            if (!usable) return;
+            const notifyBody = getCleanPreview(usable) || usable;
             handleInboundMessageNotification({
               senderName,
               content: notifyBody,
@@ -1029,6 +1031,53 @@ export function useWebSocket({
     const destRoomId = targetRoomId || activeRoomId;
     const isDm = destRoomId.startsWith('dm_') && !destRoomId.startsWith('dm_velum_');
     const isAlreadyEncrypted = text.startsWith('e2ee:') || text.startsWith('ratchet:v2:') || text.startsWith('ratchet:v1:') || text.startsWith('VEL_E2EE[');
+    const rawPlaintext = clientPlaintext || text;
+    const clientMsgId = crypto.randomUUID();
+    const expiresAt =
+      burnSeconds != null && Number.isFinite(burnSeconds) && burnSeconds > 0
+        ? new Date(Date.now() + burnSeconds * 1000).toISOString()
+        : null;
+
+    // Paint the bubble immediately — never block UI on peer-key fetch / encrypt.
+    const optMessage: Message = {
+      id: clientMsgId,
+      client_msg_id: clientMsgId,
+      message_id: clientMsgId,
+      nonce: clientMsgId,
+      room_id: destRoomId,
+      user_id: userId || 0,
+      username: 'You',
+      content: isAlreadyEncrypted ? text : rawPlaintext,
+      plaintext: rawPlaintext,
+      is_encrypted: isAlreadyEncrypted || isEncrypted,
+      status: 'sending',
+      reply_to: replyTo ? String(replyTo) : null,
+      timestamp: new Date().toISOString(),
+      expires_in: burnSeconds,
+      expires_at: expiresAt,
+    };
+
+    const isDirectMatch = destRoomId === activeRoomId;
+    let isDmMatch = false;
+    let dmPeerId: number | undefined = undefined;
+    if (isDm) {
+      dmPeerId = parseDmPeerId(destRoomId, userId) || undefined;
+      if (dmPeerId && userId) {
+        const pairwiseRoom = `dm_${Math.min(userId, dmPeerId)}_${Math.max(userId, dmPeerId)}`;
+        isDmMatch = activeRoomId === destRoomId || activeRoomId === pairwiseRoom;
+      }
+    }
+
+    if (isDirectMatch || isDmMatch) {
+      appendMessage({ ...optMessage, to: dmPeerId } as any);
+    }
+    setLastMessage(destRoomId, optMessage);
+    if (isDm && dmPeerId && userId) {
+      const pairwise = `dm_${Math.min(userId, dmPeerId)}_${Math.max(userId, dmPeerId)}`;
+      setLastMessage(pairwise, optMessage);
+      setLastMessage(`dm_${dmPeerId}`, optMessage);
+    }
+
     let finalContent = text;
     let shouldEncrypt = isEncrypted;
 
@@ -1064,54 +1113,30 @@ export function useWebSocket({
       }
     }
 
-    const rawPlaintext = clientPlaintext || text;
     if (finalContent && rawPlaintext) {
       cachePlaintext(finalContent, rawPlaintext);
     }
-    
-    const clientMsgId = crypto.randomUUID();
-    const expiresAt =
-      burnSeconds != null && Number.isFinite(burnSeconds) && burnSeconds > 0
-        ? new Date(Date.now() + burnSeconds * 1000).toISOString()
-        : null;
-    const optMessage: Message = {
-      id: clientMsgId,
-      client_msg_id: clientMsgId,
-      message_id: clientMsgId,
-      nonce: clientMsgId,
-      room_id: destRoomId,
-      user_id: userId || 0,
-      username: 'You',
+
+    updateMessage(
+      (m) => m.client_msg_id === clientMsgId || String(m.id) === clientMsgId,
+      (m) => ({
+        ...m,
+        content: finalContent,
+        plaintext: rawPlaintext,
+        is_encrypted: shouldEncrypt,
+      })
+    );
+    const stamped = {
+      ...optMessage,
       content: finalContent,
       plaintext: rawPlaintext,
       is_encrypted: shouldEncrypt,
-      status: 'sending',
-      reply_to: replyTo ? String(replyTo) : null,
-      timestamp: new Date().toISOString(),
-      expires_in: burnSeconds,
-      expires_at: expiresAt,
     };
-    
-    const isDirectMatch = destRoomId === activeRoomId;
-    let isDmMatch = false;
-    let dmPeerId: number | undefined = undefined;
-    if (isDm) {
-      dmPeerId = parseDmPeerId(destRoomId, userId) || undefined;
-      if (dmPeerId && userId) {
-        const pairwiseRoom = `dm_${Math.min(userId, dmPeerId)}_${Math.max(userId, dmPeerId)}`;
-        isDmMatch = activeRoomId === destRoomId || activeRoomId === pairwiseRoom;
-      }
-    }
-
-    if (isDirectMatch || isDmMatch) {
-      appendMessage({ ...optMessage, to: dmPeerId } as any);
-    }
-
-    setLastMessage(destRoomId, optMessage);
+    setLastMessage(destRoomId, stamped);
     if (isDm && dmPeerId && userId) {
       const pairwise = `dm_${Math.min(userId, dmPeerId)}_${Math.max(userId, dmPeerId)}`;
-      setLastMessage(pairwise, optMessage);
-      setLastMessage(`dm_${dmPeerId}`, optMessage);
+      setLastMessage(pairwise, stamped);
+      setLastMessage(`dm_${dmPeerId}`, stamped);
     }
 
     const outboxPayload = {
@@ -1125,10 +1150,8 @@ export function useWebSocket({
       retryCount: 0
     };
 
-    // Enqueue in IndexedDB outbox queue
     await enqueueOutboxMessage(outboxPayload, userId || undefined);
 
-    // If socket is open, send frame immediately
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       if (isDm) {
         const peerId = parseDmPeerId(destRoomId, userId);
@@ -1156,8 +1179,7 @@ export function useWebSocket({
         }));
       }
     }
-    
-    // Add a timeout to transition 'sending' to 'failed' if no ACK after 10s
+
     setTimeout(() => {
       updateMessage(
         (m) => Boolean((m.client_msg_id === clientMsgId || String(m.id) === clientMsgId) && m.status === 'sending'),

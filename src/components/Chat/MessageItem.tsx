@@ -8,7 +8,6 @@ import { MessageStatusTicks } from '../MessageStatusTicks';
 import { parseAttachment, getCleanPreview, stripAttachmentTokens } from '../../utils/messageParser';
 import { getSessionId } from '../../utils/auth';
 import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
-import { LinkPreviewCard, extractMessageUrls } from './LinkPreviewCard';
 import { resolveMediaUrl, getFormattedDownloadFilename } from '../../utils/mediaPipeline';
 import { getAlbumCellClass, getAlbumGridClass } from './albumLayout';
 import { getMessageKey } from './messageKey';
@@ -458,7 +457,7 @@ function VideoCard({
 
 function MediaStatusOverlay({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-[var(--blur-backdrop-sm)] px-2 py-0.5 rounded-full flex items-center gap-1 text-[9.5px] font-sans text-white select-none z-10 border border-white/5 pointer-events-auto">
+    <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1 text-[9.5px] font-sans text-white select-none z-10 border border-white/5 pointer-events-auto">
       {children}
     </div>
   );
@@ -491,6 +490,27 @@ function ExpandableMessageText({
   const [expanded, setExpanded] = useState(false);
   const needsCollapse = messageNeedsCollapse(text);
 
+  const renderLinkedText = (value: string) => {
+    const parts = value.split(/(https?:\/\/[^\s<>"']+)/gi);
+    return parts.map((part, i) => {
+      if (/^https?:\/\//i.test(part)) {
+        return (
+          <a
+            key={`u-${i}`}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 break-all"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        );
+      }
+      return <React.Fragment key={`t-${i}`}>{part}</React.Fragment>;
+    });
+  };
+
   return (
     <div>
       <p
@@ -498,7 +518,7 @@ function ExpandableMessageText({
           needsCollapse && !expanded ? 'line-clamp-5' : ''
         }`}
       >
-        {text}
+        {renderLinkedText(text)}
         {isEdited && (
           <span
             className="text-[10px] opacity-45 ml-1.5 select-none font-sans lowercase"
@@ -820,7 +840,7 @@ export function MessageItem({
                   )}
                 </div>
               ) : isSingleVideo || isVideo ? (
-                <div className="flex flex-col gap-1 w-full max-w-[320px]">
+                <div className="flex flex-col gap-2 w-full max-w-[320px] my-1">
                   {attachments.map((att, idx) => (
                     <VideoCard
                       key={idx}
@@ -840,7 +860,7 @@ export function MessageItem({
                   )}
                 </div>
               ) : isSingleImage || isImageCard ? (
-                <div className="w-full max-w-[280px]">
+                <div className="w-full max-w-[280px] my-1">
                   <SecureImageCard
                     src={attachments[0].data}
                     name={attachments[0].name}
@@ -848,7 +868,7 @@ export function MessageItem({
                     caption={attachments[0].caption || parsedMsgContent}
                     isMe={isMe}
                     timestamp={msgTime}
-                    containerClass="w-full max-w-[280px] min-h-[180px] aspect-[4/3] border border-accent/25 shadow-none"
+                    containerClass="w-full max-w-[280px] min-h-[180px] aspect-[4/3] border border-white-5 shadow-none rounded-xl overflow-hidden"
                     manualLoad={manualMediaLoad}
                     allowSave={allowMediaSave}
                   >
@@ -943,17 +963,6 @@ export function MessageItem({
                           </>
                         }
                       />
-                      {(() => {
-                        const matchedUrls = extractMessageUrls(parsedMsgContent);
-                        if (matchedUrls.length === 0) return null;
-                        return (
-                          <div className="flex flex-col gap-2 mt-1">
-                            {matchedUrls.map((url) => (
-                              <LinkPreviewCard key={url} url={url} />
-                            ))}
-                          </div>
-                        );
-                      })()}
                       {(() => {
                         const keyMatch = parsedMsgContent.match(/`([a-f0-9A-F\-_\:]{12,})`/);
                         const keyString = keyMatch ? keyMatch[1] : null;

@@ -1,0 +1,32 @@
+---
+description: NEVER start any work without double-confirming expected scope first
+alwaysApply: true
+---
+
+# ##### ANYTHING ##### — DOUBLE CONFIRM FIRST
+
+<span style="color:red;font-weight:900">NEVER EVER START ANYTHING WITHOUT DOUBLE-CONFIRMING IT IS WHAT YOU ARE EXPECTED TO DO — ##### ANYTHING #####</span>
+
+## Absolute gate
+
+Before **any** action (tools, edits, git, revert, build, test, install, commit, push, stash, refactor, “helpful” side fix):
+
+1. Re-read the latest user message word-for-word.
+2. State back: what you will do / what you will not touch / what stays.
+3. **Wait for the user to confirm** that matches expectation.
+4. Only then execute — and only that confirmed scope.
+
+Triggers (`start working`, `greenlight`, `implement this`, `execute plan`) unlock **confirmed** work only. They do not authorize guessed or bundled scope.
+
+## Hard bans
+
+- Do not guess.
+- Do not full-revert a working fix to chase another bug in the same message.
+- Do not regress live chat display, preview plaintext, or “no refresh for new messages” unless the user explicitly confirms that exact regression.
+- Prefer surgical patch over `git revert` / reset.
+
+## Failure example (forbidden)
+
+User: “revert that commit and sanitise media notifs…”
+Wrong: immediately `git revert` the live-DM plaintext stamp.
+Right: state understanding → confirm SHA + what must stay → only then act.

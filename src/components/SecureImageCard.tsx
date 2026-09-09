@@ -141,7 +141,7 @@ const SecureImageCardInner: React.FC<SecureImageCardProps> = ({
               <button
                 type="button"
                 onClick={handleDownload}
-                className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
+                className="p-1.5 bg-black/70 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
                 title="Download"
               >
                 <Download className="w-3.5 h-3.5 pointer-events-none" />
@@ -153,7 +153,7 @@ const SecureImageCardInner: React.FC<SecureImageCardProps> = ({
                 e.stopPropagation();
                 setIsExpanded(true);
               }}
-              className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition backdrop-blur-[var(--blur-backdrop-sm)] cursor-pointer border-0"
+              className="p-1.5 bg-black/70 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
               title="Expand"
             >
               <Maximize2 className="w-3.5 h-3.5 pointer-events-none" />
@@ -162,7 +162,7 @@ const SecureImageCardInner: React.FC<SecureImageCardProps> = ({
         )}
 
         {children && (
-          <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-[var(--blur-backdrop-sm)] px-2 py-0.5 rounded-full flex items-center gap-1 text-[9.5px] font-sans text-white select-none z-10 border border-white/5">
+          <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1 text-[9.5px] font-sans text-white select-none z-10 border border-white/5">
             {children}
           </div>
         )}
