@@ -699,10 +699,7 @@ export default function DashboardLayout({
                   if (res.ok) {
                     const data = await res.json();
                     setProfileCardUser((prev: any) => prev ? { ...prev, isBlocked: data.isBlocked } : null);
-                    if (data.isBlocked) {
-                      if (onRoomSelect) onRoomSelect('');
-                      if (onClearChatPeer) onClearChatPeer();
-                    }
+                    // Keep chat mounted so Unblock remains available on the profile card
                   }
                 } catch(e) {}
               }}

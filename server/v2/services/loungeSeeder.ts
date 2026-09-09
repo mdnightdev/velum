@@ -115,9 +115,9 @@ export async function ensureVelumLoungeSeeded() {
         message_id INTEGER REFERENCES dms(id) ON DELETE CASCADE NOT NULL,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
         emoji VARCHAR(32) NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
-        CONSTRAINT unique_dm_user_emoji UNIQUE (message_id, user_id, emoji)
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS unique_dm_user_emoji ON dm_reactions (message_id, user_id, emoji);
       CREATE INDEX IF NOT EXISTS idx_dm_reactions_message ON dm_reactions (message_id);
     `);
 

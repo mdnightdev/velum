@@ -25,6 +25,8 @@
     "secrets:status": "tsx scripts/secrets-manager.ts status",
     "db:backup": "bash scripts/backup-db.sh",
     "db:restore": "bash scripts/restore-db.sh",
+    "db:migrate": "drizzle-kit migrate",
+    "db:schema:apply": "tsx scripts/apply-pending-schema.ts",
     "messages:clear-legacy": "bash server/v2/scripts/clear-legacy-messages.sh",
     "dev:start": "bash scripts/dev-start.sh",
     "dev:stop": "bash scripts/dev-stop.sh",

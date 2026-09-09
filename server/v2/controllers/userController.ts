@@ -60,16 +60,10 @@ export class UserController {
     }
 
     let isBlocked = false;
-    const blockRecord = await db.select().from(relationships).where(
-      and(
-        eq(relationships.status, 'blocked'),
-        or(
-          and(eq(relationships.userId, req.user.userId), eq(relationships.friendId, targetUserId)),
-          and(eq(relationships.userId, targetUserId), eq(relationships.friendId, req.user.userId))
-        )
-      )
-    ).limit(1);
-    isBlocked = blockRecord.length > 0;
+    if (req.user.userId !== targetUserId) {
+      const { hasBlocked } = await import('../services/blockService.js');
+      isBlocked = await hasBlocked(req.user.userId, targetUserId);
+    }
 
     res.status(200).json({
       userId: user.id,

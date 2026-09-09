@@ -133,9 +133,6 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
       if (res.ok) {
         const data = await res.json();
         velumToast.info(data.isBlocked ? 'Blocked user. User Blocked!' : 'Unblocked user.');
-        if (data.isBlocked && props.onRoomSelect) {
-          props.onRoomSelect('');
-        }
         setSelectedMember((prev: any) => {
           const prevId = prev?.user_id || prev?.userId;
           if (prev && String(prevId) === String(targetId)) {

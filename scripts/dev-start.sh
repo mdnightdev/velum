@@ -100,9 +100,15 @@ else
   echo -e "${YELLOW}[DEV-START] REDIS_URL not configured. Operating in fallback memory mode.${NC}"
 fi
 
-# Step 3: Drizzle Schema Synchronization
-echo -e "${YELLOW}[DEV-START] Step 3/4: Synchronizing Drizzle ORM schema...${NC}"
-npx drizzle-kit push
+# Step 3: Drizzle schema sync (non-interactive migrations — never drizzle-kit push)
+echo -e "${YELLOW}[DEV-START] Step 3/4: Applying Drizzle migrations...${NC}"
+if ! npx drizzle-kit migrate; then
+  echo -e "${YELLOW}[DEV-START] drizzle-kit migrate failed; applying idempotent SQL fallback...${NC}"
+  npx tsx scripts/apply-pending-schema.ts || {
+    echo -e "${RED}[DEV-START] Schema sync failed. Fix DB then retry.${NC}"
+    exit 1
+  }
+fi
 
 # Step 4: Start Development Server
 echo -e "${GREEN}[DEV-START] Step 4/4: Launching Velum development server on port ${DEV_SERVER_PORT}...${NC}"

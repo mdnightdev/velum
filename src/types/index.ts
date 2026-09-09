@@ -223,7 +223,10 @@ export interface FriendRequest {
   status: 'pending' | 'accepted' | 'declined' | string;
   created_at: string | number;
   sender_name?: string;
+  sender_display_name?: string;
   sender_avatar?: string;
+  receiver_username?: string;
+  receiver_name?: string;
 }
 
 export interface PeerRelationship {

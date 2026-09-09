@@ -2,25 +2,16 @@ import { eq, and, or, gt, inArray, desc, asc, sql } from 'drizzle-orm';
 import { db, executeWithRetry } from '../db/client.js';
 import { dms, dmClears, dmReactions, type Dm, type NewDm } from '../db/schema/dms.js';
 import { users } from '../db/schema/users.js';
-import { relationships } from '../db/schema/relationships.js';
+import { getBlockPairState, isBlockedBetween as checkBlockedBetween } from './blockService.js';
 
 export class DmService {
-  /** True if either user has blocked the other. */
+  /** True if either user has blocked the other (messaging blocked both ways). */
   async isBlockedBetween(userA: number, userB: number): Promise<boolean> {
-    const rows = await db
-      .select({ id: relationships.id })
-      .from(relationships)
-      .where(
-        and(
-          eq(relationships.status, 'blocked'),
-          or(
-            and(eq(relationships.userId, userA), eq(relationships.friendId, userB)),
-            and(eq(relationships.userId, userB), eq(relationships.friendId, userA))
-          )
-        )
-      )
-      .limit(1);
-    return rows.length > 0;
+    return checkBlockedBetween(userA, userB);
+  }
+
+  async getBlockPairState(viewerId: number, peerId: number) {
+    return getBlockPairState(viewerId, peerId);
   }
 
   /**
@@ -95,8 +86,10 @@ export class DmService {
     replyTo?: number
   ): Promise<Dm> {
     if (await this.isBlockedBetween(senderId, peerId)) {
+      const state = await getBlockPairState(senderId, peerId);
       const err = new Error('BLOCKED');
-      (err as Error & { code?: string }).code = 'BLOCKED';
+      (err as Error & { code?: string; blockReason?: string }).code = 'BLOCKED';
+      (err as Error & { blockReason?: string }).blockReason = state.iBlocked ? 'self' : 'peer';
       throw err;
     }
 

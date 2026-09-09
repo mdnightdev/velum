@@ -140,12 +140,16 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
           )
         );
 
+      const { hasBlocked } = await import('../services/blockService.js');
+      const iBlocked = await hasBlocked(currentUserId, peerId);
+
       return {
         friendId: peerId,
         username: peer?.username || `User #${peerId}`,
         displayName: peer?.displayName || null,
         avatarUrl: peer?.avatarUrl || null,
         status: 'accepted',
+        isBlocked: iBlocked,
         last_seen_at: lastSeen,
         active_lounge: null,
         dm_room_id: peerId === 999 ? `dm_velum_${currentUserId}` : `dm_${Math.min(currentUserId, peerId)}_${Math.max(currentUserId, peerId)}`,
@@ -201,6 +205,11 @@ const handleSendFriendRequest = async (req: Request, res: Response) => {
     if (PROTECTED_SYSTEM_IDS.includes(receiverId) || targetUser[0].username.toLowerCase() === 'velum') {
       return res.status(403).json({ error: 'System staff accounts cannot be added as contacts.' });
     }
+
+    const { isBlockedBetween } = await import('../services/blockService.js');
+    if (await isBlockedBetween(currentUserId, receiverId)) {
+      return res.status(403).json({ error: 'Cannot send a friend request while a block is in place.' });
+    }
     
     const existing = await db.select().from(relationships).where(
       or(
@@ -215,6 +224,9 @@ const handleSendFriendRequest = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'You are already friends.' });
       } else if (rel.status === 'pending') {
         return res.status(400).json({ error: 'Friend request is already pending.' });
+      } else if (rel.status === 'blocked') {
+        // Legacy row — migrate path will clear; refuse duplicate pending
+        return res.status(403).json({ error: 'Cannot send a friend request while a block is in place.' });
       }
     }
     
@@ -328,11 +340,25 @@ friendRouter.post('/requests/:requestId/respond', async (req: Request, res: Resp
   }
 });
 
-// POST /v2/friends/unblock - Unblock a user (stub/real)
+// POST /v2/friends/unblock - Clear only the caller's directional block
 friendRouter.post('/unblock', async (req: Request, res: Response) => {
   try {
-    const { targetUserId } = req.body;
-    res.json({ success: true, message: 'User unblocked.' });
+    const currentUserId = req.user!.userId;
+    const raw = req.body?.targetUserId ?? req.body?.userId ?? req.body?.peerId;
+    const targetUserId = parseInt(String(raw), 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'targetUserId required.' });
+    }
+    const { unblockUser, hasBlocked } = await import('../services/blockService.js');
+    if (!(await hasBlocked(currentUserId, targetUserId))) {
+      return res.status(404).json({ error: 'You have not blocked this user.' });
+    }
+    await unblockUser(currentUserId, targetUserId);
+    const redis = await getRedisClient();
+    if (redis) {
+      await redis.del(`user:${currentUserId}:blocked:${targetUserId}`);
+    }
+    res.json({ success: true, isBlocked: false, message: 'User unblocked.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to unblock user.' });
   }

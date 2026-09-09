@@ -316,7 +316,7 @@ userRouter.post('/:id/mute', authMiddleware, async (req: Request, res: Response)
   }
 });
 
-// POST /v2/user/:id/block - Block or unblock user
+// POST /v2/user/:id/block - Toggle directional block (does not destroy friendship)
 userRouter.post('/:id/block', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
@@ -324,32 +324,12 @@ userRouter.post('/:id/block', authMiddleware, async (req: Request, res: Response
     if (isNaN(targetUserId)) {
       return res.status(400).json({ error: 'Invalid user ID.' });
     }
-    
-    const existing = await db.select().from(relationships).where(
-      or(
-        and(eq(relationships.userId, currentUserId), eq(relationships.friendId, targetUserId)),
-        and(eq(relationships.userId, targetUserId), eq(relationships.friendId, currentUserId))
-      )
-    ).limit(1);
-
-    let isBlocked = false;
-    if (existing.length > 0) {
-      if (existing[0].status === 'blocked') {
-        await db.update(relationships).set({ status: 'accepted', updatedAt: new Date() }).where(eq(relationships.id, existing[0].id));
-        isBlocked = false;
-      } else {
-        await db.update(relationships).set({ status: 'blocked', updatedAt: new Date() }).where(eq(relationships.id, existing[0].id));
-        isBlocked = true;
-      }
-    } else {
-      await db.insert(relationships).values({
-        userId: currentUserId,
-        friendId: targetUserId,
-        status: 'blocked',
-        updatedAt: new Date()
-      });
-      isBlocked = true;
+    if (currentUserId === targetUserId) {
+      return res.status(400).json({ error: 'Cannot block yourself.' });
     }
+
+    const { toggleBlock } = await import('../services/blockService.js');
+    const isBlocked = await toggleBlock(currentUserId, targetUserId);
 
     const redis = await getRedisClient();
     if (redis) {

@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, varchar, boolean, timestamp, index, unique, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, serial, integer, text, varchar, boolean, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 /**
@@ -43,7 +43,8 @@ export const dmReactions = pgTable('dm_reactions', {
     .defaultNow()
     .notNull()
 }, (table) => [
-  unique('unique_dm_user_emoji').on(table.messageId, table.userId, table.emoji),
+  // Unique index name must match DB; CREATE UNIQUE INDEX IF NOT EXISTS in migrations.
+  uniqueIndex('unique_dm_user_emoji').on(table.messageId, table.userId, table.emoji),
   index('idx_dm_reactions_message').on(table.messageId)
 ]);
 

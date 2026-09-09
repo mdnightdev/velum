@@ -1000,9 +1000,16 @@ export async function handleDirectMessage(client: ClientConnection, message: any
   } catch (err) {
     const blocked = (err as Error & { code?: string })?.code === 'BLOCKED' || (err as Error)?.message === 'BLOCKED';
     console.error('[WS Direct Message Error]:', err);
+    const reason = (err as Error & { blockReason?: string }).blockReason;
+    const { blockedSendErrorMessage } = await import('../../v2/utils/blockCopy.js');
+    const message = blocked
+      ? blockedSendErrorMessage(reason)
+      : 'Failed to deliver direct message';
     client.ws.send(JSON.stringify({
       type: 'error',
-      message: blocked ? 'Unblock this contact to send messages' : 'Failed to deliver direct message'
+      message,
+      code: blocked ? 'BLOCKED' : undefined,
+      blockReason: blocked ? reason || 'peer' : undefined,
     }));
   }
 }

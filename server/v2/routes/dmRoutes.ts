@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 import { dmService } from '../services/dmService.js';
+import { blockedSendErrorMessage } from '../utils/blockCopy.js';
 import { logger } from '../utils/logger.js';
 import { getDmRoomAliases, resetUnread } from '../../websocket/unreadManager.js';
 import type { Request, Response } from 'express';
@@ -64,7 +65,12 @@ dmRouter.post('/:peer', async (req: Request, res: Response) => {
   } catch (err) {
     const blocked = (err as Error & { code?: string })?.code === 'BLOCKED' || (err as Error)?.message === 'BLOCKED';
     if (blocked) {
-      return res.status(403).json({ error: 'Unblock this contact to send messages' });
+      const reason = (err as Error & { blockReason?: string }).blockReason;
+      return res.status(403).json({
+        error: blockedSendErrorMessage(reason),
+        code: 'BLOCKED',
+        blockReason: reason || 'peer',
+      });
     }
     logger.error('Failed to send direct message', { error: (err as Error).message });
     res.status(500).json({ error: 'Failed to send message' });
