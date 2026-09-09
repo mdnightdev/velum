@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { CheckCircle, AlertTriangle, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
-import PasswordInput from '../../../components/PasswordInput';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle, AlertTriangle, Upload, Trash2 } from 'lucide-react';
 import { resolveMediaUrl } from '../../../utils/mediaPipeline';
+import { isAvatarImageSrc } from '../../../components/ContactAvatar';
 
 export function SettingsAccountTab({
   profileMsg,
@@ -35,10 +35,22 @@ export function SettingsAccountTab({
   const [avatarLoadError, setAvatarLoadError] = useState(false);
   const [bannerLoadError, setBannerLoadError] = useState(false);
 
-  const rawAvatarSrc = avatarPreview || avatarUrl || (avatarColor === 'custom' ? avatarUrl : null);
+  const candidateAvatar = avatarPreview || avatarUrl || null;
+  const rawAvatarSrc = isAvatarImageSrc(candidateAvatar) ? candidateAvatar : null;
   const resolvedAvatarSrc = rawAvatarSrc ? resolveMediaUrl(rawAvatarSrc) : null;
+  const showAvatarImage = Boolean(resolvedAvatarSrc) && !avatarLoadError;
+  const avatarInitial =
+    (displayName ? displayName.slice(0, 1).toUpperCase() : '') ||
+    (currentUsername ? currentUsername.slice(0, 1).toUpperCase() : 'U');
 
-  const rawBannerSrc = bannerPreview || bannerUrl || (bannerColor === 'custom' ? bannerUrl : null);
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [candidateAvatar]);
+
+  const rawBannerSrc =
+    isAvatarImageSrc(bannerPreview) || isAvatarImageSrc(bannerUrl)
+      ? bannerPreview || bannerUrl
+      : null;
   const resolvedBannerSrc = rawBannerSrc ? resolveMediaUrl(rawBannerSrc) : null;
 
   return (
@@ -106,16 +118,22 @@ export function SettingsAccountTab({
         <div className="px-6 pb-5 pt-0 relative flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-10">
           <div className="flex items-end gap-4">
             <div className="relative group shrink-0">
-              <div className="w-20 h-20 rounded-full border-4 border-velum-800 bg-velum-750 flex items-center justify-center font-bold text-2xl text-accent overflow-hidden shadow-2xl">
-                {resolvedAvatarSrc && !avatarLoadError ? (
-                  <img 
-                    src={resolvedAvatarSrc} 
-                    alt="Avatar" 
-                    className="w-full h-full object-cover" 
+              <div
+                className={`w-20 h-20 rounded-full border-4 border-velum-800 relative flex items-center justify-center font-bold text-2xl text-accent overflow-hidden shadow-2xl ${
+                  showAvatarImage ? 'bg-velum-750' : getAvatarClass?.(avatarColor) || 'bg-velum-750'
+                }`}
+              >
+                {showAvatarImage ? (
+                  <img
+                    src={resolvedAvatarSrc!}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover"
                     onError={() => setAvatarLoadError(true)}
                   />
                 ) : (
-                  (displayName ? displayName.slice(0, 1).toUpperCase() : '') || (currentUsername ? currentUsername.slice(0, 1).toUpperCase() : 'U')
+                  <span className="leading-none select-none" aria-hidden="true">
+                    {avatarInitial}
+                  </span>
                 )}
               </div>
               <label className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 rounded-full transition-opacity cursor-pointer">
@@ -134,7 +152,7 @@ export function SettingsAccountTab({
             <div className="mb-1">
               <div className="flex items-center gap-2">
                 <h4 className="text-lg font-bold text-text-primary leading-none">{displayName}</h4>
-                {resolvedAvatarSrc && !avatarLoadError && (
+                {showAvatarImage && (
                   <button
                     type="button"
                     onClick={handleDeleteAvatar}

@@ -11,29 +11,7 @@ import { resolveMediaUrl } from '../../utils/mediaPipeline';
 import { getSessionId } from '../../utils/auth';
 import { getDmRoomAliases, resolveDmUnreadCount, selectLatestDmMessage, messageTimestamp, shouldHideDeletedDm, getPrimaryDmRoomId } from '../../utils/roomUtils';
 import { useChatStore } from '../../stores/chatStore';
-
-const AVATAR_COLOR_CLASSES: Record<string, string> = {
-  blue: 'bg-theme-blue-avatar-bg text-theme-blue-avatar border-theme-blue-avatar-border',
-  emerald: 'bg-theme-emerald-avatar-bg text-theme-emerald-avatar border-theme-emerald-avatar-border',
-  amber: 'bg-theme-amber-avatar-bg text-theme-amber-avatar border-theme-amber-avatar-border',
-  purple: 'bg-theme-purple-avatar-bg text-theme-purple-avatar border-theme-purple-avatar-border',
-  charcoal: 'bg-velum-800 text-text-secondary border-velum-600'
-};
-
-function isAvatarImageSrc(avatar?: string | null): boolean {
-  if (!avatar) return false;
-  const v = avatar.trim();
-  if (!v) return false;
-  if (AVATAR_COLOR_CLASSES[v]) return false;
-  return (
-    v.startsWith('http://') ||
-    v.startsWith('https://') ||
-    v.startsWith('/') ||
-    v.startsWith('data:') ||
-    v.startsWith('blob:') ||
-    v.includes('/')
-  );
-}
+import { ContactAvatar, isAvatarImageSrc } from '../ContactAvatar';
 
 function dedupeRelationshipsByPeerId(raw: any[]): any[] {
   const SYSTEM_IDS = new Set([1, 2, 999]);
@@ -68,44 +46,6 @@ function dedupeRelationshipsByPeerId(raw: any[]): any[] {
   }
 
   return Array.from(byPeer.values());
-}
-
-function ContactAvatar({
-  name,
-  avatar,
-  className = 'w-10 h-10 rounded-xl'
-}: {
-  name: string;
-  avatar?: string | null;
-  className?: string;
-}) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const initials = ((name || '?').trim().charAt(0) || '?').toUpperCase();
-  const colorKey = avatar && AVATAR_COLOR_CLASSES[avatar.trim()] ? avatar.trim() : null;
-  const showImage = isAvatarImageSrc(avatar) && !imgFailed;
-
-  React.useEffect(() => {
-    setImgFailed(false);
-  }, [avatar]);
-
-  return (
-    <div
-      className={`${className} border flex items-center justify-center font-bold text-xs overflow-hidden flex-shrink-0 relative ${
-        colorKey ? AVATAR_COLOR_CLASSES[colorKey] : 'bg-velum-750 border-velum-600 text-text-secondary'
-      }`}
-    >
-      {showImage ? (
-        <img
-          src={resolveMediaUrl(avatar)}
-          alt={name}
-          className="absolute inset-0 w-full h-full object-cover"
-          onError={() => setImgFailed(true)}
-        />
-      ) : (
-        <span className="uppercase text-sm font-semibold text-text-primary">{initials}</span>
-      )}
-    </div>
-  );
 }
 
 function renderPreviewWithIcons(content: string) {

@@ -4,7 +4,7 @@ import { FriendRequest, stripAt } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { getSessionId } from '../../utils/auth';
 import { unDeleteContact, isHiddenFromUserContacts } from '../../utils/deletedDms';
-import { resolveMediaUrl } from '../../utils/mediaPipeline';
+import { ContactAvatar } from '../ContactAvatar';
 
 type DirectoryHit = {
   id: number;
@@ -390,12 +390,14 @@ export default function PeopleMainDashboard({
                 : item.displayName || item.username;
               const userId = Number(isPending ? item.sender_id : item.friendId);
               const avatarUrl = isPending ? item.sender_avatar : item.avatarUrl || item.avatar;
-              const avatarLetter = displayName ? String(displayName).charAt(0).toUpperCase() : '?';
               const peerUsername = stripAt(username || displayName || `User #${userId}`);
 
               const avatarNode = (
-                <button
-                  type="button"
+                <ContactAvatar
+                  name={String(displayName || peerUsername || '?')}
+                  avatar={avatarUrl}
+                  className="w-10 h-10 rounded-xl"
+                  title="Profile"
                   onClick={(e) =>
                     openProfile(e, {
                       userId,
@@ -404,20 +406,7 @@ export default function PeopleMainDashboard({
                       avatar: avatarUrl || undefined,
                     })
                   }
-                  className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-semibold overflow-hidden bg-velum-750 border border-velum-600 text-text-primary cursor-pointer active:scale-95 transition-transform p-0"
-                  title="Profile"
-                  aria-label="Open profile"
-                >
-                  {avatarUrl ? (
-                    <img
-                      src={resolveMediaUrl(avatarUrl)}
-                      alt={displayName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    avatarLetter
-                  )}
-                </button>
+                />
               );
 
               if (isPending) {
@@ -508,7 +497,6 @@ export default function PeopleMainDashboard({
                 {directoryToShow.map((u) => {
                   const uname = stripAt(u.username);
                   const displayName = u.displayName || uname;
-                  const avatarLetter = displayName.charAt(0).toUpperCase();
                   const alreadyPending =
                     pendingOutgoingUsernames.has(uname.toLowerCase()) ||
                     pendingOutgoingUsernames.has(String(u.id));
@@ -519,8 +507,11 @@ export default function PeopleMainDashboard({
                       key={u.id}
                       className="w-full px-3 py-2.5 flex items-center gap-3"
                     >
-                      <button
-                        type="button"
+                      <ContactAvatar
+                        name={displayName}
+                        avatar={u.avatarUrl}
+                        className="w-10 h-10 rounded-xl"
+                        title="Profile"
                         onClick={(e) =>
                           openProfile(e, {
                             userId: u.id,
@@ -529,20 +520,7 @@ export default function PeopleMainDashboard({
                             avatar: u.avatarUrl || undefined,
                           })
                         }
-                        className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-sm font-semibold overflow-hidden bg-velum-750 border border-velum-600 text-text-primary cursor-pointer active:scale-95 transition-transform p-0"
-                        title="Profile"
-                        aria-label="Open profile"
-                      >
-                        {u.avatarUrl ? (
-                          <img
-                            src={resolveMediaUrl(u.avatarUrl)}
-                            alt={displayName}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          avatarLetter
-                        )}
-                      </button>
+                      />
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="text-sm font-semibold text-text-primary truncate">{displayName}</span>
                       </div>
