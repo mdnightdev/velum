@@ -43,18 +43,22 @@ async function connect(): Promise<pg.Client> {
 }
 
 async function main() {
-  const sqlPath = path.resolve('server/v2/db/migrations/0002_ops_dm_reactions_blocks.sql');
-  const raw = fs.readFileSync(sqlPath, 'utf8');
-  const statements = raw
-    .split(/-->\s*statement-breakpoint/)
-    .map((s) =>
-      s
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('--'))
-        .join('\n')
-        .trim()
-    )
-    .filter(Boolean);
+  const migrationPaths = [
+    path.resolve('server/v2/db/migrations/0002_ops_dm_reactions_blocks.sql'),
+    path.resolve('server/v2/db/migrations/0003_profile_nicknames.sql'),
+  ];
+  const statements = migrationPaths.flatMap((sqlPath) =>
+    fs.readFileSync(sqlPath, 'utf8')
+      .split(/-->\s*statement-breakpoint/)
+      .map((s) =>
+        s
+          .split('\n')
+          .filter((line) => !line.trim().startsWith('--'))
+          .join('\n')
+          .trim()
+      )
+      .filter(Boolean)
+  );
 
   const client = await connect();
   try {
@@ -80,6 +84,10 @@ async function main() {
 
     await client.query(`ALTER TABLE dms ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_dms_expires_at ON dms (expires_at)`);
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS bio text
+    `);
 
     console.log('[apply-pending-schema] ok — ops/dm_reactions/blocks applied without truncate');
   } finally {

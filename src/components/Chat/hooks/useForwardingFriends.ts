@@ -38,8 +38,9 @@ export function useForwardingFriends({
             }
             return {
               userId,
-              username: stripAt(r.username || r.displayName || `User #${userId}`),
+              username: stripAt(r.username || `User #${userId}`),
               displayName: r.displayName || r.username,
+              nickname: r.nickname || '',
               avatar: r.avatarUrl || r.avatar || r.avatar_url || ''
             };
           })

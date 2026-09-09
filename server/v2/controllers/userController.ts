@@ -2,11 +2,12 @@ import type { Request, Response } from 'express';
 import { userRepository } from '../repositories/userRepository.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { db } from '../db/client.js';
-import { users, sessions } from '../db/schema/index.js';
+import { users, sessions, userNicknames } from '../db/schema/index.js';
 import { eq, or, and, count, desc } from 'drizzle-orm';
 import { loungeMembers } from '../db/schema/lounges.js';
 import { relationships } from '../db/schema/relationships.js';
 import { getRedisClient } from '../db/redis.js';
+import { DEFAULT_USER_BIO } from '../constants/profile.js';
 
 export class UserController {
   async getProfile(req: Request, res: Response): Promise<void> {
@@ -38,6 +39,15 @@ export class UserController {
         )
       );
     const connectionsCount = Number(userConnections[0]?.value || 0);
+
+    const [nicknameRecord] = await db
+      .select({ nickname: userNicknames.nickname })
+      .from(userNicknames)
+      .where(and(
+        eq(userNicknames.ownerId, req.user.userId),
+        eq(userNicknames.targetId, targetUserId)
+      ))
+      .limit(1);
 
     const isRecentlyActive = user.updatedAt && (Date.now() - new Date(user.updatedAt).getTime() < 300000);
     const resolvedStatus = isRecentlyActive ? 'Online' : 'Offline';
@@ -71,7 +81,8 @@ export class UserController {
       displayName: user.displayName || user.username,
       avatar: user.avatarUrl || '',
       avatarUrl: user.avatarUrl || '',
-      bio: user.bio || '',
+      bio: user.bio || DEFAULT_USER_BIO,
+      nickname: nicknameRecord?.nickname || '',
       location: user.location || '',
       role: user.role,
       createdAt: user.createdAt,

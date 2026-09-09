@@ -26,6 +26,11 @@ import { useChatMedia } from './useChatMedia';
 import ChatMediaSection from './ChatMediaSection';
 import ProfileActionModals from './ProfileActionModals';
 import {
+  resolveContactName,
+  writeStoredNickname,
+  readStoredNickname,
+} from '../../utils/contactName';
+import {
   MUTE_DURATIONS,
   NOTIFICATION_SOUNDS,
   getSelectedNotificationSound,
@@ -145,8 +150,27 @@ export default function UserProfileCard({
   );
 
   React.useEffect(() => {
-    setLocalNickname(user?.nickname || '');
-  }, [user?.userId, user?.nickname]);
+    if (!user?.userId || !currentUserId) {
+      setLocalNickname('');
+      return;
+    }
+    let cancelled = false;
+    const localValue = readStoredNickname(currentUserId, user.userId) || user.nickname || '';
+    setLocalNickname(localValue);
+    fetch(`/v2/user/${user.userId}/profile`, {
+      headers: { Authorization: `Bearer ${getSessionId()}` },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || typeof data?.nickname !== 'string') return;
+        setLocalNickname(data.nickname);
+        writeStoredNickname(currentUserId, user.userId, data.nickname);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, user?.userId, user?.nickname]);
 
   React.useEffect(() => {
     if (user?.userId) {
@@ -202,8 +226,11 @@ export default function UserProfileCard({
     return null;
   }
 
-  const baseName = user.displayName || user.username;
-  const displayName = (localNickname.trim() || baseName).trim();
+  const displayName = resolveContactName({
+    nickname: localNickname,
+    displayName: user.displayName,
+    username: user.username,
+  });
   const isAdminMode = type === 'admin' || user.role === 'LOGIN_ADMIN' || user.role === 'SUPPORT_OPERATOR';
   const isSystemPeer = SYSTEM_IDS.has(user.userId || 0) || user.username?.toLowerCase() === 'velum';
   const bioText = (user.bio || '').trim();
@@ -211,6 +238,33 @@ export default function UserProfileCard({
   const triggerFeedback = (msg: string) => {
     setActionFeedback(msg);
     setTimeout(() => setActionFeedback(null), 3000);
+  };
+
+  const persistNickname = async (value: string): Promise<boolean> => {
+    if (!user?.userId || !currentUserId || user.userId === currentUserId) return false;
+    try {
+      const response = await fetch(`/v2/user/${user.userId}/nickname`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${getSessionId()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nickname: value }),
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      const savedValue = typeof data.nickname === 'string' ? data.nickname : value;
+      setLocalNickname(savedValue);
+      writeStoredNickname(currentUserId, user.userId, savedValue);
+      window.dispatchEvent(
+        new CustomEvent('velum-nickname-updated', {
+          detail: { targetUserId: user.userId, nickname: savedValue },
+        })
+      );
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const resetReportModal = () => {
@@ -681,9 +735,15 @@ export default function UserProfileCard({
                 type="button"
                 className="px-3 py-2 text-xs text-text-secondary hover:text-white cursor-pointer"
                 onClick={() => {
-                  setLocalNickname('');
-                  setShowNicknameModal(false);
-                  triggerFeedback('Nickname cleared');
+                  void persistNickname('').then((saved) => {
+                    if (!saved) {
+                      triggerFeedback('Nickname could not be cleared');
+                      return;
+                    }
+                    setLocalNickname('');
+                    setShowNicknameModal(false);
+                    triggerFeedback('Nickname cleared');
+                  });
                 }}
               >
                 Clear
@@ -692,9 +752,16 @@ export default function UserProfileCard({
                 type="button"
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-accent text-velum-900 cursor-pointer"
                 onClick={() => {
-                  setLocalNickname(nicknameDraft.trim());
-                  setShowNicknameModal(false);
-                  triggerFeedback(nicknameDraft.trim() ? 'Nickname saved' : 'Nickname cleared');
+                  const value = nicknameDraft.trim();
+                  void persistNickname(value).then((saved) => {
+                    if (!saved) {
+                      triggerFeedback('Nickname could not be saved');
+                      return;
+                    }
+                    setLocalNickname(value);
+                    setShowNicknameModal(false);
+                    triggerFeedback(value ? 'Nickname saved' : 'Nickname cleared');
+                  });
                 }}
               >
                 Save

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Message, stripAt } from '../types';
+import { Message } from '../types';
 import { EncryptionContext } from '../services/encryptionService';
 import { useAudioRecorder } from './Chat/hooks/useAudioRecorder';
 import { useMessageInput } from './Chat/hooks/useMessageInput';
@@ -18,6 +18,7 @@ import { MessageList } from './Chat/MessageList';
 import { SearchDrawer } from './Chat/SearchDrawer';
 import { getMessageKey } from './Chat/messageKey';
 import { resolveContactDisplayName } from './Chat/MessageItem';
+import { resolveContactName } from '../utils/contactName';
 import { velumToast } from '../utils/toast';
 import { ImageCropperModal } from './ImageCropperModal';
 import { streamFileDirectToCloudStorage, generateAnonymousFilename, sanitizeMediaExtension } from '../utils/mediaPipeline';
@@ -51,7 +52,13 @@ export interface ChatAreaProps {
   onMarkAsRead?: (messageId: string, roomId: string, dbMessageId?: number, sequenceId?: number) => void;
   onMarkAllAsRead?: (roomId: string) => void;
   onMarkDelivered?: (messageId: string, roomId: string) => void;
-  activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
+  activeChatPeer?: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  } | null;
   isDark?: boolean;
   roomAccessLevel?: string;
   onBackToDeck?: () => void;
@@ -204,7 +211,12 @@ export default function ChatArea({
   });
 
   const chatTitle = activeChatPeer
-    ? stripAt(activeChatPeer.username)
+    ? resolveContactName({
+        nickname: activeChatPeer.nickname,
+        displayName: activeChatPeer.displayName,
+        username: activeChatPeer.username,
+        fallback: 'Contact',
+      })
     : roomName
       ? roomName.replace(/^#\s*/, '')
       : (roomId.startsWith('#') ? roomId.slice(1) : roomId);

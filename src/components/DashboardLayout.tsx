@@ -30,8 +30,20 @@ interface DashboardLayoutProps {
   onLogout: () => void;
   activeRoomId: string;
   onRoomSelect: (roomId: string) => void;
-  activeChatPeer?: { userId: number; username: string; avatar?: string } | null;
-  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
+  activeChatPeer?: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  } | null;
+  onSelectPeer?: (peer: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  }) => void;
   onClearChatPeer?: () => void;
   onProfileUpdate?: (u: any) => void;
   wsConnected?: boolean;
@@ -129,6 +141,7 @@ export default function DashboardLayout({
           id: targetUserId,
           avatarUrl: data.avatarUrl || data.avatar || profUser.avatarUrl || profUser.avatar || '',
           displayName: data.displayName || profUser.displayName || profUser.username,
+          nickname: data.nickname || '',
           bio: data.bio || '',
           location: data.location || '',
           status: data.status || 'Active',
@@ -238,6 +251,24 @@ export default function DashboardLayout({
     const interval = setInterval(loadPeopleAndRequests, ms);
     return () => clearInterval(interval);
   }, [user?.userId, wsConnected]);
+
+  useEffect(() => {
+    const onNicknameUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const targetUserId = Number(detail.targetUserId);
+      if (!Number.isFinite(targetUserId)) return;
+      const nickname = typeof detail.nickname === 'string' ? detail.nickname : '';
+      setFriendRelationships((prev) =>
+        (Array.isArray(prev) ? prev : []).map((r: any) => {
+          const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
+          if (friendId !== targetUserId) return r;
+          return { ...r, nickname };
+        })
+      );
+    };
+    window.addEventListener('velum-nickname-updated', onNicknameUpdated);
+    return () => window.removeEventListener('velum-nickname-updated', onNicknameUpdated);
+  }, []);
 
   // Silent background revalidation on visibility change, online event, and socket reconnection
   useEffect(() => {

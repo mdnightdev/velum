@@ -59,6 +59,7 @@ export default function SettingsDrawer({
   const [activeView, setActiveView] = useState<SettingCategory | 'menu'>('menu');
 
   // Account settings states
+  const [username, setUsername] = useState(stripAt(currentUsername || ''));
   const [displayName, setDisplayName] = useState(stripAt(currentUsername || ''));
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -73,14 +74,10 @@ export default function SettingsDrawer({
 
   // Profile personalization states
   const [bio, setBio] = useState('');
+  const [location, setLocation] = useState('');
   const [avatarColor, setAvatarColor] = useState('emerald');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [bannerColor, setBannerColor] = useState('charcoal');
-  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
-  const [bannerFile, setBannerFile] = useState<File | Blob | null>(null);
-  const [bannerUrl, setBannerUrl] = useState('');
   
-  const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -120,152 +117,101 @@ export default function SettingsDrawer({
 
   // Load profile details from real API endpoint on open
   useEffect(() => {
-    if (isOpen) {
-      setAccountMsg(null);
-      setAccountError(null);
-      setProfileMsg(null);
-      setProfileError(null);
-      setAppearanceMsg(null);
-      setNotificationsMsg(null);
-      setMediaMsg(null);
-      setMediaError(null);
+    if (!isOpen || !currentUserId) return;
 
-      getLocalMedia(`avatar_${currentUserId}`).then((cachedBlob) => {
-        if (cachedBlob) {
-          const localUrl = URL.createObjectURL(cachedBlob);
-          setAvatarPreview(localUrl);
-          setAvatarColor('custom');
-        }
-      }).catch(() => {});
-
-      getLocalMedia(`banner_${currentUserId}`).then((cachedBlob) => {
-        if (cachedBlob) {
-          const localUrl = URL.createObjectURL(cachedBlob);
-          setBannerPreview(localUrl);
-          setBannerColor('custom');
-        }
-      }).catch(() => {});
-
-      const sId = getSessionId();
-      const requestHeaders = {
-        'Authorization': `Bearer ${sId}`,
-        'Content-Type': 'application/json'
-      };
-
-      fetch(`/v2/user/${currentUserId}/profile`, { headers: requestHeaders })
-        .then(res => res.json())
-        .then(data => {
-          if (data) {
-            if (data.bio) setBio(data.bio);
-            setDisplayName(stripAt(data.displayName || currentUsername || ''));
-            if (data.avatar !== undefined) {
-              const avatarVal = data.avatar || '';
-              if (avatarVal.startsWith('http') || avatarVal.startsWith('data:') || avatarVal.startsWith('/')) {
-                setAvatarUrl(avatarVal);
-                setAvatarColor('custom');
-              } else {
-                setAvatarUrl('');
-                setAvatarColor(avatarVal || 'charcoal');
-              }
-            }
-            if (data.email) setEmail(data.email);
-            if (data.phone) setPhone(data.phone);
-            if (data.bannerColor) {
-              const bannerVal = data.bannerColor || '';
-              if (bannerVal.startsWith('http') || bannerVal.startsWith('data:') || bannerVal.startsWith('/')) {
-                setBannerUrl(bannerVal);
-                setBannerColor('custom');
-              } else {
-                setBannerUrl('');
-                setBannerColor(bannerVal || 'charcoal');
-              }
-            }
-
-            if (data.settings) {
-              const s = data.settings;
-              if (s.theme) setThemeMode(s.theme);
-              if (s.messageScaling) setMessageScaling(s.messageScaling);
-              if (s.fontAdjustment) setFontAdjustment(s.fontAdjustment);
-              if (s.desktopPopups !== undefined) setDesktopPopups(s.desktopPopups);
-              if (s.soundTriggers !== undefined) setSoundTriggers(s.soundTriggers);
-              if (s.unreadBadges !== undefined) setUnreadBadges(s.unreadBadges);
-              if (s.pushPreferences !== undefined) setPushPreferences(s.pushPreferences);
-              if (s.voiceEnabled !== undefined) setVoiceEnabled(s.voiceEnabled);
-              if (s.autoPlayVoice !== undefined) setAutoPlayVoice(s.autoPlayVoice);
-            }
-          }
-        })
-        .catch(() => {});
-
-      // Fetch user lounges count
-      fetch('/v2/lounges', { headers: requestHeaders })
-        .then(res => res.ok ? res.json() : [])
-        .then(data => {
-          const list = Array.isArray(data) ? data : (data?.lounges || []);
-          setLoungesCount(list.length);
-        })
-        .catch(() => {});
-
-      // Fetch user connections/friends count
-      fetch('/v2/friends/relationships', { headers: requestHeaders })
-        .then(res => res.ok ? res.json() : [])
-        .then(data => {
-          const rels = Array.isArray(data) ? data : (data?.relationships || []);
-          const activeFriends = rels.filter((r: any) => r.status === 'accepted');
-          setConnectionsCount(activeFriends.length);
-        })
-        .catch(() => {});
-    }
-  }, [isOpen, currentUserId]);
-
-  const handleUpdateAccountDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
     setAccountMsg(null);
     setAccountError(null);
+    setProfileError(null);
+    setAppearanceMsg(null);
+    setNotificationsMsg(null);
+    setMediaMsg(null);
+    setMediaError(null);
 
-    const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
-
-    try {
-      const res = await fetch('/v2/user/profile', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${stripAt(displayName)}`,
-          displayName: stripAt(displayName),
-          bio,
-          avatar: chosenAvatar,
-          location: '',
-          email: email.trim(),
-          phone: phone.trim(),
-          bannerColor,
-          settings: {
-            theme: themeMode,
-            messageScaling,
-            fontAdjustment,
-            desktopPopups,
-            soundTriggers,
-            unreadBadges,
-            pushPreferences,
-            voiceEnabled,
-            autoPlayVoice
-          }
-        })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setAccountMsg('Account details saved.');
-        if (onProfileUpdate) {
-          onProfileUpdate(data.user);
-        }
-        storage.setItem('velum-username', data.user.username);
-      } else {
-        setAccountError(data.error || 'Failed to update account details.');
+    getLocalMedia(`avatar_${currentUserId}`, currentUserId).then((cachedBlob) => {
+      if (cachedBlob) {
+        const localUrl = URL.createObjectURL(cachedBlob);
+        setAvatarPreview(localUrl);
+        setAvatarColor('custom');
       }
-    } catch {
-      setAccountError('Server connection error.');
-    }
+    }).catch(() => {});
+
+    const sId = getSessionId();
+    const requestHeaders = {
+      'Authorization': `Bearer ${sId}`,
+      'Content-Type': 'application/json'
+    };
+
+    fetch('/v2/user/me/profile', { headers: requestHeaders })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!data || data.error) return;
+        if (data.bio !== undefined) setBio(data.bio || '');
+        if (data.username) setUsername(stripAt(data.username));
+        setDisplayName(stripAt(data.displayName || data.username || currentUsername || ''));
+        if (data.location !== undefined) setLocation(data.location || '');
+        const avatarVal = data.avatar || data.avatarUrl || '';
+        if (avatarVal.startsWith('http') || avatarVal.startsWith('data:') || avatarVal.startsWith('/') || avatarVal.includes('/uploads/')) {
+          setAvatarUrl(avatarVal);
+          setAvatarPreview(avatarVal);
+          setAvatarColor('custom');
+        } else if (avatarVal) {
+          setAvatarUrl('');
+          setAvatarPreview(null);
+          setAvatarColor(avatarVal);
+        } else {
+          setAvatarUrl('');
+          setAvatarPreview(null);
+          setAvatarColor('charcoal');
+        }
+        if (data.email) setEmail(data.email);
+        if (data.phone) setPhone(data.phone);
+
+        if (data.settings) {
+          const s = data.settings;
+          if (s.theme) setThemeMode(s.theme);
+          if (s.messageScaling) setMessageScaling(s.messageScaling);
+          if (s.fontAdjustment) setFontAdjustment(s.fontAdjustment);
+          if (s.desktopPopups !== undefined) setDesktopPopups(s.desktopPopups);
+          if (s.soundTriggers !== undefined) setSoundTriggers(s.soundTriggers);
+          if (s.unreadBadges !== undefined) setUnreadBadges(s.unreadBadges);
+          if (s.pushPreferences !== undefined) setPushPreferences(s.pushPreferences);
+          if (s.voiceEnabled !== undefined) setVoiceEnabled(s.voiceEnabled);
+          if (s.autoPlayVoice !== undefined) setAutoPlayVoice(s.autoPlayVoice);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/v2/lounges', { headers: requestHeaders })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.lounges || []);
+        setLoungesCount(list.length);
+      })
+      .catch(() => {});
+
+    fetch('/v2/friends/relationships', { headers: requestHeaders })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const rels = Array.isArray(data) ? data : (data?.relationships || []);
+        const activeFriends = rels.filter((r: any) => r.status === 'accepted');
+        setConnectionsCount(activeFriends.length);
+      })
+      .catch(() => {});
+  }, [isOpen, currentUserId, currentUsername]);
+
+  const buildProfileBody = (overrides: Record<string, unknown> = {}) => {
+    const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
+    return {
+      userId: currentUserId,
+      username: stripAt(username || displayName),
+      displayName: stripAt(displayName || username),
+      bio: bio.trim(),
+      location: location.trim(),
+      avatar: chosenAvatar,
+      email: email.trim(),
+      phone: phone.trim(),
+      ...overrides,
+    };
   };
 
   const handlePasswordReset = async (e: React.FormEvent) => {
@@ -353,7 +299,7 @@ export default function SettingsDrawer({
   const [croppingConfig, setCroppingConfig] = useState<{
     src: string;
     fileName: string;
-    type: 'avatar' | 'banner';
+    type: 'avatar';
   } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -369,19 +315,6 @@ export default function SettingsDrawer({
     e.target.value = '';
   };
 
-  const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (reader.result) {
-        setCroppingConfig({ src: reader.result as string, fileName: file.name, type: 'banner' });
-      }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
   const handleRemovePhoto = () => {
     setAvatarPreview(null);
     setAvatarFile(null);
@@ -389,22 +322,11 @@ export default function SettingsDrawer({
     setAvatarColor('charcoal');
   };
 
-  const handleRemoveBanner = () => {
-    setBannerPreview(null);
-    setBannerFile(null);
-    setBannerUrl('');
-    setBannerColor('slate');
-  };
-
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setProfileMsg(null);
+  const handleSaveProfile = async () => {
     setProfileError(null);
     setIsUploading(true);
 
     let finalAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
-    let finalBanner = bannerColor === 'custom' ? bannerUrl : bannerColor;
-
     try {
       const sId = getSessionId();
       const requestHeaders = {
@@ -416,33 +338,24 @@ export default function SettingsDrawer({
         const uploadedUrl = await streamFileDirectToCloudStorage(avatarFile, 'avatars', avatarFile.type.split('/')[1] || 'webp');
         finalAvatar = uploadedUrl;
         setAvatarUrl(uploadedUrl);
-        await saveLocalMedia(`avatar_${currentUserId}`, avatarFile);
+        setAvatarPreview(uploadedUrl);
+        setAvatarColor('custom');
+        await saveLocalMedia(
+          `avatar_${currentUserId}`,
+          avatarFile,
+          avatarFile.type || 'image/webp',
+          currentUserId
+        );
       } else if (avatarColor === 'charcoal' && !avatarPreview && !avatarUrl) {
         finalAvatar = '';
-        await deleteLocalMedia(`avatar_${currentUserId}`);
-      }
-
-      if (bannerFile && bannerPreview) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(bannerFile, 'avatars', bannerFile.type.split('/')[1] || 'webp');
-        finalBanner = uploadedUrl;
-        setBannerUrl(uploadedUrl);
-        await saveLocalMedia(`banner_${currentUserId}`, bannerFile);
-      } else if (bannerColor === 'slate' && !bannerPreview && !bannerUrl) {
-        finalBanner = '';
-        await deleteLocalMedia(`banner_${currentUserId}`);
+        await deleteLocalMedia(`avatar_${currentUserId}`, currentUserId);
       }
 
       const res = await fetch('/v2/user/profile', {
         method: 'POST',
         headers: requestHeaders,
         body: JSON.stringify({
-          userId: currentUserId,
-          displayName: stripAt(displayName),
-          bio: bio.trim(),
-          avatar: finalAvatar,
-          email: email.trim(),
-          phone: phone.trim(),
-          bannerColor: finalBanner,
+          ...buildProfileBody({ avatar: finalAvatar }),
           settings: {
             theme: themeMode,
             messageScaling,
@@ -458,31 +371,58 @@ export default function SettingsDrawer({
       });
       const data = await res.json();
       if (res.ok) {
-        setProfileMsg('Profile updated.');
+        velumToast.success('Profile updated.');
+        const savedUser = data.user || {};
+        const avatarVal = savedUser.avatar || savedUser.avatarUrl || finalAvatar || '';
+        if (savedUser.username) {
+          storage.setItem('velum-username', savedUser.username);
+          setUsername(stripAt(savedUser.username));
+        }
+        if (avatarVal) {
+          setAvatarUrl(avatarVal);
+          setAvatarPreview(avatarVal);
+          setAvatarColor('custom');
+        } else if (!finalAvatar) {
+          setAvatarUrl('');
+          setAvatarPreview(null);
+        }
+        try {
+          const cached = storage.getItem<any>('velum-user') || {};
+          storage.setItem('velum-user', {
+            ...cached,
+            ...savedUser,
+            userId: savedUser.userId || savedUser.id || currentUserId,
+            username: savedUser.username || username,
+            displayName: savedUser.displayName || displayName,
+            avatar: avatarVal,
+            avatarUrl: avatarVal,
+            bio: savedUser.bio ?? bio,
+            location: savedUser.location ?? location,
+          });
+        } catch (_) {}
         if (onProfileUpdate) {
-          onProfileUpdate(data.user);
+          onProfileUpdate({
+            ...savedUser,
+            avatar: avatarVal,
+            avatarUrl: avatarVal,
+          });
         }
         window.dispatchEvent(new CustomEvent('velum-profile-updated'));
-        
-        if (data.user?.avatar) {
-          setAvatarUrl(data.user.avatar);
-          setAvatarPreview(data.user.avatar);
-        }
-        if (data.user?.bannerColor) {
-          setBannerUrl(data.user.bannerColor);
-          setBannerPreview(data.user.bannerColor);
-        }
         setAvatarFile(null);
-        setBannerFile(null);
-        setTimeout(() => setProfileMsg(null), 3500);
+        return true;
       } else {
-        setProfileError(data.error || 'Failed to update profile.');
+        const message = data.error || 'Failed to update profile.';
+        velumToast.error(message);
+        setProfileError(message);
         setTimeout(() => setProfileError(null), 3500);
+        return false;
       }
     } catch (err) {
       console.error('Profile save error:', err);
+      velumToast.error('Failed to establish server connection.');
       setProfileError('Failed to establish server connection.');
       setTimeout(() => setProfileError(null), 3500);
+      return false;
     } finally {
       setIsUploading(false);
     }
@@ -504,19 +444,11 @@ export default function SettingsDrawer({
     });
 
     try {
-      const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
       await fetch('/v2/user/profile', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${stripAt(displayName)}`,
-          displayName: stripAt(displayName),
-          bio,
-          avatar: chosenAvatar,
-          email,
-          phone,
-          bannerColor,
+          ...buildProfileBody(),
           settings: {
             theme: newTheme,
             messageScaling: newScaling,
@@ -546,19 +478,11 @@ export default function SettingsDrawer({
   const handleSaveNotifications = async (popups: boolean, sound: boolean, badges: boolean, push: boolean) => {
     setNotificationsMsg(null);
     try {
-      const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
       await fetch('/v2/user/profile', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${stripAt(displayName)}`,
-          displayName: stripAt(displayName),
-          bio,
-          avatar: chosenAvatar,
-          email,
-          phone,
-          bannerColor,
+          ...buildProfileBody(),
           settings: {
             theme: themeMode,
             messageScaling,
@@ -586,19 +510,11 @@ export default function SettingsDrawer({
     setMediaMsg(null);
     setMediaError(null);
     try {
-      const chosenAvatar = avatarColor === 'custom' ? avatarUrl : avatarColor;
       await fetch('/v2/user/profile', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          userId: currentUserId,
-          username: `@${stripAt(displayName)}`,
-          displayName: stripAt(displayName),
-          bio,
-          avatar: chosenAvatar,
-          email,
-          phone,
-          bannerColor,
+          ...buildProfileBody(),
           settings: {
             theme: themeMode,
             messageScaling,
@@ -645,18 +561,6 @@ export default function SettingsDrawer({
   };
 
   if (!isOpen) return null;
-
-  const getBannerClass = (color: string) => {
-    const classes: Record<string, string> = {
-      charcoal: 'bg-velum-800',
-      emerald: 'bg-theme-emerald-banner',
-      bronze: 'bg-theme-bronze-banner',
-      violet: 'bg-theme-violet-banner',
-      indigo: 'bg-theme-indigo-banner',
-      crimson: 'bg-theme-crimson-banner'
-    };
-    return classes[color] || classes.charcoal;
-  };
 
   const getAvatarClass = (color: string) => {
     const classes: Record<string, string> = {
@@ -792,16 +696,16 @@ export default function SettingsDrawer({
                 <button
                   type="button"
                   onClick={() => setActiveView('menu')}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white-5 hover:bg-white-10 text-text-secondary hover:text-text-primary transition text-xs font-mono font-semibold uppercase tracking-wider cursor-pointer"
+                  className="inline-flex items-center p-1 text-text-secondary hover:text-text-primary transition cursor-pointer"
+                  aria-label="Back"
+                  title="Back"
                 >
                   <ChevronRight className="w-4 h-4 rotate-180" />
-                  <span>Back</span>
                 </button>
               </div>
 
               {activeView === 'account' && (
                 <SettingsAccountTab
-                  profileMsg={profileMsg}
                   profileError={profileError}
                   handleSaveProfile={handleSaveProfile}
                   avatarPreview={avatarPreview}
@@ -809,7 +713,11 @@ export default function SettingsDrawer({
                   avatarColor={avatarColor}
                   getAvatarClass={getAvatarClass}
                   displayName={displayName}
+                  username={username}
+                  setUsername={setUsername}
                   bio={bio}
+                  location={location}
+                  setLocation={setLocation}
                   loungesCount={loungesCount}
                   connectionsCount={connectionsCount}
                   currentUsername={currentUsername}
@@ -818,12 +726,7 @@ export default function SettingsDrawer({
                   setBio={setBio}
                   handleFileChange={handleFileChange}
                   handleDeleteAvatar={handleRemovePhoto}
-                  handleDeleteBanner={handleRemoveBanner}
-                  bannerPreview={bannerPreview}
-                  bannerUrl={bannerUrl}
-                  bannerColor={bannerColor}
-                  getBannerClass={getBannerClass}
-                  handleBannerFileChange={handleBannerFileChange}
+                  isUploading={isUploading}
                 />
               )}
 
@@ -902,10 +805,6 @@ export default function SettingsDrawer({
               setAvatarFile(croppedFile);
               setAvatarPreview(croppedDataUrl);
               setAvatarColor('custom');
-            } else {
-              setBannerFile(croppedFile);
-              setBannerPreview(croppedDataUrl);
-              setBannerColor('custom');
             }
             setCroppingConfig(null);
           }}

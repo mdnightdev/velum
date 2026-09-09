@@ -5,6 +5,7 @@ import { useLanguage } from '../../i18n/LanguageContext';
 import { getSessionId } from '../../utils/auth';
 import { unDeleteContact, isHiddenFromUserContacts } from '../../utils/deletedDms';
 import { ContactAvatar } from '../ContactAvatar';
+import { resolveContactName } from '../../utils/contactName';
 
 type DirectoryHit = {
   id: number;
@@ -22,7 +23,13 @@ interface PeopleMainDashboardProps {
   setUserSearchTerm: (v: string) => void;
   handleRespondFriendRequest: (requestId: string, action: 'accepted' | 'declined') => void;
   handleSendFriendRequest: (username: string) => void;
-  onSelectPeer: (peer: { userId: number; username: string; avatar?: string }) => void;
+  onSelectPeer: (peer: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  }) => void;
   onSectionView: (view: string) => void;
   loadAndShowProfileCard?: (user: any) => void;
   forwardMode?: boolean;
@@ -230,7 +237,13 @@ export default function PeopleMainDashboard({
     }, 0);
   };
 
-  const openDm = (peer: { userId: number; username: string; avatar?: string }) => {
+  const openDm = (peer: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  }) => {
     unDeleteContact(currentUserId, peer.userId);
     onSelectPeer(peer);
     onSectionView('chat');
@@ -238,7 +251,13 @@ export default function PeopleMainDashboard({
 
   const openProfile = (
     e: React.MouseEvent,
-    peer: { userId: number; username: string; displayName?: string; avatar?: string }
+    peer: {
+      userId: number;
+      username: string;
+      displayName?: string;
+      nickname?: string;
+      avatar?: string;
+    }
   ) => {
     e.stopPropagation();
     e.preventDefault();
@@ -247,6 +266,7 @@ export default function PeopleMainDashboard({
       userId: peer.userId,
       username: peer.username,
       displayName: peer.displayName || peer.username,
+      nickname: peer.nickname || '',
       avatarUrl: peer.avatar,
       avatar: peer.avatar,
     });
@@ -388,13 +408,20 @@ export default function PeopleMainDashboard({
               const displayName = isPending
                 ? item.sender_display_name || item.sender_name
                 : item.displayName || item.username;
+              const nickname = isPending ? '' : item.nickname || '';
+              const contactName = resolveContactName({
+                nickname,
+                displayName,
+                username,
+                fallback: `User #${Number(isPending ? item.sender_id : item.friendId) || 0}`,
+              });
               const userId = Number(isPending ? item.sender_id : item.friendId);
               const avatarUrl = isPending ? item.sender_avatar : item.avatarUrl || item.avatar;
               const peerUsername = stripAt(username || displayName || `User #${userId}`);
 
               const avatarNode = (
                 <ContactAvatar
-                  name={String(displayName || peerUsername || '?')}
+                  name={String(contactName || peerUsername || '?')}
                   avatar={avatarUrl}
                   className="w-10 h-10 rounded-xl"
                   title="Profile"
@@ -403,6 +430,7 @@ export default function PeopleMainDashboard({
                       userId,
                       username: peerUsername,
                       displayName: displayName || peerUsername,
+                      nickname,
                       avatar: avatarUrl || undefined,
                     })
                   }
@@ -459,6 +487,8 @@ export default function PeopleMainDashboard({
                     openDm({
                       userId,
                       username: peerUsername,
+                      displayName: displayName || peerUsername,
+                      nickname,
                       avatar: avatarUrl || undefined,
                     })
                   }
@@ -468,6 +498,8 @@ export default function PeopleMainDashboard({
                       openDm({
                         userId,
                         username: peerUsername,
+                        displayName: displayName || peerUsername,
+                        nickname,
                         avatar: avatarUrl || undefined,
                       });
                     }
@@ -476,7 +508,7 @@ export default function PeopleMainDashboard({
                 >
                   {avatarNode}
                   <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-semibold text-text-primary truncate">{displayName}</span>
+                    <span className="text-sm font-semibold text-text-primary truncate">{contactName}</span>
                   </div>
                 </div>
               );

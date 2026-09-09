@@ -6,6 +6,7 @@ import { Message } from '../../types';
 import { formatLastSeen } from '../../utils/datetime';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
 import { stripAttachmentTokens } from '../../utils/messageParser';
+import { resolveContactName } from '../../utils/contactName';
 
 interface ChatHeaderProps {
   wsConnected: boolean;
@@ -77,7 +78,13 @@ export function ChatHeader({
     setMoreOpen(false);
   }, [selectedMessage]);
 
-  const initials = (activeChatPeer?.displayName || activeChatPeer?.username || chatTitle || '?').slice(0, 2).toUpperCase();
+  const headerName = resolveContactName({
+    nickname: activeChatPeer?.nickname,
+    displayName: activeChatPeer?.displayName,
+    username: activeChatPeer?.username,
+    fallback: chatTitle || 'Contact',
+  });
+  const initials = (headerName || '?').slice(0, 2).toUpperCase();
   const headerAvatar = activeChatPeer?.avatar || avatarUrl;
 
   if (selectedMessage) {
@@ -191,7 +198,7 @@ export function ChatHeader({
           )}
 
           <div className="flex flex-col min-w-0">
-            <span className="text-sm font-semibold text-white leading-tight truncate">{chatTitle}</span>
+            <span className="text-sm font-semibold text-white leading-tight truncate">{headerName || chatTitle}</span>
             {!wsConnected ? (
               <span className="text-[9px] font-mono text-accent animate-pulse leading-none mt-0.5">
                 connecting...

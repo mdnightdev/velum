@@ -13,6 +13,11 @@ interface AuthUser {
   role: 'CLI_ADMIN' | 'LOGIN_ADMIN' | 'SUPPORT_ADMIN' | 'ADMIN' | 'USER' | 'SYSTEM' | string;
   status: string;
   duress_active?: boolean;
+  displayName?: string;
+  avatar?: string;
+  avatarUrl?: string;
+  bio?: string;
+  location?: string;
 }
 
 interface AuthContextType {
@@ -22,6 +27,7 @@ interface AuthContextType {
   deviceId: string | null;
   handleLogout: () => void;
   handleLoginSuccess: (user: AuthUser, sessionId: string, deviceId: string, destination: string) => void;
+  updateUser: (partial: Partial<AuthUser>) => void;
   resetFormStates: () => void;
   isLoadingSession: boolean;
 }
@@ -101,6 +107,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.velumDebug.userId = null;
       window.velumDebug.username = null;
     }
+  };
+
+  const updateUser = (partial: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next: AuthUser = { ...prev };
+      if (partial.userId !== undefined) next.userId = partial.userId;
+      if (partial.username !== undefined) next.username = partial.username;
+      if (partial.role !== undefined) next.role = partial.role;
+      if (partial.status !== undefined) next.status = partial.status;
+      if (partial.displayName !== undefined) next.displayName = partial.displayName;
+      if (partial.bio !== undefined) next.bio = partial.bio;
+      if (partial.location !== undefined) next.location = partial.location;
+      if (partial.duress_active !== undefined) next.duress_active = partial.duress_active;
+      if (partial.avatar !== undefined || partial.avatarUrl !== undefined) {
+        const avatarVal = partial.avatarUrl ?? partial.avatar ?? '';
+        next.avatar = avatarVal;
+        next.avatarUrl = avatarVal;
+      }
+      try {
+        storage.setItem('velum-user', next);
+        if (next.username) storage.setItem('velum-username', next.username);
+      } catch (e) {
+        log.warn('Profile storage write warning', { error: (e as Error).message });
+      }
+      if (window.velumDebug) {
+        window.velumDebug.userId = next.userId;
+        window.velumDebug.username = next.username;
+      }
+      return next;
+    });
   };
 
   const resetFormStates = () => {
@@ -207,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       deviceId,
       handleLogout,
       handleLoginSuccess,
+      updateUser,
       resetFormStates,
       isLoadingSession
     }}>

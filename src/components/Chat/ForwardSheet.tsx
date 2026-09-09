@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { X, Loader2, Search } from 'lucide-react';
 import { stripAt } from '../../types';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
+import { resolveContactName } from '../../utils/contactName';
 
 type FriendPeer = {
   userId: number;
   username: string;
   displayName?: string;
+  nickname?: string;
   avatar?: string;
 };
 
@@ -29,8 +31,16 @@ export default function ForwardSheet({
   const term = query.trim().toLowerCase();
   const filtered = friends.filter((f) => {
     if (!term) return true;
-    const name = (f.displayName || f.username || '').toLowerCase();
-    return name.includes(term) || stripAt(f.username || '').toLowerCase().includes(term);
+    const name = resolveContactName({
+      nickname: f.nickname,
+      displayName: f.displayName,
+      username: f.username,
+    }).toLowerCase();
+    return (
+      name.includes(term) ||
+      String(f.nickname || '').toLowerCase().includes(term) ||
+      stripAt(f.username || '').toLowerCase().includes(term)
+    );
   });
 
   return (
@@ -77,7 +87,12 @@ export default function ForwardSheet({
             <p className="text-center text-xs text-text-secondary py-10">No contacts found</p>
           ) : (
             filtered.map((peer) => {
-              const name = peer.displayName || stripAt(peer.username) || `User #${peer.userId}`;
+              const name = resolveContactName({
+                nickname: peer.nickname,
+                displayName: peer.displayName,
+                username: peer.username,
+                fallback: `User #${peer.userId}`,
+              });
               const letter = name.charAt(0).toUpperCase();
               const busy = sendingId === peer.userId;
               return (

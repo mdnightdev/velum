@@ -114,7 +114,10 @@ export const authMiddleware = createAuthMiddleware(async (tokenHash) => {
       role: result.user.role,
       duress_active: result.user.duressActive,
       displayName: result.user.displayName || result.user.username,
-      avatarUrl: result.user.avatarUrl || ''
+      avatarUrl: result.user.avatarUrl || '',
+      avatar: result.user.avatarUrl || '',
+      bio: result.user.bio || '',
+      location: result.user.location || ''
     },
     expiresAt: result.session.expiresAt
   };

@@ -22,11 +22,33 @@ const AdminControlDesk = lazy(() => import('./views/AdminControlDesk'));
 
 
 function AppContent() {
-  const { isAuthenticated, user, sessionId, deviceId, handleLoginSuccess, handleLogout, isLoadingSession } = useAuth();
+  const { isAuthenticated, user, sessionId, deviceId, handleLoginSuccess, handleLogout, updateUser, isLoadingSession } = useAuth();
   const [isDark, setIsDark] = useState<boolean>(true);
   const [activeRoomId, setActiveRoomId] = useState<string>('');
-  const [activeChatPeer, setActiveChatPeer] = useState<{ userId: number; username: string; avatar?: string } | null>(null);
+  const [activeChatPeer, setActiveChatPeer] = useState<{
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  } | null>(null);
   const [migrationUser, setMigrationUser] = useState<{ userId: number; username: string } | null>(null);
+
+  // Keep open DM header in sync when a nickname is saved from the profile card
+  useEffect(() => {
+    const onNicknameUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const targetUserId = Number(detail.targetUserId);
+      if (!Number.isFinite(targetUserId)) return;
+      const nickname = typeof detail.nickname === 'string' ? detail.nickname : '';
+      setActiveChatPeer((prev) => {
+        if (!prev || Number(prev.userId) !== targetUserId) return prev;
+        return { ...prev, nickname };
+      });
+    };
+    window.addEventListener('velum-nickname-updated', onNicknameUpdated);
+    return () => window.removeEventListener('velum-nickname-updated', onNicknameUpdated);
+  }, []);
 
   // Initialize global appearance settings
   useEffect(() => {
@@ -351,6 +373,22 @@ function AppContent() {
       onRetryMessage={ws.retryMessage}
       onMarkAsRead={ws.markAsRead}
       onMarkAllAsRead={ws.markAllAsRead}
+      onProfileUpdate={(updated) => {
+        if (!updated) return;
+        const avatarVal = updated.avatarUrl || updated.avatar || '';
+        updateUser({
+          ...(updated.userId || updated.id ? { userId: updated.userId || updated.id } : {}),
+          ...(updated.username ? { username: updated.username } : {}),
+          ...(updated.displayName !== undefined ? { displayName: updated.displayName } : {}),
+          ...(avatarVal || updated.avatar === '' || updated.avatarUrl === ''
+            ? { avatar: avatarVal, avatarUrl: avatarVal }
+            : {}),
+          ...(updated.bio !== undefined ? { bio: updated.bio } : {}),
+          ...(updated.location !== undefined ? { location: updated.location } : {}),
+          ...(updated.role ? { role: updated.role } : {}),
+          ...(updated.status ? { status: updated.status } : {}),
+        });
+      }}
     />
   );
 }
@@ -363,6 +401,7 @@ export default function App() {
           <CartProvider>
             <Toaster
               position="top-center"
+              containerStyle={{ zIndex: 10000000 }}
               toastOptions={{
                 duration: 2500,
                 style: {
@@ -370,8 +409,8 @@ export default function App() {
                   color: 'var(--theme-text-primary)',
                   boxShadow: 'none',
                   borderRadius: '6px',
-                  padding: '8px 14px',
-                  fontSize: '12px',
+                  padding: '6px 10px',
+                  fontSize: '11px',
                 },
               }}
             />

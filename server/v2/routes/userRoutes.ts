@@ -7,7 +7,8 @@ import { authMiddleware } from '../middleware/auth.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { userController } from '../controllers/userController.js';
 import { db } from '../db/client.js';
-import { users, supportAdminNominations } from '../db/schema/users.js';
+import { users, supportAdminNominations, userNicknames } from '../db/schema/index.js';
+import { DEFAULT_USER_BIO, MAX_USER_BIO_LENGTH, MAX_USER_NICKNAME_LENGTH } from '../constants/profile.js';
 import { userPrekeys } from '../db/schema/keys.js';
 import { relationships } from '../db/schema/relationships.js';
 import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema/lounges.js';
@@ -21,6 +22,7 @@ import { clearUserChatHistory } from '../services/loungeService.js';
 import { dmService } from '../services/dmService.js';
 
 export const userRouter = Router();
+
 
 import { publishPrekeyBundle, fetchPrekeyBundle } from '../services/crypto/prekeyVaultService.js';
 
@@ -124,6 +126,45 @@ userRouter.get('/:id/profile', authMiddleware, (req, res, next) => {
   userController.getProfile(req, res).catch(next);
 });
 
+userRouter.put('/:id/nickname', authMiddleware, async (req: Request, res: Response) => {
+  const targetUserId = Number(req.params.id);
+  const nickname = typeof req.body?.nickname === 'string' ? req.body.nickname.trim() : '';
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'Invalid user ID.' });
+  }
+  if (targetUserId === req.user!.userId) {
+    return res.status(400).json({ error: 'Use your profile name instead.' });
+  }
+  if (nickname.length > MAX_USER_NICKNAME_LENGTH) {
+    return res.status(400).json({ error: `Nickname cannot exceed ${MAX_USER_NICKNAME_LENGTH} characters.` });
+  }
+  const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, targetUserId)).limit(1);
+  if (!target) return res.status(404).json({ error: 'User not found.' });
+
+  if (!nickname) {
+    await db.delete(userNicknames).where(and(
+      eq(userNicknames.ownerId, req.user!.userId),
+      eq(userNicknames.targetId, targetUserId)
+    ));
+    return res.json({ nickname: '' });
+  }
+
+  const [saved] = await db
+    .insert(userNicknames)
+    .values({
+      ownerId: req.user!.userId,
+      targetId: targetUserId,
+      nickname,
+    })
+    .onConflictDoUpdate({
+      target: [userNicknames.ownerId, userNicknames.targetId],
+      set: { nickname, updatedAt: new Date() },
+    })
+    .returning({ nickname: userNicknames.nickname });
+
+  return res.json({ nickname: saved.nickname });
+});
+
 userRouter.get('/admin/all', authMiddleware, (req, res, next) => {
   userController.getAllUsers(req, res).catch(next);
 });
@@ -195,7 +236,7 @@ userRouter.get('/:id/media-prefs', authMiddleware, async (req: Request, res: Res
     const raw = await redis.get(`user:${currentUserId}:media_prefs:${targetUserId}`);
     if (!raw) return res.json(defaults);
     try {
-      const parsed = JSON.parse(raw) as Partial<typeof defaults>;
+      const parsed = JSON.parse(String(raw)) as Partial<typeof defaults>;
       return res.json({
         autoDownload: parsed.autoDownload !== false,
         saveToDevice: parsed.saveToDevice !== false,
@@ -414,11 +455,38 @@ userRouter.get('/:id/status', async (req: Request, res: Response) => {
 userRouter.post('/profile', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.user!.userId;
-    const { displayName, bio, avatar, avatarUrl, location } = req.body;
+    const { username, displayName, bio, avatar, avatarUrl, location } = req.body;
     
     const updateData: any = { updatedAt: new Date() };
+    if (username !== undefined) {
+      const cleanUsername = String(username).replace(/^@+/, '').trim();
+      if (!cleanUsername) {
+        return res.status(400).json({ error: 'Username cannot be empty.' });
+      }
+      if (cleanUsername.length < 3 || cleanUsername.length > 32) {
+        return res.status(400).json({ error: 'Username must be between 3 and 32 characters.' });
+      }
+      if (!/^[a-zA-Z0-9_]+$/.test(cleanUsername)) {
+        return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores.' });
+      }
+      const existing = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(sql`LOWER(${users.username}) = LOWER(${cleanUsername})`, sql`${users.id} != ${currentUserId}`))
+        .limit(1);
+      if (existing.length > 0) {
+        return res.status(409).json({ error: 'Username is already taken.' });
+      }
+      updateData.username = cleanUsername;
+    }
     if (displayName !== undefined) updateData.displayName = displayName ? String(displayName).trim() : null;
-    if (bio !== undefined) updateData.bio = bio ? String(bio).trim() : null;
+    if (bio !== undefined) {
+      const normalizedBio = String(bio).trim();
+      if (normalizedBio.length > MAX_USER_BIO_LENGTH) {
+        return res.status(400).json({ error: `Bio cannot exceed ${MAX_USER_BIO_LENGTH} characters.` });
+      }
+      updateData.bio = normalizedBio || DEFAULT_USER_BIO;
+    }
     if (avatar !== undefined || avatarUrl !== undefined) updateData.avatarUrl = avatar || avatarUrl || null;
     if (location !== undefined) updateData.location = location ? String(location).trim() : null;
     

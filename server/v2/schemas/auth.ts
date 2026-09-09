@@ -50,7 +50,7 @@ export const changePasswordSchema = z.object({
 export const updateProfileSchema = z.object({
   displayName: z.string().max(64).optional(),
   avatarUrl: z.string().url('Invalid avatar URL').optional().or(z.literal('')),
-  bio: z.string().max(256).optional(),
+  bio: z.string().max(150).optional(),
   location: z.string().max(128).optional()
 });
 

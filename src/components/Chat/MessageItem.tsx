@@ -18,6 +18,7 @@ import {
   shouldSaveMediaToDevice,
 } from '../../utils/dmPeerPrefs';
 import { isUsablePlaintext } from '../../utils/messagePlaintext';
+import { resolveContactName } from '../../utils/contactName';
 
 function formatVideoClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -564,7 +565,12 @@ export function resolveContactDisplayName(
   opts: {
     currentUserId: number;
     currentUsername?: string;
-    peer?: { userId: number; username: string; displayName?: string } | null;
+    peer?: {
+      userId: number;
+      username: string;
+      displayName?: string;
+      nickname?: string;
+    } | null;
   }
 ): string {
   if (SYSTEM_ROLES[msg.user_id]) return SYSTEM_ROLES[msg.user_id].name;
@@ -572,7 +578,11 @@ export function resolveContactDisplayName(
     return stripAt(opts.currentUsername || msg.username || 'You') || 'You';
   }
   if (opts.peer && Number(msg.user_id) === Number(opts.peer.userId)) {
-    const peerName = stripAt(opts.peer.displayName || opts.peer.username || '');
+    const peerName = resolveContactName({
+      nickname: opts.peer.nickname,
+      displayName: opts.peer.displayName,
+      username: opts.peer.username,
+    });
     if (peerName && !/^\d+$/.test(peerName)) return peerName;
   }
   const fromMsg = getSenderIdentity(msg).cleanName;
@@ -602,7 +612,12 @@ export interface MessageItemProps {
   /** When set, show reaction picker on this bubble. */
   showReactionsForKey?: string | null;
   onReactSelect?: (msg: Message, emoji: string) => void;
-  activeChatPeer?: { userId: number; username: string; displayName?: string } | null;
+  activeChatPeer?: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+  } | null;
 }
 
 export function MessageItem({

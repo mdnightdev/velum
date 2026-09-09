@@ -9,9 +9,10 @@ import { flushLoungeCache, purgeDmMessages } from '../../utils/indexedDb';
 import { resolveMediaUrl } from '../../utils/mediaPipeline';
 import { getSessionId } from '../../utils/auth';
 import { getDmRoomAliases, resolveDmUnreadCount, selectLatestDmMessage, messageTimestamp, shouldHideDeletedDm, getPrimaryDmRoomId } from '../../utils/roomUtils';
-import { getSidebarPreviewLabel } from '../../utils/messagePlaintext';
+import { getMessagePreviewPlaintext } from '../../utils/messagePlaintext';
 import { useChatStore } from '../../stores/chatStore';
 import { ContactAvatar, isAvatarImageSrc } from '../ContactAvatar';
+import { resolveContactName, writeStoredNickname } from '../../utils/contactName';
 
 function dedupeRelationshipsByPeerId(raw: any[]): any[] {
   const SYSTEM_IDS = new Set([1, 2, 999]);
@@ -111,7 +112,13 @@ interface DirectMainDashboardProps {
   friendRelationships: any;
   currentUserId: number;
   isDark: boolean;
-  onSelectPeer?: (peer: { userId: number; username: string; avatar?: string }) => void;
+  onSelectPeer?: (peer: {
+    userId: number;
+    username: string;
+    displayName?: string;
+    nickname?: string;
+    avatar?: string;
+  }) => void;
   onSectionView?: (view: any) => void;
   onMarkAsRead?: (messageId: string | undefined, roomId: string) => void;
   unreadCounts: Record<string, number>;
@@ -157,6 +164,39 @@ function DirectMainDashboard({
     }
     return dedupeRelationshipsByPeerId(raw);
   })();
+
+  const [nicknameOverrides, setNicknameOverrides] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    for (const r of relationshipsArray) {
+      const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
+      if (!Number.isFinite(friendId)) continue;
+      if (typeof r.nickname === 'string') {
+        writeStoredNickname(currentUserId, friendId, r.nickname);
+      }
+    }
+  }, [relationshipsArray, currentUserId]);
+
+  useEffect(() => {
+    const onNicknameUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const targetUserId = Number(detail.targetUserId);
+      if (!Number.isFinite(targetUserId)) return;
+      const nickname = typeof detail.nickname === 'string' ? detail.nickname : '';
+      writeStoredNickname(currentUserId, targetUserId, nickname);
+      setNicknameOverrides((prev) => ({ ...prev, [targetUserId]: nickname }));
+    };
+    window.addEventListener('velum-nickname-updated', onNicknameUpdated);
+    return () => window.removeEventListener('velum-nickname-updated', onNicknameUpdated);
+  }, [currentUserId]);
+
+  const resolveFriendName = (r: any, friendId: number) =>
+    resolveContactName({
+      nickname: nicknameOverrides[friendId] ?? r.nickname,
+      displayName: r.displayName,
+      username: r.username,
+      fallback: `User #${friendId}`,
+    });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'active' | 'archived'>('active');
   const [archivedUserIds, setArchivedUserIds] = useState<number[]>(() => {
@@ -183,6 +223,7 @@ function DirectMainDashboard({
     userId: number;
     username: string;
     displayName?: string;
+    nickname?: string;
     avatarUrl?: string;
     bio?: string;
     anchor: { top: number; left: number };
@@ -190,7 +231,14 @@ function DirectMainDashboard({
 
   const openQuickAvatar = (
     e: React.MouseEvent,
-    peer: { userId: number; username: string; displayName?: string; avatarUrl?: string; bio?: string }
+    peer: {
+      userId: number;
+      username: string;
+      displayName?: string;
+      nickname?: string;
+      avatarUrl?: string;
+      bio?: string;
+    }
   ) => {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -383,8 +431,15 @@ function DirectMainDashboard({
   };
 
   const filteredFriends = relationshipsArray.filter(r => {
-    const name = r.username || r.displayName;
-    return name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
+    const name = resolveFriendName(r, friendId);
+    const q = searchQuery.toLowerCase();
+    return (
+      name.toLowerCase().includes(q) ||
+      String(r.username || '').toLowerCase().includes(q) ||
+      String(r.displayName || '').toLowerCase().includes(q) ||
+      String(r.nickname || nicknameOverrides[friendId] || '').toLowerCase().includes(q)
+    );
   });
   const velumUnread = unreadCounts[`dm_velum_${currentUserId}`] || 0;
 
@@ -396,7 +451,7 @@ function DirectMainDashboard({
   let velumIsMe = false;
   if (velumLast) {
     velumIsMe = (velumLast.user_id === currentUserId) || (velumLast.senderId === currentUserId);
-    velumTxt = getCleanPreview(getSidebarPreviewLabel(velumLast)) || '';
+    velumTxt = getCleanPreview(getMessagePreviewPlaintext(velumLast)) || '';
     if (velumIsMe) {
       if (velumLast.status) {
         velumMsgStatus = velumLast.status;
@@ -666,7 +721,8 @@ function DirectMainDashboard({
           .map(r => {
             const friendId = Number(r.friendId || r.userId || r.user_id || r.id);
             if (!Number.isFinite(friendId)) return null;
-            const friendName = stripAt(r.username || r.displayName || `User #${friendId}`);
+            const friendName = resolveFriendName(r, friendId);
+            const friendUsername = stripAt(r.username || `User #${friendId}`);
             const friendAvatar = r.avatarUrl || r.avatar || r.avatar_url || null;
             const dmRoomId = `dm_${friendId}`;
             const isArchived = archivedUserIds.includes(friendId);
@@ -688,7 +744,7 @@ function DirectMainDashboard({
 
             if (last) {
               isMe = (last.user_id === currentUserId) || (last.senderId === currentUserId);
-              lastTxt = getCleanPreview(getSidebarPreviewLabel(last)) || '';
+              lastTxt = getCleanPreview(getMessagePreviewPlaintext(last)) || '';
               if (last.status === 'failed' || last.delivery_status === 'failed') {
                 isFailed = true;
               } else if (isMe) {
@@ -725,7 +781,15 @@ function DirectMainDashboard({
                     if (onMarkAsRead) onMarkAsRead(lastId, dmRoomId);
                   } catch (e) {}
 
-                  if (onSelectPeer) onSelectPeer({ userId: friendId, username: friendName, avatar: friendAvatar });
+                  if (onSelectPeer) {
+                    onSelectPeer({
+                      userId: friendId,
+                      username: friendUsername,
+                      displayName: r.displayName || friendUsername,
+                      nickname: nicknameOverrides[friendId] ?? r.nickname ?? '',
+                      avatar: friendAvatar,
+                    });
+                  }
                   if (onSectionView) onSectionView('chat');
                 }}
                 onTouchStart={() => startLongPress({ userId: friendId, username: friendName, dmRoomId, isArchived })}
@@ -747,8 +811,9 @@ function DirectMainDashboard({
                     onClick={(e) => {
                       openQuickAvatar(e, {
                         userId: friendId,
-                        username: friendName,
+                        username: friendUsername,
                         displayName: friendName,
+                        nickname: nicknameOverrides[friendId] ?? r.nickname ?? '',
                         avatarUrl: friendAvatar || undefined,
                         bio: r.bio
                       });
@@ -837,7 +902,13 @@ function DirectMainDashboard({
           >
             {/* Top Bar with Name */}
             <div className="p-3 bg-velum-800 border-b border-velum-600/60 flex items-center justify-between">
-              <span className="text-sm font-bold text-white truncate">{quickAvatarPeer.displayName || quickAvatarPeer.username}</span>
+              <span className="text-sm font-bold text-white truncate">
+                {resolveContactName({
+                  nickname: quickAvatarPeer.nickname,
+                  displayName: quickAvatarPeer.displayName,
+                  username: quickAvatarPeer.username,
+                })}
+              </span>
             </div>
 
             {/* Large avatar preview — fixed height, full-bleed (no floating center circle) */}
@@ -865,7 +936,17 @@ function DirectMainDashboard({
                 } ${quickAvatarPeer.userId === 999 && !quickAvatarPeer.avatarUrl ? 'hidden' : ''}`}
               >
                 <span className="text-5xl font-bold text-accent/80 uppercase leading-none">
-                  {(quickAvatarPeer.displayName || quickAvatarPeer.username || 'U').trim().slice(0, 1).toUpperCase() || 'U'}
+                  {(
+                    resolveContactName({
+                      nickname: quickAvatarPeer.nickname,
+                      displayName: quickAvatarPeer.displayName,
+                      username: quickAvatarPeer.username,
+                      fallback: 'U',
+                    }) || 'U'
+                  )
+                    .trim()
+                    .slice(0, 1)
+                    .toUpperCase() || 'U'}
                 </span>
               </div>
             </div>
@@ -876,7 +957,15 @@ function DirectMainDashboard({
                 type="button"
                 onClick={() => {
                   unDeleteContact(quickAvatarPeer.userId);
-                  if (onSelectPeer) onSelectPeer({ userId: quickAvatarPeer.userId, username: quickAvatarPeer.username, avatar: quickAvatarPeer.avatarUrl });
+                  if (onSelectPeer) {
+                    onSelectPeer({
+                      userId: quickAvatarPeer.userId,
+                      username: quickAvatarPeer.username,
+                      displayName: quickAvatarPeer.displayName,
+                      nickname: quickAvatarPeer.nickname,
+                      avatar: quickAvatarPeer.avatarUrl,
+                    });
+                  }
                   if (onSectionView) onSectionView('chat');
                   setQuickAvatarPeer(null);
                 }}
@@ -897,6 +986,7 @@ function DirectMainDashboard({
                       userId: peer.userId,
                       username: peer.username,
                       displayName: peer.displayName || peer.username,
+                      nickname: peer.nickname || '',
                       avatarUrl: peer.avatarUrl,
                       avatar: peer.avatarUrl,
                       bio: peer.bio

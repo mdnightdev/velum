@@ -25,3 +25,4 @@ export * from './dms.js';
 export * from './media.js';
 export * from './ops_error_events.js';
 export * from './ops_client_diagnostics.js';
+export * from './user_nicknames.js';

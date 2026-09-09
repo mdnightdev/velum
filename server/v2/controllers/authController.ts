@@ -12,6 +12,7 @@ import { ensureAdminSeeded } from '../services/adminSeeder.js';
 import { systemBot } from '../services/systemBot.js';
 import { BotTemplates } from '../services/botTemplates.js';
 import { logger } from '../utils/logger.js';
+import { DEFAULT_USER_BIO } from '../constants/profile.js';
 import { reportOpsError } from '../services/opsErrorService.js';
 
 import crypto from 'node:crypto';
@@ -331,6 +332,7 @@ export class AuthController {
       recoveryKeyHash,
       recoveryKey,
       role: 'USER',
+      bio: DEFAULT_USER_BIO,
       duressActive: false,
       isCompromised: false
     });
@@ -568,7 +570,10 @@ export class AuthController {
     }
     const safeUser = {
       ...req.user,
-      avatar: req.user.avatarUrl || req.user.avatar || '',
+      avatar: (req.user as any).avatarUrl || (req.user as any).avatar || '',
+      avatarUrl: (req.user as any).avatarUrl || (req.user as any).avatar || '',
+      bio: (req.user as any).bio || '',
+      location: (req.user as any).location || '',
       salt: (req.user as any).salt,
       duress_active: undefined
     };

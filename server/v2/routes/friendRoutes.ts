@@ -4,6 +4,7 @@ import { userRepository } from '../repositories/userRepository.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { relationships } from '../db/schema/relationships.js';
+import { userNicknames } from '../db/schema/user_nicknames.js';
 import { dms, dmClears } from '../db/schema/dms.js';
 import { eq, and, or, inArray, desc, gt, sql } from 'drizzle-orm';
 import { connectedClients, broadcastToUserDevices } from '../../websocket.js';
@@ -85,6 +86,19 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
     await dmService.purgeExpiredDmsAndSync({ involvingUserId: currentUserId });
 
     const peerUsers = await db.select().from(users).where(inArray(users.id, peerIds));
+    const nicknameRows = await db
+      .select({
+        targetId: userNicknames.targetId,
+        nickname: userNicknames.nickname,
+      })
+      .from(userNicknames)
+      .where(
+        and(
+          eq(userNicknames.ownerId, currentUserId),
+          inArray(userNicknames.targetId, peerIds)
+        )
+      );
+    const nickByTarget = new Map(nicknameRows.map((row) => [row.targetId, row.nickname]));
     const isUserOnline = (uid: number) => Array.from(connectedClients.values()).some(c => c.userId === uid);
 
     const mapped = await Promise.all(relations.map(async r => {
@@ -142,6 +156,7 @@ friendRouter.get('/relationships', async (req: Request, res: Response) => {
         friendId: peerId,
         username: peer?.username || `User #${peerId}`,
         displayName: peer?.displayName || null,
+        nickname: nickByTarget.get(peerId) || '',
         avatarUrl: peer?.avatarUrl || null,
         status: 'accepted',
         isBlocked: iBlocked,
