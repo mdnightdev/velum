@@ -5,7 +5,11 @@ dotenv.config();
 
 const cleanEnvStr = (val?: string) => {
   if (!val) return '';
-  const cleaned = val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '').replace(/(&|\?)channel_binding=[^&]+/g, '');
+  let cleaned = val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+  // Drop channel_binding without leaving a bare "&…" query (that makes PG see
+  // the database name as e.g. "neondb&sslmode=require" → SQLSTATE 3D000).
+  cleaned = cleaned.replace(/([?&])channel_binding=[^&]*/g, (match, sep) => (sep === '?' ? '?' : ''));
+  cleaned = cleaned.replace(/\?&/g, '?').replace(/[?&]$/g, '');
   return cleaned.replace('-pooler', '');
 };
 
