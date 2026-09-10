@@ -23,7 +23,9 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
     try {
       setLoading(true);
       const sId = getSessionId();
-      const res = await fetch('/v2/admin/verifications', {
+      const statusQs =
+        filter === 'APPROVED' ? 'ACTIVE' : filter === 'REJECTED' ? 'REJECTED' : 'PENDING_REVIEW';
+      const res = await fetch(`/v2/admin/verifications?status=${statusQs}`, {
         headers: { 'Authorization': `Bearer ${sId}` }
       });
       if (res.ok) {
@@ -55,7 +57,7 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
 
   useEffect(() => {
     loadVerificationQueue();
-  }, []);
+  }, [filter]);
 
   const handleReview = async (listingId: string, decision: 'APPROVED' | 'REJECTED') => {
     if (!window.confirm(`Are you sure you want to mark this listing as ${decision}?`)) return;
@@ -104,9 +106,10 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
   };
 
   const safeListings = Array.isArray(listings) ? listings : [];
-  const filteredListings = safeListings
-    .filter(l => l?.verification_status === filter)
-    .filter(l => (l?.title || '').toLowerCase().includes(search.toLowerCase()) || (l?.listing_id || '').toLowerCase().includes(search.toLowerCase()));
+  const filteredListings = safeListings.filter((l) =>
+    (l?.title || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(l?.listing_id || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   if (adminRole !== 'LOGIN_ADMIN' && adminRole !== 'CLI_ADMIN') {
     return (
@@ -198,9 +201,14 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
                         </div>
                         <h3 className="text-sm font-bold text-white">{listing.title}</h3>
                         <p className="text-xs text-text-secondary line-clamp-2">{listing.description}</p>
+                        {(listing.moderation_reason || listing.moderation_lane) && (
+                          <p className="text-[10px] font-mono text-status-away">
+                            {listing.moderation_lane ? `[${listing.moderation_lane}] ` : ''}
+                            {listing.moderation_reason}
+                          </p>
+                        )}
                         <div className="flex gap-4 text-[10px] font-mono text-text-secondary">
                           <span>Price: ${Number(listing.price || 0).toFixed(2)}</span>
-                          <span>Inventory: {listing.inventory_count}</span>
                           <span>Seller ID: {listing.seller_id}</span>
                         </div>
                       </div>

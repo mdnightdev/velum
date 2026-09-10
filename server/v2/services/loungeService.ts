@@ -9,9 +9,20 @@ import { userRepository } from '../repositories/userRepository.js';
 import { loungeRepository } from '../repositories/loungeRepository.js';
 import { generateSecureInviteCode } from '../utils/crypto.js';
 import { eq, gt, and, or, desc, like, inArray, sql } from 'drizzle-orm';
+import { MIN_PUBLIC_LOUNGE_ID } from '../constants/systemIds.js';
 
 export const SYSTEM_ADMIN_ROLES = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
 export const SYSTEM_ADMIN_USERNAMES = ['lexie', 'midnight'];
+
+async function ensurePublicLoungeSequenceFloor(): Promise<void> {
+  await db.execute(sql`
+    SELECT setval(
+      pg_get_serial_sequence('lounges', 'id'),
+      GREATEST((SELECT COALESCE(MAX(id), 1) FROM lounges), ${MIN_PUBLIC_LOUNGE_ID}),
+      true
+    );
+  `);
+}
 
 export function checkIsSystemAdmin(user?: { role?: string; username?: string }): boolean {
   if (!user) return false;
@@ -601,6 +612,7 @@ export async function createLounge(currentUserId: number, name: string, descript
   const privateFlag = Boolean(isPrivate);
   const inviteCode = privateFlag ? generateSecureInviteCode('VL/M') : null;
   const slug = `lounge_${Date.now()}`;
+  await ensurePublicLoungeSequenceFloor();
   const [created] = await db.insert(lounges).values({
     slug,
     name: cleanName,
@@ -612,6 +624,11 @@ export async function createLounge(currentUserId: number, name: string, descript
     inviteCode,
     avatarUrl: typeof iconUrl === 'string' ? iconUrl : null
   }).returning();
+
+  if (created.id < MIN_PUBLIC_LOUNGE_ID) {
+    await db.delete(lounges).where(eq(lounges.id, created.id));
+    return { error: 'Lounge ID allocation failed (reserved band). Retry.', status: 500 };
+  }
 
   await db.insert(loungeMembers).values({
     loungeId: created.id,
@@ -666,6 +683,7 @@ export async function createSublounge(user: any, rawId: string, name: string, de
   const inviteCode = privateFlag ? generateSecureInviteCode('VL/S') : null;
   const slug = `sublounge_${Date.now()}`;
 
+  await ensurePublicLoungeSequenceFloor();
   const [created] = await db.insert(lounges).values({
     slug,
     name: cleanSubName,
@@ -677,6 +695,11 @@ export async function createSublounge(user: any, rawId: string, name: string, de
     accessLevel: 'ALL',
     inviteCode
   }).returning();
+
+  if (created.id < MIN_PUBLIC_LOUNGE_ID) {
+    await db.delete(lounges).where(eq(lounges.id, created.id));
+    return { error: 'Channel ID allocation failed (reserved band). Retry.', status: 500 };
+  }
 
   await db.insert(loungeMembers).values({
     loungeId: created.id,

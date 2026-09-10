@@ -2,6 +2,16 @@ import { eq, sql } from 'drizzle-orm';
 import { db, executeWithRetry } from '../db/client.js';
 import { users, sessions, type User, type NewUser, type Session, type NewSession } from '../db/schema/index.js';
 import { logger } from '../utils/logger.js';
+import {
+  isForbiddenPublicUserId,
+  isReservedSystemUserId,
+  MIN_PUBLIC_USER_ID,
+} from '../constants/systemIds.js';
+
+export type CreateUserOptions = {
+  /** Only admin/bot seeders may set reserved IDs 1, 2, 999. */
+  allowSystemId?: boolean;
+};
 
 export class UserRepository {
   async findById(id: number): Promise<User | null> {
@@ -22,10 +32,44 @@ export class UserRepository {
     });
   }
 
-  async create(data: NewUser): Promise<User> {
+  async create(data: NewUser, options: CreateUserOptions = {}): Promise<User> {
     return executeWithRetry(async () => {
+      if (data.id != null) {
+        const id = Number(data.id);
+        if (options.allowSystemId) {
+          if (!isReservedSystemUserId(id)) {
+            throw new Error(
+              `[UserRepository] allowSystemId only permits reserved IDs (1, 2, 999); got ${id}`
+            );
+          }
+        } else if (isForbiddenPublicUserId(id)) {
+          throw new Error(
+            `[UserRepository] Refusing user ID ${id}: IDs below ${MIN_PUBLIC_USER_ID} and 1/2/999 are locked to Velum system accounts`
+          );
+        }
+      } else {
+        // Keep serial above the reserved band even if something reset the sequence.
+        await db.execute(sql`
+          SELECT setval(
+            pg_get_serial_sequence('users', 'id'),
+            GREATEST(
+              (SELECT COALESCE(MAX(id), 1) FROM users),
+              ${MIN_PUBLIC_USER_ID}
+            ),
+            true
+          );
+        `);
+      }
+
       const inserted = await db.insert(users).values(data).returning();
-      return inserted[0];
+      const created = inserted[0];
+      if (!options.allowSystemId && created && isForbiddenPublicUserId(created.id)) {
+        await db.delete(users).where(eq(users.id, created.id));
+        throw new Error(
+          `[UserRepository] Serial issued locked ID ${created.id}; insert rolled back. Re-seed system accounts and setval >= ${MIN_PUBLIC_USER_ID}.`
+        );
+      }
+      return created;
     });
   }
 

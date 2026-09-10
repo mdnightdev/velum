@@ -2,6 +2,7 @@ import { db } from '../db/client.js';
 import { lounges, loungeMembers } from '../db/schema/lounges.js';
 import { eq, sql } from 'drizzle-orm';
 import { deduplicateSublounges } from './loungeDeduplicator.js';
+import { MIN_PUBLIC_LOUNGE_ID } from '../constants/systemIds.js';
 
 export const OFFICIAL_SUBLOUNGES = [
   { id: 2, slug: 'velum_general', name: 'General', description: 'Main community chat & general discussion', accessLevel: 'ALL', isLocked: false, isHidden: false },
@@ -162,7 +163,11 @@ export async function ensureVelumLoungeSeeded() {
 
     // Advance sequence past reserved official lounge IDs (1-11) so user-created lounges start at 1000+
     await db.execute(sql`
-      SELECT setval(pg_get_serial_sequence('lounges', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM lounges), 1000), true);
+      SELECT setval(
+        pg_get_serial_sequence('lounges', 'id'),
+        GREATEST((SELECT COALESCE(MAX(id), 1) FROM lounges), ${MIN_PUBLIC_LOUNGE_ID}),
+        true
+      );
     `);
 
     await deduplicateSublounges();

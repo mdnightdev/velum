@@ -2,23 +2,60 @@ import { eq, desc } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { listings, escrows, type Listing, type NewListing, type Escrow, type NewEscrow } from '../db/schema/index.js';
 import { moderationService } from '../services/moderationService.js';
+import { SystemBot } from '../services/systemBot.js';
+import { BotTemplates } from '../services/botTemplates.js';
+import { users } from '../db/schema/users.js';
 
 export class MarketRepository {
   async createListing(data: NewListing, tx: any = db): Promise<Listing> {
-    const combinedContent = `${data.title} ${data.description || ''} ${data.category || ''}`;
-    const payload = moderationService.detectMaliciousPayload(combinedContent);
-    const zeroTol = moderationService.detectZeroToleranceViolation(combinedContent);
+    const combinedContent = `${data.title} ${data.description || ''} ${data.category || ''} ${data.digitalPayload || ''}`;
+    const hit = moderationService.scanListingContent(combinedContent);
 
-    if (payload || zeroTol) {
-      const reason = payload ? `Prohibited malicious script payload: ${payload}` : `Zero-tolerance violation keyword: ${zeroTol}`;
-      if (data.sellerId) {
-        moderationService.executeInstantEcosystemBlacklist(data.sellerId, 'MALICIOUS_MARKETPLACE_LISTING', reason).catch(() => {});
-      }
-      throw new Error(`[SECURITY_REJECTED] Listing dropped and rejected: ${reason}`);
+    const payload: NewListing = hit
+      ? {
+          ...data,
+          status: 'PENDING_REVIEW',
+          moderationReason: hit.match,
+          moderationLane: hit.lane,
+          heldAt: new Date(),
+        }
+      : {
+          ...data,
+          status: data.status || 'ACTIVE',
+          moderationReason: null,
+          moderationLane: null,
+          heldAt: null,
+        };
+
+    const inserted = await tx.insert(listings).values(payload).returning();
+    const listing = inserted[0] as Listing;
+
+    if (hit && listing) {
+      void (async () => {
+        try {
+          const [seller] = await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1);
+          if (seller) {
+            await SystemBot.getInstance().sendToUser(
+              seller.id,
+              BotTemplates.marketplaceListingHeldForReview(seller.username, listing.title, hit.lane, hit.match)
+            );
+          }
+          const { auditLogs } = await import('../db/schema/audit_logs.js');
+          await db.insert(auditLogs).values({
+            logId: `mod_${Date.now()}_audit`,
+            adminId: 999,
+            adminName: 'SYSTEM_MODERATION',
+            action: 'MARKETPLACE_LISTING_HELD',
+            targetId: String(listing.sellerId),
+            reason: `Listing #${listing.id} held (${hit.lane}): ${hit.match}`,
+          });
+        } catch {
+          /* listing already PENDING_REVIEW */
+        }
+      })();
     }
 
-    const inserted = await tx.insert(listings).values(data).returning();
-    return inserted[0];
+    return listing;
   }
 
   async findListingById(id: number, tx: any = db): Promise<Listing | null> {
@@ -41,12 +78,39 @@ export class MarketRepository {
   }
 
   async updateListing(id: number, data: Partial<NewListing>, tx: any = db): Promise<Listing | null> {
+    const existing = await this.findListingById(id, tx);
+    if (!existing) return null;
+
+    const nextTitle = data.title ?? existing.title;
+    const nextDescription = data.description ?? existing.description;
+    const nextCategory = data.category ?? existing.category;
+    const nextPayload = data.digitalPayload !== undefined ? data.digitalPayload : existing.digitalPayload;
+    const combined = `${nextTitle} ${nextDescription || ''} ${nextCategory || ''} ${nextPayload || ''}`;
+    const hit = moderationService.scanListingContent(combined);
+
+    const patch: Partial<NewListing> = {
+      ...data,
+      updatedAt: new Date(),
+    };
+
+    if (hit) {
+      patch.status = 'PENDING_REVIEW';
+      patch.moderationReason = hit.match;
+      patch.moderationLane = hit.lane;
+      patch.heldAt = new Date();
+    }
+
     const updated = await tx
       .update(listings)
-      .set({ ...data, updatedAt: new Date() })
+      .set(patch)
       .where(eq(listings.id, id))
       .returning();
-    return updated[0] || null;
+
+    const listing = updated[0] || null;
+    if (hit && listing) {
+      void moderationService.holdListingForReview(listing.id, hit);
+    }
+    return listing;
   }
 
   async deleteListing(id: number, tx: any = db): Promise<boolean> {

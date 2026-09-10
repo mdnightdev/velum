@@ -14,6 +14,9 @@ export const listings = pgTable('listings', {
   digitalDelivery: boolean('digital_delivery').default(false).notNull(),
   digitalPayload: text('digital_payload'),
   status: varchar('status', { length: 16 }).default('ACTIVE').notNull(),
+  moderationReason: text('moderation_reason'),
+  moderationLane: varchar('moderation_lane', { length: 16 }),
+  heldAt: timestamp('held_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => [

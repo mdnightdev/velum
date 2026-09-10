@@ -71,16 +71,56 @@ export const BotTemplates = {
 
   marketplaceMaliciousListingDropped(sellerUsername: string, listingTitle: string, reason: string): string {
     return [
-      `### Marketplace Notice: Listing Removed & Sanitized`,
-      `Hello ${sellerUsername}, your marketplace listing has been permanently removed.`,
+      `### Marketplace Notice: Listing Held`,
+      `Hello ${sellerUsername}, your marketplace listing was held for review.`,
       ``,
       `**Details:**`,
       `- **Listing:** ${listingTitle}`,
-      `- **Violation:** Malicious Content / Prohibited Script Detected`,
       `- **Reason:** ${reason}`,
-      `- **Action Taken:** Listing Dropped and Sanitized`,
+      `- **Action Taken:** Listing hidden pending admin review (account not banned)`,
       ``,
-      `Publishing malicious code, exploits, or deceptive payloads violates Velum terms and may lead to immediate account blacklisting.`
+      `You will be notified when the review completes.`
+    ].join('\n');
+  },
+
+  marketplaceListingHeldForReview(
+    sellerUsername: string,
+    listingTitle: string,
+    lane: string,
+    match: string
+  ): string {
+    return [
+      `### Marketplace Notice: Listing Held for Review`,
+      `Hello ${sellerUsername}, your listing is not public yet.`,
+      ``,
+      `**Details:**`,
+      `- **Listing:** ${listingTitle}`,
+      `- **Lane:** ${lane}`,
+      `- **Signal:** ${match}`,
+      `- **Action:** Held for admin review — your account was not banned`,
+      ``,
+      `Admins will approve or reject it from the Verifications queue.`
+    ].join('\n');
+  },
+
+  marketplaceListingApproved(sellerUsername: string, listingTitle: string): string {
+    return [
+      `### Marketplace Notice: Listing Approved`,
+      `Hello ${sellerUsername}, your listing is now live.`,
+      ``,
+      `- **Listing:** ${listingTitle}`,
+    ].join('\n');
+  },
+
+  marketplaceListingRejected(sellerUsername: string, listingTitle: string, reason: string): string {
+    return [
+      `### Marketplace Notice: Listing Rejected`,
+      `Hello ${sellerUsername}, your listing was not approved.`,
+      ``,
+      `- **Listing:** ${listingTitle}`,
+      `- **Reason:** ${reason}`,
+      ``,
+      `You may edit and resubmit a clean listing.`
     ].join('\n');
   },
 
