@@ -8,8 +8,19 @@ export const RESERVED_SYSTEM_USERNAMES = new Set<string>([
   'system_bot',
 ]);
 
-/** First ID allowed for public / test / SA registrations. */
+/** First ID allowed for real public / SA registrations. */
 export const MIN_PUBLIC_USER_ID = 1000;
+
+/** Last ID for real public accounts. Above this is the disposable test band. */
+export const MAX_PUBLIC_USER_ID = 8999;
+
+/**
+ * Disposable test / chaos / integration accounts.
+ * Drop with: DELETE cascade via scripts/purge-test-accounts.ts
+ * or SQL: users WHERE id BETWEEN 9000 AND 9999
+ */
+export const TEST_USER_ID_MIN = 9000;
+export const TEST_USER_ID_MAX = 9999;
 
 /** Official Velum lounge IDs (master + sublounges). User lounges start at 1000+. */
 export const RESERVED_SYSTEM_LOUNGE_IDS = new Set<number>([
@@ -28,11 +39,20 @@ export function isReservedSystemUsername(username: string | null | undefined): b
   return RESERVED_SYSTEM_USERNAMES.has(username.toLowerCase());
 }
 
-/** True when an ID must not be issued to a non-system insert. */
+export function isTestUserId(id: number | null | undefined): boolean {
+  if (id == null || !Number.isFinite(id)) return false;
+  const n = Number(id);
+  return n >= TEST_USER_ID_MIN && n <= TEST_USER_ID_MAX;
+}
+
+/** True when an ID must not be issued to a normal (non-system, non-test) insert. */
 export function isForbiddenPublicUserId(id: number | null | undefined): boolean {
   if (id == null || !Number.isFinite(id)) return false;
   const n = Number(id);
-  return n < MIN_PUBLIC_USER_ID || isReservedSystemUserId(n);
+  if (n < MIN_PUBLIC_USER_ID || isReservedSystemUserId(n)) return true;
+  if (isTestUserId(n)) return true;
+  if (n > MAX_PUBLIC_USER_ID && !isTestUserId(n)) return true;
+  return false;
 }
 
 export function isReservedSystemLoungeId(id: number | null | undefined): boolean {

@@ -2,12 +2,13 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { app } from '../app.js';
 
-describe('V2 Auth Endpoints Integration Tests', () => {
-  const testUsername = `user_${Date.now()}`;
+describe('Auth', () => {
+  const uniq = Date.now().toString(36).slice(-5);
+  const testUsername = `tAuth${uniq}`;
   const testPassword = 'SecureComplexPass123!';
   let authToken = '';
 
-  it('POST /v2/auth/register - should create user and return session token', async () => {
+  it('POST /v2/auth/register creates user and session', async () => {
     const res = await request(app)
       .post('/v2/auth/register')
       .send({
@@ -21,11 +22,11 @@ describe('V2 Auth Endpoints Integration Tests', () => {
     authToken = res.body.token;
   });
 
-  it('POST /v2/auth/register - should reject weak password', async () => {
+  it('POST /v2/auth/register rejects weak password', async () => {
     const res = await request(app)
       .post('/v2/auth/register')
       .send({
-        username: `weak_${Date.now()}`,
+        username: `tWeak${uniq}`,
         password: '12345678'
       });
 
@@ -33,7 +34,7 @@ describe('V2 Auth Endpoints Integration Tests', () => {
     expect(res.body.error).toBe('Invalid request payload');
   });
 
-  it('POST /v2/auth/login - should authenticate user successfully', async () => {
+  it('POST /v2/auth/login authenticates', async () => {
     const res = await request(app)
       .post('/v2/auth/login')
       .send({
@@ -47,7 +48,7 @@ describe('V2 Auth Endpoints Integration Tests', () => {
     expect(res.body.user.username).toBe(testUsername);
   });
 
-  it('GET /v2/auth/me - should return authenticated user profile', async () => {
+  it('GET /v2/auth/me returns profile', async () => {
     const res = await request(app)
       .get('/v2/auth/me')
       .set('Authorization', `Bearer ${authToken}`);
@@ -56,7 +57,7 @@ describe('V2 Auth Endpoints Integration Tests', () => {
     expect(res.body.user.username).toBe(testUsername);
   });
 
-  it('POST /v2/auth/logout - should invalidate session', async () => {
+  it('POST /v2/auth/logout invalidates session', async () => {
     const res = await request(app)
       .post('/v2/auth/logout')
       .set('Authorization', `Bearer ${authToken}`);
@@ -65,7 +66,7 @@ describe('V2 Auth Endpoints Integration Tests', () => {
     expect(res.body.message).toBe('Logged out successfully.');
   });
 
-  it('POST /v2/auth/login - should intercept scheduled deletion and allow cancellation', async () => {
+  it('POST /v2/auth/login intercepts scheduled deletion', async () => {
     // 1. Log back in to get active session
     const loginRes = await request(app)
       .post('/v2/auth/login')

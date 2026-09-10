@@ -9,7 +9,7 @@ const app = express();
 app.use(express.json());
 app.use('/v2', utilityRouter);
 
-describe('Over-The-Air (OTA) Live Updates Pipeline', () => {
+describe('OTA', () => {
   it('GET /v2/ota/manifest returns valid manifest metadata', async () => {
     const res = await request(app).get('/v2/ota/manifest');
     expect(res.status).toBe(200);

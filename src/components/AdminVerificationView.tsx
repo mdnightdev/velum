@@ -60,7 +60,7 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
   }, [filter]);
 
   const handleReview = async (listingId: string, decision: 'APPROVED' | 'REJECTED') => {
-    if (!window.confirm(`Are you sure you want to mark this listing as ${decision}?`)) return;
+    if (!window.confirm(`Mark this listing as ${decision === 'APPROVED' ? 'approved' : 'rejected'}?`)) return;
     try {
       const sId = getSessionId();
       const res = await fetch(`/v2/admin/verifications/${listingId}/review`, {
@@ -70,7 +70,7 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
       });
       if (res.ok) {
         loadVerificationQueue();
-        velumToast.success(`Listing marked as ${decision}.`);
+        velumToast.success(decision === 'APPROVED' ? 'Listing approved.' : 'Listing rejected.');
       } else {
         velumToast.error('Failed to submit review');
       }
@@ -115,7 +115,7 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
     return (
       <div className="flex flex-col items-center justify-center h-full space-y-4">
         <ShieldCheck className="w-16 h-16 text-text-disabled" />
-        <p className="text-sm font-mono text-text-secondary">Insufficient clearance for this module.</p>
+        <p className="text-sm text-text-secondary">You do not have access to this page.</p>
       </div>
     );
   }
@@ -194,22 +194,26 @@ export default function AdminVerificationView({ adminRole }: AdminVerificationVi
                     <div className="flex flex-col md:flex-row justify-between gap-4">
                       <div className="space-y-2 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono text-text-secondary">#{(listing.listing_id || '').substring(0, 8)}</span>
-                          {listing.verification_status === 'PENDING_REVIEW' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-status-away-bg text-status-away">PENDING</span>}
-                          {listing.verification_status === 'APPROVED' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-status-online-bg text-status-online">APPROVED</span>}
-                          {listing.verification_status === 'REJECTED' && <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-status-dnd-bg text-status-dnd">REJECTED</span>}
+                          <span className="text-xs text-text-secondary">#{(listing.listing_id || '').substring(0, 8)}</span>
+                          {listing.verification_status === 'PENDING_REVIEW' && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-status-away-bg text-status-away">Pending</span>}
+                          {listing.verification_status === 'APPROVED' && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-status-online-bg text-status-online">Approved</span>}
+                          {listing.verification_status === 'REJECTED' && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-status-dnd-bg text-status-dnd">Rejected</span>}
                         </div>
                         <h3 className="text-sm font-bold text-white">{listing.title}</h3>
                         <p className="text-xs text-text-secondary line-clamp-2">{listing.description}</p>
                         {(listing.moderation_reason || listing.moderation_lane) && (
-                          <p className="text-[10px] font-mono text-status-away">
-                            {listing.moderation_lane ? `[${listing.moderation_lane}] ` : ''}
+                          <p className="text-[11px] text-status-away">
+                            {listing.moderation_lane ? `${String(listing.moderation_lane).toLowerCase()} · ` : ''}
                             {listing.moderation_reason}
                           </p>
                         )}
-                        <div className="flex gap-4 text-[10px] font-mono text-text-secondary">
-                          <span>Price: ${Number(listing.price || 0).toFixed(2)}</span>
-                          <span>Seller ID: {listing.seller_id}</span>
+                        <div className="flex gap-4 text-[11px] text-text-secondary">
+                          <span>${Number(listing.price || 0).toFixed(2)}</span>
+                          <span>
+                            {listing.seller_username
+                              ? listing.seller_username.replace(/^@/, '')
+                              : `Seller ${listing.seller_id}`}
+                          </span>
                         </div>
                       </div>
                       

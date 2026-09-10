@@ -4,6 +4,7 @@ import PasswordInput from '../PasswordInput';
 import { streamFileDirectToCloudStorage } from '../../utils/mediaPipeline';
 import { saveLocalMedia } from '../../utils/indexedDb';
 import { ImageCropperModal } from '../ImageCropperModal';
+import { formatRoleLabel } from '../../utils/formatRoleLabel';
 
 interface AdminProfileProps {
   adminId: number;
@@ -204,7 +205,7 @@ export default function AdminProfile({
                   <input
                     type="text"
                     disabled
-                    value={adminRole === 'SUPPORT_ADMIN' ? 'Support Admin' : 'Admin'}
+                    value={formatRoleLabel(adminRole)}
                     className="w-full p-2 rounded-lg bg-velum-750 border border-velum-600 text-text-secondary cursor-not-allowed text-xs"
                   />
                 </div>

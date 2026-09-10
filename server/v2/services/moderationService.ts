@@ -443,17 +443,32 @@ export class ModerationService {
   }
 
   public async listHeldListings(statusFilter: 'PENDING_REVIEW' | 'ACTIVE' | 'REJECTED' | 'ALL' = 'PENDING_REVIEW') {
+    const base = db
+      .select({
+        id: listings.id,
+        title: listings.title,
+        description: listings.description,
+        category: listings.category,
+        price: listings.price,
+        sellerId: listings.sellerId,
+        sellerUsername: users.username,
+        status: listings.status,
+        moderationReason: listings.moderationReason,
+        moderationLane: listings.moderationLane,
+        heldAt: listings.heldAt,
+        createdAt: listings.createdAt,
+        updatedAt: listings.updatedAt,
+      })
+      .from(listings)
+      .leftJoin(users, eq(listings.sellerId, users.id));
+
     if (statusFilter === 'ALL') {
-      return db
-        .select()
-        .from(listings)
+      return base
         .where(inArray(listings.status, ['PENDING_REVIEW', 'REJECTED']))
         .orderBy(desc(listings.updatedAt))
         .limit(200);
     }
-    return db
-      .select()
-      .from(listings)
+    return base
       .where(eq(listings.status, statusFilter))
       .orderBy(desc(listings.heldAt), desc(listings.updatedAt))
       .limit(200);

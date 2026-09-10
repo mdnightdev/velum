@@ -8,7 +8,7 @@ import { hashArgon2id } from '../utils/crypto.js';
 import { reserveRepository } from '../repositories/reserveRepository.js';
 import { logger } from '../utils/logger.js';
 import { userRepository } from '../repositories/userRepository.js';
-import { MIN_PUBLIC_USER_ID } from '../constants/systemIds.js';
+import { MIN_PUBLIC_USER_ID, TEST_USER_ID_MIN } from '../constants/systemIds.js';
 
 const ADMIN_USERS = [
   {
@@ -277,11 +277,14 @@ export async function ensureAdminSeeded() {
         logger.info('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
       }
 
-      // Advance sequence past reserved system IDs so regular registrations start at 1000+
+      // Advance sequence for real users only (keep 9000–9999 free for disposable tests)
       await db.execute(sql`
         SELECT setval(
           pg_get_serial_sequence('users', 'id'),
-          GREATEST((SELECT COALESCE(MAX(id), 1) FROM users), ${MIN_PUBLIC_USER_ID}),
+          GREATEST(
+            (SELECT COALESCE(MAX(id), 1) FROM users WHERE id < ${TEST_USER_ID_MIN}),
+            ${MIN_PUBLIC_USER_ID}
+          ),
           true
         );
       `);

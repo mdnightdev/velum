@@ -5,12 +5,18 @@ import { logger } from '../utils/logger.js';
 import {
   isForbiddenPublicUserId,
   isReservedSystemUserId,
+  isTestUserId,
   MIN_PUBLIC_USER_ID,
+  MAX_PUBLIC_USER_ID,
+  TEST_USER_ID_MIN,
+  TEST_USER_ID_MAX,
 } from '../constants/systemIds.js';
 
 export type CreateUserOptions = {
   /** Only admin/bot seeders may set reserved IDs 1, 2, 999. */
   allowSystemId?: boolean;
+  /** Integration/chaos helpers may set disposable IDs 9000–9999. */
+  allowTestId?: boolean;
 };
 
 export class UserRepository {
@@ -32,6 +38,25 @@ export class UserRepository {
     });
   }
 
+  /** Next free ID in the disposable test band (9000–9999). */
+  async allocateTestUserId(): Promise<number> {
+    return executeWithRetry(async () => {
+      const [row] = await db
+        .select({
+          maxId: sql<number>`COALESCE(MAX(${users.id}), ${TEST_USER_ID_MIN - 1})`.mapWith(Number),
+        })
+        .from(users)
+        .where(sql`${users.id} BETWEEN ${TEST_USER_ID_MIN} AND ${TEST_USER_ID_MAX}`);
+      const next = Number(row?.maxId ?? TEST_USER_ID_MIN - 1) + 1;
+      if (next > TEST_USER_ID_MAX) {
+        throw new Error(
+          `[UserRepository] Test user ID band exhausted (${TEST_USER_ID_MIN}-${TEST_USER_ID_MAX}). Run scripts/purge-test-accounts.ts`
+        );
+      }
+      return next;
+    });
+  }
+
   async create(data: NewUser, options: CreateUserOptions = {}): Promise<User> {
     return executeWithRetry(async () => {
       if (data.id != null) {
@@ -42,18 +67,24 @@ export class UserRepository {
               `[UserRepository] allowSystemId only permits reserved IDs (1, 2, 999); got ${id}`
             );
           }
+        } else if (options.allowTestId) {
+          if (!isTestUserId(id)) {
+            throw new Error(
+              `[UserRepository] allowTestId only permits IDs ${TEST_USER_ID_MIN}-${TEST_USER_ID_MAX}; got ${id}`
+            );
+          }
         } else if (isForbiddenPublicUserId(id)) {
           throw new Error(
-            `[UserRepository] Refusing user ID ${id}: IDs below ${MIN_PUBLIC_USER_ID} and 1/2/999 are locked to Velum system accounts`
+            `[UserRepository] Refusing user ID ${id}: use 1/2/999 (system), ${MIN_PUBLIC_USER_ID}-${MAX_PUBLIC_USER_ID} (public), or ${TEST_USER_ID_MIN}-${TEST_USER_ID_MAX} (test)`
           );
         }
       } else {
-        // Keep serial above the reserved band even if something reset the sequence.
+        // Real registrations stay below the test band so 9000–9999 stay disposable.
         await db.execute(sql`
           SELECT setval(
             pg_get_serial_sequence('users', 'id'),
             GREATEST(
-              (SELECT COALESCE(MAX(id), 1) FROM users),
+              (SELECT COALESCE(MAX(id), 1) FROM users WHERE id < ${TEST_USER_ID_MIN}),
               ${MIN_PUBLIC_USER_ID}
             ),
             true
@@ -63,10 +94,10 @@ export class UserRepository {
 
       const inserted = await db.insert(users).values(data).returning();
       const created = inserted[0];
-      if (!options.allowSystemId && created && isForbiddenPublicUserId(created.id)) {
+      if (!options.allowSystemId && !options.allowTestId && created && isForbiddenPublicUserId(created.id)) {
         await db.delete(users).where(eq(users.id, created.id));
         throw new Error(
-          `[UserRepository] Serial issued locked ID ${created.id}; insert rolled back. Re-seed system accounts and setval >= ${MIN_PUBLIC_USER_ID}.`
+          `[UserRepository] Serial issued locked/test ID ${created.id}; insert rolled back.`
         );
       }
       return created;

@@ -23,6 +23,7 @@ import AdminProfile from './Admin/AdminProfile';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import SystemHealthTab from '../views/AdminControlDesk/SystemHealthTab';
 import { getSessionId } from '../utils/auth';
+import { formatRoleLabel } from '../utils/formatRoleLabel';
 import { velumToast } from '../utils/toast';
 
 import logoSvg from '../assets/logo.svg?raw';
@@ -327,8 +328,8 @@ export default function AdminPanel({
     }
   }, [user?.userId]);
 
-  const displayName = user?.username ? stripAt(user.username) : 'Executive';
-  const roleLabel = adminRole === 'SUPPORT_ADMIN' ? 'Support' : 'Executive';
+  const displayName = user?.username ? stripAt(user.username) : 'Admin';
+  const roleLabel = formatRoleLabel(adminRole);
   const avatarSrc = localAvatarUrl || adminProfile?.avatar || user?.avatar || '';
 
   const renderSidebarContent = (expanded: boolean) => (

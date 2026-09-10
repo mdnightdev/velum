@@ -942,6 +942,7 @@ adminRouter.get('/verifications', async (req: Request, res: Response) => {
       category: l.category,
       price: l.price,
       seller_id: l.sellerId,
+      seller_username: l.sellerUsername ?? null,
       status: l.status === 'ACTIVE' ? 'APPROVED' : l.status === 'REJECTED' ? 'REJECTED' : 'PENDING_REVIEW',
       verification_status: l.status === 'ACTIVE' ? 'APPROVED' : l.status === 'REJECTED' ? 'REJECTED' : 'PENDING_REVIEW',
       moderation_reason: l.moderationReason,
