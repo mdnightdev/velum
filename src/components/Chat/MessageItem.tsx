@@ -9,7 +9,6 @@ import { parseAttachment, getCleanPreview, stripAttachmentTokens } from '../../u
 import { getSessionId } from '../../utils/auth';
 import { safeFormatTimeOnly, formatMessageTimestamp } from '../../utils/time';
 import { resolveMediaUrl, getFormattedDownloadFilename } from '../../utils/mediaPipeline';
-import { getAlbumCellClass, getAlbumGridClass } from './albumLayout';
 import { getMessageKey } from './messageKey';
 import { ReactionPicker } from './ReactionPicker';
 import { velumToast } from '../../utils/toast';
@@ -105,14 +104,14 @@ function AlbumVideoThumb({
           className="w-full h-full object-cover block pointer-events-none"
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
         />
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-10 h-10 rounded-full bg-black/50 border border-white/20 flex items-center justify-center">
+        <div className="media-bubble-play">
+          <div className="media-bubble-play-btn media-bubble-play-btn--sm">
             <svg className="w-5 h-5 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
           </div>
         </div>
-        <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/55 text-[10px] text-white font-mono tabular-nums pointer-events-none">
+        <div className="media-bubble-duration">
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polygon points="23 7 16 12 23 17 23 7" />
             <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
@@ -365,20 +364,18 @@ function VideoCard({
 
   if (!loaded) {
     return (
-      <button
-        type="button"
-        className="relative rounded-2xl overflow-hidden bg-velum-800 w-full max-w-[320px] min-h-[180px] border border-accent/25 flex items-center justify-center cursor-pointer"
-        onClick={() => setLoaded(true)}
-      >
-        <span className="text-sm text-white">Tap to load</span>
-      </button>
+      <div className="collage-bubble collage-bubble--single">
+        <button type="button" className="collage-item media-bubble-tap-load" onClick={() => setLoaded(true)}>
+          Tap to load
+        </button>
+      </div>
     );
   }
 
   return (
     <>
       <div
-        className="relative rounded-2xl overflow-hidden bg-black w-full max-w-[320px] max-h-[420px] border border-accent/25 group cursor-pointer"
+        className="collage-bubble collage-bubble--single group"
         onClick={() => setIsExpanded(true)}
         role="button"
         tabIndex={0}
@@ -390,58 +387,56 @@ function VideoCard({
         }}
         aria-label="Open video"
       >
-        <video
-          src={src}
-          playsInline
-          preload="metadata"
-          muted
-          className="w-full max-h-[420px] object-cover rounded-2xl bg-black block pointer-events-none"
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
-        />
+        <div className="collage-item">
+          <video
+            src={src}
+            playsInline
+            preload="metadata"
+            muted
+            className="pointer-events-none"
+            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+          />
 
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none">
-          <div className="w-14 h-14 rounded-full bg-black/55 border border-white/20 flex items-center justify-center">
-            <svg className="w-7 h-7 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
+          <div className="media-bubble-play">
+            <div className="media-bubble-play-btn">
+              <svg className="w-6 h-6 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+            </div>
           </div>
-        </div>
 
-        <div className="absolute bottom-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/55 text-[10px] text-white font-mono tabular-nums pointer-events-none z-10">
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polygon points="23 7 16 12 23 17 23 7" />
-            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-          </svg>
-          <span>{formatVideoClock(duration)}</span>
-        </div>
+          <div className="media-bubble-duration">
+            <span>{formatVideoClock(duration)}</span>
+          </div>
 
-        {statusSlot}
+          {statusSlot}
 
-        <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-10">
-          {allowSave && (
+          <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-10">
+            {allowSave && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void saveMediaToDevice(src, 'mp4', 'video/mp4');
+                }}
+                className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
+                title="Save"
+              >
+                <Download className="w-3.5 h-3.5 pointer-events-none" />
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                void saveMediaToDevice(src, 'mp4', 'video/mp4');
+                setIsExpanded(true);
               }}
               className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
-              title="Save"
+              title="Fullscreen"
             >
-              <Download className="w-3.5 h-3.5 pointer-events-none" />
+              <Maximize2 className="w-3.5 h-3.5 pointer-events-none" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded(true);
-            }}
-            className="p-1.5 bg-black/60 hover:bg-black/85 rounded-lg text-white transition cursor-pointer border-0"
-            title="Fullscreen"
-          >
-            <Maximize2 className="w-3.5 h-3.5 pointer-events-none" />
-          </button>
+          </div>
         </div>
       </div>
 
@@ -457,11 +452,7 @@ function VideoCard({
 }
 
 function MediaStatusOverlay({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1 text-[9.5px] font-sans text-white select-none z-10 border border-white/5 pointer-events-auto">
-      {children}
-    </div>
-  );
+  return <div className="media-bubble-meta">{children}</div>;
 }
 
 const SYSTEM_ROLES: Record<number, { name: string; style: string }> = {
@@ -476,7 +467,7 @@ function messageNeedsCollapse(text: string): boolean {
   return text.length > 280 || lines > 5;
 }
 
-/** Long-message collapse (WA/TG): clamp lines, expand in place via Read more. */
+/** Long-message collapse: clamp lines, expand in place via Read more. */
 function ExpandableMessageText({
   text,
   isEdited,
@@ -813,49 +804,66 @@ export function MessageItem({
               {isVoiceNote ? (
                 <AudioMessagePlayer content={activeContent} isMe={isMe} />
               ) : isMediaAlbum ? (
-                <div className="flex flex-col w-full max-w-[300px] rounded-2xl overflow-hidden border border-accent/30 bg-black/40">
-                  <div className={`relative grid gap-[3px] p-[3px] bg-black ${getAlbumGridClass(attachments.length)}`}>
-                    {attachments.map((att, idx) => {
-                      const isLast = idx === attachments.length - 1;
-                      const cellClass = getAlbumCellClass(attachments.length, idx);
-                      const status =
-                        isLast ? (
-                          <MediaStatusOverlay>{renderStatusChips()}</MediaStatusOverlay>
-                        ) : null;
-
-                      if (isVideoAttachment(att)) {
-                        return (
-                          <div key={idx} className={`${cellClass} rounded-md overflow-hidden`}>
-                            <AlbumVideoThumb src={att.data} statusSlot={status} manualLoad={manualMediaLoad} />
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div key={idx} className={`${cellClass} rounded-md overflow-hidden`}>
-                          <SecureImageCard
-                            src={att.data}
-                            name={att.name}
-                            size={att.size}
-                            containerClass="w-full h-full min-h-0 rounded-md shadow-none border-0"
-                            isMe={isMe}
-                            manualLoad={manualMediaLoad}
-                            allowSave={allowMediaSave}
-                          >
-                            {isLast ? renderStatusChips() : null}
-                          </SecureImageCard>
+                (() => {
+                  const displayItems = attachments.slice(0, 4);
+                  const remainingCount = attachments.length - 4;
+                  const collageMod =
+                    displayItems.length === 1
+                      ? 'collage-bubble--single'
+                      : displayItems.length === 2
+                        ? 'collage-bubble--two'
+                        : displayItems.length === 3
+                          ? 'collage-bubble--three'
+                          : '';
+                  return (
+                    <>
+                      <div className={`collage-bubble ${collageMod}`}>
+                        {displayItems.map((att, idx) => {
+                          const showPlus =
+                            idx === displayItems.length - 1 && remainingCount > 0;
+                          const isLastVisible = idx === displayItems.length - 1;
+                          return (
+                            <div key={idx} className="collage-item">
+                              {isVideoAttachment(att) ? (
+                                <AlbumVideoThumb
+                                  src={att.data}
+                                  statusSlot={
+                                    isLastVisible && !showPlus ? (
+                                      <MediaStatusOverlay>{renderStatusChips()}</MediaStatusOverlay>
+                                    ) : undefined
+                                  }
+                                  manualLoad={manualMediaLoad}
+                                />
+                              ) : (
+                                <SecureImageCard
+                                  src={att.data}
+                                  name={att.name}
+                                  size={att.size}
+                                  containerClass="w-full h-full min-h-0 border-0 shadow-none rounded-none"
+                                  isMe={isMe}
+                                  manualLoad={manualMediaLoad}
+                                  allowSave={allowMediaSave}
+                                >
+                                  {isLastVisible && !showPlus ? renderStatusChips() : null}
+                                </SecureImageCard>
+                              )}
+                              {showPlus && (
+                                <div className="collage-overlay">+{remainingCount}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {parsedMsgContent && (
+                        <div className="px-2.5 py-2 text-[13px] text-white whitespace-pre-wrap break-words">
+                          {parsedMsgContent}
                         </div>
-                      );
-                    })}
-                  </div>
-                  {parsedMsgContent && (
-                    <div className="px-2.5 py-2 text-[13px] text-white whitespace-pre-wrap break-words">
-                      {parsedMsgContent}
-                    </div>
-                  )}
-                </div>
+                      )}
+                    </>
+                  );
+                })()
               ) : isSingleVideo || isVideo ? (
-                <div className="flex flex-col gap-2 w-full max-w-[320px] my-1">
+                <>
                   {attachments.map((att, idx) => (
                     <VideoCard
                       key={idx}
@@ -873,22 +881,24 @@ export function MessageItem({
                   {parsedMsgContent && (
                     <p className="px-1 text-[13px] text-white whitespace-pre-wrap">{parsedMsgContent}</p>
                   )}
-                </div>
+                </>
               ) : isSingleImage || isImageCard ? (
-                <div className="w-full max-w-[280px] my-1">
-                  <SecureImageCard
-                    src={attachments[0].data}
-                    name={attachments[0].name}
-                    size={attachments[0].size}
-                    caption={attachments[0].caption || parsedMsgContent}
-                    isMe={isMe}
-                    timestamp={msgTime}
-                    containerClass="w-full max-w-[280px] min-h-[180px] aspect-[4/3] border border-white-5 shadow-none rounded-xl overflow-hidden"
-                    manualLoad={manualMediaLoad}
-                    allowSave={allowMediaSave}
-                  >
-                    {renderStatusChips()}
-                  </SecureImageCard>
+                <div className="collage-bubble collage-bubble--single">
+                  <div className="collage-item">
+                    <SecureImageCard
+                      src={attachments[0].data}
+                      name={attachments[0].name}
+                      size={attachments[0].size}
+                      caption={attachments[0].caption || parsedMsgContent}
+                      isMe={isMe}
+                      timestamp={msgTime}
+                      containerClass="w-full h-full min-h-0 border-0 shadow-none rounded-none"
+                      manualLoad={manualMediaLoad}
+                      allowSave={allowMediaSave}
+                    >
+                      {renderStatusChips()}
+                    </SecureImageCard>
+                  </div>
                 </div>
               ) : (
                 <>

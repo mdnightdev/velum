@@ -37,19 +37,13 @@ function MediaStripVideoThumb({ url }: { url: string }) {
         className="w-full h-full object-cover pointer-events-none"
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
       />
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-7 h-7 rounded-full bg-black/55 border border-white/20 flex items-center justify-center">
-          <svg className="w-3.5 h-3.5 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="5 3 19 12 5 21 5 3" />
-          </svg>
-        </div>
-      </div>
-      <div className="absolute bottom-1 right-1 flex items-center gap-0.5 px-1 py-0.5 rounded bg-black/60 text-[9px] text-white font-mono tabular-nums pointer-events-none">
-        <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polygon points="23 7 16 12 23 17 23 7" />
-          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+      <div className="absolute bottom-1 left-1 text-white pointer-events-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17 10.5V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.5l4 4v-11l-4 4z" />
         </svg>
-        <span>{formatMediaClock(duration)}</span>
+      </div>
+      <div className="absolute bottom-1 right-1 text-[10px] text-white font-sans tabular-nums pointer-events-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+        {formatMediaClock(duration)}
       </div>
     </div>
   );
@@ -129,13 +123,13 @@ export default function ChatMediaSection({
         </div>
 
         {stripItems.length > 0 ? (
-          <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none">
+          <div className="flex items-center gap-2.5 overflow-x-auto py-1 scrollbar-none">
             {stripItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => openItem(item)}
-                className="relative w-16 h-16 rounded-xl overflow-hidden bg-velum-750 border border-velum-600/50 shrink-0 cursor-pointer active:scale-95 transition"
+                className="relative w-[4.5rem] h-[5.5rem] rounded-[12px] overflow-hidden bg-velum-750 border-0 shrink-0 cursor-pointer p-0"
                 title={item.name}
               >
                 {item.kind === 'video' ? (
@@ -162,8 +156,8 @@ export default function ChatMediaSection({
             ))}
           </div>
         ) : (
-          <div className="flex items-center gap-2 overflow-x-auto py-1">
-            <div className="w-16 h-16 rounded-xl bg-velum-750 border border-velum-600/50 flex flex-col items-center justify-center shrink-0 text-text-secondary">
+          <div className="flex items-center gap-2.5 overflow-x-auto py-1">
+            <div className="w-[4.5rem] h-[5.5rem] rounded-[12px] bg-velum-750 border-0 flex flex-col items-center justify-center shrink-0 text-text-secondary">
               {mediaLoading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (

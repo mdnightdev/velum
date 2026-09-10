@@ -213,7 +213,14 @@ export function ChatHeader({
       </div>
 
       <div className="relative shrink-0">
-        <HeaderIconBtn title="More" onClick={() => setMoreOpen((v) => !v)} active={moreOpen}>
+        <HeaderIconBtn
+          title="More"
+          compact
+          onClick={() => {
+            setMoreOpen((v) => !v);
+          }}
+          active={moreOpen}
+        >
           <MoreVertical className="w-5 h-5" />
         </HeaderIconBtn>
         {moreOpen && (
@@ -251,18 +258,20 @@ function HeaderIconBtn({
   onClick,
   title,
   active,
+  compact,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title: string;
   active?: boolean;
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
-      className={`w-11 h-11 rounded-full cursor-pointer flex items-center justify-center transition-colors ${
+      className={`${compact ? 'w-8 h-8' : 'w-11 h-11'} rounded-full cursor-pointer flex items-center justify-center transition-colors ${
         active ? 'text-accent bg-white-5' : 'text-text-secondary hover:text-accent hover:bg-white-5'
       }`}
     >

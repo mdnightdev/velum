@@ -13,10 +13,10 @@ export const velumToastStyle = {
 };
 
 export const velumToast = {
-  success: (message: string) => toast.success(message, velumToastStyle),
-  error: (message: string) => toast.error(message, velumToastStyle),
-  info: (message: string) => toast(message, velumToastStyle),
-  loading: (message: string) => toast.loading(message, velumToastStyle),
+  success: (message: string) => toast.success(message, { ...velumToastStyle, id: `ok:${message}` }),
+  error: (message: string) => toast.error(message, { ...velumToastStyle, id: `err:${message}` }),
+  info: (message: string) => toast(message, { ...velumToastStyle, id: `info:${message}` }),
+  loading: (message: string) => toast.loading(message, { ...velumToastStyle, id: `load:${message}` }),
   dismiss: () => toast.dismiss()
 };
 

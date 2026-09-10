@@ -112,8 +112,7 @@ const SecureImageCardInner: React.FC<SecureImageCardProps> = ({
     <>
       <div
         className={`relative overflow-hidden bg-black/80 group ${
-          containerClass ||
-          'w-full max-w-[280px] min-h-[180px] aspect-[4/3] rounded-2xl border border-accent/25'
+          containerClass || 'w-full h-full min-h-0'
         }`}
       >
         {loaded ? (
@@ -162,9 +161,7 @@ const SecureImageCardInner: React.FC<SecureImageCardProps> = ({
         )}
 
         {children && (
-          <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1 text-[9.5px] font-sans text-white select-none z-10 border border-white/5">
-            {children}
-          </div>
+          <div className="media-bubble-meta">{children}</div>
         )}
       </div>
 

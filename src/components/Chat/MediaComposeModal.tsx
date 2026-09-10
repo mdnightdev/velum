@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Crop } from 'lucide-react';
 import { Attachment } from './hooks/useMessageInput';
 
 export interface ComposeMediaItem extends Attachment {
   id: string;
+  /** Original File when available — preferred for upload over blob:/data: URLs. */
+  file?: File;
 }
 
 export interface MediaComposeModalProps {
@@ -31,6 +33,8 @@ function isVideoItem(item: ComposeMediaItem): boolean {
   );
 }
 
+const SWIPE_THRESHOLD_PX = 56;
+
 export function MediaComposeModal({
   items,
   onClose,
@@ -42,6 +46,9 @@ export function MediaComposeModal({
 }: MediaComposeModalProps) {
   const [activeId, setActiveId] = useState(items[0]?.id ?? '');
   const [caption, setCaption] = useState('');
+  const [stageFailed, setStageFailed] = useState(false);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
 
   useEffect(() => {
     if (!items.some((i) => i.id === activeId)) {
@@ -49,11 +56,48 @@ export function MediaComposeModal({
     }
   }, [items, activeId]);
 
-  const active = items.find((i) => i.id === activeId) ?? items[0];
+  useEffect(() => {
+    setStageFailed(false);
+  }, [activeId]);
+
+  const activeIndex = Math.max(0, items.findIndex((i) => i.id === activeId));
+  const active = items[activeIndex] ?? items[0];
   if (!active || items.length === 0) return null;
 
   const canCrop = isEditableStill(active);
   const count = items.length;
+  const previewSrc = active.data || '';
+
+  const goToIndex = (next: number) => {
+    if (next < 0 || next >= items.length || isSending) return;
+    setActiveId(items[next].id);
+  };
+
+  const goPrev = () => goToIndex(activeIndex - 1);
+  const goNext = () => goToIndex(activeIndex + 1);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.changedTouches[0];
+    touchStartX.current = t.clientX;
+    touchStartY.current = t.clientY;
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current == null || touchStartY.current == null) return;
+    if (count < 2 || isSending) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      return;
+    }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX.current;
+    const dy = t.clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    if (Math.abs(dx) < SWIPE_THRESHOLD_PX || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0) goNext();
+    else goPrev();
+  };
 
   const removeActive = () => {
     const next = items.filter((i) => i.id !== active.id);
@@ -62,7 +106,7 @@ export function MediaComposeModal({
       return;
     }
     onUpdateItems(next);
-    setActiveId(next[0].id);
+    setActiveId(next[Math.min(activeIndex, next.length - 1)].id);
   };
 
   return (
@@ -94,51 +138,70 @@ export function MediaComposeModal({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 flex items-center justify-center px-2 pt-14 pb-36">
-        {isVideoItem(active) ? (
+      <div
+        className="relative flex-1 min-h-0 flex items-center justify-center px-2 pt-14 pb-44 bg-black touch-pan-y"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
+        {!previewSrc || stageFailed ? (
+          <span className="text-sm text-white/50">Preview unavailable</span>
+        ) : isVideoItem(active) ? (
           <video
             key={active.id}
-            src={active.data}
+            src={previewSrc}
             playsInline
             muted
             autoPlay
             loop
-            className="max-w-full max-h-full object-contain"
+            controls={false}
+            className="block w-full h-full max-h-full object-contain pointer-events-none"
+            onError={() => setStageFailed(true)}
           />
         ) : (
           <img
             key={active.id}
-            src={active.data}
+            src={previewSrc}
             alt=""
-            className="max-w-full max-h-full object-contain"
+            draggable={false}
+            className="block w-full h-full max-h-full object-contain pointer-events-none"
+            onError={() => setStageFailed(true)}
           />
         )}
       </div>
 
       <div className="absolute bottom-0 inset-x-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-black via-black/90 to-transparent space-y-3">
         {count > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {items.map((item, index) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setActiveId(item.id)}
-                disabled={isSending}
-                className={`relative shrink-0 w-14 h-14 rounded-xl overflow-hidden border-2 transition cursor-pointer ${
-                  item.id === active.id ? 'border-accent' : 'border-white/20 opacity-80'
-                }`}
-                aria-label={`Media ${index + 1}`}
-              >
-                {isVideoItem(item) ? (
-                  <video src={item.data} muted playsInline className="w-full h-full object-cover" />
-                ) : (
-                  <img src={item.data} alt="" className="w-full h-full object-cover" />
-                )}
-                <span className="absolute top-0.5 left-0.5 min-w-[16px] h-4 px-0.5 rounded-full bg-accent text-velum-900 text-[9px] font-bold leading-4 text-center">
-                  {index + 1}
-                </span>
-              </button>
-            ))}
+          <div className="flex items-center gap-2.5 overflow-x-auto py-1 scrollbar-none">
+            {items.map((item, index) => {
+              const selected = item.id === active.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveId(item.id)}
+                  disabled={isSending}
+                  className={`relative shrink-0 w-[4.5rem] h-[5.5rem] rounded-[12px] overflow-hidden border-0 p-0 cursor-pointer transition ${
+                    selected ? 'ring-2 ring-accent opacity-100' : 'opacity-70'
+                  }`}
+                  aria-label={`Media ${index + 1}`}
+                >
+                  {isVideoItem(item) ? (
+                    <video
+                      src={item.data}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-cover pointer-events-none"
+                    />
+                  ) : (
+                    <img src={item.data} alt="" className="w-full h-full object-cover" />
+                  )}
+                  <span className="absolute top-1 left-1 min-w-[16px] h-4 px-0.5 rounded-md bg-black/70 text-white text-[9px] font-bold leading-4 text-center">
+                    {index + 1}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
 
