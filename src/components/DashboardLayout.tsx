@@ -7,7 +7,8 @@ import NotificationsMainDashboard from './SidebarTabs/NotificationsMainDashboard
 import LoungeMainDashboard from './SidebarTabs/LoungeMainDashboard';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import DirectMainDashboard from './SidebarTabs/DirectMainDashboard';
-import UnderDevelopment from './UnderDevelopment';
+import MarketMainDashboard from './SidebarTabs/MarketMainDashboard';
+import WalletMainDashboard from './SidebarTabs/WalletMainDashboard';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
 import ProfileCard, { toUserProfileData } from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
@@ -451,11 +452,18 @@ export default function DashboardLayout({
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">
-              <UnderDevelopment title="Wallet" />
+              <WalletMainDashboard
+                currentUserId={user ? user.userId : 0}
+                isDark={isDark}
+              />
             </div>
           ) : activeCategory === 'market' ? (
             <div className="flex-1 overflow-y-auto relative flex flex-col">
-              <UnderDevelopment title="Market" />
+              <MarketMainDashboard
+                currentUserId={user?.userId || 0}
+                currentUserRole={user?.role || 'USER'}
+                isDark={isDark}
+              />
             </div>
           ) : activeCategory === 'tickets' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">

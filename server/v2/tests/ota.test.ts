@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import express from 'express';
+import http from 'http';
+import type { AddressInfo } from 'net';
 import fs from 'fs';
 import path from 'path';
 import { utilityRouter } from '../routes/utilityRoutes';
@@ -20,25 +22,35 @@ describe('OTA', () => {
   });
 
   it('GET /v2/ota/bundle.zip returns a valid zip archive with PK magic header', async () => {
-    const res = await request(app)
-      .get('/v2/ota/bundle.zip')
-      .buffer(true)
-      .parse((res, callback) => {
-        res.setEncoding('binary');
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => { callback(null, Buffer.from(data, 'binary')); });
-      });
+    const zipPath = path.join(process.cwd(), 'public', 'ota', 'bundle.zip');
+    expect(fs.existsSync(zipPath)).toBe(true);
 
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('application/zip');
-    
-    // Zip file header signature check: PK\x03\x04 (0x50 0x4B 0x03 0x04)
-    const buffer = res.body as Buffer;
-    expect(buffer.length).toBeGreaterThan(0);
-    expect(buffer[0]).toBe(0x50);
-    expect(buffer[1]).toBe(0x4B);
-    expect(buffer[2]).toBe(0x03);
-    expect(buffer[3]).toBe(0x04);
+    const server = await new Promise<http.Server>((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v2/ota/bundle.zip`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type') || '').toContain('application/zip');
+
+      const reader = res.body?.getReader();
+      expect(reader).toBeTruthy();
+      const first = await reader!.read();
+      await reader!.cancel();
+
+      const buf = first.value;
+      expect(buf).toBeTruthy();
+      expect(buf!.length).toBeGreaterThanOrEqual(4);
+      expect(buf![0]).toBe(0x50);
+      expect(buf![1]).toBe(0x4b);
+      expect(buf![2]).toBe(0x03);
+      expect(buf![3]).toBe(0x04);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
   });
 });
