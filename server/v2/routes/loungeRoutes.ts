@@ -69,6 +69,7 @@ loungeRouter.delete('/:loungeId/invites/:inviteId', auth, loungeController.delet
 loungeRouter.get('/:id/requests', auth, loungeController.getJoinRequests);
 loungeRouter.post('/apply/review', auth, loungeController.reviewJoinRequest);
 loungeRouter.put('/:id/members/:targetUserId', auth, loungeController.updateMemberRole);
+loungeRouter.post('/:id/transfer', auth, loungeController.transferLoungeOwnership);
 loungeRouter.delete('/:id/members/:targetUserId', auth, loungeController.removeMember);
 loungeRouter.post('/sanction', auth, loungeController.applySanction);
 loungeRouter.post('/:id/members/add', auth, loungeController.addMemberDirect);

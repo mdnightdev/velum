@@ -1,7 +1,9 @@
 import { db } from '../db/client.js';
 import { lounges, loungeMembers } from '../db/schema/lounges.js';
-import { eq, sql } from 'drizzle-orm';
+import { users } from '../db/schema/users.js';
+import { eq, sql, and, inArray } from 'drizzle-orm';
 import { deduplicateSublounges } from './loungeDeduplicator.js';
+import { MIN_PUBLIC_LOUNGE_ID } from '../constants/systemIds.js';
 
 export const OFFICIAL_SUBLOUNGES = [
   { id: 2, slug: 'velum_general', name: 'General', description: 'Main community chat & general discussion', accessLevel: 'ALL', isLocked: false, isHidden: false },
@@ -16,12 +18,92 @@ export const OFFICIAL_SUBLOUNGES = [
   { id: 11, slug: 'velum_executives', name: 'Executive Lounge', description: 'Restricted executive & governance channel', accessLevel: 'EXEC_ONLY', isLocked: true, isHidden: true }
 ];
 
+/** Platform roles treated as Velum lounge owners (membership.role = owner). */
+export const VELUM_LOUNGE_OWNER_SYSTEM_ROLES = ['CLI_ADMIN', 'LOGIN_ADMIN'] as const;
+/** Platform roles treated as Velum lounge admins (membership.role = admin). */
+export const VELUM_LOUNGE_ADMIN_SYSTEM_ROLES = ['SUPPORT_ADMIN'] as const;
+
 let isSeeded = false;
 
-export async function ensureVelumLoungeSeeded() {
-  if (isSeeded) return;
+async function upsertLoungeMembership(
+  loungeId: number,
+  userId: number,
+  role: 'owner' | 'admin'
+) {
+  const [existing] = await db
+    .select()
+    .from(loungeMembers)
+    .where(and(eq(loungeMembers.loungeId, loungeId), eq(loungeMembers.userId, userId)))
+    .limit(1);
+
+  if (!existing) {
+    await db.insert(loungeMembers).values({
+      loungeId,
+      userId,
+      role,
+      status: 'active',
+    });
+    return;
+  }
+
+  if (existing.role !== role || existing.status !== 'active') {
+    await db
+      .update(loungeMembers)
+      .set({ role, status: 'active' })
+      .where(eq(loungeMembers.id, existing.id));
+  }
+}
+
+/**
+ * Persist Velum lounge staff: CLI/LOGIN → owner membership, SUPPORT → admin.
+ * Primary lounges.owner_id stays the first CLI_ADMIN (id 1 / midnight) when present.
+ */
+export async function ensureVelumLoungeStaffMembership() {
   try {
-    await db.execute(sql`
+    const [master] = await db
+      .select()
+      .from(lounges)
+      .where(eq(lounges.slug, 'velum_master_lounge'))
+      .limit(1);
+    if (!master) return;
+
+    const ownerUsers = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(inArray(users.role, [...VELUM_LOUNGE_OWNER_SYSTEM_ROLES]));
+
+    const adminUsers = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(inArray(users.role, [...VELUM_LOUNGE_ADMIN_SYSTEM_ROLES]));
+
+    for (const u of ownerUsers) {
+      await upsertLoungeMembership(master.id, u.id, 'owner');
+    }
+    for (const u of adminUsers) {
+      await upsertLoungeMembership(master.id, u.id, 'admin');
+    }
+
+    const primaryOwner =
+      ownerUsers.find((u) => u.id === 1) ||
+      ownerUsers.find((u) => u.role === 'CLI_ADMIN') ||
+      ownerUsers[0];
+
+    if (primaryOwner && master.ownerId !== primaryOwner.id) {
+      await db
+        .update(lounges)
+        .set({ ownerId: primaryOwner.id, updatedAt: new Date() })
+        .where(eq(lounges.id, master.id));
+    }
+  } catch (err) {
+    console.error('[LoungeSeeder] Staff membership seed error:', err);
+  }
+}
+
+export async function ensureVelumLoungeSeeded() {
+  if (!isSeeded) {
+    try {
+      await db.execute(sql`
       CREATE TABLE IF NOT EXISTS lounges (
         id SERIAL PRIMARY KEY,
         slug VARCHAR(64) UNIQUE,
@@ -121,54 +203,62 @@ export async function ensureVelumLoungeSeeded() {
       CREATE INDEX IF NOT EXISTS idx_dm_reactions_message ON dm_reactions (message_id);
     `);
 
-    await db.execute(sql`
+      await db.execute(sql`
       UPDATE lounges SET slug = 'velum_master_lounge' WHERE id = 1 AND (slug = 'velum_lounge' OR slug IS NULL);
     `);
 
-    let [master] = await db.select().from(lounges).where(eq(lounges.id, 1));
-    if (!master) {
-      const [inserted] = await db.insert(lounges).values({
-        id: 1,
-        slug: 'velum_master_lounge',
-        name: 'Velum Lounge',
-        description: 'Velum Lounge',
-        isOfficial: true,
-        isSystem: true,
-        isPrivate: false,
-        type: 'official',
-        accessLevel: 'ALL'
-      }).onConflictDoNothing().returning();
-      master = inserted || (await db.select().from(lounges).where(eq(lounges.id, 1)))[0];
-    }
-
-    for (const sub of OFFICIAL_SUBLOUNGES) {
-      const [existing] = await db.select().from(lounges).where(eq(lounges.id, sub.id));
-      if (!existing && master) {
-        await db.insert(lounges).values({
-          id: sub.id,
-          slug: sub.slug,
-          name: sub.name,
-          description: sub.description,
-          parentLoungeId: master.id,
+      let [master] = await db.select().from(lounges).where(eq(lounges.id, 1));
+      if (!master) {
+        const [inserted] = await db.insert(lounges).values({
+          id: 1,
+          slug: 'velum_master_lounge',
+          name: 'Velum Lounge',
+          description: 'Velum Lounge',
           isOfficial: true,
           isSystem: true,
-          isPrivate: sub.accessLevel === 'EXEC_ONLY',
-          isHidden: (sub as any).isHidden || false,
-          type: sub.accessLevel === 'EXEC_ONLY' ? 'private_sublounge' : 'official',
-          accessLevel: sub.accessLevel
-        }).onConflictDoNothing();
+          isPrivate: false,
+          type: 'official',
+          accessLevel: 'ALL'
+        }).onConflictDoNothing().returning();
+        master = inserted || (await db.select().from(lounges).where(eq(lounges.id, 1)))[0];
       }
-    }
 
-    // Advance sequence past reserved official lounge IDs (1-11) so user-created lounges start at 1000+
-    await db.execute(sql`
-      SELECT setval(pg_get_serial_sequence('lounges', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM lounges), 1000), true);
+      for (const sub of OFFICIAL_SUBLOUNGES) {
+        const [existing] = await db.select().from(lounges).where(eq(lounges.id, sub.id));
+        if (!existing && master) {
+          await db.insert(lounges).values({
+            id: sub.id,
+            slug: sub.slug,
+            name: sub.name,
+            description: sub.description,
+            parentLoungeId: master.id,
+            isOfficial: true,
+            isSystem: true,
+            isPrivate: sub.accessLevel === 'EXEC_ONLY',
+            isHidden: (sub as any).isHidden || false,
+            type: sub.accessLevel === 'EXEC_ONLY' ? 'private_sublounge' : 'official',
+            accessLevel: sub.accessLevel
+          }).onConflictDoNothing();
+        }
+      }
+
+      // Advance sequence past reserved official lounge IDs (1-11) so user-created lounges start at 1000+
+      await db.execute(sql`
+      SELECT setval(
+        pg_get_serial_sequence('lounges', 'id'),
+        GREATEST((SELECT COALESCE(MAX(id), 1) FROM lounges), ${MIN_PUBLIC_LOUNGE_ID}),
+        true
+      );
     `);
 
-    await deduplicateSublounges();
+      await deduplicateSublounges();
 
-    isSeeded = true;
-  } catch (err) {
-    console.error('[LoungeSeeder] Seeding error:', err);
+      isSeeded = true;
+    } catch (err) {
+      console.error('[LoungeSeeder] Seeding error:', err);
+    }
   }
+
+  // Always re-sync staff roles (CLI/LOGIN owners, SUPPORT admin) after lounge exists.
+  await ensureVelumLoungeStaffMembership();
 }

@@ -284,7 +284,7 @@ export async function handleDb(ctx: CommandContext): Promise<void> {
       await ensureAdminSeeded();
       await ensureReservesSeeded();
       await ensureVelumLoungeSeeded();
-      console.log('[OK] Seeded official system accounts (1, 2, 999), central bank reserves, and 11 official lounges.');
+      console.log('[OK] Seeded official system accounts (1, 2, 999), central bank reserves, 11 official lounges, and Velum lounge staff (CLI/LOGIN=owner, SUPPORT=admin).');
       await logAudit('/db/seed', 'SYSTEM', 'Executed official database infrastructure seeding');
     } catch (err) {
       console.log(`[ERROR] Database seed failed: ${(err as Error).message}`);

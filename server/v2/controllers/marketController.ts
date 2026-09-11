@@ -6,14 +6,11 @@ import { generateRandomToken } from '../utils/crypto.js';
 import { NotFoundError, BadRequestError, ForbiddenError } from '../utils/errors.js';
 import type { CreateListingInput, UpdateListingInput, EscrowActionInput } from '../schemas/marketplace.js';
 import { outboxWorker } from '../services/outboxWorker.js';
-import { scanContent } from '../services/marketplaceService.js';
 
 export class MarketController {
   async createListing(req: Request<{}, {}, CreateListingInput>, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
     const { title, description, price, category, stock, digitalDelivery, digitalPayload } = req.body;
-
-    const isFlagged = scanContent(title, description);
 
     const listing = await marketRepository.createListing({
       sellerId: req.user.userId,
@@ -24,10 +21,16 @@ export class MarketController {
       stock,
       digitalDelivery,
       digitalPayload,
-      status: isFlagged ? 'PENDING_REVIEW' : 'ACTIVE'
     });
 
-    res.status(201).json({ listing });
+    res.status(201).json({
+      listing,
+      heldForReview: listing.status === 'PENDING_REVIEW',
+      message:
+        listing.status === 'PENDING_REVIEW'
+          ? 'Listing saved and held for admin review. It is not public yet.'
+          : undefined,
+    });
   }
 
   async getListings(_req: Request, res: Response): Promise<void> {

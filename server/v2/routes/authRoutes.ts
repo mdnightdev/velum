@@ -147,8 +147,8 @@ authRouter.post('/promote-to-support-admin', authMiddleware, async (req, res, ne
     const saPanicPhraseHash = await hashArgon2id(saPanicPhrase, Buffer.from(salt, 'hex'));
     const saRecoveryKeyHash = await hashArgon2id(saRecoveryKey, Buffer.from(salt, 'hex'));
 
-    // Create SA account
-    const [newSAUser] = await db.insert(users).values({
+    // Create SA account (serial floor enforced in userRepository.create)
+    const newSAUser = await userRepository.create({
       username: saUsername,
       passwordHash: saPasswordHash,
       salt,
@@ -159,7 +159,7 @@ authRouter.post('/promote-to-support-admin', authMiddleware, async (req, res, ne
       role: 'SUPPORT_ADMIN',
       displayName: `Support Admin - ${targetUser.displayName || targetUser.username}`,
       recoveryKeyDelivered: true
-    }).returning();
+    });
 
     // Send credentials to original user's VELUM bot DM
     await systemBot.sendToUser(targetUserId, BotTemplates.supportCredentialsDelivered({

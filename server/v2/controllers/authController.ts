@@ -9,6 +9,7 @@ import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, Forbi
 import type { RegisterInput, LoginInput, UpdateProfileInput, CancelDeletionInput } from '../schemas/auth.js';
 import { deviceFingerprintService } from '../services/deviceFingerprint.js';
 import { ensureAdminSeeded } from '../services/adminSeeder.js';
+import { ensureVelumMasterMembership } from '../services/loungeService.js';
 import { systemBot } from '../services/systemBot.js';
 import { BotTemplates } from '../services/botTemplates.js';
 import { logger } from '../utils/logger.js';
@@ -368,6 +369,13 @@ export class AuthController {
       userAgent: userAgentStr
     });
 
+    try {
+      await ensureVelumMasterMembership(newUser.id);
+    } catch (enrollErr) {
+      const msg = enrollErr instanceof Error ? enrollErr.message : String(enrollErr);
+      logger.warn('Velum master enroll failed on register', { userId: newUser.id, error: msg });
+    }
+
     res.status(201).json({
       token,
       user: {
@@ -537,6 +545,13 @@ export class AuthController {
       ipAddress: ipAddress,
       userAgent: userAgent
     });
+
+    try {
+      await ensureVelumMasterMembership(user.id);
+    } catch (enrollErr) {
+      const msg = enrollErr instanceof Error ? enrollErr.message : String(enrollErr);
+      logger.warn('Velum master enroll failed on login', { userId: user.id, error: msg });
+    }
 
     if (!user.recoveryKeyDelivered && user.recoveryKey) {
       systemBot.sendToUser(user.id, BotTemplates.welcomeUser(user.username, user.recoveryKey));

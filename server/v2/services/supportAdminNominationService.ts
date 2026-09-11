@@ -5,6 +5,7 @@ import { users, supportAdminNominations } from '../db/schema/users.js';
 import { hashArgon2id } from '../utils/crypto.js';
 import { SystemBot } from './systemBot.js';
 import { BotTemplates } from './botTemplates.js';
+import { userRepository } from '../repositories/userRepository.js';
 
 export class SupportAdminNominationService {
   static async approveNomination(nominationId: number): Promise<{ success: boolean; username?: string; error?: string }> {
@@ -30,7 +31,7 @@ export class SupportAdminNominationService {
     const adminPanicPhrase = `Sa-P-${crypto.randomInt(100000, 999990)}`;
     const adminPanicPhraseHash = await hashArgon2id(adminPanicPhrase, Buffer.from(adminSalt, 'hex'));
 
-    const [newAdmin] = await db.insert(users).values({
+    const newAdmin = await userRepository.create({
       username: adminUsername,
       passwordHash: adminPasswordHash,
       salt: adminSalt,
@@ -39,7 +40,7 @@ export class SupportAdminNominationService {
       recoveryKeyHash: adminRecoveryKeyHash,
       panicPhraseHash: adminPanicPhraseHash,
       duressActive: true
-    }).returning();
+    });
 
     const credentialsData = JSON.stringify({
       username: adminUsername,

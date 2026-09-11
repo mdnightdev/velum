@@ -69,6 +69,11 @@ export interface ChatInputProps {
   isPrivateSublounge?: boolean;
   isMember?: boolean;
   onJoinLounge?: () => void;
+  onApplyLounge?: () => void;
+  isJoiningLounge?: boolean;
+  isApplyingLounge?: boolean;
+  appliedSuccess?: boolean;
+  isPrivateLounge?: boolean;
 }
 
 export function ChatInput({
@@ -118,6 +123,11 @@ export function ChatInput({
   isPrivateSublounge,
   isMember,
   onJoinLounge,
+  onApplyLounge,
+  isJoiningLounge = false,
+  isApplyingLounge = false,
+  appliedSuccess = false,
+  isPrivateLounge = false,
 }: ChatInputProps) {
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
@@ -418,15 +428,33 @@ export function ChatInput({
           </div>
         ) : isMember === false ? (
           <div className="w-full bg-velum-850 border border-velum-600 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs text-text-secondary select-none">
-            <span>You must be a member of this lounge to send messages.</span>
-            {onJoinLounge && (
-              <button
-                type="button"
-                onClick={onJoinLounge}
-                className="px-3.5 py-1.5 bg-accent hover:bg-accent-hover text-black rounded-lg text-xs font-semibold cursor-pointer shrink-0"
-              >
-                Join Lounge
-              </button>
+            <span>
+              {isPrivateLounge
+                ? 'This lounge requires approval to join.'
+                : 'You must be a member of this lounge to send messages.'}
+            </span>
+            {isPrivateLounge ? (
+              onApplyLounge && (
+                <button
+                  type="button"
+                  onClick={onApplyLounge}
+                  disabled={isApplyingLounge || appliedSuccess}
+                  className="px-3.5 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-black rounded-lg text-xs font-semibold cursor-pointer shrink-0"
+                >
+                  {appliedSuccess ? 'Application Sent' : isApplyingLounge ? 'Applying...' : 'Apply to Join'}
+                </button>
+              )
+            ) : (
+              onJoinLounge && (
+                <button
+                  type="button"
+                  onClick={onJoinLounge}
+                  disabled={isJoiningLounge}
+                  className="px-3.5 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-black rounded-lg text-xs font-semibold cursor-pointer shrink-0"
+                >
+                  {isJoiningLounge ? 'Joining...' : 'Join Lounge'}
+                </button>
+              )
             )}
           </div>
         ) : (

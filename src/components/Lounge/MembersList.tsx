@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { sortMembersAdminsFirst } from './utils/memberRoster';
 
 interface MembersListProps {
   members: any[];
@@ -7,12 +8,14 @@ interface MembersListProps {
 }
 
 export default function MembersList({ members, isDark, onSelectMember }: MembersListProps) {
+  const ordered = useMemo(() => sortMembersAdminsFirst(members || []), [members]);
+
   return (
     <div className="flex flex-col p-2 space-y-1">
       <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-text-secondary">
-        Members — {members.length}
+        Members — {ordered.length}
       </div>
-      {members.map((member, index) => (
+      {ordered.map((member, index) => (
         <div 
           key={member.user_id || `member-${member.username || index}`}
           onClick={() => onSelectMember(member)}
@@ -28,7 +31,11 @@ export default function MembersList({ members, isDark, onSelectMember }: Members
                 {member.username.replace('@', '').charAt(0) || 'U'}
               </div>
             )}
-            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${isDark ? 'border-velum-600' : 'border-white'} ${member.status === 'online' ? 'bg-status-online' : 'bg-status-invisible'}`} />
+            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${isDark ? 'border-velum-600' : 'border-white'} ${
+              String(member.presence || member.last_seen_at || '').toLowerCase() === 'online'
+                ? 'bg-status-online'
+                : 'bg-status-invisible'
+            }`} />
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-xs font-bold truncate ${isDark ? 'text-text-primary' : 'text-velum-900'}`}>

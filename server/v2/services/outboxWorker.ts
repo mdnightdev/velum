@@ -3,7 +3,7 @@ import { db } from '../db/client.js';
 import { outboxEvents, type NewOutboxEvent } from '../db/schema/outbox.js';
 import { listings } from '../db/schema/index.js';
 import { getRedisClient } from '../db/redis.js';
-import { scanContent } from './marketplaceService.js';
+import { moderationService } from './moderationService.js';
 
 export class OutboxWorker {
   private isProcessing = false;
@@ -35,11 +35,10 @@ export class OutboxWorker {
       }
 
       for (const listing of activeListings) {
-        if (scanContent(listing.title, listing.description || '')) {
-          await db
-            .update(listings)
-            .set({ status: 'PENDING_REVIEW' })
-            .where(eq(listings.id, listing.id));
+        const combined = `${listing.title} ${listing.description || ''} ${listing.category || ''} ${listing.digitalPayload || ''}`;
+        const hit = moderationService.scanListingContent(combined);
+        if (hit) {
+          await moderationService.holdListingForReview(listing.id, hit);
         }
       }
       lastId += batchSize;

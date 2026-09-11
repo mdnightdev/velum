@@ -6,7 +6,7 @@ import { useMessageInput } from './Chat/hooks/useMessageInput';
 import { useMessageScroll } from './Chat/hooks/useMessageScroll';
 import { useMessageActions } from './Chat/hooks/useMessageActions';
 import { useSupportNomination } from './Chat/hooks/useSupportNomination';
-import { useAttachmentActions, dataUriToBlob, uploadComposeItems, shouldOpenChatImageCropper } from './Chat/hooks/useAttachmentActions';
+import { useAttachmentActions, dataUriToBlob, uploadComposeItems, shouldOpenChatImageCropper, revokeComposeItemUrls } from './Chat/hooks/useAttachmentActions';
 import { useMessageDecryption } from './Chat/hooks/useMessageDecryption';
 import { useTypingStatus } from './Chat/hooks/useTypingStatus';
 import { usePeerPresence } from './Chat/hooks/usePeerPresence';
@@ -69,9 +69,16 @@ export interface ChatAreaProps {
   isPrivateSublounge?: boolean;
   isMember?: boolean;
   onJoinLounge?: () => void;
+  onApplyLounge?: () => void;
+  isJoiningLounge?: boolean;
+  isApplyingLounge?: boolean;
+  appliedSuccess?: boolean;
+  isPrivateLounge?: boolean;
   avatarUrl?: string;
   /** Opens the shared contacts list to pick a forward target. */
   onRequestForward?: (content: string) => void;
+  /** Live lounge member avatars/names by user id. */
+  memberDirectory?: import('./Chat/MessageItem').LoungeMemberDirectory;
 }
 
 export default function ChatArea({
@@ -101,9 +108,15 @@ export default function ChatArea({
   roomAccessLevel,
   isMember,
   onJoinLounge,
+  onApplyLounge,
+  isJoiningLounge,
+  isApplyingLounge,
+  appliedSuccess,
+  isPrivateLounge,
   avatarUrl,
   onSelectProfileUser,
   onRequestForward,
+  memberDirectory,
 }: ChatAreaProps) {
   // Subscribe directly so WS append + plaintext stamps re-render without App prop lag.
   const messages = useChatStore((s) => s.messages);
@@ -288,6 +301,7 @@ export default function ChatArea({
   } | null>(null);
   const [composeItems, setComposeItems] = useState<ComposeMediaItem[] | null>(null);
   const [composeSending, setComposeSending] = useState(false);
+  const composeSendingRef = useRef(false);
   const [composeProgress, setComposeProgress] = useState<number | null>(null);
   const [fileErrorAlert, setFileErrorAlert] = useState<string | null>(null);
 
@@ -629,6 +643,8 @@ export default function ChatArea({
           clearActionMessage();
         }}
         activeChatPeer={activeChatPeer}
+        memberDirectory={memberDirectory}
+        onSelectProfileUser={onSelectProfileUser}
       />
 
       <input
@@ -672,19 +688,32 @@ export default function ChatArea({
           items={composeItems}
           onClose={() => {
             if (composeSending) return;
+            revokeComposeItemUrls(composeItems);
             setComposeItems(null);
             setComposeProgress(null);
           }}
-          onUpdateItems={setComposeItems}
+          onUpdateItems={(next) => {
+            const removed = (composeItems || []).filter((old) => !next.some((n) => n.id === old.id));
+            revokeComposeItemUrls(removed);
+            setComposeItems(next);
+          }}
           isSending={composeSending}
           uploadProgress={composeProgress}
-          onCropItem={(itemId) => {
+          onCropItem={async (itemId) => {
             const item = composeItems.find((i) => i.id === itemId);
             if (!item) return;
-            const blob = item.data.startsWith('data:') ? dataUriToBlob(item.data) : null;
-            const file = blob
-              ? new File([blob], item.name || 'image.webp', { type: item.type || blob.type || 'image/webp' })
-              : new File([], item.name || 'image.webp', { type: item.type || 'image/webp' });
+            let blob: Blob | null = null;
+            try {
+              if (item.data.startsWith('data:')) {
+                blob = dataUriToBlob(item.data);
+              } else {
+                blob = await (await fetch(item.data)).blob();
+              }
+            } catch {
+              velumToast.error('Could not open image for crop.');
+              return;
+            }
+            const file = new File([blob], item.name || 'image.webp', { type: item.type || blob.type || 'image/webp' });
             if (!shouldOpenChatImageCropper(file) && !item.type.startsWith('image/')) return;
             setCroppingImage({
               src: item.data,
@@ -694,7 +723,8 @@ export default function ChatArea({
             });
           }}
           onSend={async (items, caption) => {
-            if (composeSending || items.length === 0) return;
+            if (composeSendingRef.current || composeSending || items.length === 0) return;
+            composeSendingRef.current = true;
             setComposeSending(true);
             setComposeProgress(0);
             try {
@@ -705,12 +735,14 @@ export default function ChatArea({
               const targetRoom = activeChatPeer ? `dm_${activeChatPeer.userId}` : roomId;
               const isEnc = Boolean(activeChatPeer && activeChatPeer.userId !== 999);
               sendWithDisappear(textToSend, resolveBurnSeconds(), isEnc, targetRoom, undefined, textToSend);
+              revokeComposeItemUrls(items);
               setComposeItems(null);
               setComposeProgress(null);
             } catch (err) {
               log.error('Compose media upload failed', { error: (err as Error).message });
               velumToast.error('Media upload failed. Please try again.');
             } finally {
+              composeSendingRef.current = false;
               setComposeSending(false);
             }
           }}
@@ -727,17 +759,24 @@ export default function ChatArea({
             const sizeStr = `${(croppedFile.size / 1024).toFixed(0)} KB`;
             if (croppingImage.composeItemId && composeItems) {
               setComposeItems(
-                composeItems.map((item) =>
-                  item.id === croppingImage.composeItemId
-                    ? {
-                        ...item,
-                        name: croppedFile.name || item.name,
-                        size: sizeStr,
-                        type: croppedFile.type || item.type || 'image/png',
-                        data: croppedDataUrl,
-                      }
-                    : item
-                )
+                composeItems.map((item) => {
+                  if (item.id !== croppingImage.composeItemId) return item;
+                  if (item.data?.startsWith('blob:')) {
+                    try {
+                      URL.revokeObjectURL(item.data);
+                    } catch {
+                      /* ignore */
+                    }
+                  }
+                  return {
+                    ...item,
+                    name: croppedFile.name || item.name,
+                    size: sizeStr,
+                    type: croppedFile.type || item.type || 'image/png',
+                    data: croppedDataUrl,
+                    file: croppedFile,
+                  };
+                })
               );
             } else {
               setSelectedAttachment({
@@ -829,6 +868,11 @@ export default function ChatArea({
         isPrivateSublounge={isPrivateSublounge}
         isMember={isMember}
         onJoinLounge={onJoinLounge}
+        onApplyLounge={onApplyLounge}
+        isJoiningLounge={isJoiningLounge}
+        isApplyingLounge={isApplyingLounge}
+        appliedSuccess={appliedSuccess}
+        isPrivateLounge={isPrivateLounge}
       />
     </div>
   );

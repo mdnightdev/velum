@@ -2,6 +2,22 @@ import { eq, sql } from 'drizzle-orm';
 import { db, executeWithRetry } from '../db/client.js';
 import { users, sessions, type User, type NewUser, type Session, type NewSession } from '../db/schema/index.js';
 import { logger } from '../utils/logger.js';
+import {
+  isForbiddenPublicUserId,
+  isReservedSystemUserId,
+  isTestUserId,
+  MIN_PUBLIC_USER_ID,
+  MAX_PUBLIC_USER_ID,
+  TEST_USER_ID_MIN,
+  TEST_USER_ID_MAX,
+} from '../constants/systemIds.js';
+
+export type CreateUserOptions = {
+  /** Only admin/bot seeders may set reserved IDs 1, 2, 999. */
+  allowSystemId?: boolean;
+  /** Integration/chaos helpers may set disposable IDs 9000–9999. */
+  allowTestId?: boolean;
+};
 
 export class UserRepository {
   async findById(id: number): Promise<User | null> {
@@ -22,10 +38,69 @@ export class UserRepository {
     });
   }
 
-  async create(data: NewUser): Promise<User> {
+  /** Next free ID in the disposable test band (9000–9999). */
+  async allocateTestUserId(): Promise<number> {
     return executeWithRetry(async () => {
+      const [row] = await db
+        .select({
+          maxId: sql<number>`COALESCE(MAX(${users.id}), ${TEST_USER_ID_MIN - 1})`.mapWith(Number),
+        })
+        .from(users)
+        .where(sql`${users.id} BETWEEN ${TEST_USER_ID_MIN} AND ${TEST_USER_ID_MAX}`);
+      const next = Number(row?.maxId ?? TEST_USER_ID_MIN - 1) + 1;
+      if (next > TEST_USER_ID_MAX) {
+        throw new Error(
+          `[UserRepository] Test user ID band exhausted (${TEST_USER_ID_MIN}-${TEST_USER_ID_MAX}). Run scripts/purge-test-accounts.ts`
+        );
+      }
+      return next;
+    });
+  }
+
+  async create(data: NewUser, options: CreateUserOptions = {}): Promise<User> {
+    return executeWithRetry(async () => {
+      if (data.id != null) {
+        const id = Number(data.id);
+        if (options.allowSystemId) {
+          if (!isReservedSystemUserId(id)) {
+            throw new Error(
+              `[UserRepository] allowSystemId only permits reserved IDs (1, 2, 999); got ${id}`
+            );
+          }
+        } else if (options.allowTestId) {
+          if (!isTestUserId(id)) {
+            throw new Error(
+              `[UserRepository] allowTestId only permits IDs ${TEST_USER_ID_MIN}-${TEST_USER_ID_MAX}; got ${id}`
+            );
+          }
+        } else if (isForbiddenPublicUserId(id)) {
+          throw new Error(
+            `[UserRepository] Refusing user ID ${id}: use 1/2/999 (system), ${MIN_PUBLIC_USER_ID}-${MAX_PUBLIC_USER_ID} (public), or ${TEST_USER_ID_MIN}-${TEST_USER_ID_MAX} (test)`
+          );
+        }
+      } else {
+        // Real registrations stay below the test band so 9000–9999 stay disposable.
+        await db.execute(sql`
+          SELECT setval(
+            pg_get_serial_sequence('users', 'id'),
+            GREATEST(
+              (SELECT COALESCE(MAX(id), 1) FROM users WHERE id < ${TEST_USER_ID_MIN}),
+              ${MIN_PUBLIC_USER_ID}
+            ),
+            true
+          );
+        `);
+      }
+
       const inserted = await db.insert(users).values(data).returning();
-      return inserted[0];
+      const created = inserted[0];
+      if (!options.allowSystemId && !options.allowTestId && created && isForbiddenPublicUserId(created.id)) {
+        await db.delete(users).where(eq(users.id, created.id));
+        throw new Error(
+          `[UserRepository] Serial issued locked/test ID ${created.id}; insert rolled back.`
+        );
+      }
+      return created;
     });
   }
 
@@ -40,10 +115,19 @@ export class UserRepository {
     });
   }
 
-  async delete(id: number): Promise<boolean> {
+    async delete(id: number): Promise<boolean> {
     return executeWithRetry(async () => {
-      const deleted = await db.delete(users).where(eq(users.id, id)).returning();
-      return deleted.length > 0;
+      await db.execute(sql`SELECT purge_user(${id});`);
+      return true;
+    });
+  }
+
+  async purgeMany(ids: number[]): Promise<number> {
+    return executeWithRetry(async () => {
+      const res = await db.execute<{ count: number }>(
+        sql`SELECT purge_users(${ids}::int[]) AS count;`
+      );
+      return Number(res[0]?.count ?? 0);
     });
   }
 

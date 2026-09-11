@@ -10,6 +10,9 @@ import { eq, and, or, inArray, desc, gt, sql } from 'drizzle-orm';
 import { connectedClients, broadcastToUserDevices } from '../../websocket.js';
 import { getRedisClient } from '../db/redis.js';
 import { logger } from '../utils/logger.js';
+import {
+  RESERVED_SYSTEM_USER_IDS,
+} from '../constants/systemIds.js';
 
 export const friendRouter = Router();
 
@@ -211,7 +214,7 @@ const handleSendFriendRequest = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Cannot send a friend request to yourself.' });
     }
 
-    const PROTECTED_SYSTEM_IDS = [1, 2, 999];
+    const PROTECTED_SYSTEM_IDS = [...RESERVED_SYSTEM_USER_IDS];
     if (PROTECTED_SYSTEM_IDS.includes(receiverId) || targetUser[0].username.toLowerCase() === 'velum') {
       return res.status(403).json({ error: 'System staff accounts cannot be added as contacts.' });
     }

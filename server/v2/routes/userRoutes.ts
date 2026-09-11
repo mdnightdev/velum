@@ -15,11 +15,16 @@ import { messages, lounges, userUnreadCounts, loungeMembers } from '../db/schema
 import { dms, dmClears } from '../db/schema/dms.js';
 import { getPeerIdFromDmRoom, getDmRoomAliases } from '../../websocket/unreadManager.js';
 import { getRedisClient } from '../db/redis.js';
-import { eq, or, and, desc, inArray, ilike, sql } from 'drizzle-orm';
+import { eq, or, and, desc, inArray, notInArray, ilike, sql } from 'drizzle-orm';
 import { SystemBot } from '../services/systemBot.js';
 import { BotTemplates } from '../services/botTemplates.js';
 import { clearUserChatHistory } from '../services/loungeService.js';
 import { dmService } from '../services/dmService.js';
+import {
+  RESERVED_SYSTEM_USER_IDS,
+  isReservedSystemUserId,
+  isReservedSystemUsername,
+} from '../constants/systemIds.js';
 
 export const userRouter = Router();
 
@@ -83,6 +88,11 @@ userRouter.get('/:id/prekey-bundle', authMiddleware, async (req: Request, res: R
 userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Response) => {
   try {
     const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const reservedIds = [...RESERVED_SYSTEM_USER_IDS];
+    const baseWhere = and(
+      eq(users.role, 'USER'),
+      notInArray(users.id, reservedIds)
+    );
     let dbUsers;
     if (query) {
       dbUsers = await db.select({
@@ -95,10 +105,13 @@ userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Re
         role: users.role,
         createdAt: users.createdAt
       }).from(users)
-      .where(and(eq(users.role, "USER"), or(
-        ilike(users.username, `%${query}%`),
-        ilike(users.displayName, `%${query}%`)
-    )))
+      .where(and(
+        baseWhere,
+        or(
+          ilike(users.username, `%${query}%`),
+          ilike(users.displayName, `%${query}%`)
+        )
+      ))
       .limit(50);
     } else {
       dbUsers = await db.select({
@@ -111,12 +124,17 @@ userRouter.get('/directory/search', authMiddleware, async (req: Request, res: Re
         role: users.role,
         createdAt: users.createdAt
       }).from(users)
-      .where(eq(users.role, "USER"))
+      .where(baseWhere)
       .orderBy(desc(users.createdAt))
       .limit(50);
     }
 
-    res.json({ users: dbUsers });
+    // Hard strip reserved system accounts — never discoverable
+    const usersOut = dbUsers.filter(
+      (u) => !isReservedSystemUserId(u.id) && !isReservedSystemUsername(u.username)
+    );
+
+    res.json({ users: usersOut });
   } catch (err) {
     res.status(500).json({ error: 'Failed to search directory.' });
   }
@@ -568,6 +586,7 @@ userRouter.post('/upload-avatar', authMiddleware, express.raw({ type: '*/*', lim
     await fs.promises.writeFile(filepath, buffer);
     
     const relativeUrl = `/uploads/avatars/${userId}/${filename}`;
+    await db.update(users).set({ avatarUrl: relativeUrl, updatedAt: new Date() }).where(eq(users.id, userId));
     const { mediaService } = await import('../services/media/mediaService.js');
     await mediaService.recordAsset({
       uploaderId: userId,

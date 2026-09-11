@@ -3,10 +3,12 @@ import { db, executeWithRetry } from '../db/client.js';
 import { users } from '../db/schema/users.js';
 import { exchangeRates } from '../db/schema/exchange_rates.js';
 import { reserves } from '../db/schema/reserves.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { hashArgon2id } from '../utils/crypto.js';
 import { reserveRepository } from '../repositories/reserveRepository.js';
 import { logger } from '../utils/logger.js';
+import { userRepository } from '../repositories/userRepository.js';
+import { MIN_PUBLIC_USER_ID, TEST_USER_ID_MIN } from '../constants/systemIds.js';
 
 const ADMIN_USERS = [
   {
@@ -183,21 +185,61 @@ export async function ensureAdminSeeded() {
 
         const existingById = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
         const existingByName = await db.select().from(users).where(eq(users.username, adminUser.username)).limit(1).then(r => r[0]);
-        const existing = existingById || existingByName;
+
+        // Reclaim reserved ID if a non-system account squatted on it.
+        if (
+          existingById &&
+          existingById.username.toLowerCase() !== adminUser.username.toLowerCase()
+        ) {
+          logger.warn(
+            `[AdminSeeder] Reclaiming reserved ID ${adminUser.id} from squatter "${existingById.username}"`
+          );
+          await userRepository.purgeUserCompletely(
+            existingById.id,
+            `RECLAIM_SYSTEM_ID_${adminUser.id}`
+          );
+        }
+
+        // If the correct username exists on a non-reserved ID, purge the duplicate so we can seed the locked ID.
+        const nameAfterReclaim = await db
+          .select()
+          .from(users)
+          .where(eq(users.username, adminUser.username))
+          .limit(1)
+          .then((r) => r[0]);
+        if (nameAfterReclaim && nameAfterReclaim.id !== adminUser.id) {
+          logger.warn(
+            `[AdminSeeder] Moving "${adminUser.username}" from ID ${nameAfterReclaim.id} onto locked ID ${adminUser.id}`
+          );
+          await userRepository.purgeUserCompletely(
+            nameAfterReclaim.id,
+            `RELOCATE_TO_SYSTEM_ID_${adminUser.id}`
+          );
+        }
+
+        const existing = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, adminUser.id))
+          .limit(1)
+          .then((r) => r[0]);
         
         if (!existing) {
           const salt = crypto.randomBytes(16);
           const saltHex = salt.toString('hex');
           const passwordHash = await hashArgon2id(password, Buffer.from(saltHex, 'hex'));
           
-          await db.insert(users).values({
-            id: adminUser.id,
-            username: adminUser.username,
-            passwordHash,
-            salt: saltHex,
-            role: adminUser.role,
-            displayName: adminUser.displayName
-          }).onConflictDoNothing();
+          await userRepository.create(
+            {
+              id: adminUser.id,
+              username: adminUser.username,
+              passwordHash,
+              salt: saltHex,
+              role: adminUser.role,
+              displayName: adminUser.displayName
+            },
+            { allowSystemId: true }
+          );
           
           logger.info(`[AdminSeeder] Created admin user: ${adminUser.username} (ID: ${adminUser.id})`);
         } else {
@@ -213,23 +255,38 @@ export async function ensureAdminSeeded() {
         }
       }
 
-      // Ensure Velum bot (ID 999) exists
+      // Ensure Velum bot (ID 999) exists on the locked slot
       const botUser = await db.select().from(users).where(eq(users.id, 999)).limit(1).then(r => r[0]);
-      if (!botUser) {
-        await db.insert(users).values({
-          id: 999,
-          username: 'velum',
-          passwordHash: 'system_bot_no_login',
-          salt: 'system_bot_salt',
-          role: 'ADMIN',
-          displayName: 'Velum Bot'
-        }).onConflictDoNothing();
+      if (botUser && botUser.username.toLowerCase() !== 'velum') {
+        logger.warn(`[AdminSeeder] Reclaiming reserved ID 999 from squatter "${botUser.username}"`);
+        await userRepository.purgeUserCompletely(botUser.id, 'RECLAIM_SYSTEM_ID_999');
+      }
+      const botAfter = await db.select().from(users).where(eq(users.id, 999)).limit(1).then(r => r[0]);
+      if (!botAfter) {
+        await userRepository.create(
+          {
+            id: 999,
+            username: 'velum',
+            passwordHash: 'system_bot_no_login',
+            salt: 'system_bot_salt',
+            role: 'ADMIN',
+            displayName: 'Velum Bot'
+          },
+          { allowSystemId: true }
+        );
         logger.info('[AdminSeeder] Seeded Velum Bot user (ID: 999)');
       }
 
-      // Advance sequence past reserved system IDs (1, 2, 999) so regular registrations start at 1000+
+      // Advance sequence for real users only (keep 9000–9999 free for disposable tests)
       await db.execute(sql`
-        SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM users), 1000), true);
+        SELECT setval(
+          pg_get_serial_sequence('users', 'id'),
+          GREATEST(
+            (SELECT COALESCE(MAX(id), 1) FROM users WHERE id < ${TEST_USER_ID_MIN}),
+            ${MIN_PUBLIC_USER_ID}
+          ),
+          true
+        );
       `);
     });
     

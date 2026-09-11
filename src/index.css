@@ -180,7 +180,160 @@ html, body {
   -webkit-backdrop-filter: none !important;
 }
 
-/* Chat media: solid matte only — no glass, glow, or drop shadow */
+/*
+ * Media collage bubble.
+ * Square clipped shell + 2px gutters. No stroke frame.
+ */
+.collage-bubble {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: var(--collage-gap);
+  width: var(--collage-size);
+  height: var(--collage-size);
+  max-width: 100%;
+  border-radius: var(--collage-radius);
+  overflow: hidden;
+  background-color: var(--collage-gutter);
+  border: none;
+  box-shadow: none !important;
+  margin-block: var(--media-outer-my);
+}
+
+/* 1 media: single tile fills the shell */
+.collage-bubble--single {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 media: side by side */
+.collage-bubble--two {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 3 media: top full + two bottom */
+.collage-bubble--three {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.collage-bubble--three > .collage-item:first-child {
+  grid-column: 1 / -1;
+}
+
+.collage-item {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.collage-item img,
+.collage-item video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border: none;
+}
+
+.collage-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--collage-overlay-bg);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* keep video/meta helpers for collage cells */
+.media-bubble-meta {
+  position: absolute;
+  right: var(--media-meta-inset);
+  bottom: var(--media-meta-inset);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: var(--media-meta-size);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  line-height: 1.2;
+  pointer-events: auto;
+  user-select: none;
+  box-shadow: none !important;
+}
+
+.media-bubble-duration {
+  position: absolute;
+  left: var(--media-meta-inset);
+  bottom: var(--media-meta-inset);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: var(--media-meta-size);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  box-shadow: none !important;
+}
+
+.media-bubble-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.media-bubble-play-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.media-bubble-play-btn--sm {
+  width: 2rem;
+  height: 2rem;
+}
+
+.media-bubble-tap-load {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-velum-800, #101218);
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  font-size: 0.875rem;
+}
+
 .message-bubble-container,
 .message-bubble-container * {
   box-shadow: none !important;
@@ -194,7 +347,7 @@ html, body {
   -webkit-backdrop-filter: none !important;
 }
 
-/* WhatsApp-style: meta sits on the last text line when space allows */
+/* on the last text line when space allows */
 .msg-inline-meta {
   float: right;
   margin-left: 10px;
@@ -317,6 +470,16 @@ html[data-reduced-motion="true"] *::after {
   --color-bubble-peer: #7A8FA6;
   --color-bubble-peer-border: transparent;
   --color-bubble-peer-text: #F5F2EB;
+
+  /* ---- Media collage bubble (tweak here) ---- */
+  --collage-size: 300px;
+  --collage-gap: 2px;
+  --collage-radius: 18px;
+  --collage-gutter: #0b141a;
+  --collage-overlay-bg: rgba(0, 0, 0, 0.45);
+  --media-meta-inset: 6px;
+  --media-meta-size: 10px;
+  --media-outer-my: 0.25rem;
 
   /* ---- Payment Card Custom Gradients ---- */
   --color-card-bank-start:      #0C0E12;   /* velum-850 */

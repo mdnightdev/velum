@@ -2,14 +2,15 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { app } from '../app.js';
 
-describe('V2 Banking Endpoints Integration Tests', () => {
-  const senderUser = `sender_${Date.now()}`;
-  const recipientUser = `recipient_${Date.now()}`;
+describe('Bank', () => {
+  const uniq = Date.now().toString(36).slice(-5);
+  const senderUser = `tSend${uniq}`;
+  const recipientUser = `tRecv${uniq}`;
   const password = 'SecureComplexPass123!';
   let senderToken = '';
   let recipientId = 0;
 
-  it('Setup: Register sender and recipient', async () => {
+  it('registers sender and recipient', async () => {
     const reg1 = await request(app)
       .post('/v2/auth/register')
       .send({ username: senderUser, password });
@@ -23,7 +24,7 @@ describe('V2 Banking Endpoints Integration Tests', () => {
     recipientId = reg2.body.user.id;
   });
 
-  it('GET /v2/bank/wallet - should fetch or initialize wallet', async () => {
+  it('GET /v2/bank/wallet fetches or initializes wallet', async () => {
     const res = await request(app)
       .get('/v2/bank/wallet')
       .set('Authorization', `Bearer ${senderToken}`);
@@ -33,20 +34,20 @@ describe('V2 Banking Endpoints Integration Tests', () => {
     expect(res.body.wallet.currency).toBe('USD');
   });
 
-  it('POST /v2/bank/transfer - should reject transfer with insufficient funds', async () => {
+  it('POST /v2/bank/transfer rejects insufficient funds', async () => {
     const res = await request(app)
       .post('/v2/bank/transfer')
       .set('Authorization', `Bearer ${senderToken}`)
       .send({
         recipientUsername: recipientUser,
-        amount: '500.00'
+        amount: '500.00',
       });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Insufficient funds for transfer.');
   });
 
-  it('GET /v2/bank/history - should return empty history for new wallet', async () => {
+  it('GET /v2/bank/history returns history for new wallet', async () => {
     const res = await request(app)
       .get('/v2/bank/history')
       .set('Authorization', `Bearer ${senderToken}`);

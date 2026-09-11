@@ -14,6 +14,7 @@ import { BotTemplates } from '../services/botTemplates.js';
 import { SupportAdminNominationService } from '../services/supportAdminNominationService.js';
 import { getAuditLogs, recordAuditEvent } from '../services/auditService.js';
 import { hashArgon2id, generateRandomToken } from '../utils/crypto.js';
+import { moderationService } from '../services/moderationService.js';
 import crypto from 'node:crypto';
 
 export const adminRouter = Router();
@@ -914,7 +915,50 @@ adminRouter.post('/invites', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v2/admin/verifications/:id/review - Review verification
+// GET /v2/admin/verifications - Held marketplace listings for review
+adminRouter.get('/verifications', async (req: Request, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (admin.role === 'SUPPORT_ADMIN') {
+      return res.status(403).json({ error: 'Access denied. Support Operators are restricted from verification controls.' });
+    }
+
+    const filterRaw = String(req.query.status || 'ALL').toUpperCase();
+    const filter =
+      filterRaw === 'APPROVED' || filterRaw === 'ACTIVE'
+        ? 'ACTIVE'
+        : filterRaw === 'REJECTED'
+          ? 'REJECTED'
+          : filterRaw === 'PENDING_REVIEW'
+            ? 'PENDING_REVIEW'
+            : 'ALL';
+
+    const rows = await moderationService.listHeldListings(filter as any);
+    const mapped = rows.map((l) => ({
+      id: String(l.id),
+      listing_id: String(l.id),
+      title: l.title,
+      description: l.description,
+      category: l.category,
+      price: l.price,
+      seller_id: l.sellerId,
+      seller_username: l.sellerUsername ?? null,
+      status: l.status === 'ACTIVE' ? 'APPROVED' : l.status === 'REJECTED' ? 'REJECTED' : 'PENDING_REVIEW',
+      verification_status: l.status === 'ACTIVE' ? 'APPROVED' : l.status === 'REJECTED' ? 'REJECTED' : 'PENDING_REVIEW',
+      moderation_reason: l.moderationReason,
+      moderation_lane: l.moderationLane,
+      held_at: l.heldAt,
+      created_at: l.createdAt,
+      updated_at: l.updatedAt,
+    }));
+    res.json(mapped);
+  } catch (err) {
+    console.error('[Admin] verifications list failed:', err);
+    res.status(500).json({ error: 'Failed to load verification queue.' });
+  }
+});
+
+// POST /v2/admin/verifications/:id/review - Review held listing
 adminRouter.post('/verifications/:id/review', async (req: Request, res: Response) => {
   try {
     const admin = req.user!;
@@ -922,14 +966,36 @@ adminRouter.post('/verifications/:id/review', async (req: Request, res: Response
       return res.status(403).json({ error: 'Access denied. Support Operators are restricted from verification controls.' });
     }
 
-    const { id } = req.params;
-    const { status } = req.body;
-    if (!status) {
-      return res.status(400).json({ error: 'Review status is required.' });
+    const listingId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(listingId)) {
+      return res.status(400).json({ error: 'Invalid listing id.' });
     }
-    
-    res.json({ success: true, message: `Verification ${status === 'approved' ? 'approved' : 'rejected'}.` });
+
+    const resultRaw = String(req.body?.result || req.body?.status || '').toUpperCase();
+    const decision =
+      resultRaw === 'PASS' || resultRaw === 'APPROVED' || resultRaw === 'APPROVE'
+        ? 'PASS'
+        : resultRaw === 'FAIL' || resultRaw === 'REJECTED' || resultRaw === 'REJECT'
+          ? 'FAIL'
+          : null;
+
+    if (!decision) {
+      return res.status(400).json({ error: 'Review result is required (PASS/FAIL).' });
+    }
+
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes : undefined;
+    const reviewed = await moderationService.reviewHeldListing(listingId, decision, admin.userId, notes);
+    if (!reviewed.ok) {
+      return res.status(404).json({ error: reviewed.error || 'Listing not found.' });
+    }
+
+    res.json({
+      success: true,
+      message: decision === 'PASS' ? 'Listing approved.' : 'Listing rejected.',
+      listing: reviewed.listing,
+    });
   } catch (err) {
+    console.error('[Admin] verification review failed:', err);
     res.status(500).json({ error: 'Failed to review verification.' });
   }
 });

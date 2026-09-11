@@ -7,7 +7,6 @@ import NotificationsMainDashboard from './SidebarTabs/NotificationsMainDashboard
 import LoungeMainDashboard from './SidebarTabs/LoungeMainDashboard';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import DirectMainDashboard from './SidebarTabs/DirectMainDashboard';
-import UnderDevelopment from './UnderDevelopment';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
 import ProfileCard, { toUserProfileData } from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
@@ -450,12 +449,14 @@ export default function DashboardLayout({
         <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden bg-velum-850 border-none rounded-none text-text-primary">
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
-            <div className="flex-1 overflow-hidden relative flex flex-col">
-              <UnderDevelopment title="Wallet" />
+            <div className="flex-1 overflow-hidden relative flex flex-col items-center justify-center gap-2 px-6 text-center">
+              <h1 className="text-lg font-semibold text-text-primary">Wallet</h1>
+              <p className="text-sm text-text-primary">Under development</p>
             </div>
           ) : activeCategory === 'market' ? (
-            <div className="flex-1 overflow-y-auto relative flex flex-col">
-              <UnderDevelopment title="Market" />
+            <div className="flex-1 overflow-hidden relative flex flex-col items-center justify-center gap-2 px-6 text-center">
+              <h1 className="text-lg font-semibold text-text-primary">Market</h1>
+              <p className="text-sm text-text-primary">Under development</p>
             </div>
           ) : activeCategory === 'tickets' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">
@@ -525,6 +526,7 @@ export default function DashboardLayout({
             <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col min-w-0">
               
               {activeLoungeId ? (
+                <div className="flex-1 min-h-0 h-full overflow-hidden flex flex-col">
                 <LoungeWorkspace
                   loungeId={activeLoungeId}
                   loungeName={(!activeLoungeName || activeLoungeName.toUpperCase() === 'TEST') ? 'Velum Lounge' : activeLoungeName}
@@ -567,6 +569,7 @@ export default function DashboardLayout({
                     setActiveCategory('people');
                   }}
                 />
+                </div>
               ) : (
                 <div className="flex-grow flex-shrink flex-1 min-h-0 overflow-hidden relative flex flex-col">
 
@@ -803,9 +806,18 @@ export default function DashboardLayout({
           )}
           </PullToRefresh>
 
-          {/* Mobile Bottom Navigation Bar */}
-          {!activeRoomId && !activeChatPeer && (
-            <nav className="h-14 shrink-0 bg-velum-850 border-t border-white-5 flex items-center justify-around px-2 z-30 pb-[env(safe-area-inset-bottom,0px)]">
+          {/* Mobile Bottom Navigation Bar — keep mounted; animate hide when entering a chat/lounge room */}
+          {(() => {
+            const showBottomNav = !activeRoomId && !activeChatPeer;
+            return (
+            <nav
+              aria-hidden={!showBottomNav}
+              className={`shrink-0 bg-velum-850 border-t border-white-5 flex items-center justify-around px-2 z-30 overflow-hidden transition-[height,opacity,padding,border-color] duration-200 ease-out ${
+                showBottomNav
+                  ? 'h-14 opacity-100 pb-[env(safe-area-inset-bottom,0px)] pointer-events-auto'
+                  : 'h-0 opacity-0 pb-0 border-transparent pointer-events-none'
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -904,7 +916,8 @@ export default function DashboardLayout({
                 <span className="text-[10px] font-medium mt-0.5">Alerts</span>
               </button>
             </nav>
-          )}
+            );
+          })()}
         </main>
       </div>
     );

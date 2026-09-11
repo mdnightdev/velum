@@ -58,16 +58,20 @@ const envSchema = z.object({
   R2_PUBLIC_URL: z.string().optional().default(''),
   REDIS_URL: z.string().optional().transform((val) => {
     const isLocal = (url: string) => url.includes('localhost') || url.includes('127.0.0.1');
+    // Explicit REDIS_URL wins (local or remote). Cloud is fallback for CLI/prod when unset.
+    const rawRedis = cleanEnvStr(val) || cleanEnvStr(process.env.REDIS_URL);
+    if (rawRedis) {
+      if (process.env.NODE_ENV === 'production' && isLocal(rawRedis)) {
+        // refuse silent local redis in production; fall through to cloud
+      } else {
+        return rawRedis;
+      }
+    }
     const cloudRedis = cleanEnvStr(process.env.CLOUD_REDIS_URL);
     const upstashRedis = cleanEnvStr(process.env.UPSTASH_REDIS_URL);
     if (cloudRedis && !isLocal(cloudRedis)) return cloudRedis;
     if (upstashRedis && !isLocal(upstashRedis)) return upstashRedis;
-
-    const rawRedis = cleanEnvStr(val) || cleanEnvStr(process.env.REDIS_URL);
-    if (rawRedis && !isLocal(rawRedis)) {
-      return rawRedis;
-    }
-    return cloudRedis || upstashRedis || '';
+    return '';
   }),
   CLOUD_REDIS_URL: z.string().optional().transform(cleanEnvStr).default(''),
   MESSAGE_BATCH_INTERVAL: z.string().optional().transform((val) => {
@@ -91,7 +95,7 @@ export type Config = z.infer<typeof envSchema>;
 
 const pointsAtLocalhost = (value: string) => /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(value);
 
-if (config.NODE_ENV === 'production') {
+if (config.NODE_ENV === 'production' && process.env.ALLOW_LOCALHOST_BUILD !== 'true') {
   // A silent fall back to the local dev database would run production against an empty box.
   if (config.DATABASE_URL === defaultLocalDbUrl || pointsAtLocalhost(config.DATABASE_URL)) {
     throw new Error('[CONFIG] DATABASE_URL is missing or points at localhost while NODE_ENV=production.');

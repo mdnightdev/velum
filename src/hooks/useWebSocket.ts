@@ -902,13 +902,18 @@ export function useWebSocket({
               const bodyText = getNotificationBodyText(pt);
               if (!bodyText) return;
               const senderDisplayName = (newMessage.username || (newMessage as any).sender_name || 'Velum').replace(/^@/, '');
+              const cachedUser = storage.getItem<any>('velum-user') || storage.getItem<any>('velum_user');
+              const myUsername =
+                cachedUser?.username || cachedUser?.user?.username || undefined;
               handleInboundMessageNotification({
                 senderName: `#${data.room_id}`,
                 content: senderDisplayName ? `${senderDisplayName}: ${bodyText}` : bodyText,
                 isFromMe: false,
                 roomId: data.room_id,
+                loungeId: data.lounge_id || data.parent_lounge_id || data.room_id,
                 activeRoomId: activeRoomIdRef.current,
-                timestamp: newMessage.timestamp ? new Date(newMessage.timestamp).getTime() : Date.now()
+                timestamp: newMessage.timestamp ? new Date(newMessage.timestamp).getTime() : Date.now(),
+                myUsername,
               });
             };
 

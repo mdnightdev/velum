@@ -1,16 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useLoungeSettings } from './useLoungeSettings';
-import { streamFileDirectToCloudStorage } from '../../../utils/mediaPipeline';
 import { getSessionId } from '../../../utils/auth';
 import { storage } from '../../../services/storageService';
 import { velumToast } from '../../../utils/toast';
+import { normalizeLoungeMembersPayload, sortMembersAdminsFirst } from '../utils/memberRoster';
 
 interface UseLoungeDataOptions {
   loungeId: string;
   currentUserId: number;
   currentUserRole: string;
   activeRoomId: string;
-  isMobile: boolean;
   onRoomSelect: (roomId: string) => void;
 }
 
@@ -19,7 +18,6 @@ export function useLoungeData({
   currentUserId,
   currentUserRole,
   activeRoomId,
-  isMobile,
   onRoomSelect,
 }: UseLoungeDataOptions) {
   const getLoungeCache = (id: string) => {
@@ -32,7 +30,9 @@ export function useLoungeData({
   const initialCache = getLoungeCache(loungeId);
 
   const [rooms, setRooms] = useState<any[]>(() => initialCache?.rooms || []);
-  const [members, setMembers] = useState<any[]>(() => initialCache?.members || []);
+  const [members, setMembers] = useState<any[]>(() =>
+    sortMembersAdminsFirst(initialCache?.members || [])
+  );
   const [loungeDetails, setLoungeDetails] = useState<any | null>(() => initialCache?.details || null);
   const [loungeList, setLoungeList] = useState<any[]>([]);
   const [isLoadingLounge, setIsLoadingLounge] = useState<boolean>(!initialCache);
@@ -44,7 +44,7 @@ export function useLoungeData({
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   const [showManageModal, setShowManageModal] = useState(false);
-  const [manageTab, setManageTab] = useState<'members' | 'requests' | 'invites' | 'settings'>('members');
+  // manageTab lives in useLoungeSettings (LoungeSettingsPageId)
   const [manageRequests, setManageRequests] = useState<any[]>([]);
   const [manageInvites, setManageInvites] = useState<any[]>([]);
   const [directAddUsername, setDirectAddUsername] = useState('');
@@ -54,11 +54,6 @@ export function useLoungeData({
   const [activeSanctionUserId, setActiveSanctionUserId] = useState<number | null>(null);
   const [showSanctionDialog, setShowSanctionDialog] = useState<'mute' | 'kick' | 'ban' | null>(null);
 
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editIconUrl, setEditIconUrl] = useState('');
-  const [settingsError, setSettingsError] = useState('');
-  const [settingsSuccess, setSettingsSuccess] = useState('');
   const [typingRooms, setTypingRooms] = useState<Record<string, Set<string>>>({});
 
   useEffect(() => {
@@ -90,14 +85,6 @@ export function useLoungeData({
     };
   }, [currentUserId]);
 
-  useEffect(() => {
-    if (loungeDetails) {
-      setEditName(loungeDetails.name || '');
-      setEditDescription(loungeDetails.description || '');
-      setEditIconUrl(loungeDetails.icon_url || '');
-    }
-  }, [loungeDetails]);
-
   const getRoomId = (room: any): string | null => {
     if (!room) return null;
     return room.id || room.room_id || null;
@@ -112,7 +99,7 @@ export function useLoungeData({
       if (res.ok) {
         const data = await res.json();
         setRooms(data);
-        if (!isMobile && !activeRoomId && data.length > 0) {
+        if (!activeRoomId && data.length > 0) {
           const firstRoomId = getRoomId(data[0]);
           if (firstRoomId) onRoomSelect(firstRoomId);
         }
@@ -158,50 +145,6 @@ export function useLoungeData({
     }
   };
 
-  const handleSaveSettings = async (iconFile?: Blob | null) => {
-    if (!editName.trim()) {
-      setSettingsError('Lounge name is required.');
-      return;
-    }
-    setSettingsError('');
-    setSettingsSuccess('');
-    try {
-      let finalIconUrl = editIconUrl;
-      if (iconFile) {
-        const uploadedUrl = await streamFileDirectToCloudStorage(iconFile, 'avatars', iconFile.type.split('/')[1] || 'webp');
-        if (uploadedUrl) {
-          finalIconUrl = uploadedUrl;
-          setEditIconUrl(uploadedUrl);
-        }
-      }
-
-      const sid = getSessionId();
-      const res = await fetch(`/v2/lounges/${loungeId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${sid}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: editName,
-          description: editDescription,
-          icon_url: finalIconUrl
-        })
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to update lounge settings.');
-      }
-
-      const updated = await res.json();
-      setLoungeDetails(updated);
-      setSettingsSuccess('Lounge settings updated successfully.');
-    } catch (err: any) {
-      setSettingsError(err.message || 'Something went wrong.');
-    }
-  };
-
   const handleReviewRequest = async (requestId: string, approve: boolean) => {
     try {
       const sid = getSessionId();
@@ -219,8 +162,7 @@ export function useLoungeData({
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
-          const data = await memRes.json();
-          setMembers(data.filter((u: any) => u.user_id !== 999 && !(u.username?.toLowerCase() === 'velum' || u.username?.toLowerCase() === 'velum-msg')));
+          setMembers(normalizeLoungeMembersPayload(await memRes.json()));
         }
       }
     } catch (err) {
@@ -244,8 +186,7 @@ export function useLoungeData({
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
-          const data = await memRes.json();
-          setMembers(data.filter((u: any) => u.user_id !== 999 && !(u.username?.toLowerCase() === 'velum' || u.username?.toLowerCase() === 'velum-msg')));
+          setMembers(normalizeLoungeMembersPayload(await memRes.json()));
         }
       }
     } catch (err) {
@@ -278,8 +219,7 @@ export function useLoungeData({
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
-          const data = await memRes.json();
-          setMembers(data.filter((u: any) => u.user_id !== 999 && !(u.username?.toLowerCase() === 'velum' || u.username?.toLowerCase() === 'velum-msg')));
+          setMembers(normalizeLoungeMembersPayload(await memRes.json()));
         }
       } else {
         const err = await res.json();
@@ -312,8 +252,7 @@ export function useLoungeData({
           headers: { 'Authorization': `Bearer ${sid}` }
         });
         if (memRes.ok) {
-          const data = await memRes.json();
-          setMembers(data.filter((u: any) => u.user_id !== 999 && !(u.username?.toLowerCase() === 'velum' || u.username?.toLowerCase() === 'velum-msg')));
+          setMembers(normalizeLoungeMembersPayload(await memRes.json()));
         }
       } else {
         const err = await res.json();
@@ -418,7 +357,7 @@ export function useLoungeData({
     
     if (cache) {
       if (cache.rooms) setRooms(cache.rooms);
-      if (cache.members) setMembers(cache.members);
+      if (cache.members) setMembers(sortMembersAdminsFirst(cache.members));
       if (cache.details) setLoungeDetails(cache.details);
       setIsLoadingLounge(false);
     } else {
@@ -447,7 +386,7 @@ export function useLoungeData({
           const rData = await roomsRes.value.json();
           fetchedRooms = rData.rooms || rData || [];
           setRooms(fetchedRooms);
-          if (!isMobile && !activeRoomId && fetchedRooms.length > 0) {
+          if (!activeRoomId && fetchedRooms.length > 0) {
             const firstRoomId = getRoomId(fetchedRooms[0]);
             if (firstRoomId) onRoomSelect(firstRoomId);
           }
@@ -455,8 +394,7 @@ export function useLoungeData({
 
         if (membersRes.status === 'fulfilled' && membersRes.value.ok) {
           const mData = await membersRes.value.json();
-          const rawMembers = Array.isArray(mData) ? mData : (mData.members || mData.users || []);
-          const realMembers = rawMembers.filter((u: any) => u && u.user_id !== 999 && !(u.username?.toLowerCase() === 'velum' || u.username?.toLowerCase() === 'velum-msg'));
+          const realMembers = normalizeLoungeMembersPayload(mData);
           fetchedMembers = realMembers;
           setMembers(realMembers);
         }
@@ -495,7 +433,7 @@ export function useLoungeData({
     return () => {
       isMounted = false;
     };
-  }, [loungeId, isMobile, currentUserId]);
+  }, [loungeId, currentUserId]);
 
   const sysAdminRoles = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
   const storedUser = (() => {
@@ -514,6 +452,9 @@ export function useLoungeData({
     loungeId,
     loungeDetails,
     isParentAdmin,
+    onDetailsUpdated: (details) => {
+      setLoungeDetails((prev: any) => ({ ...(prev || {}), ...(details || {}) }));
+    },
   });
 
   useEffect(() => {
@@ -522,6 +463,43 @@ export function useLoungeData({
       fetchInvites();
     }
   }, [showManageModal, loungeId, isParentAdmin]);
+
+  const handleTransferOwnership = async (newOwnerUserId: number): Promise<boolean> => {
+    try {
+      const sid = getSessionId();
+      const res = await fetch(`/v2/lounges/${loungeId}/transfer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sid}`,
+        },
+        body: JSON.stringify({ new_owner_user_id: newOwnerUserId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to transfer ownership.');
+      }
+      const memRes = await fetch(`/v2/lounges/${loungeId}/members`, {
+        headers: { Authorization: `Bearer ${sid}` },
+      });
+      if (memRes.ok) {
+        const mData = await memRes.json();
+        setMembers(normalizeLoungeMembersPayload(mData));
+      }
+      const detailsRes = await fetch(`/v2/lounges/${loungeId}`, {
+        headers: { Authorization: `Bearer ${sid}` },
+      });
+      if (detailsRes.ok) {
+        const d = await detailsRes.json();
+        setLoungeDetails(d.lounge || d);
+      }
+      velumToast.success('Ownership transferred.');
+      return true;
+    } catch (err: any) {
+      velumToast.error(err.message || 'Failed to transfer ownership.');
+      return false;
+    }
+  };
 
   const handleDeleteLounge = async (targetId?: string | number): Promise<boolean> => {
     const idToDelete = targetId || loungeId;
@@ -624,8 +602,13 @@ export function useLoungeData({
     setEditDescription: loungeSettings.setEditDescription,
     editIconUrl: loungeSettings.editIconUrl,
     setEditIconUrl: loungeSettings.setEditIconUrl,
+    editIsPrivate: loungeSettings.editIsPrivate,
+    setEditIsPrivate: loungeSettings.setEditIsPrivate,
     settingsError: loungeSettings.settingsError,
     settingsSuccess: loungeSettings.settingsSuccess,
+    isSavingSettings: loungeSettings.isSavingSettings,
+    uploadError: loungeSettings.uploadError,
+    setUploadError: loungeSettings.setUploadError,
     typingRooms,
     isParentAdmin,
     isSystemAdmin,
@@ -638,6 +621,7 @@ export function useLoungeData({
     handleRevokeInviteCode,
     handleCreateRoom,
     handleDeleteLounge,
+    handleTransferOwnership,
     handleDeleteRoom,
   };
 }

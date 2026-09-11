@@ -23,7 +23,7 @@ backups/
 # Ignore local databases, keys, and logs
 bun.lock
 bun.lockb
-data/
+/data/
 *.sqlite-journal
 *.log
 bank-log.txt

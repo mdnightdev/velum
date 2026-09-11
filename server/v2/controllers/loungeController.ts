@@ -343,6 +343,23 @@ export async function updateMemberRole(req: Request, res: Response, next: NextFu
   }
 }
 
+export async function transferLoungeOwnership(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rawId = req.params.id;
+    const newOwnerUserId = parseInt(
+      String(req.body?.new_owner_user_id ?? req.body?.newOwnerUserId ?? ''),
+      10
+    );
+    const result = await loungeService.transferLoungeOwnership(req.user!, rawId, newOwnerUserId);
+    if ('error' in result && result.status) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function removeMember(req: Request, res: Response, next: NextFunction) {
   try {
     const rawId = req.params.id;

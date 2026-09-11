@@ -21,5 +21,9 @@ export const LockedSeal = () => (
 );
 
 export const cleanRoomName = (name: string): string => {
-  return name.replace(/^#\s*/, '').trim();
+  return String(name || '')
+    .replace(/^#+\s*/g, '')
+    .replace(/\s*#+$/g, '')
+    .replace(/#/g, '')
+    .trim();
 };

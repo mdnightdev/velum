@@ -1,3 +1,3 @@
 export const APP_VERSION = '2.2.0';
-export const BUILD_NUMBER = 'b2175';
+export const BUILD_NUMBER = 'b2283';
 export const FULL_BUILD_VERSION = `v${APP_VERSION}-${BUILD_NUMBER}`;

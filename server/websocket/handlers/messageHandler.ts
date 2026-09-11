@@ -719,6 +719,24 @@ export async function handleSendMessage(client: ClientConnection, message: any) 
     return;
   }
 
+  // Platform-harm only (no commerce keyword CIA). Skip E2E ciphertext.
+  try {
+    const { moderationService } = await import('../../v2/services/moderationService.js');
+    if (!moderationService.isEncryptedMessageBody(contentStr) && !message.is_encrypted) {
+      const harm = moderationService.detectPlatformHarm(contentStr);
+      if (harm) {
+        client.ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Message blocked: prohibited technical payload detected.',
+          code: 'PLATFORM_PAYLOAD_BLOCKED'
+        }));
+        return;
+      }
+    }
+  } catch (modErr) {
+    console.error('[WS] Platform payload scan failed:', modErr);
+  }
+
   let targetLoungeId: number | null = loungeId;
 
   if (clientMsgId && targetLoungeId) {
@@ -935,6 +953,24 @@ export async function handleDirectMessage(client: ClientConnection, message: any
       message: 'Raw data URI payloads are forbidden. Attachments must be uploaded via storage URLs.'
     }));
     return;
+  }
+
+  // Platform-harm only on visible plaintext; skip E2E ciphertext
+  try {
+    const { moderationService } = await import('../../v2/services/moderationService.js');
+    if (!encrypted && !moderationService.isEncryptedMessageBody(body)) {
+      const harm = moderationService.detectPlatformHarm(body);
+      if (harm) {
+        client.ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Message blocked: prohibited technical payload detected.',
+          code: 'PLATFORM_PAYLOAD_BLOCKED'
+        }));
+        return;
+      }
+    }
+  } catch (modErr) {
+    console.error('[WS] DM platform payload scan failed:', modErr);
   }
 
   try {

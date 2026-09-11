@@ -46,14 +46,39 @@ export async function fileToComposeItem(file: File): Promise<ComposeMediaItem> {
   const sizeStr = file.size > 1024 * 1024
     ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
     : `${(file.size / 1024).toFixed(0)} KB`;
-  const data = await fileToDataUrl(file);
+  const data = URL.createObjectURL(file);
   return {
     id: createComposeItemId(),
     name: file.name,
     size: sizeStr,
     type: file.type || (isImg ? 'image/webp' : isVid ? 'video/mp4' : 'application/octet-stream'),
     data,
+    file,
   };
+}
+
+export function revokeComposeItemUrls(items: ComposeMediaItem[] | null | undefined): void {
+  if (!items?.length) return;
+  for (const item of items) {
+    if (item.data?.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(item.data);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+export async function resolveComposeBlob(item: ComposeMediaItem): Promise<Blob> {
+  if (item.file && item.file.size > 0) return item.file;
+  if (item.data?.startsWith('data:')) return dataUriToBlob(item.data);
+  if (item.data?.startsWith('blob:') || item.data?.startsWith('http')) {
+    const res = await fetch(item.data);
+    if (!res.ok) throw new Error(`Failed to read media (${res.status})`);
+    return res.blob();
+  }
+  throw new Error('No media payload to upload');
 }
 
 export async function mapWithConcurrency<T, R>(
@@ -101,9 +126,7 @@ export async function uploadComposeItems(
   onProgress?: (done: number, total: number) => void
 ): Promise<string[]> {
   return mapWithConcurrency(items, UPLOAD_CONCURRENCY, async (item) => {
-    const blob = item.data.startsWith('data:')
-      ? dataUriToBlob(item.data)
-      : await (await fetch(item.data)).blob();
+    const blob = await resolveComposeBlob(item);
 
     let uploadBlob: Blob = blob;
     if (item.type.startsWith('image/') && item.type !== 'image/gif' && item.type !== 'image/svg+xml') {

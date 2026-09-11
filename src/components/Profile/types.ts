@@ -33,6 +33,16 @@ export type ProfileCardProps = {
   onForceRekey?: () => void;
   /** Used to resolve DM room aliases when loading chat media. */
   currentUserId?: number;
+  /** Lounge context: sanctions/roles on this card; hides DM-only extras. */
+  loungeActions?: {
+    memberRole: string;
+    canMute: boolean;
+    canKick: boolean;
+    canChangeRole: boolean;
+    onLoungeMute: () => void;
+    onLoungeKick: () => void;
+    onSetRole: (role: 'member' | 'moderator' | 'admin') => void;
+  };
 };
 
 /** Normalize heterogeneous API / list shapes into UserProfileData. */

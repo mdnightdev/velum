@@ -8,7 +8,6 @@ interface PrivateSubloungeBannerProps {
   isSubloungeCreator: boolean;
   isLoungeOwnerNotCreator?: boolean;
   isMember?: boolean;
-  isMobile?: boolean;
 }
 
 export default function PrivateSubloungeBanner({
@@ -17,7 +16,6 @@ export default function PrivateSubloungeBanner({
   isSubloungeCreator,
   isLoungeOwnerNotCreator,
   isMember = true,
-  isMobile = false,
 }: PrivateSubloungeBannerProps) {
   const [copied, setCopied] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
@@ -68,7 +66,7 @@ export default function PrivateSubloungeBanner({
       <div className="bg-accent-10 border-b border-white-5 px-4 py-2 flex items-center justify-between gap-2 shrink-0 select-none">
         <div className="flex items-center gap-2 text-xs min-w-0">
           <span className="font-bold text-accent uppercase tracking-wider text-[10px] shrink-0">
-            {isMobile ? 'Sublounge Invite:' : 'Private Sublounge Invite:'}
+            Sublounge Invite:
           </span>
           <span className="font-mono font-bold text-white tracking-widest bg-black/40 px-2.5 py-0.5 rounded-md border border-accent-20 select-all truncate text-[11px]">
             {activeRoom.invite_code}
@@ -79,7 +77,7 @@ export default function PrivateSubloungeBanner({
             onClick={handleCopyCode}
             className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest bg-accent-10 hover:bg-accent-20 text-accent rounded-lg transition active:scale-95 cursor-pointer"
           >
-            {copied ? 'Copied' : isMobile ? 'Copy' : 'Copy Code'}
+            {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
       </div>
