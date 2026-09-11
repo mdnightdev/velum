@@ -69,6 +69,11 @@ export interface ChatAreaProps {
   isPrivateSublounge?: boolean;
   isMember?: boolean;
   onJoinLounge?: () => void;
+  onApplyLounge?: () => void;
+  isJoiningLounge?: boolean;
+  isApplyingLounge?: boolean;
+  appliedSuccess?: boolean;
+  isPrivateLounge?: boolean;
   avatarUrl?: string;
   /** Opens the shared contacts list to pick a forward target. */
   onRequestForward?: (content: string) => void;
@@ -103,6 +108,11 @@ export default function ChatArea({
   roomAccessLevel,
   isMember,
   onJoinLounge,
+  onApplyLounge,
+  isJoiningLounge,
+  isApplyingLounge,
+  appliedSuccess,
+  isPrivateLounge,
   avatarUrl,
   onSelectProfileUser,
   onRequestForward,
@@ -634,6 +644,7 @@ export default function ChatArea({
         }}
         activeChatPeer={activeChatPeer}
         memberDirectory={memberDirectory}
+        onSelectProfileUser={onSelectProfileUser}
       />
 
       <input
@@ -857,6 +868,11 @@ export default function ChatArea({
         isPrivateSublounge={isPrivateSublounge}
         isMember={isMember}
         onJoinLounge={onJoinLounge}
+        onApplyLounge={onApplyLounge}
+        isJoiningLounge={isJoiningLounge}
+        isApplyingLounge={isApplyingLounge}
+        appliedSuccess={appliedSuccess}
+        isPrivateLounge={isPrivateLounge}
       />
     </div>
   );

@@ -15,6 +15,9 @@ import {
   Users,
   X,
   ChevronRight,
+  VolumeX,
+  UserMinus,
+  Shield,
 } from 'lucide-react';
 import logoSvg from '../../assets/logo.svg?raw';
 import { ContactAvatar, isAvatarImageSrc } from '../ContactAvatar';
@@ -54,6 +57,7 @@ export default function UserProfileCard({
   onDeleteChat,
   onReport,
   currentUserId,
+  loungeActions,
 }: ProfileCardProps) {
   const [isMutedLocal, setIsMutedLocal] = React.useState(!!user?.isMuted);
   const [disappearingMode, setDisappearingMode] = React.useState<DisappearMode>(() =>
@@ -383,7 +387,7 @@ export default function UserProfileCard({
                   <span className="text-[11px] font-medium text-text-primary">Chat</span>
                 </button>
               )}
-              {onMute && (
+              {!loungeActions && onMute && (
                 <button
                   type="button"
                   onClick={() => setShowNotificationsSheet(true)}
@@ -399,9 +403,61 @@ export default function UserProfileCard({
                   </span>
                 </button>
               )}
+              {loungeActions?.canMute ? (
+                <button
+                  type="button"
+                  onClick={() => loungeActions.onLoungeMute()}
+                  className="flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-velum-800 border border-white-5 hover:bg-velum-750 active:scale-95 transition cursor-pointer group"
+                >
+                  <VolumeX className="w-5 h-5 text-status-away group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium text-text-primary">Mute</span>
+                </button>
+              ) : null}
+              {loungeActions?.canKick ? (
+                <button
+                  type="button"
+                  onClick={() => loungeActions.onLoungeKick()}
+                  className="flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-velum-800 border border-white-5 hover:bg-velum-750 active:scale-95 transition cursor-pointer group"
+                >
+                  <UserMinus className="w-5 h-5 text-alert-error group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium text-text-primary">Kick</span>
+                </button>
+              ) : null}
             </div>
           </div>
 
+          {loungeActions?.canChangeRole ? (
+            <div className="rounded-2xl bg-velum-850 border border-white-5 divide-y divide-white-5 shadow-lg overflow-hidden mb-3">
+              <div className="px-4 py-3 flex items-center gap-3">
+                <Shield className="w-5 h-5 text-text-secondary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-text-primary">Role</div>
+                  <div className="text-xs text-text-secondary mt-0.5 capitalize">
+                    {loungeActions.memberRole || 'member'}
+                  </div>
+                </div>
+                <select
+                  value={
+                    ['member', 'moderator', 'admin'].includes(
+                      String(loungeActions.memberRole || '').toLowerCase()
+                    )
+                      ? String(loungeActions.memberRole).toLowerCase()
+                      : 'member'
+                  }
+                  onChange={(e) =>
+                    loungeActions.onSetRole(e.target.value as 'member' | 'moderator' | 'admin')
+                  }
+                  className="text-xs font-semibold uppercase tracking-wide p-2 rounded-lg bg-velum-800 text-text-secondary outline-none cursor-pointer"
+                >
+                  <option value="member">Member</option>
+                  <option value="moderator">Moderator</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+          ) : null}
+
+          {!loungeActions ? (
           <ChatMediaSection
             chatMedia={chatMedia}
             mediaLoading={mediaLoading}
@@ -410,7 +466,9 @@ export default function UserProfileCard({
             galleryOpen={galleryOpen}
             setGalleryOpen={setGalleryOpen}
           />
+          ) : null}
 
+          {!loungeActions ? (
           <div className="rounded-2xl bg-velum-850 border border-velum-600/50 divide-y divide-white-5 shadow-lg overflow-hidden">
             <button
               type="button"
@@ -503,9 +561,10 @@ export default function UserProfileCard({
               </button>
             )}
           </div>
+          ) : null}
 
           <div className="rounded-2xl bg-velum-850 border border-velum-600/50 divide-y divide-white-5 shadow-lg overflow-hidden">
-            {onDeleteChat && (
+            {!loungeActions && onDeleteChat && (
               <button
                 type="button"
                 onClick={() => setShowClearModal(true)}
@@ -516,7 +575,7 @@ export default function UserProfileCard({
               </button>
             )}
 
-            {onBlock && !isSystemPeer && (
+            {!loungeActions && onBlock && !isSystemPeer && (
               <button
                 type="button"
                 onClick={() => {

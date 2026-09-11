@@ -637,6 +637,13 @@ export interface MessageItemProps {
   } | null;
   /** Live lounge member avatars/names by user id (lounges only). */
   memberDirectory?: LoungeMemberDirectory;
+  /** Open profile for a lounge sender (avatar / name tap). */
+  onSelectProfileUser?: (user: {
+    userId: number;
+    username?: string;
+    avatar?: string | null;
+    displayName?: string | null;
+  }) => void;
 }
 
 export function MessageItem({
@@ -659,6 +666,7 @@ export function MessageItem({
   onReactSelect,
   activeChatPeer,
   memberDirectory,
+  onSelectProfileUser,
 }: MessageItemProps) {
   const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
   const isDm = Boolean(roomId && roomId.startsWith('dm_'));
@@ -693,17 +701,46 @@ export function MessageItem({
         data-message-id={String(msg.client_msg_id || msg.id || msg.message_id)}
       >
         {showLoungeSender && loungeSender && (
-          <ContactAvatar
-            name={loungeSender.name}
-            avatar={loungeSender.avatar}
-            className="w-7 h-7 rounded-full border-0 mt-0.5 mr-2 shrink-0"
-          />
+          <button
+            type="button"
+            className="shrink-0 mt-0.5 mr-2 p-0 border-0 bg-transparent cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!msg.user_id || !onSelectProfileUser) return;
+              onSelectProfileUser({
+                userId: Number(msg.user_id),
+                username: loungeSender.name,
+                avatar: loungeSender.avatar,
+                displayName: loungeSender.name,
+              });
+            }}
+            aria-label={`View ${loungeSender.name}`}
+          >
+            <ContactAvatar
+              name={loungeSender.name}
+              avatar={loungeSender.avatar}
+              className="w-7 h-7 rounded-full border-0 pointer-events-none"
+            />
+          </button>
         )}
         <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
           {showLoungeSender && loungeSender && (
-            <span className="text-[11px] font-semibold text-text-primary mb-0.5 px-0.5 truncate max-w-[220px]">
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-text-primary mb-0.5 px-0.5 truncate max-w-[220px] text-left bg-transparent border-0 cursor-pointer hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!msg.user_id || !onSelectProfileUser) return;
+                onSelectProfileUser({
+                  userId: Number(msg.user_id),
+                  username: loungeSender.name,
+                  avatar: loungeSender.avatar,
+                  displayName: loungeSender.name,
+                });
+              }}
+            >
               {loungeSender.name}
-            </span>
+            </button>
           )}
           <div className={`chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-peer'} opacity-70`}>
             <span className="inline-block w-12 h-3 rounded bg-current/20 animate-pulse" aria-hidden />
@@ -784,17 +821,46 @@ export function MessageItem({
       onContextMenu={(e) => e.preventDefault()}
     >
       {showLoungeSender && loungeSender && (
-        <ContactAvatar
-          name={loungeSender.name}
-          avatar={loungeSender.avatar}
-          className="w-7 h-7 rounded-full border-0 mt-0.5 mr-2 shrink-0"
-        />
+        <button
+          type="button"
+          className="shrink-0 mt-0.5 mr-2 p-0 border-0 bg-transparent cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!msg.user_id || !onSelectProfileUser) return;
+            onSelectProfileUser({
+              userId: Number(msg.user_id),
+              username: loungeSender.name,
+              avatar: loungeSender.avatar,
+              displayName: loungeSender.name,
+            });
+          }}
+          aria-label={`View ${loungeSender.name}`}
+        >
+          <ContactAvatar
+            name={loungeSender.name}
+            avatar={loungeSender.avatar}
+            className="w-7 h-7 rounded-full border-0 pointer-events-none"
+          />
+        </button>
       )}
       <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
         {showLoungeSender && loungeSender && (
-          <span className="text-[11px] font-semibold text-text-primary mb-0.5 px-0.5 truncate max-w-[220px]">
+          <button
+            type="button"
+            className="text-[11px] font-semibold text-text-primary mb-0.5 px-0.5 truncate max-w-[220px] text-left bg-transparent border-0 cursor-pointer hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!msg.user_id || !onSelectProfileUser) return;
+              onSelectProfileUser({
+                userId: Number(msg.user_id),
+                username: loungeSender.name,
+                avatar: loungeSender.avatar,
+                displayName: loungeSender.name,
+              });
+            }}
+          >
             {loungeSender.name}
-          </span>
+          </button>
         )}
         {/* Content Bubble Card */}
         <div className={

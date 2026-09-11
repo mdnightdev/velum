@@ -10,6 +10,7 @@ import { loungeRepository } from '../repositories/loungeRepository.js';
 import { generateSecureInviteCode } from '../utils/crypto.js';
 import { eq, gt, and, or, desc, like, inArray, sql } from 'drizzle-orm';
 import { MIN_PUBLIC_LOUNGE_ID } from '../constants/systemIds.js';
+import { getRedisClient } from '../db/redis.js';
 
 export const SYSTEM_ADMIN_ROLES = ['ADMIN', 'CLI_ADMIN', 'LOGIN_ADMIN', 'BANK_ADMIN', 'SUPPORT_ADMIN'];
 export const SYSTEM_ADMIN_USERNAMES = ['lexie', 'midnight'];
@@ -574,22 +575,51 @@ export async function getLoungeMembersList(rawId: string) {
     userRole: users.role,
     avatarUrl: users.avatarUrl,
     displayName: users.displayName,
+    updatedAt: users.updatedAt,
   })
   .from(loungeMembers)
   .leftJoin(users, eq(loungeMembers.userId, users.id))
   .where(eq(loungeMembers.loungeId, parent.id));
 
-  let memberList = memberRows.map(m => ({
-    id: m.id,
-    user_id: m.userId,
-    username: m.username || `User_${m.userId}`,
-    role: m.role || 'member',
-    status: m.status || 'active',
-    userRole: m.userRole,
-    avatarUrl: m.avatarUrl || null,
-    avatar: m.avatarUrl || null,
-    displayName: m.displayName || null,
-  }));
+  const redis = await getRedisClient();
+
+  const resolvePresence = async (userId: number | null | undefined, updatedAt: Date | null | undefined) => {
+    if (!userId) {
+      return { presence: 'offline' as const, last_seen_at: 'offline' };
+    }
+    let isOnline = false;
+    if (redis) {
+      try {
+        isOnline = (await redis.exists(`user:${userId}:active`)) === 1;
+      } catch {
+        /* offline fallback */
+      }
+    }
+    return {
+      presence: isOnline ? ('online' as const) : ('offline' as const),
+      last_seen_at: isOnline ? 'online' : (updatedAt?.toISOString() || 'offline'),
+    };
+  };
+
+  let memberList = await Promise.all(
+    memberRows.map(async (m) => {
+      const live = await resolvePresence(m.userId, m.updatedAt);
+      return {
+        id: m.id,
+        user_id: m.userId,
+        username: m.username || `User_${m.userId}`,
+        role: m.role || 'member',
+        /** Membership state (active / muted / banned / pending) — not presence. */
+        status: m.status || 'active',
+        userRole: m.userRole,
+        avatarUrl: m.avatarUrl || null,
+        avatar: m.avatarUrl || null,
+        displayName: m.displayName || null,
+        presence: live.presence,
+        last_seen_at: live.last_seen_at,
+      };
+    })
+  );
 
   if (memberList.length === 0) {
     const allUsers = await db.select({
@@ -598,19 +628,41 @@ export async function getLoungeMembersList(rawId: string) {
       role: users.role,
       avatarUrl: users.avatarUrl,
       displayName: users.displayName,
+      updatedAt: users.updatedAt,
     }).from(users).limit(50);
-    memberList = allUsers.map(u => ({
-      id: u.id,
-      user_id: u.id,
-      username: u.username,
-      role: u.role === 'ADMIN' ? 'owner' : 'member',
-      status: 'active',
-      userRole: u.role,
-      avatarUrl: u.avatarUrl || null,
-      avatar: u.avatarUrl || null,
-      displayName: u.displayName || null,
-    }));
+    memberList = await Promise.all(
+      allUsers.map(async (u) => {
+        const live = await resolvePresence(u.id, u.updatedAt);
+        return {
+          id: u.id,
+          user_id: u.id,
+          username: u.username,
+          role: u.role === 'ADMIN' ? 'owner' : 'member',
+          status: 'active',
+          userRole: u.role,
+          avatarUrl: u.avatarUrl || null,
+          avatar: u.avatarUrl || null,
+          displayName: u.displayName || null,
+          presence: live.presence,
+          last_seen_at: live.last_seen_at,
+        };
+      })
+    );
   }
+
+  // Sort on server response shape so roster is consistent for all clients
+  memberList = memberList.sort((a, b) => {
+    const rank = (role: string) => {
+      const r = (role || 'member').toLowerCase();
+      if (r === 'owner') return 0;
+      if (r === 'admin' || r === 'administrator') return 1;
+      if (r === 'moderator' || r === 'mod') return 2;
+      return 3;
+    };
+    const d = rank(a.role) - rank(b.role);
+    if (d !== 0) return d;
+    return (a.username || '').localeCompare(b.username || '');
+  });
 
   return { members: memberList };
 }
@@ -631,6 +683,13 @@ export async function joinLounge(currentUserId: number, loungeId?: string, invit
 
   const existing = await db.select().from(loungeMembers)
     .where(and(eq(loungeMembers.loungeId, target.id), eq(loungeMembers.userId, currentUserId)));
+
+  if (existing.length > 0) {
+    const member = existing[0];
+    if (member.status === 'banned') {
+      return { error: 'You are blocked from this lounge.', status: 403 };
+    }
+  }
 
   if (existing.length === 0) {
     await db.insert(loungeMembers).values({
@@ -708,10 +767,24 @@ export async function createSublounge(user: any, rawId: string, name: string, de
   const parentLoungeId = parentLounge.id;
 
   const isSysAdmin = checkIsSystemAdmin(user);
-  if (parentLounge.isOfficial || parentLounge.isSystem || parentLounge.slug === 'velum_master_lounge') {
+  const isVelumOfficial =
+    !!parentLounge.isOfficial ||
+    !!parentLounge.isSystem ||
+    parentLounge.slug === 'velum_master_lounge';
+
+  if (isVelumOfficial) {
     if (!isSysAdmin) {
       return { error: 'Sub-lounge creation under Velum Official Lounge is restricted exclusively to System Admins.', status: 403 };
     }
+  }
+
+  const siblingCount = allLounges.filter((l) => l.parentLoungeId === parentLoungeId).length;
+  const maxSublounges = isVelumOfficial ? 10 : 20;
+  if (siblingCount >= maxSublounges) {
+    return {
+      error: `This lounge can have at most ${maxSublounges} rooms.`,
+      status: 403,
+    };
   }
 
   const isOwner = parentLounge.ownerId === currentUserId;
@@ -1290,6 +1363,85 @@ export async function updateMemberRole(user: any, rawId: string, targetUserId: n
   return { success: true, message: 'Member role updated.' };
 }
 
+/**
+ * Transfer lounge ownership. Caller must be current owner (or system admin).
+ * New owner must be an active member. Old owner demoted to admin.
+ */
+export async function transferLoungeOwnership(
+  user: any,
+  rawId: string,
+  newOwnerUserId: number
+) {
+  if (!Number.isFinite(newOwnerUserId) || newOwnerUserId <= 0) {
+    return { error: 'Valid new owner user ID is required.', status: 400 };
+  }
+
+  const all = await loungeRepository.findAll();
+  const target = all.find((l) => l.slug === rawId || l.id.toString() === rawId);
+
+  if (!target) {
+    return { error: 'Lounge not found.', status: 404 };
+  }
+
+  const currentUserId = user.userId;
+  const isSystemAdmin = checkIsSystemAdmin(user);
+  const isOwner = target.ownerId === currentUserId;
+
+  if (!isOwner && !isSystemAdmin) {
+    return { error: 'Only the lounge owner can transfer ownership.', status: 403 };
+  }
+
+  if (newOwnerUserId === currentUserId && isOwner) {
+    return { error: 'You already own this lounge.', status: 400 };
+  }
+
+  const [incoming] = await db
+    .select()
+    .from(loungeMembers)
+    .where(
+      and(
+        eq(loungeMembers.loungeId, target.id),
+        eq(loungeMembers.userId, newOwnerUserId),
+        eq(loungeMembers.status, 'active')
+      )
+    )
+    .limit(1);
+
+  if (!incoming) {
+    return { error: 'New owner must be an active member of this lounge.', status: 400 };
+  }
+
+  const previousOwnerId = target.ownerId;
+
+  await db
+    .update(lounges)
+    .set({ ownerId: newOwnerUserId, updatedAt: new Date() })
+    .where(eq(lounges.id, target.id));
+
+  await db
+    .update(loungeMembers)
+    .set({ role: 'owner' })
+    .where(
+      and(eq(loungeMembers.loungeId, target.id), eq(loungeMembers.userId, newOwnerUserId))
+    );
+
+  if (previousOwnerId != null && previousOwnerId !== newOwnerUserId) {
+    await db
+      .update(loungeMembers)
+      .set({ role: 'admin' })
+      .where(
+        and(eq(loungeMembers.loungeId, target.id), eq(loungeMembers.userId, previousOwnerId))
+      );
+  }
+
+  return {
+    success: true,
+    message: 'Ownership transferred.',
+    owner_id: newOwnerUserId,
+    previous_owner_id: previousOwnerId,
+  };
+}
+
 export async function removeMember(user: any, rawId: string, targetUserId: number) {
   if (isNaN(targetUserId)) {
     return { error: 'Valid target user ID is required.', status: 400 };
@@ -1335,15 +1487,17 @@ export async function applySanction(user: any, rawId: string, targetUserId: any,
 
   const numTargetId = parseInt(targetUserId, 10);
 
-  if (type === 'kick') {
-    await db.delete(loungeMembers)
+  if (type === 'kick' || type === 'ban') {
+    // Kick removes access and blocks rejoin/re-apply (same as ban).
+    await db.update(loungeMembers)
+      .set({ status: 'banned' })
       .where(and(
         eq(loungeMembers.loungeId, target.id),
         eq(loungeMembers.userId, numTargetId)
       ));
-  } else if (type === 'ban' || type === 'mute') {
+  } else if (type === 'mute') {
     await db.update(loungeMembers)
-      .set({ status: type === 'ban' ? 'banned' : 'muted' })
+      .set({ status: 'muted' })
       .where(and(
         eq(loungeMembers.loungeId, target.id),
         eq(loungeMembers.userId, numTargetId)
@@ -1434,8 +1588,27 @@ export async function updateLoungeSettings(user: any, rawId: string, body: any) 
   }
 
   const isAdmin = checkIsSystemAdmin(user);
-  if (target.ownerId !== currentUserId && !isAdmin) {
+  const membership = await db
+    .select()
+    .from(loungeMembers)
+    .where(and(eq(loungeMembers.loungeId, target.id), eq(loungeMembers.userId, currentUserId)))
+    .limit(1);
+  const loungeRole = String(membership[0]?.role || '').toLowerCase();
+  const isLoungeOwnerOrAdmin =
+    target.ownerId === currentUserId ||
+    loungeRole === 'owner' ||
+    loungeRole === 'admin';
+
+  if (!isAdmin && !isLoungeOwnerOrAdmin) {
     return { error: 'Only lounge owner or admins can update settings.', status: 403 };
+  }
+
+  // Official Velum lounge cannot flip to private via this path
+  if (
+    (target.isOfficial || target.isSystem || target.slug === 'velum_master_lounge') &&
+    is_private === true
+  ) {
+    return { error: 'Official Velum lounge cannot be set to private.', status: 403 };
   }
 
   const updates: Record<string, any> = {
@@ -1490,6 +1663,9 @@ export async function applyToLounge(currentUserId: number, rawId: string) {
 
   if (existing.length > 0) {
     const member = existing[0];
+    if (member.status === 'banned') {
+      return { error: 'You are blocked from this lounge.', status: 403 };
+    }
     if (member.status === 'active') {
       return { success: true, status: 'active', message: 'You are already a member.' };
     }

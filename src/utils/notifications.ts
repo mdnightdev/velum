@@ -9,6 +9,10 @@ import {
 import { isPeerMuted } from './dmPeerPrefs';
 import { getNotificationBodyText } from './messagePlaintext';
 import { getCleanPreview } from './messageParser';
+import {
+  getLoungeNotificationPrefs,
+  shouldAlertForLoungeMessage,
+} from './loungeNotificationPrefs';
 
 export interface NotificationPreferences {
   desktopPopups: boolean;
@@ -142,13 +146,21 @@ export const dismissAllNotifications = async (): Promise<void> => {
 
 export const sendDesktopNotification = (
   title: string,
-  options?: { body?: string; icon?: string; tag?: string; roomId?: string }
+  options?: {
+    body?: string;
+    icon?: string;
+    tag?: string;
+    roomId?: string;
+    respectDnd?: boolean;
+    notificationLight?: boolean;
+  }
 ) => {
   if (typeof window === 'undefined') return;
 
   const tag = options?.tag || options?.roomId || 'velum-chat';
   const roomId = options?.roomId || (tag !== 'velum-chat' ? tag : undefined);
   const notifId = stringToNotificationId(tag);
+  const respectDnd = options?.respectDnd !== false;
 
   LocalNotifications.schedule({
     notifications: [
@@ -159,8 +171,11 @@ export const sendDesktopNotification = (
         channelId: 'velum_messages',
         sound: undefined,
         actionTypeId: '',
-        extra: { tag, roomId },
-        ...({ isExactNotification: false, allowWhileIdle: false } as any)
+        extra: { tag, roomId, light: options?.notificationLight !== false },
+        ...({
+          isExactNotification: false,
+          allowWhileIdle: !respectDnd,
+        } as any)
       }
     ]
   }).catch(() => {
@@ -228,46 +243,71 @@ export function handleInboundMessageNotification(msg: {
   content?: string;
   isFromMe?: boolean;
   roomId?: string;
+  loungeId?: string;
   activeRoomId?: string;
   timestamp?: number;
   peerUserId?: number;
+  myUsername?: string;
 }): void {
   if (msg.isFromMe) return;
 
-  // Drop alerts for messages synced before app launch or older than current session init
   if (msg.timestamp && msg.timestamp < APP_INIT_TIME) return;
 
-  // Per-peer mute (timed) — skip sound + banners
   if (msg.peerUserId != null && isPeerMuted(Number(msg.peerUserId))) return;
+
+  const loungeKey =
+    msg.loungeId ||
+    (msg.peerUserId == null && msg.roomId && msg.roomId !== 'notifications' ? msg.roomId : undefined);
+
+  if (loungeKey && !shouldAlertForLoungeMessage(loungeKey, msg.content, msg.myUsername)) {
+    return;
+  }
+
+  const loungePrefs = loungeKey ? getLoungeNotificationPrefs(loungeKey) : null;
 
   const isVisible = typeof document !== 'undefined' && !document.hidden;
   const isViewingSameRoom = isVisible && msg.roomId && msg.activeRoomId && msg.roomId === msg.activeRoomId;
 
-  // If user is currently active and viewing the exact same conversation, suppress notification
   if (isViewingSameRoom) return;
 
   const prefs = getNotificationPreferences();
   const cleanSender = (msg.senderName || 'Velum').replace(/^@/, '');
-  // Never decrypt here; never surface ciphertext / poison. Media → Photo/Video labels.
   const usable = getNotificationBodyText(msg.content);
   const previewText = usable ? (getCleanPreview(usable) || usable) : '';
+  const bodyText =
+    loungePrefs && !loungePrefs.showPreview ? 'New message' : previewText;
 
-  if (isVisible) {
-    // In-app foreground: crisp Web Audio chime + single-token toast
-    if (prefs.soundTriggers) {
+  const allowSound = prefs.soundTriggers && (loungePrefs ? loungePrefs.sound : true);
+  const allowVibrate = loungePrefs ? loungePrefs.vibrate : true;
+  const style = loungePrefs?.style || 'default';
+  const allowPopup = prefs.desktopPopups && style !== 'quiet';
+  const forceHeadsUp = style === 'heads_up';
+
+  if (allowVibrate && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    try {
+      navigator.vibrate(40);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (isVisible && !forceHeadsUp) {
+    if (allowSound) {
       playNotificationSound();
     }
-    if (prefs.desktopPopups && previewText) {
-      toast(`${cleanSender}: ${previewText}`);
+    if (allowPopup && bodyText) {
+      toast(`${cleanSender}: ${bodyText}`);
     }
-  } else {
-    // Out-of-app background: hand off 100% to OS ringer / vibration profile
-    if (prefs.desktopPopups) {
-      sendDesktopNotification(cleanSender, {
-        body: previewText,
-        tag: msg.roomId || 'velum-chat',
-        roomId: msg.roomId
-      });
+  } else if (allowPopup || forceHeadsUp) {
+    if (allowSound && isVisible) {
+      playNotificationSound();
     }
+    sendDesktopNotification(cleanSender, {
+      body: bodyText,
+      tag: msg.roomId || 'velum-chat',
+      roomId: msg.roomId,
+      respectDnd: loungePrefs ? loungePrefs.respectDnd : true,
+      notificationLight: loungePrefs ? loungePrefs.notificationLight : true,
+    });
   }
 }

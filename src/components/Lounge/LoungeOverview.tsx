@@ -47,7 +47,7 @@ export default function LoungeOverview({
   return (
     <div className="flex-1 overflow-y-auto w-full h-full bg-velum-800 text-text-primary select-none flex flex-col">
       {/* Top Lounge Identity Bar */}
-      <div className="w-full p-4 sm:p-5 border-b border-velum-600 bg-velum-850 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0">
+      <div className="w-full p-4 border-b border-velum-600 bg-velum-850 flex flex-col items-start justify-between gap-4 shrink-0">
         <div className="flex items-center gap-3.5 min-w-0">
           <div className="w-12 h-12 rounded-xl bg-velum-750 border border-velum-600 flex items-center justify-center overflow-hidden shrink-0">
             {avatar ? (
@@ -108,7 +108,7 @@ export default function LoungeOverview({
       </div>
 
       {/* Unified 4 Metrics Strip */}
-      <div className="w-full grid grid-cols-2 sm:grid-cols-4 border-b border-velum-600 bg-velum-800 divide-x divide-y sm:divide-y-0 divide-velum-600 shrink-0">
+      <div className="w-full grid grid-cols-2 border-b border-velum-600 bg-velum-800 divide-x divide-y divide-velum-600 shrink-0">
         <div className="p-4 flex flex-col items-center justify-center text-center">
           <span className="text-base font-bold text-accent">{memberCount}</span>
           <span className="text-[11px] text-text-secondary mt-0.5">Members</span>
@@ -128,7 +128,7 @@ export default function LoungeOverview({
       </div>
 
       {/* Topic & Description Body */}
-      <div className="w-full p-4 sm:p-5 space-y-2 flex-1">
+      <div className="w-full p-4 space-y-2 flex-1">
         <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Topic</span>
         <div className="p-4 rounded-xl border border-velum-600 bg-velum-850 text-xs text-text-primary leading-relaxed whitespace-pre-wrap">
           {description}

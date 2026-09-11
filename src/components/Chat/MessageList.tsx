@@ -25,6 +25,12 @@ export interface MessageListProps {
   onReactSelect?: (msg: Message, emoji: string) => void;
   activeChatPeer?: { userId: number; username: string; displayName?: string } | null;
   memberDirectory?: LoungeMemberDirectory;
+  onSelectProfileUser?: (user: {
+    userId: number;
+    username: string;
+    avatar?: string;
+    displayName?: string;
+  }) => void;
 }
 
 export function MessageList({
@@ -49,6 +55,7 @@ export function MessageList({
   onReactSelect,
   activeChatPeer,
   memberDirectory,
+  onSelectProfileUser,
 }: MessageListProps) {
   return (
     <>
@@ -89,6 +96,7 @@ export function MessageList({
               onReactSelect={onReactSelect}
               activeChatPeer={activeChatPeer}
               memberDirectory={memberDirectory}
+              onSelectProfileUser={onSelectProfileUser}
             />
           ))
         )}
