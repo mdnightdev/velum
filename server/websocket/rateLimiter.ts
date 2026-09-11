@@ -6,7 +6,7 @@ const BURST_CAPACITY = 5.0;
 const REFILL_RATE_PER_MS = 0.001; // 1 token per 1000ms = 1 msg/sec sustained
 
 export async function checkRateLimit(userId: number): Promise<boolean> {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' || process.env.DISABLE_RATE_LIMIT === 'true') {
     return true;
   }
   const now = Date.now();

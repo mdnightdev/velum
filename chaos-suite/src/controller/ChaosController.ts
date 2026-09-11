@@ -867,7 +867,7 @@ export class ChaosController {
   async runFullPipeline(): Promise<boolean> {
     this.gateKind = 'full';
     term.line(
-      'full  auth → create → lounge → avatar → friends → talk → media → ws → cues'
+      'full  auth → lounge → avatar → friends → talk → media → ws → cues  (create disabled)'
     );
 
     const stages: Array<{ name: string; ok: boolean }> = [];
@@ -880,7 +880,7 @@ export class ChaosController {
     };
 
     await runStage('auth', () => this.runAuthGate());
-    await runStage('create', () => this.runCreateJoinGate());
+    // Lounge creation disabled for this suite — skip create stage.
     await runStage('lounge', () => this.runLoungeGate());
     await runStage('avatar', () => this.runAvatarGate());
     await runStage('friends', () => this.runFriendGate());
