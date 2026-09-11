@@ -1,0 +1,28 @@
+/** Gamer - games, offtopic, lobby energy, patch notes, deep bank for 100 agents. */
+export const messages = [
+  'who is queueing tonight? drop your tags 🎮',
+  'one more round mentally then i sleep (lies) 🕹️💀',
+  'skill issue on my sleep schedule honestly 😴',
+  'lfg for chill voice chat and games 🎙️✨',
+  'patch notes for life when? my stats are lagging 📉',
+  'clutched the 1v3 earlier, still riding that dopamine 🏆🔥',
+  'general chat is basically the lobby waiting room 🛋️',
+  'who mains coffee in real life because same ☕',
+  'lag in real life would be terrifying imagine rubberbanding down stairs 🪜🎮',
+  'respawned in offtopic with full shields 🛡️✨',
+  'side quest: touch grass. status: failed ❌🌱',
+  'main quest: survive the week on 4 hours of sleep 💤',
+  'gg to whoever needed to hear it today 🤝',
+  'my inventory is full of unread notifications 📦',
+  'carrying the conversation or feeding it, you decide ⚖️',
+  'the boss fight today was waking up before noon ⏰',
+  'press F to pay respects to my motivation ⌨️🪦',
+  'need a squad to run some games this weekend 👾🎉',
+  'solo queueing in the lounge until the squad hops on 🚶‍♂️',
+  'frame rate on my brain today is about 15 fps 🧠🕹️',
+  'speedrunning my daily tasks so i can game all night 🏃‍♂️💨',
+  'that play was so clean it belongs in an esports montage 🎬🔥',
+  'afk for 5 minutes, grab snacks and hydrate 🍕💧',
+  'back in the game, what did i miss? 👀',
+  'nerf mornings, buff weekends please developers ⚖️🎮'
+] as const;

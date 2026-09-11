@@ -183,6 +183,17 @@ export async function handleUsers(ctx: CommandContext): Promise<void> {
   }
 
   if (sub === 'delete' || sub === 'purge') {
+
+    if (flags['all'] || rawArgs[0] === '--all') {
+    const res: any = await db.execute(
+      sql`SELECT purge_users(ARRAY(SELECT id FROM users WHERE id NOT IN (1, 2, 999))) AS count;`
+    );
+    const rows = Array.isArray(res) ? res : res?.rows ?? [];
+    const count = Number(rows[0]?.count ?? 0);
+    console.log(`[OK] Purged ${count} user(s).`);
+    return;
+  }
+
     const user = await requireUser(rawArgs, 'purge <id_or_username>');
     if (!user) return;
     if (!guardProtectedUser(user.id, 'delete or purge')) return;

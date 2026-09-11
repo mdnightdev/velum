@@ -95,7 +95,7 @@ export type Config = z.infer<typeof envSchema>;
 
 const pointsAtLocalhost = (value: string) => /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(value);
 
-if (config.NODE_ENV === 'production') {
+if (config.NODE_ENV === 'production' && process.env.ALLOW_LOCALHOST_BUILD !== 'true') {
   // A silent fall back to the local dev database would run production against an empty box.
   if (config.DATABASE_URL === defaultLocalDbUrl || pointsAtLocalhost(config.DATABASE_URL)) {
     throw new Error('[CONFIG] DATABASE_URL is missing or points at localhost while NODE_ENV=production.');

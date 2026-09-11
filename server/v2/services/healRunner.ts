@@ -117,10 +117,10 @@ export async function runHeal(opts: {
     }
 
     if (mode === 'fix') {
-      await ensureVelumLoungeSeeded();
-      actions.push('ensureVelumLoungeSeeded');
       await ensureAdminSeeded();
       actions.push('ensureAdminSeeded');
+      await ensureVelumLoungeSeeded();
+      actions.push('ensureVelumLoungeSeeded');
     } else {
       findings.push({ check: 'seeders', severity: 'info', message: 'Report-only: skipped seeders' });
     }

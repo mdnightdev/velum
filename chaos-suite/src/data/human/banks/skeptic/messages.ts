@@ -1,0 +1,28 @@
+/** Skeptic - dry, short doubt, questioning assumptions, critical view, deep bank for 100 agents. */
+export const messages = [
+  'i will believe that when i see verifiable proof',
+  'sounds promising in theory, but what is the catch?',
+  'has anyone independently verified those claims?',
+  'color me skeptical, but that seems too convenient',
+  'i would advise taking that announcement with a grain of salt',
+  'where is the documentation backing up that assertion?',
+  'every platform claims that until reality hits',
+  'let us see how it holds up under real load first',
+  'correlation does not imply causation, remember that',
+  'i have seen this exact promise fall apart three times before',
+  'healthy skepticism saves you from unnecessary disappointment',
+  'what are the underlying incentives here?',
+  'not convinced yet, need more data points',
+  'seems like marketing hype rather than technical substance',
+  'who stands to profit from this change?',
+  'questioning things is how we maintain quality',
+  'let us wait for the post-mortem before celebrating',
+  'the numbers look a bit too neat to be organic',
+  'i remain cautiously pessimistic until tested',
+  'extraordinary claims require extraordinary evidence',
+  'did anyone review the edge cases?',
+  'easy to say in a demo, harder in production',
+  'i\'ll reserve judgment until the actual rollout',
+  'let us verify before we rush to conclusions',
+  'just playing devil\'s advocate for a moment'
+] as const;

@@ -51,16 +51,14 @@ class PersistenceManager {
       if (fs.existsSync(this.credentialsFile)) {
         const data = fs.readFileSync(this.credentialsFile, 'utf-8');
         const credentialsArray: StoredCredentials[] = JSON.parse(data);
-        
+
         this.credentials.clear();
         credentialsArray.forEach(cred => {
           this.credentials.set(cred.username, cred);
         });
-        
-        console.log(`Loaded ${this.credentials.size} stored credentials`);
+
       }
-    } catch (error) {
-      console.error('Failed to load credentials:', error);
+    } catch {
       this.credentials = new Map();
     }
   }
@@ -69,8 +67,8 @@ class PersistenceManager {
     try {
       const credentialsArray = Array.from(this.credentials.values());
       fs.writeFileSync(this.credentialsFile, JSON.stringify(credentialsArray, null, 2));
-    } catch (error) {
-      console.error('Failed to save credentials:', error);
+    } catch {
+
     }
   }
 
@@ -79,16 +77,14 @@ class PersistenceManager {
       if (fs.existsSync(this.stateFile)) {
         const data = fs.readFileSync(this.stateFile, 'utf-8');
         const statesArray: AgentState[] = JSON.parse(data);
-        
+
         this.agentStates.clear();
         statesArray.forEach(state => {
           this.agentStates.set(state.agentId, state);
         });
-        
-        console.log(`Loaded ${this.agentStates.size} agent states`);
+
       }
-    } catch (error) {
-      console.error('Failed to load agent states:', error);
+    } catch {
       this.agentStates = new Map();
     }
   }
@@ -97,28 +93,24 @@ class PersistenceManager {
     try {
       const statesArray = Array.from(this.agentStates.values());
       fs.writeFileSync(this.stateFile, JSON.stringify(statesArray, null, 2));
-    } catch (error) {
-      console.error('Failed to save agent states:', error);
+    } catch {
+
     }
   }
 
-  // Check if user exists
   userExists(username: string): boolean {
     return this.credentials.has(username);
   }
 
-  // Get existing credentials
   getCredentials(username: string): StoredCredentials | undefined {
     return this.credentials.get(username);
   }
 
-  // Store new credentials
   storeCredentials(credentials: StoredCredentials): void {
     this.credentials.set(credentials.username, credentials);
     this.saveCredentials();
   }
 
-  // Update last login time
   updateLastLogin(username: string): void {
     const cred = this.credentials.get(username);
     if (cred) {
@@ -127,20 +119,21 @@ class PersistenceManager {
     }
   }
 
-  // Get all active usernames
   getActiveUsernames(): string[] {
     return Array.from(this.credentials.values())
       .filter(cred => cred.isActive)
       .map(cred => cred.username);
   }
 
-  // Get user by persona
+  getActiveCredentials(): StoredCredentials[] {
+    return Array.from(this.credentials.values()).filter((cred) => cred.isActive);
+  }
+
   getUsersByPersona(persona: string): StoredCredentials[] {
     return Array.from(this.credentials.values())
       .filter(cred => cred.persona === persona && cred.isActive);
   }
 
-  // Deactivate user
   deactivateUser(username: string): void {
     const cred = this.credentials.get(username);
     if (cred) {
@@ -149,7 +142,6 @@ class PersistenceManager {
     }
   }
 
-  // Agent state management
   saveAgentState(state: AgentState): void {
     this.agentStates.set(state.agentId, state);
     this.saveAgentStates();
@@ -180,21 +172,18 @@ class PersistenceManager {
     }
   }
 
-  // Reset all states (for fresh test runs)
   resetAllStates(): void {
     this.agentStates.clear();
     this.saveAgentStates();
-    console.log('All agent states reset');
   }
 
-  // Get statistics
   getStatistics(): {
     totalUsers: number;
     activeUsers: number;
     usersByPersona: Record<string, number>;
   } {
     const usersByPersona: Record<string, number> = {};
-    
+
     this.credentials.forEach(cred => {
       if (cred.persona) {
         usersByPersona[cred.persona] = (usersByPersona[cred.persona] || 0) + 1;
@@ -209,5 +198,4 @@ class PersistenceManager {
   }
 }
 
-// Singleton instance
 export const persistenceManager = new PersistenceManager();

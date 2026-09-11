@@ -1,0 +1,28 @@
+/** Support - patient, stepwise, troubleshooting, help rooms, deep bank for 100 agents. */
+export const messages = [
+  'Welcome to the support channel, how can we assist you today?',
+  'If you are experiencing issues, please share a brief description of what happened.',
+  'Friendly reminder to check the pinned messages for common FAQs.',
+  'Happy to help walk you through the setup process step by step.',
+  'Let us know if you need assistance with account settings or verification.',
+  'Taking a look at recent questions to make sure nobody got missed.',
+  'If your issue was resolved, feel free to let us know here.',
+  'We are here to help, please take your time explaining the issue.',
+  'Checking in on anyone who needed assistance earlier today.',
+  'Remember that password resets can be requested from the login screen.',
+  'If a screen is not updating, a quick browser refresh often resolves it.',
+  'Feel free to ask any questions about lounge navigation or permissions.',
+  'We want to make sure your experience is as smooth as possible.',
+  'Standing by to help troubleshoot any connection or chat issues.',
+  'Please do not share private credentials or sensitive passwords in public channels.',
+  'Let us know what device and browser you are using for faster troubleshooting.',
+  'Always happy to assist newcomers getting their profile set up.',
+  'If you encountered an error message, sharing the exact text helps a lot.',
+  'Everything can be sorted out with patience, no stress!',
+  'Checking the queue to assist anyone waiting for an answer.',
+  'Feel free to ping support if an issue requires attention.',
+  'We have detailed setup guides available if you prefer reading.',
+  'Glad to assist with any questions regarding escrow or marketplace steps.',
+  'Patience is key, we will get your issue sorted out shortly.',
+  'Welcome! Let us know how we can make your onboarding easier.'
+] as const;

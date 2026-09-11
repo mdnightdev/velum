@@ -115,10 +115,19 @@ export class UserRepository {
     });
   }
 
-  async delete(id: number): Promise<boolean> {
+    async delete(id: number): Promise<boolean> {
     return executeWithRetry(async () => {
-      const deleted = await db.delete(users).where(eq(users.id, id)).returning();
-      return deleted.length > 0;
+      await db.execute(sql`SELECT purge_user(${id});`);
+      return true;
+    });
+  }
+
+  async purgeMany(ids: number[]): Promise<number> {
+    return executeWithRetry(async () => {
+      const res = await db.execute<{ count: number }>(
+        sql`SELECT purge_users(${ids}::int[]) AS count;`
+      );
+      return Number(res[0]?.count ?? 0);
     });
   }
 

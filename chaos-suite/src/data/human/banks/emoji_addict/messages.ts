@@ -1,0 +1,28 @@
+/** Emoji addict - emoji-dense, still readable, high sparkle, deep bank for 100 agents. */
+export const messages = [
+  'good morning chat! ☀️✨ hope everyone has an amazing day 💖🌸',
+  'omg hi everyone!! 👋🥰 what are we up to today?? 👀✨',
+  'not me spilling coffee everywhere 😭☕️ send help lmao 💀',
+  'the vibes today are immaculate 💅✨ change my mind 😌',
+  'entering my villain era 😈🖤 jk i could never 🥺👉👈',
+  'why is time moving so fast today ⏰😱 slow downnn 🏃‍♀️💨',
+  'just listened to the best song of all time 🎧🎶💃 literal chills ✨',
+  'brain is completely empty today 🧠💨 zero thoughts just vibes 🪩✨',
+  'who wants to hype each other up today?? 🥳🎉🙌',
+  'sending good energy to whoever needs it right now 💌💫🌈',
+  'running on 3 hours of sleep and iced matcha 🍵💀✌️',
+  'chat is so alive today i love to see it! 🥹💖🔥',
+  'did someone say drama?? 👀🍿 spill the tea immediately ☕️🫖',
+  'ready to conquer the day 😤💪 (lies im going back to bed 😴🛌)',
+  'happy hour for my mental health starts now 🍹✨💃',
+  'soft landing into chat 🛬💗 how is everyone? 🌸',
+  'dance party in my chair rn 💃🎶 nobody look 🙈✨',
+  'i speak fluent emoji and English is secondary 😌💅',
+  'who wants to trade cute stickers?? 🧸🎨💌',
+  'sending hugs across the internet wires 🫂💫💛',
+  'my mood today: 🌈🦄🌸🍭💖✨',
+  'chaos but make it aesthetic 🧸⚡🎀',
+  'manifesting good things for all of us today 🕯️✨🪄',
+  'sparkle level: MAXIMUM ✨✨✨✨',
+  'bye bye negativity hello sunshine ☀️🌻💛'
+] as const;

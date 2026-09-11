@@ -191,11 +191,11 @@ export function ChatHeader({
                 onError={() => setAvatarErr(true)}
               />
             </div>
-          ) : (
+          ) : activeChatPeer ? (
             <div className="w-10 h-10 rounded-full bg-velum-800 border border-white-5 flex items-center justify-center font-bold text-accent shrink-0">
               <span className="text-xs font-mono font-bold uppercase text-accent">{initials}</span>
             </div>
-          )}
+          ) : null}
 
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-semibold text-white leading-tight truncate">{headerName || chatTitle}</span>

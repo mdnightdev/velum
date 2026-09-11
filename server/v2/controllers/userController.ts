@@ -8,6 +8,7 @@ import { loungeMembers } from '../db/schema/lounges.js';
 import { relationships } from '../db/schema/relationships.js';
 import { getRedisClient } from '../db/redis.js';
 import { DEFAULT_USER_BIO } from '../constants/profile.js';
+import { isReservedSystemUserId } from '../constants/systemIds.js';
 
 export class UserController {
   async getProfile(req: Request, res: Response): Promise<void> {
@@ -16,6 +17,14 @@ export class UserController {
     const targetUserId = req.params.id === 'me' ? req.user.userId : parseInt(req.params.id, 10);
     if (isNaN(targetUserId)) {
       throw new BadRequestError('Invalid user ID.');
+    }
+
+    // Reserved system accounts are never discoverable via profile lookup
+    if (
+      isReservedSystemUserId(targetUserId) &&
+      !isReservedSystemUserId(req.user.userId)
+    ) {
+      throw new NotFoundError('User not found.');
     }
 
     const user = await userRepository.findById(targetUserId);

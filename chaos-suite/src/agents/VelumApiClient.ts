@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 export interface VelumCredentials {
   username: string;
   password: string;
@@ -55,6 +53,20 @@ export interface VelumMessage {
   avatar?: string;
 }
 
+export interface VelumAuthUser {
+  userId: number;
+  username: string;
+  role?: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  salt?: string;
+}
+
+export interface VelumAuthPayload {
+  token: string;
+  user: VelumAuthUser;
+}
+
 export class VelumApiClient {
   private baseUrl: string;
   private credentials: VelumCredentials;
@@ -66,13 +78,6 @@ export class VelumApiClient {
   constructor(credentials: VelumCredentials, baseUrl: string = 'http://localhost:3000/v2') {
     this.credentials = credentials;
     this.baseUrl = baseUrl;
-    
-    // Generate salt if not provided
-    if (!this.credentials.salt) {
-      this.credentials.salt = crypto.randomBytes(16).toString('hex');
-    }
-
-    // Random device simulation
     this.deviceInfo = this.generateRandomDevice();
     this.ipAddress = this.generateRandomIP();
   }
@@ -143,39 +148,65 @@ export class VelumApiClient {
     }
   }
 
-  // Authentication
-  async register(): Promise<VelumApiResponse<{ token: string; userId: number }>> {
-    const result = await this.request<{ token: string; userId: number }>('/auth/register', {
+  private applyAuthPayload(data: VelumAuthPayload | undefined): boolean {
+    if (!data?.token || data.user?.userId == null) return false;
+    this.sessionToken = data.token;
+    this.userId = Number(data.user.userId);
+    return Number.isFinite(this.userId);
+  }
+
+  clearSession(): void {
+    this.sessionToken = undefined;
+    this.userId = undefined;
+  }
+
+  setCredentials(credentials: VelumCredentials): void {
+    this.credentials = credentials;
+    this.clearSession();
+  }
+
+  async register(): Promise<VelumApiResponse<VelumAuthPayload>> {
+    const result = await this.request<VelumAuthPayload>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         username: this.credentials.username,
         password: this.credentials.password,
         panicPhrase: this.credentials.panicPhrase,
-        safeWord: this.credentials.safeWord,
-        salt: this.credentials.salt
-      })
+      }),
     });
 
-    if (result.success && result.data?.token) {
-      this.sessionToken = result.data.token;
-      this.userId = result.data.userId;
+    if (result.success) {
+      if (!this.applyAuthPayload(result.data)) {
+        return {
+          success: false,
+          error: 'Register OK but missing token or user.userId',
+          statusCode: result.statusCode,
+          latency: result.latency,
+        };
+      }
     }
 
     return result;
   }
 
-  async login(): Promise<VelumApiResponse<{ token: string; userId: number }>> {
-    const result = await this.request<{ token: string; userId: number }>('/auth/login', {
+  async login(): Promise<VelumApiResponse<VelumAuthPayload>> {
+    const result = await this.request<VelumAuthPayload>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({
         username: this.credentials.username,
-        password: this.credentials.password
-      })
+        password: this.credentials.password,
+      }),
     });
 
-    if (result.success && result.data?.token) {
-      this.sessionToken = result.data.token;
-      this.userId = result.data.userId;
+    if (result.success) {
+      if (!this.applyAuthPayload(result.data)) {
+        return {
+          success: false,
+          error: 'Login OK but missing token or user.userId',
+          statusCode: result.statusCode,
+          latency: result.latency,
+        };
+      }
     }
 
     return result;
@@ -183,18 +214,18 @@ export class VelumApiClient {
 
   async logout(): Promise<VelumApiResponse> {
     const result = await this.request('/auth/logout', {
-      method: 'POST'
+      method: 'POST',
     });
 
-    if (result.success) {
-      this.sessionToken = undefined;
-      this.userId = undefined;
-    }
-
+    this.clearSession();
     return result;
   }
 
-  // User Discovery
+
+  async ping(): Promise<VelumApiResponse<{ status?: string }>> {
+    return this.request<{ status?: string }>('/health', { method: 'GET' });
+  }
+
   async searchUsers(query: string = ''): Promise<VelumApiResponse<{ users: VelumUser[] }>> {
     const queryParams = query ? `?q=${encodeURIComponent(query)}` : '';
     return this.request<{ users: VelumUser[] }>(`/user/directory/search${queryParams}`);
@@ -204,7 +235,6 @@ export class VelumApiClient {
     return this.request<VelumUser>(`/user/${userId}/profile`);
   }
 
-  // Lounge Discovery
   async getLounges(): Promise<VelumApiResponse<{ lounges: VelumLounge[] }>> {
     return this.request<{ lounges: VelumLounge[] }>('/lounges');
   }
@@ -214,60 +244,179 @@ export class VelumApiClient {
   }
 
   async getLoungeDetails(loungeId: string): Promise<VelumApiResponse<VelumLounge>> {
-    return this.request<VelumLounge>(`/lounges/${loungeId}`);
+    const res = await this.request<{ lounge: VelumLounge }>(`/lounges/${loungeId}`);
+    if (!res.success) {
+      return { success: false, error: res.error, statusCode: res.statusCode, latency: res.latency };
+    }
+    if (!res.data?.lounge) {
+      return {
+        success: false,
+        error: 'Missing lounge in details response',
+        statusCode: res.statusCode,
+        latency: res.latency,
+      };
+    }
+    return { success: true, data: res.data.lounge, statusCode: res.statusCode, latency: res.latency };
   }
 
-  async getLoungeRooms(loungeId: string): Promise<VelumApiResponse<VelumLounge[]>> {
-    return this.request<VelumLounge[]>(`/lounges/${loungeId}/rooms`);
+  async getLoungeRooms(loungeId: string): Promise<VelumApiResponse<{ rooms: VelumLounge[] }>> {
+    return this.request<{ rooms: VelumLounge[] }>(`/lounges/${loungeId}/rooms`);
   }
 
   async getLoungeMembers(loungeId: string): Promise<VelumApiResponse<any[]>> {
     return this.request<any[]>(`/lounges/${loungeId}/members`);
   }
 
-  // Lounge Actions
-  async createLounge(name: string, description: string = '', isPrivate: boolean = false): Promise<VelumApiResponse<VelumLounge>> {
-    return this.request<VelumLounge>('/lounges', {
+  async createLounge(
+    name: string,
+    description: string = '',
+    isPrivate: boolean = false
+  ): Promise<VelumApiResponse<VelumLounge>> {
+    const res = await this.request<{ lounge: VelumLounge }>('/lounges', {
       method: 'POST',
-      body: JSON.stringify({ name, description, is_private: isPrivate })
+      body: JSON.stringify({ name, description, is_private: isPrivate }),
     });
+    if (!res.success) {
+      return { success: false, error: res.error, statusCode: res.statusCode, latency: res.latency };
+    }
+    if (!res.data?.lounge) {
+      return {
+        success: false,
+        error: 'Missing lounge in create response',
+        statusCode: res.statusCode,
+        latency: res.latency,
+      };
+    }
+    return { success: true, data: res.data.lounge, statusCode: res.statusCode, latency: res.latency };
   }
 
-  async createSublounge(parentLoungeId: string, name: string, description: string = ''): Promise<VelumApiResponse<VelumLounge>> {
-    return this.request<VelumLounge>(`/lounges/${parentLoungeId}/sublounges`, {
-      method: 'POST',
-      body: JSON.stringify({ name, description })
-    });
+  async createSublounge(
+    parentLoungeId: string,
+    name: string,
+    description: string = ''
+  ): Promise<VelumApiResponse<VelumLounge>> {
+    const res = await this.request<{ lounge?: VelumLounge; sublounge?: VelumLounge }>(
+      `/lounges/${parentLoungeId}/sublounges`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ name, description }),
+      }
+    );
+    if (!res.success) {
+      return { success: false, error: res.error, statusCode: res.statusCode, latency: res.latency };
+    }
+    const created = res.data?.sublounge || res.data?.lounge;
+    if (!created) {
+      return {
+        success: false,
+        error: 'Missing sublounge in create response',
+        statusCode: res.statusCode,
+        latency: res.latency,
+      };
+    }
+    return { success: true, data: created, statusCode: res.statusCode, latency: res.latency };
   }
 
   async joinLounge(loungeId: string): Promise<VelumApiResponse> {
     return this.request('/lounges/join', {
       method: 'POST',
-      body: JSON.stringify({ lounge_id: loungeId })
+      body: JSON.stringify({ lounge_id: loungeId }),
     });
   }
 
-  async leaveLounge(loungeId: string): Promise<VelumApiResponse> {
-    return this.request(`/lounges/${loungeId}/leave`, {
-      method: 'POST'
-    });
+  async getMessages(
+    loungeId: string,
+    limit: number = 50
+  ): Promise<VelumApiResponse<VelumMessage[]>> {
+    const res = await this.request<{ messages: VelumMessage[] }>(
+      `/lounges/${loungeId}/messages?limit=${limit}`
+    );
+    if (!res.success) {
+      return { success: false, error: res.error, statusCode: res.statusCode, latency: res.latency };
+    }
+    const list = Array.isArray(res.data?.messages) ? res.data!.messages : [];
+    return { success: true, data: list, statusCode: res.statusCode, latency: res.latency };
   }
 
-  // Messaging
-  async getMessages(loungeId: string, limit: number = 50): Promise<VelumApiResponse<VelumMessage[]>> {
-    return this.request<VelumMessage[]>(`/lounges/${loungeId}/messages?limit=${limit}`);
-  }
-
-  async sendMessage(loungeId: string, message: string): Promise<VelumApiResponse<VelumMessage>> {
-    // Use the actual room ID (slug or lounge_id format)
-    const roomId = loungeId;
-    return this.request<VelumMessage>(`/lounges/${roomId}/messages`, {
+  async sendMessage(
+    loungeId: string,
+    message: string
+  ): Promise<VelumApiResponse<VelumMessage>> {
+    const res = await this.request<{ message: VelumMessage }>(`/lounges/${loungeId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content: message })
+      body: JSON.stringify({ content: message }),
+    });
+    if (!res.success) {
+      return { success: false, error: res.error, statusCode: res.statusCode, latency: res.latency };
+    }
+    if (!res.data?.message) {
+      return {
+        success: false,
+        error: 'Missing message in post response',
+        statusCode: res.statusCode,
+        latency: res.latency,
+      };
+    }
+    return { success: true, data: res.data.message, statusCode: res.statusCode, latency: res.latency };
+  }
+
+  async sendFriendRequest(opts: {
+    targetUserId?: number;
+    username?: string;
+  }): Promise<VelumApiResponse<{ success?: boolean; message?: string }>> {
+    const body: Record<string, string | number> = {};
+    if (opts.targetUserId != null) body.targetUserId = opts.targetUserId;
+    if (opts.username) body.receiverUsername = opts.username;
+    return this.request<{ success?: boolean; message?: string }>('/friends/request', {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   }
 
-  // User Actions
+  async getFriendRequests(): Promise<
+    VelumApiResponse<{
+      requests: Array<{
+        request_id: string;
+        sender_id: number;
+        sender_name?: string;
+        status?: string;
+      }>;
+    }>
+  > {
+    return this.request('/friends/requests');
+  }
+
+  async acceptFriendRequest(
+    requestId: string | number
+  ): Promise<VelumApiResponse<{ success?: boolean; message?: string }>> {
+    return this.request(`/friends/accept/${requestId}`, { method: 'POST', body: '{}' });
+  }
+
+  async getFriendRelationships(): Promise<
+    VelumApiResponse<{
+      relationships: Array<{
+        friendId?: number;
+        friend_id?: number;
+        peerId?: number;
+        peer_id?: number;
+        username?: string;
+        status?: string;
+      }>;
+    }>
+  > {
+    return this.request('/friends/relationships');
+  }
+
+  async sendDm(
+    peerId: number,
+    body: string
+  ): Promise<VelumApiResponse<{ message?: unknown }>> {
+    return this.request(`/dm/${peerId}`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    });
+  }
+
   async blockUser(targetUserId: number): Promise<VelumApiResponse<{ success: boolean; isBlocked: boolean }>> {
     return this.request<{ success: boolean; isBlocked: boolean }>(`/user/${targetUserId}/block`, {
       method: 'POST'
@@ -293,15 +442,66 @@ export class VelumApiClient {
     });
   }
 
-  // Profile
-  async updateProfile(data: { displayName?: string; bio?: string; avatar?: string }): Promise<VelumApiResponse> {
+  async updateProfile(data: {
+    displayName?: string;
+    bio?: string;
+    avatar?: string;
+    avatarUrl?: string;
+  }): Promise<VelumApiResponse> {
     return this.request('/user/profile', {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
     });
   }
 
-  async uploadAvatar(avatarData: Buffer): Promise<VelumApiResponse<{ url: string }>> {
+  async uploadMedia(
+    mediaData: Buffer,
+    contentType: string
+  ): Promise<VelumApiResponse<{ url: string }>> {
+    const url = `${this.baseUrl}/user/upload-media`;
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.getHeaders({
+          'Content-Type': contentType,
+        }),
+        body: new Uint8Array(mediaData),
+      });
+
+      const latency = Date.now() - startTime;
+      const responseData: any = response.ok
+        ? await response.json().catch(() => ({}))
+        : await response.json().catch(() => ({ error: response.statusText }));
+
+      const uploadedUrl =
+        typeof responseData?.url === 'string' ? responseData.url : undefined;
+
+      return {
+        success: response.ok && !!uploadedUrl,
+        data: response.ok && uploadedUrl ? { url: uploadedUrl } : undefined,
+        error: response.ok
+          ? uploadedUrl
+            ? undefined
+            : 'Missing url in upload response'
+          : responseData.error || response.statusText,
+        statusCode: response.status,
+        latency,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: (error as Error).message,
+        latency: Date.now() - startTime,
+      };
+    }
+  }
+
+  async uploadAvatar(
+    avatarData: Buffer,
+    contentType: string = 'image/jpeg'
+  ): Promise<VelumApiResponse<{ url: string }>> {
     const url = `${this.baseUrl}/user/upload-avatar`;
     const startTime = Date.now();
 
@@ -309,20 +509,33 @@ export class VelumApiClient {
       const response = await fetch(url, {
         method: 'POST',
         headers: this.getHeaders({
-          'Content-Type': 'image/webp'
+          'Content-Type': contentType,
         }),
-        body: new Uint8Array(avatarData)
+        body: new Uint8Array(avatarData),
       });
 
       const latency = Date.now() - startTime;
-      const responseData: any = response.ok ? await response.json().catch(() => ({})) : await response.json().catch(() => ({ error: response.statusText }));
+      const responseData: any = response.ok
+        ? await response.json().catch(() => ({}))
+        : await response.json().catch(() => ({ error: response.statusText }));
+
+      const uploadedUrl =
+        typeof responseData?.url === 'string'
+          ? responseData.url
+          : typeof responseData?.avatarUrl === 'string'
+            ? responseData.avatarUrl
+            : undefined;
 
       const result: VelumApiResponse<{ url: string }> = {
-        success: response.ok,
-        data: response.ok ? (responseData as { url: string }) : undefined,
-        error: response.ok ? undefined : (responseData.error || response.statusText),
+        success: response.ok && !!uploadedUrl,
+        data: response.ok && uploadedUrl ? { url: uploadedUrl } : undefined,
+        error: response.ok
+          ? uploadedUrl
+            ? undefined
+            : 'Missing url in upload response'
+          : responseData.error || response.statusText,
         statusCode: response.status,
-        latency
+        latency,
       };
 
       return result;
@@ -331,7 +544,7 @@ export class VelumApiClient {
       return {
         success: false,
         error: (error as Error).message,
-        latency
+        latency,
       };
     }
   }
@@ -343,7 +556,6 @@ export class VelumApiClient {
     });
   }
 
-  // Tickets
   async createTicket(reason: string, description: string): Promise<VelumApiResponse<{ ticket_id?: string; id?: string }>> {
     return this.request('/tickets', {
       method: 'POST',
@@ -351,14 +563,12 @@ export class VelumApiClient {
     });
   }
 
-  // Account Management
   async deleteAccount(): Promise<VelumApiResponse> {
     return this.request('/user/me', {
       method: 'DELETE'
     });
   }
 
-  // Session helpers
   isAuthenticated(): boolean {
     return !!this.sessionToken;
   }

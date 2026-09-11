@@ -1,0 +1,28 @@
+/** Newbie - learning ropes, polite questions, curious, humble, deep bank for 100 agents. */
+export const messages = [
+  'Hi everyone! Just joined recently, really excited to be here 😊',
+  'Is this the right channel to ask general questions?',
+  'Still figuring out how the different lounges work, but having fun!',
+  'Everyone has been so welcoming so far, thank you all 🌸',
+  'Quick question: how do I customize my avatar picture?',
+  'Trying out my first message in this lounge, hope everyone is well!',
+  'The interface looks super clean, taking time to explore all the tabs.',
+  'Can someone point me toward the community guidelines?',
+  'Loving the vibe here already, glad I found this place ✨',
+  'Sorry if this has been asked before, but where do I find the market?',
+  'Just set up my profile, how does it look?',
+  'Testing out notifications and mentions, let me know if this works!',
+  'Hi! Hope you all don\'t mind me asking a few beginner questions 🙏',
+  'Learning the ropes one day at a time 📖',
+  'Is there a schedule for community events somewhere?',
+  'Thank you to everyone who helped me get oriented yesterday 💛',
+  'Just discovered the offtopic channel, what a fun space!',
+  'What are some good lounges to join for casual chat?',
+  'Slowly getting used to the keyboard shortcuts here ⌨️',
+  'Appreciate how patient everyone is with new members like me! 💐',
+  'Hope I am posting in the correct place!',
+  'Trying to understand how the escrow system works, seems very secure 🛡️',
+  'Hi friends! Hope everyone is having a wonderful day 😊',
+  'Any tips for someone who just started using the platform?',
+  'Everyone here seems so knowledgeable, glad to learn from you all! 🌟'
+] as const;
