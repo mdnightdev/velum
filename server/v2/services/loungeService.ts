@@ -53,6 +53,44 @@ export function matchLounge(l: any, rawId: string): boolean {
   return false;
 }
 
+/** Enroll user in Velum master on register/login so public chat works without Join. */
+export async function ensureVelumMasterMembership(userId: number): Promise<void> {
+  if (!Number.isFinite(userId) || userId <= 0) return;
+
+  try {
+    const { ensureVelumLoungeSeeded } = await import('./loungeSeeder.js');
+    await ensureVelumLoungeSeeded();
+  } catch {
+    /* seed best-effort */
+  }
+
+  let master = await loungeRepository.findBySlug('velum_master_lounge');
+  if (!master) {
+    master = await loungeRepository.findById(1);
+  }
+  if (!master) return;
+
+  const existing = await loungeRepository.findMembership(master.id, userId);
+  if (existing) {
+    if (existing.status !== 'active') {
+      await db
+        .update(loungeMembers)
+        .set({ status: 'active' })
+        .where(
+          and(eq(loungeMembers.loungeId, master.id), eq(loungeMembers.userId, userId))
+        );
+    }
+    return;
+  }
+
+  await loungeRepository.addMember({
+    loungeId: master.id,
+    userId,
+    role: 'member',
+    status: 'active',
+  });
+}
+
 export async function getConversationsSummary(currentUserId?: number) {
   if (!currentUserId) {
     return { summary: {}, unreadCounts: {} };
@@ -533,7 +571,9 @@ export async function getLoungeMembersList(rawId: string) {
     role: loungeMembers.role,
     status: loungeMembers.status,
     username: users.username,
-    userRole: users.role
+    userRole: users.role,
+    avatarUrl: users.avatarUrl,
+    displayName: users.displayName,
   })
   .from(loungeMembers)
   .leftJoin(users, eq(loungeMembers.userId, users.id))
@@ -545,18 +585,30 @@ export async function getLoungeMembersList(rawId: string) {
     username: m.username || `User_${m.userId}`,
     role: m.role || 'member',
     status: m.status || 'active',
-    userRole: m.userRole
+    userRole: m.userRole,
+    avatarUrl: m.avatarUrl || null,
+    avatar: m.avatarUrl || null,
+    displayName: m.displayName || null,
   }));
 
   if (memberList.length === 0) {
-    const allUsers = await db.select({ id: users.id, username: users.username, role: users.role }).from(users).limit(50);
+    const allUsers = await db.select({
+      id: users.id,
+      username: users.username,
+      role: users.role,
+      avatarUrl: users.avatarUrl,
+      displayName: users.displayName,
+    }).from(users).limit(50);
     memberList = allUsers.map(u => ({
       id: u.id,
       user_id: u.id,
       username: u.username,
       role: u.role === 'ADMIN' ? 'owner' : 'member',
       status: 'active',
-      userRole: u.role
+      userRole: u.role,
+      avatarUrl: u.avatarUrl || null,
+      avatar: u.avatarUrl || null,
+      displayName: u.displayName || null,
     }));
   }
 

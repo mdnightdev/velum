@@ -72,6 +72,8 @@ export interface ChatAreaProps {
   avatarUrl?: string;
   /** Opens the shared contacts list to pick a forward target. */
   onRequestForward?: (content: string) => void;
+  /** Live lounge member avatars/names by user id. */
+  memberDirectory?: import('./Chat/MessageItem').LoungeMemberDirectory;
 }
 
 export default function ChatArea({
@@ -104,6 +106,7 @@ export default function ChatArea({
   avatarUrl,
   onSelectProfileUser,
   onRequestForward,
+  memberDirectory,
 }: ChatAreaProps) {
   // Subscribe directly so WS append + plaintext stamps re-render without App prop lag.
   const messages = useChatStore((s) => s.messages);
@@ -630,6 +633,7 @@ export default function ChatArea({
           clearActionMessage();
         }}
         activeChatPeer={activeChatPeer}
+        memberDirectory={memberDirectory}
       />
 
       <input

@@ -215,17 +215,35 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
   const rawLoungeTitle = loungeData.loungeDetails?.name || props.loungeName;
   const effectiveLoungeName = (!rawLoungeTitle || rawLoungeTitle.toUpperCase() === 'TEST') ? 'Velum Lounge' : rawLoungeTitle;
 
-  const getRoomLastMessageTime = (room: any) => {
-    const roomId = getRoomId(room);
-    if (!roomId || !props.lastMessages || !props.lastMessages[roomId]) return 0;
-    const lm = props.lastMessages[roomId];
-    if (!lm) return 0;
-    const ts = lm.timestamp || lm.created_at || lm.createdAt;
-    if (!ts) return 0;
-    return new Date(ts).getTime();
-  };
+  const OFFICIAL_ROOM_ORDER = [
+    'velum_general',
+    'velum_market',
+    'velum_escrow',
+    'velum_offtopic',
+    'velum_bugs',
+    'velum_support',
+    'velum_suggestions',
+    'velum_events',
+    'velum_announcements',
+    'velum_executives',
+  ];
 
-  const sortedVisibleRooms = visibleRooms.sort((a, b) => getRoomLastMessageTime(b) - getRoomLastMessageTime(a));
+  const roomOrderKey = (room: any): string =>
+    String(room.slug || room.lounge_id || room.id || '');
+
+  const sortedVisibleRooms = [...visibleRooms].sort((a, b) => {
+    if (isMasterLounge) {
+      const ia = OFFICIAL_ROOM_ORDER.indexOf(roomOrderKey(a));
+      const ib = OFFICIAL_ROOM_ORDER.indexOf(roomOrderKey(b));
+      const pa = ia === -1 ? 999 : ia;
+      const pb = ib === -1 ? 999 : ib;
+      if (pa !== pb) return pa - pb;
+    }
+    const ida = Number(a.id ?? a.lounge_id ?? 0);
+    const idb = Number(b.id ?? b.lounge_id ?? 0);
+    if (Number.isFinite(ida) && Number.isFinite(idb) && ida !== idb) return ida - idb;
+    return roomOrderKey(a).localeCompare(roomOrderKey(b));
+  });
 
   const publicRooms = isMasterLounge 
     ? sortedVisibleRooms.filter(room => room.accessLevel !== 'EXEC_ONLY' && room.accessLevel !== 'ANNOUNCE')
@@ -240,9 +258,27 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
     props.currentUserRole === 'owner' ||
     loungeData.isParentAdmin;
 
-  const isMember = isLoungeCreator || isSystemExecutive || loungeData.members.some(
-    m => String(m.user_id) === String(props.currentUserId) && (m.status === 'active' || m.status === 'approved' || !m.status)
-  );
+  const isMember =
+    isMasterLounge ||
+    isLoungeCreator ||
+    isSystemExecutive ||
+    loungeData.members.some(
+      m => String(m.user_id) === String(props.currentUserId) && (m.status === 'active' || m.status === 'approved' || !m.status)
+    );
+
+  const memberDirectory = React.useMemo(() => {
+    const map: Record<string, { username?: string; avatar?: string | null; displayName?: string | null }> = {};
+    for (const m of loungeData.members || []) {
+      const id = String(m.user_id ?? m.id ?? '');
+      if (!id) continue;
+      map[id] = {
+        username: m.username,
+        avatar: m.avatarUrl || m.avatar || null,
+        displayName: m.displayName || m.display_name || null,
+      };
+    }
+    return map;
+  }, [loungeData.members]);
 
   const [isJoiningLounge, setIsJoiningLounge] = useState(false);
   const [isApplyingLounge, setIsApplyingLounge] = useState(false);
@@ -366,6 +402,7 @@ export default function LoungeWorkspace(props: LoungeWorkspaceProps) {
           onJoinLounge={handleJoinLounge}
           avatarUrl={loungeAvatar}
           onRequestForward={props.onRequestForward}
+          memberDirectory={memberDirectory}
         />
       </div>
     );

@@ -1,6 +1,6 @@
 import React, { RefObject, UIEvent } from 'react';
 import { Message } from '../../types';
-import { MessageItem } from './MessageItem';
+import { MessageItem, type LoungeMemberDirectory } from './MessageItem';
 import { getMessageListKey } from './messageKey';
 
 export interface MessageListProps {
@@ -24,6 +24,7 @@ export interface MessageListProps {
   showReactionsForKey?: string | null;
   onReactSelect?: (msg: Message, emoji: string) => void;
   activeChatPeer?: { userId: number; username: string; displayName?: string } | null;
+  memberDirectory?: LoungeMemberDirectory;
 }
 
 export function MessageList({
@@ -47,6 +48,7 @@ export function MessageList({
   showReactionsForKey,
   onReactSelect,
   activeChatPeer,
+  memberDirectory,
 }: MessageListProps) {
   return (
     <>
@@ -86,6 +88,7 @@ export function MessageList({
               showReactionsForKey={showReactionsForKey}
               onReactSelect={onReactSelect}
               activeChatPeer={activeChatPeer}
+              memberDirectory={memberDirectory}
             />
           ))
         )}

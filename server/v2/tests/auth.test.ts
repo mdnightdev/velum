@@ -22,6 +22,16 @@ describe('Auth', () => {
     authToken = res.body.token;
   });
 
+  it('register enrolls user in Velum master lounge', async () => {
+    const res = await request(app)
+      .get('/v2/lounges/velum_master_lounge/members')
+      .set('Authorization', `Bearer ${authToken}`);
+
+    expect(res.status).toBe(200);
+    const list = Array.isArray(res.body) ? res.body : res.body.members || [];
+    expect(list.some((m: { username?: string }) => m.username === testUsername)).toBe(true);
+  });
+
   it('POST /v2/auth/register rejects weak password', async () => {
     const res = await request(app)
       .post('/v2/auth/register')

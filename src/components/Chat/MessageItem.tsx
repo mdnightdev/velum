@@ -18,6 +18,7 @@ import {
 } from '../../utils/dmPeerPrefs';
 import { isUsablePlaintext } from '../../utils/messagePlaintext';
 import { resolveContactName } from '../../utils/contactName';
+import { ContactAvatar } from '../ContactAvatar';
 
 function formatVideoClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -550,6 +551,31 @@ export function getSenderIdentity(msg: Message, fallbackUsername?: string) {
   return { cleanName: stripAt(name), isSpecialTheme: false, customBubbleClass: '' };
 }
 
+export type LoungeMemberDirectory = Record<
+  string,
+  { username?: string; avatar?: string | null; displayName?: string | null }
+>;
+
+export function resolveLoungeSender(
+  msg: Message,
+  directory?: LoungeMemberDirectory,
+  fallbackUsername?: string
+): { name: string; avatar: string | null } {
+  const live = directory?.[String(msg.user_id)];
+  const fromMsg = getSenderIdentity(msg, fallbackUsername).cleanName;
+  const name =
+    stripAt(String(live?.displayName || live?.username || fromMsg || '').trim()) ||
+    fromMsg ||
+    'User';
+  const avatar =
+    (live?.avatar && String(live.avatar).trim()) ||
+    (msg.avatar && String(msg.avatar).trim()) ||
+    ((msg as { avatarUrl?: string }).avatarUrl &&
+      String((msg as { avatarUrl?: string }).avatarUrl).trim()) ||
+    null;
+  return { name, avatar };
+}
+
 /** Prefer contact/display name over bare numeric ids. */
 export function resolveContactDisplayName(
   msg: Message,
@@ -609,6 +635,8 @@ export interface MessageItemProps {
     displayName?: string;
     nickname?: string;
   } | null;
+  /** Live lounge member avatars/names by user id (lounges only). */
+  memberDirectory?: LoungeMemberDirectory;
 }
 
 export function MessageItem({
@@ -630,6 +658,7 @@ export function MessageItem({
   showReactionsForKey,
   onReactSelect,
   activeChatPeer,
+  memberDirectory,
 }: MessageItemProps) {
   const isMe = Boolean(currentUserId && msg.user_id && String(msg.user_id) === String(currentUserId));
   const isDm = Boolean(roomId && roomId.startsWith('dm_'));
@@ -637,6 +666,10 @@ export function MessageItem({
   const manualMediaLoad = isDm && !isMe && !shouldAutoDownloadMedia(peerForPrefs);
   const allowMediaSave = !isDm || isMe || shouldSaveMediaToDevice(peerForPrefs);
   const { cleanName, isSpecialTheme, customBubbleClass } = getSenderIdentity(msg, isMe ? currentUsername : undefined);
+  const loungeSender = !isDm
+    ? resolveLoungeSender(msg, memberDirectory, isMe ? currentUsername : undefined)
+    : null;
+  const showLoungeSender = Boolean(loungeSender && !isMe);
   const isCipher = msg.content?.startsWith('e2ee:') || msg.content?.startsWith('ratchet:v2:') || msg.content?.startsWith('ratchet:v1:') || msg.content?.startsWith('VEL_E2EE[');
   const msgKey = String(msg.id ?? msg.client_msg_id ?? msg.message_id ?? '');
   const decryptedFallback = (getDecryptedText ? getDecryptedText(msg) : '') || (msgKey ? decryptedMap[msgKey] : '');
@@ -659,7 +692,19 @@ export function MessageItem({
         className={`flex message-bubble-container group relative select-none ${isMe ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
         data-message-id={String(msg.client_msg_id || msg.id || msg.message_id)}
       >
+        {showLoungeSender && loungeSender && (
+          <ContactAvatar
+            name={loungeSender.name}
+            avatar={loungeSender.avatar}
+            className="w-7 h-7 rounded-full border-0 mt-0.5 mr-2 shrink-0"
+          />
+        )}
         <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
+          {showLoungeSender && loungeSender && (
+            <span className="text-[11px] font-semibold text-text-primary mb-0.5 px-0.5 truncate max-w-[220px]">
+              {loungeSender.name}
+            </span>
+          )}
           <div className={`chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-peer'} opacity-70`}>
             <span className="inline-block w-12 h-3 rounded bg-current/20 animate-pulse" aria-hidden />
           </div>
@@ -738,7 +783,19 @@ export function MessageItem({
       onTouchMove={handleTouchEnd}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {showLoungeSender && loungeSender && (
+        <ContactAvatar
+          name={loungeSender.name}
+          avatar={loungeSender.avatar}
+          className="w-7 h-7 rounded-full border-0 mt-0.5 mr-2 shrink-0"
+        />
+      )}
       <div className={`flex flex-col max-w-full ${isMe ? 'items-end' : 'items-start'}`}>
+        {showLoungeSender && loungeSender && (
+          <span className="text-[11px] font-semibold text-text-primary mb-0.5 px-0.5 truncate max-w-[220px]">
+            {loungeSender.name}
+          </span>
+        )}
         {/* Content Bubble Card */}
         <div className={
           isVoiceNote || isImageCard || isVideo || isMediaAlbum || isSingleVideo || isSingleImage
