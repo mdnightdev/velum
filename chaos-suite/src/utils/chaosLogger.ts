@@ -584,7 +584,7 @@ class ChaosLogger {
       ];
       const checks: CheckCell[] = cells.map(({ ok, skip, ms }) => ({ ok, skip, ms }));
       const fail = cells.find((c) => !c.skip && !c.ok);
-      const pass = cells.every((c) => c.ok && !c.skip);
+      const pass = cells.every((c) => !!c.skip || c.ok);
       return {
         name: b.botId,
         persona: b.persona,

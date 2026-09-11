@@ -138,12 +138,12 @@ const rawApiLimiter = rateLimit({
 });
 
 const authLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (isDevelopment) return next();
+  if (isDevelopment || process.env.DISABLE_RATE_LIMIT === 'true') return next();
   return rawAuthLimiter(req, res, next);
 };
 
 const apiLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (isDevelopment) return next();
+  if (isDevelopment || process.env.DISABLE_RATE_LIMIT === 'true') return next();
   return rawApiLimiter(req, res, next);
 };
 

@@ -808,91 +808,10 @@ export class ChaosAgent {
   /**
    * Create one public lounge with ≥10 sublounges. No messaging.
    */
-  async runCreateLounge(usedTitles: Set<string>): Promise<CreateJoinResult> {
+  async runCreateLounge(_usedTitles: Set<string>): Promise<CreateJoinResult> {
     const username = this.credentials.username;
-    const need = MIN_SUBLOUNGES;
-    const title = pickLoungeTitle(usedTitles);
-    const blurb = pickLoungeBlurb();
-
-    try {
-      if (!this.client.isAuthenticated()) {
-        const login = await this.client.login();
-        chaosLogger.logAction(
-          this.config.agentId,
-          'login',
-          login.success,
-          login.latency || 0,
-          login.error
-        );
-        if (!login.success) {
-          return { ok: false, username, role: 'create', error: login.error };
-        }
-      }
-
-      const created = await this.client.createLounge(title, blurb, false);
-      chaosLogger.logAction(
-        this.config.agentId,
-        'create',
-        created.success,
-        created.latency || 0,
-        created.error
-      );
-      if (!created.success || !created.data) {
-        return {
-          ok: false,
-          username,
-          role: 'create',
-          loungeName: title,
-          error: created.error || 'create failed',
-        };
-      }
-
-      const parent = created.data;
-      const parentRef = this.loungeRef(parent);
-      const subNames = pickSubloungeNames(need);
-      let subsOk = 0;
-
-      for (const sub of subNames) {
-        await this.sleepPlain(80);
-        const r = await this.client.createSublounge(parentRef, sub, '');
-        chaosLogger.logAction(
-          this.config.agentId,
-          `sub:${sub}`,
-          r.success,
-          r.latency || 0,
-          r.error
-        );
-        if (r.success) subsOk++;
-      }
-
-      const ok = subsOk >= need;
-      chaosLogger.logAction(
-        this.config.agentId,
-        'subs',
-        ok,
-        0,
-        `${subsOk}/${need}`
-      );
-      chaosLogger.logAction(this.config.agentId, 'lounge', true, 0, title);
-
-      return {
-        ok,
-        username,
-        role: 'create',
-        loungeName: title,
-        subsOk,
-        subsNeed: need,
-        error: ok ? undefined : `subs ${subsOk}/${need}`,
-      };
-    } catch (e) {
-      return {
-        ok: false,
-        username,
-        role: 'create',
-        loungeName: title,
-        error: e instanceof Error ? e.message : String(e),
-      };
-    }
+    chaosLogger.logAction(this.config.agentId, 'create', false, 0, 'disabled');
+    return { ok: false, username, role: 'create', error: 'lounge creation disabled' };
   }
 
   /**
@@ -1921,13 +1840,13 @@ export class ChaosAgent {
 
     switch (this.config.persona) {
       case 'social':
-        actions.push('sendMessage', 'createLounge', 'joinLounge', 'uploadAvatar');
+        actions.push('sendMessage', 'joinLounge', 'uploadAvatar');
         break;
       case 'casual':
         actions.push('sendMessage', 'joinLounge', 'uploadAvatar', 'createTicket');
         break;
       case 'tech':
-        actions.push('sendMessage', 'createLounge', 'createTicket', 'compromiseAccount');
+        actions.push('sendMessage', 'createTicket', 'compromiseAccount');
         break;
       case 'drama':
         actions.push('reportUser', 'blockUser', 'muteUser', 'sendMessage');
@@ -2056,37 +1975,8 @@ export class ChaosAgent {
   }
 
   private async actionCreateLounge(): Promise<boolean> {
-    const names = ['General Discussion', 'Random Chat', 'Tech Talk', 'Off Topic', 'Community Hub'];
-    const name = names[Math.floor(Math.random() * names.length)] + ` ${Math.floor(Math.random() * 1000)}`;
-    const description = 'A lounge for chatting and hanging out';
-
-    const result = await this.client.createLounge(name, description, false);
-
-    if (!result.success) {
-      return false;
-    }
-
-    if (result.data) {
-      const verifyResult = await this.client.getUserLounges();
-      if (verifyResult.success && verifyResult.data) {
-        const loungeExists = verifyResult.data.lounges.some(lounge =>
-          lounge.name === name || lounge.id === result.data?.id
-        );
-        if (!loungeExists) {
-          chaosLogger.logFailure(
-            this.config.agentId,
-            'createLounge',
-            'API returned success but lounge not found in user lounges',
-            false,
-            false
-          );
-          return false;
-        }
-        this.discoveredLounges.push(result.data);
-      }
-    }
-
-    return true;
+    // Banned: agents must not create lounges.
+    return false;
   }
 
   private async actionJoinLounge(): Promise<boolean> {
@@ -2284,7 +2174,6 @@ export class ChaosAgent {
     const bypassMethods = [
       () => this.client.sendMessage(roomId, 'Bypass attempt 1'),
       () => this.client.joinLounge(roomId),
-      () => this.client.createLounge('Bypass Lounge', 'Trying to bypass restrictions')
     ];
 
     const randomMethod = bypassMethods[Math.floor(Math.random() * bypassMethods.length)];
