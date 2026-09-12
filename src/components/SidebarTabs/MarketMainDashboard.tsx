@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MarketListing, EscrowTransaction } from '../../types';
-import { ShoppingBag, Search, SlidersHorizontal, Plus, Sparkles, Terminal, Code, ShieldCheck, Database, Cpu } from 'lucide-react';
+import { ShoppingBag, Search, SlidersHorizontal, Plus } from 'lucide-react';
 
 import { MarketListingsView } from '../Market/MarketListingsView';
 import { MarketEscrowsView } from '../Market/MarketEscrowsView';
@@ -19,14 +19,82 @@ interface MarketMainDashboardProps {
   isDark?: boolean;
 }
 
-const TECH_CATEGORIES = [
-  'All',
-  'Automation Scripts',
-  'Developer Utilities',
-  'Data Pipelines',
-  'AI Workflows',
-  'Decentralized Protocols'
-];
+const MARKET_CATEGORIES = ['All', 'General', 'Software', 'Services', 'Digital', 'Other'];
+
+function normalizeListing(raw: Record<string, unknown>): MarketListing {
+  const priceRaw = raw.price;
+  const price =
+    typeof priceRaw === 'number'
+      ? priceRaw
+      : parseFloat(String(priceRaw ?? '0')) || 0;
+  return {
+    listing_id: String(raw.listing_id ?? raw.id ?? ''),
+    seller_id: Number(raw.seller_id ?? raw.sellerId ?? 0),
+    seller_username: (raw.seller_username as string) || undefined,
+    title: String(raw.title || ''),
+    description: (raw.description as string) || undefined,
+    price,
+    currency: String(raw.currency || 'EUR').toUpperCase(),
+    category: String(raw.category || 'General'),
+    discount_price:
+      raw.discount_price != null
+        ? Number(raw.discount_price)
+        : raw.discountPrice != null
+          ? Number(raw.discountPrice)
+          : null,
+    status: String(raw.status || 'ACTIVE'),
+    verification_status: (raw.verification_status ||
+      raw.verificationStatus ||
+      (raw.status === 'PENDING_REVIEW' || raw.status === 'REJECTED' ? raw.status : undefined)) as
+      | 'APPROVED'
+      | 'PENDING_REVIEW'
+      | 'REJECTED'
+      | string
+      | undefined,
+    inventory_count:
+      raw.inventory_count != null
+        ? Number(raw.inventory_count)
+        : raw.stock != null
+          ? Number(raw.stock)
+          : undefined,
+    created_at: (raw.created_at || raw.createdAt || new Date().toISOString()) as string | number,
+    average_rating: raw.average_rating != null ? Number(raw.average_rating) : undefined,
+    review_count: raw.review_count != null ? Number(raw.review_count) : undefined,
+  };
+}
+
+function normalizeEscrow(raw: Record<string, unknown>): EscrowTransaction {
+  const amountRaw = raw.amount;
+  const amount =
+    typeof amountRaw === 'number' ? amountRaw : parseFloat(String(amountRaw ?? '0')) || 0;
+  return {
+    transaction_id: String(raw.transaction_id ?? raw.id ?? ''),
+    listing_id: String(raw.listing_id ?? raw.listingId ?? ''),
+    listing_title: (raw.listing_title || raw.listingTitle) as string | undefined,
+    buyer_id: Number(raw.buyer_id ?? raw.buyerId ?? 0),
+    buyer_username: (raw.buyer_username || raw.buyerUsername) as string | undefined,
+    seller_id: Number(raw.seller_id ?? raw.sellerId ?? 0),
+    seller_username: (raw.seller_username || raw.sellerUsername) as string | undefined,
+    amount,
+    currency: String(raw.currency || 'EUR').toUpperCase(),
+    payment_currency: raw.payment_currency
+      ? String(raw.payment_currency).toUpperCase()
+      : raw.paymentCurrency
+        ? String(raw.paymentCurrency).toUpperCase()
+        : undefined,
+    payment_amount:
+      raw.payment_amount != null
+        ? Number(raw.payment_amount)
+        : raw.paymentAmount != null
+          ? Number(raw.paymentAmount)
+          : undefined,
+    status: String(raw.status || 'HELD'),
+    platform_fee: raw.platform_fee != null ? Number(raw.platform_fee) : undefined,
+    payout_amount: raw.payout_amount != null ? Number(raw.payout_amount) : undefined,
+    created_at: (raw.created_at || raw.createdAt || new Date().toISOString()) as string | number,
+    updated_at: (raw.updated_at || raw.updatedAt) as string | number | undefined,
+  };
+}
 
 export default function MarketMainDashboard({
   currentUserId,
@@ -67,25 +135,23 @@ export default function MarketMainDashboard({
       ]);
       if (listingsRes.ok) {
         const lData = await listingsRes.json();
-        if (Array.isArray(lData)) {
-          setListings(lData);
-        } else if (lData && Array.isArray(lData.listings)) {
-          setListings(lData.listings);
-        } else {
-          setListings([]);
-        }
+        const rawList = Array.isArray(lData)
+          ? lData
+          : lData && Array.isArray(lData.listings)
+            ? lData.listings
+            : [];
+        setListings(rawList.map((row: Record<string, unknown>) => normalizeListing(row)));
       } else {
         setListings([]);
       }
       if (escrowsRes.ok) {
         const eData = await escrowsRes.json();
-        if (Array.isArray(eData)) {
-          setEscrows(eData);
-        } else if (eData && Array.isArray(eData.escrows)) {
-          setEscrows(eData.escrows);
-        } else {
-          setEscrows([]);
-        }
+        const rawEscrows = Array.isArray(eData)
+          ? eData
+          : eData && Array.isArray(eData.escrows)
+            ? eData.escrows
+            : [];
+        setEscrows(rawEscrows.map((row: Record<string, unknown>) => normalizeEscrow(row)));
       } else {
         setEscrows([]);
       }
@@ -144,23 +210,8 @@ export default function MarketMainDashboard({
     }
   };
 
-  // Helper to determine category of a listing dynamically (consistent with MarketListingsView)
-  const getListingCategory = (listing: MarketListing) => {
-    const text = (listing.title + ' ' + (listing.description || '')).toLowerCase();
-    if (text.includes('script') || text.includes('automation') || text.includes('cron') || text.includes('job') || text.includes('action')) {
-      return 'Automation Scripts';
-    }
-    if (text.includes('audit') || text.includes('security') || text.includes('scan') || text.includes('protect') || text.includes('firewall')) {
-      return 'Security Audits';
-    }
-    if (text.includes('pipeline') || text.includes('data') || text.includes('sync') || text.includes('db') || text.includes('etl') || text.includes('query')) {
-      return 'Data Pipelines';
-    }
-    if (text.includes('module') || text.includes('lib') || text.includes('package') || text.includes('source') || text.includes('core')) {
-      return 'Source Modules';
-    }
-    return 'Developer Utilities';
-  };
+  // Filter by listing.category (humble labels — no tech jargon buckets)
+  const getListingCategory = (listing: MarketListing) => listing.category || 'General';
 
   // Filter & Sort Logic
   const safeListings = Array.isArray(listings) ? listings : [];
@@ -283,9 +334,9 @@ export default function MarketMainDashboard({
       {mode === 'seller' && (
         <div className="bg-velum-800 border border-velum-600 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 shrink-0">
           <div>
-            <h4 className="text-xs font-semibold text-text-primary">Seller Dashboard</h4>
+            <h4 className="text-xs font-semibold text-text-primary">Your listings</h4>
             <p className="text-xs text-text-secondary mt-0.5">
-              Manage published utilities, tools, and pending escrow transactions.
+              Manage items and open orders.
             </p>
           </div>
           <button
@@ -390,7 +441,7 @@ export default function MarketMainDashboard({
 
           {/* Interactive Category Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none border-b border-velum-600">
-            {TECH_CATEGORIES.map((cat) => (
+            {MARKET_CATEGORIES.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}

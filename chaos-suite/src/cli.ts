@@ -13,6 +13,7 @@ export type ChaosTask =
   | 'auth'
   | 'ws'
   | 'media'
+  | 'market'
   | 'avatar'
   | 'friends'
   | 'live'
@@ -36,6 +37,7 @@ const TASKS: ChaosTask[] = [
   'auth',
   'ws',
   'media',
+  'market',
   'avatar',
   'friends',
   'live',
@@ -110,10 +112,11 @@ Examples:
   npm start -- -u 2 -d 2m -t talk
   npm start -- -2 --2m --talk
   npm start -- -u 4 -d 5m -t avatar
+  npm start -- -u 4 -d 2m -t market
   npm start -- -u 8 -d 10m -t media
   npm start -- -u 2 -d 2m -t talk -g instant,5s,15s,30s
   npm start -- -u 8 -d 1h -t full
-  # full = auth→create→lounge→avatar→friends→talk→media→ws→cues (not spam loop)
+  # full = auth→lounge→avatar→friends→talk→market→media→ws→cues (not spam loop)
 `.trim());
 }
 

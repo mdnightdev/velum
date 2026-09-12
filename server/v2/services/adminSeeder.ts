@@ -9,6 +9,12 @@ import { reserveRepository } from '../repositories/reserveRepository.js';
 import { logger } from '../utils/logger.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { MIN_PUBLIC_USER_ID, TEST_USER_ID_MIN } from '../constants/systemIds.js';
+import {
+  ensureInstitutionalReservesEur,
+  RESERVE_VCB,
+  RESERVE_SENTRY,
+  RESERVE_TRADING,
+} from './institutionalBank.js';
 
 const ADMIN_USERS = [
   {
@@ -32,11 +38,11 @@ let isSeeded = false;
 export async function ensureExchangeRatesSeeded() {
   try {
     await executeWithRetry(async () => {
+      // USD market value of 1 unit — pairs are stored as cross rates; converter pivots via EUR.
       const rawCurrencies = [
-        { code: 'VLM', usdVal: 1.33 }, // Pegged at EUR + 0.25 (EUR is 1.08)
-        { code: 'TWD', usdVal: 0.031 },
-        { code: 'USD', usdVal: 1.0 },
         { code: 'EUR', usdVal: 1.08 },
+        { code: 'VLM', usdVal: 1.33 },
+        { code: 'USD', usdVal: 1.0 },
         { code: 'GBP', usdVal: 1.28 },
         { code: 'JPY', usdVal: 0.0062 },
         { code: 'CAD', usdVal: 0.73 },
@@ -44,12 +50,13 @@ export async function ensureExchangeRatesSeeded() {
         { code: 'CHF', usdVal: 1.11 },
         { code: 'CNY', usdVal: 0.14 },
         { code: 'SGD', usdVal: 0.74 },
-        { code: 'HKD', usdVal: 0.13 }
+        { code: 'HKD', usdVal: 0.13 },
+        { code: 'TWD', usdVal: 0.031 },
       ];
 
       const existing = await db.select().from(exchangeRates).limit(1);
       if (existing.length === 0) {
-        logger.info('[AdminSeeder] Seeding exchange rates database table...');
+        logger.info('[AdminSeeder] Seeding exchange rates (EUR-relative pairs)...');
         const ratesToInsert = [];
         for (const base of rawCurrencies) {
           for (const quote of rawCurrencies) {
@@ -58,7 +65,7 @@ export async function ensureExchangeRatesSeeded() {
               ratesToInsert.push({
                 baseCurrency: base.code,
                 quoteCurrency: quote.code,
-                rate: rateVal.toFixed(6)
+                rate: rateVal.toFixed(6),
               });
             }
           }
@@ -69,6 +76,28 @@ export async function ensureExchangeRatesSeeded() {
     });
   } catch (err) {
     logger.error('[AdminSeeder] Failed to seed exchange rates:', err);
+  }
+}
+
+/** Idempotent: EUR default + unique (user_id, currency). */
+export async function ensureWalletCurrencySchema() {
+  try {
+    await executeWithRetry(async () => {
+      await db.execute(sql`ALTER TABLE wallets ALTER COLUMN currency SET DEFAULT 'EUR'`);
+      await db.execute(sql`
+        DELETE FROM wallets a
+        USING wallets b
+        WHERE a.user_id = b.user_id
+          AND a.currency = b.currency
+          AND a.id > b.id
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS wallets_user_currency_uidx
+        ON wallets (user_id, currency)
+      `);
+    });
+  } catch (err) {
+    logger.error('[AdminSeeder] Failed to ensure wallet currency schema:', err);
   }
 }
 
@@ -149,22 +178,23 @@ export async function ensureReservesSeeded() {
       }
 
       // 2. Ensure standard V2 reserve rows exist with default balances if not migrated
-      const vcb = await reserveRepository.getReserve('Main Account');
+      const vcb = await reserveRepository.getReserve(RESERVE_VCB);
       if (!vcb) {
-        await reserveRepository.updateBalance('Main Account', 0);
-        logger.info('[AdminSeeder] Seeded default central bank reserve: Main Account ($0.00)');
+        await reserveRepository.updateBalance(RESERVE_VCB, 0);
+        logger.info('[AdminSeeder] Seeded VELUM CENTRAL BANK (Main Account) 0.00 EUR');
       }
-      const sb = await reserveRepository.getReserve('Reserve Account');
+      const sb = await reserveRepository.getReserve(RESERVE_SENTRY);
       if (!sb) {
-        await reserveRepository.updateBalance('Reserve Account', 0);
-        logger.info('[AdminSeeder] Seeded default sentry bank reserve: Reserve Account ($0.00)');
+        await reserveRepository.updateBalance(RESERVE_SENTRY, 0);
+        logger.info('[AdminSeeder] Seeded SENTRY BANK (Reserve Account) 0.00 EUR');
       }
-      const escrow = await reserveRepository.getReserve('Trading Account');
+      const escrow = await reserveRepository.getReserve(RESERVE_TRADING);
       if (!escrow) {
-        await reserveRepository.updateBalance('Trading Account', 0);
-        logger.info('[AdminSeeder] Seeded default escrow reserve: Trading Account ($0.00)');
+        await reserveRepository.updateBalance(RESERVE_TRADING, 0);
+        logger.info('[AdminSeeder] Seeded VELUM TRADING ACCOUNT 0.00 EUR');
       }
     });
+    await ensureInstitutionalReservesEur();
   } catch (err) {
     logger.error('[AdminSeeder] Failed to seed/migrate reserves:', err);
   }
@@ -291,7 +321,10 @@ export async function ensureAdminSeeded() {
     });
     
     // Seed exchange rates table
+    await ensureWalletCurrencySchema();
     await ensureExchangeRatesSeeded();
+    const { ensureMarketCurrencySchema } = await import('./marketplaceService.js');
+    await ensureMarketCurrencySchema();
 
     // Seed system reserves table
     await ensureReservesSeeded();

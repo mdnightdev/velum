@@ -8,6 +8,14 @@ bankRouter.get('/wallet', authMiddleware, (req, res, next) => {
   bankController.getWallet(req, res).catch(next);
 });
 
+bankRouter.get('/wallets', authMiddleware, (req, res, next) => {
+  bankController.getWallets(req, res).catch(next);
+});
+
+bankRouter.post('/convert', authMiddleware, (req, res, next) => {
+  bankController.convert(req, res).catch(next);
+});
+
 bankRouter.get('/history', authMiddleware, (req, res, next) => {
   bankController.getHistory(req, res).catch(next);
 });

@@ -132,7 +132,15 @@ export class VelumApiClient {
       const result: VelumApiResponse<T> = {
         success: response.ok,
         data: response.ok ? (responseData as T) : undefined,
-        error: response.ok ? undefined : (responseData.error || response.statusText),
+        error: response.ok
+          ? undefined
+          : String(
+              responseData.error ||
+                responseData.message ||
+                responseData.details ||
+                response.statusText ||
+                'request failed'
+            ),
         statusCode: response.status,
         latency
       };
@@ -560,6 +568,74 @@ export class VelumApiClient {
     return this.request('/tickets', {
       method: 'POST',
       body: JSON.stringify({ reason, issueType: description })
+    });
+  }
+
+  async walletDeposit(amount: number, currency = 'EUR'): Promise<VelumApiResponse> {
+    return this.request('/payments/wallet-deposit', {
+      method: 'POST',
+      body: JSON.stringify({ amount: String(amount), currency, source: 'chaos' }),
+    });
+  }
+
+  async convertCurrency(
+    fromCurrency: string,
+    toCurrency: string,
+    amount: number
+  ): Promise<VelumApiResponse> {
+    return this.request('/bank/convert', {
+      method: 'POST',
+      body: JSON.stringify({
+        fromCurrency,
+        toCurrency,
+        amount: amount.toFixed(2),
+      }),
+    });
+  }
+
+  async createListing(input: {
+    title: string;
+    description: string;
+    price: number;
+    currency?: string;
+    category?: string;
+  }): Promise<VelumApiResponse<{ listing?: { id: number; currency?: string; price?: string } }>> {
+    return this.request('/marketplace/listings', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: input.title,
+        description: input.description,
+        price: input.price,
+        currency: input.currency || 'EUR',
+        category: input.category || 'General',
+        stock: 5,
+        digitalDelivery: true,
+        digitalPayload: `CHAOS-KEY-${Date.now()}`,
+      }),
+    });
+  }
+
+  async listListings(): Promise<VelumApiResponse<{ listings?: Array<Record<string, unknown>> }>> {
+    return this.request('/marketplace/listings', { method: 'GET' });
+  }
+
+  async purchaseListing(
+    listingId: number | string,
+    payCurrency?: string
+  ): Promise<VelumApiResponse<{ escrow?: { id: number } }>> {
+    return this.request(`/marketplace/listings/${listingId}/purchase`, {
+      method: 'POST',
+      body: JSON.stringify(payCurrency ? { payCurrency } : {}),
+    });
+  }
+
+  async escrowAction(
+    transactionId: string | number,
+    action: 'RELEASE' | 'REFUND' | 'DISPUTE'
+  ): Promise<VelumApiResponse> {
+    return this.request('/marketplace/escrow/action', {
+      method: 'POST',
+      body: JSON.stringify({ transactionId: String(transactionId), action }),
     });
   }
 

@@ -19,6 +19,8 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState<'EUR' | 'VLM'>('EUR');
+  const [category, setCategory] = useState('General');
   const [discountAmount, setDiscountAmount] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [aspectRatio, setAspectRatio] = useState('16:9');
@@ -57,15 +59,6 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
 
     try {
       const sId = fetchSessionId();
-      
-      // Map SKUs to cent-based objects for the server
-      const formattedSkus = skus.map(s => ({
-        attribute_name: s.attribute_name,
-        attribute_value: s.attribute_value,
-        additional_cost_cents: Math.round((parseFloat(s.additional_cost) || 0) * 100),
-        inventory_count: parseInt(s.inventory_count, 10) || 0,
-        file_payload_path: s.file_payload_path
-      }));
 
       const res = await fetch('/v2/marketplace/listings', {
         method: 'POST',
@@ -75,22 +68,18 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
         },
         body: JSON.stringify({
           title,
-          description,
+          description: description || 'Listed on Velum market.',
           price: parseFloat(price),
-          discount_price: discountAmount ? (parseFloat(price) - parseFloat(discountAmount)) : undefined,
-          sku_variants: formattedSkus,
-          media_list: mediaUrl.trim() ? [{
-            url: mediaUrl,
-            is_banner: true,
-            display_order: parseInt(displayOrder) || 1,
-            file_size: 409600,
-            aspect_ratio: aspectRatio
-          }] : []
+          currency,
+          category,
+          stock: 1,
+          digitalDelivery: false,
         })
       });
 
       if (res.ok) {
-        const created: MarketListing = await res.json();
+        const data = await res.json();
+        const created = (data.listing || data) as MarketListing;
         onSuccess(created);
       } else {
         const errData = await res.json();
@@ -146,7 +135,7 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">Base Price ($)</label>
+            <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">Price</label>
             <input
               type="number"
               step="0.01"
@@ -157,15 +146,29 @@ export function ListingCreator({ onSuccess, onCancel, fetchSessionId }: ListingC
             />
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">Discount ($ off)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={discountAmount}
-              onChange={(e) => setDiscountAmount(e.target.value)}
+            <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">Currency</label>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value as 'EUR' | 'VLM')}
               className="w-full bg-black/40 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white focus:border-accent focus:outline-none"
-            />
+            >
+              <option value="EUR">EUR</option>
+              <option value="VLM">VLM</option>
+            </select>
           </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-[9px] uppercase tracking-wider font-bold text-text-secondary font-mono">Category</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full bg-black/40 border border-white-5 rounded-xl px-4 py-2.5 text-xs text-white focus:border-accent focus:outline-none"
+          >
+            {['General', 'Software', 'Services', 'Digital', 'Other'].map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
 
         {/* Media parameters */}

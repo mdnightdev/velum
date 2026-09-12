@@ -4,6 +4,7 @@ export const createListingSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(128, 'Title cannot exceed 128 characters'),
   description: z.string().min(10, 'Description must be at least 10 characters').max(4096, 'Description too long'),
   price: z.number().positive('Price must be greater than zero'),
+  currency: z.enum(['EUR', 'VLM']).optional().default('EUR'),
   category: z.string().min(1, 'Category is required'),
   tags: z.array(z.string()).optional().default([]),
   images: z.array(z.string().url('Invalid image URL')).optional().default([]),

@@ -383,6 +383,8 @@ export interface MarketListing {
   title: string;
   description?: string;
   price: number;
+  currency?: string;
+  category?: string;
   discount_price?: number | null;
   status: string;
   verification_status?: 'APPROVED' | 'PENDING_REVIEW' | 'REJECTED' | string;
@@ -397,11 +399,15 @@ export interface MarketListing {
 export interface EscrowTransaction {
   transaction_id: string;
   listing_id: string;
+  listing_title?: string;
   buyer_id: number;
   buyer_username?: string;
   seller_id: number;
   seller_username?: string;
   amount: number;
+  currency?: string;
+  payment_currency?: string;
+  payment_amount?: number;
   status: string;
   coupon_applied?: string | null;
   sku_variant_id?: string | null;

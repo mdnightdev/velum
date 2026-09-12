@@ -438,6 +438,40 @@ class ChaosLogger {
     });
   }
 
+  buildMarketRows(
+    order?: string[],
+    results?: Array<{
+      username: string;
+      ok: boolean;
+      role: string;
+      listingId?: number;
+      escrowId?: number;
+      currency?: string;
+      payCurrency?: string;
+      error?: string;
+    }>
+  ): AgentRow[] {
+    const byName = new Map((results || []).map((r) => [r.username, r]));
+    const headers = ['AUTH', 'FUND', 'LIST/BUY', 'RELEASE'];
+    return this.botsInOrder(order).map((b) => {
+      const r = byName.get(b.botId);
+      const auth = checkFrom(b.actions, ['relogin', 'login', 'register']);
+      const fund = checkFrom(b.actions, ['deposit', 'convert']);
+      const trade = checkFrom(b.actions, ['list', 'purchase']);
+      const release = checkFrom(b.actions, ['release']);
+      const roleNote = r?.role === 'seller' ? 'list' : r?.role === 'buyer' ? 'buy' : '';
+      return {
+        name: b.botId,
+        persona: `${b.persona}${roleNote ? `/${roleNote}` : ''}`,
+        headers,
+        checks: [auth, fund, trade, release],
+        avgMs: this.avgMs(b),
+        pass: r?.ok ?? false,
+        error: r?.error || [...b.actions].reverse().find((a) => !a.ok)?.error,
+      };
+    });
+  }
+
   buildMediaRows(
     order?: string[],
     results?: Array<{
@@ -545,6 +579,7 @@ class ChaosLogger {
     avatars?: Array<{ username: string; ok: boolean; error?: string }>,
     friends?: Array<{ username: string; ok: boolean; error?: string }>,
     sessions?: Array<{ username: string; ok: boolean; error?: string }>,
+    market?: Array<{ username: string; ok: boolean; error?: string }>,
     media?: Array<{ username: string; ok: boolean; error?: string }>,
     ws?: Array<{ username: string; ok: boolean; error?: string }>,
     cues?: Array<{ username: string; ok: boolean; error?: string }>
@@ -565,6 +600,7 @@ class ChaosLogger {
       'AVATAR',
       'FRIENDS',
       'TALK',
+      'MARKET',
       'MEDIA',
       'WS',
       'CUES',
@@ -578,6 +614,7 @@ class ChaosLogger {
         mapOk(avatars, b.botId),
         mapOk(friends, b.botId),
         mapOk(sessions, b.botId),
+        mapOk(market, b.botId),
         mapOk(media, b.botId),
         mapOk(ws, b.botId),
         mapOk(cues, b.botId),
@@ -642,6 +679,7 @@ class ChaosLogger {
       | 'friends'
       | 'avatar'
       | 'media'
+      | 'market'
       | 'ws'
       | 'cues'
       | 'full' = 'auth',
@@ -721,6 +759,16 @@ class ChaosLogger {
       username: string;
       ok: boolean;
       error?: string;
+    }>,
+    market?: Array<{
+      username: string;
+      ok: boolean;
+      role?: string;
+      listingId?: number;
+      escrowId?: number;
+      currency?: string;
+      payCurrency?: string;
+      error?: string;
     }>
   ): AgentRow[] {
     if (!this.runDir) {
@@ -759,6 +807,7 @@ class ChaosLogger {
             avatars,
             friends,
             sessions,
+            market,
             media,
             ws,
             cues
@@ -769,17 +818,19 @@ class ChaosLogger {
             ? this.buildWsRows(agentOrder, ws)
             : kind === 'media'
               ? this.buildMediaRows(agentOrder, media)
-              : kind === 'avatar'
-                ? this.buildAvatarRows(agentOrder, avatars)
-                : kind === 'friends'
-                  ? this.buildFriendRows(agentOrder, friends)
-                  : kind === 'create'
-                    ? this.buildCreateRows(agentOrder, createJoin)
-                    : kind === 'live'
-                      ? this.buildLiveRows(agentOrder, sessions)
-                      : kind === 'lounge'
-                        ? this.buildLoungeRows(agentOrder)
-                        : this.buildAuthRows(agentOrder);
+              : kind === 'market'
+                ? this.buildMarketRows(agentOrder, market)
+                : kind === 'avatar'
+                  ? this.buildAvatarRows(agentOrder, avatars)
+                  : kind === 'friends'
+                    ? this.buildFriendRows(agentOrder, friends)
+                    : kind === 'create'
+                      ? this.buildCreateRows(agentOrder, createJoin)
+                      : kind === 'live'
+                        ? this.buildLiveRows(agentOrder, sessions)
+                        : kind === 'lounge'
+                          ? this.buildLoungeRows(agentOrder)
+                          : this.buildAuthRows(agentOrder);
     fs.writeFileSync(path.join(dir, 'summary.txt'), this.formatSummaryText(rows));
 
     this.closeRun();

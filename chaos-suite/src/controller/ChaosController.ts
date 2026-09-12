@@ -6,6 +6,7 @@ import {
   type CueGateResult,
   type FriendGateResult,
   type LoungeGateResult,
+  type MarketGateResult,
   type MediaGateResult,
   type SessionResult,
   type WsGateResult,
@@ -38,6 +39,7 @@ interface ChaosConfig {
   friendsOnly?: boolean;
   avatarOnly?: boolean;
   mediaOnly?: boolean;
+  marketOnly?: boolean;
   wsOnly?: boolean;
   cuesOnly?: boolean;
   humanTalkOnly?: boolean;
@@ -59,6 +61,7 @@ const DEFAULT_CONFIG: ChaosConfig = {
   friendsOnly: false,
   avatarOnly: false,
   mediaOnly: false,
+  marketOnly: false,
   wsOnly: false,
   cuesOnly: false,
   humanTalkOnly: false,
@@ -90,6 +93,7 @@ export class ChaosController {
     | 'friends'
     | 'avatar'
     | 'media'
+    | 'market'
     | 'ws'
     | 'cues'
     | 'full' = 'cues';
@@ -100,6 +104,7 @@ export class ChaosController {
   private friendResults: FriendGateResult[] = [];
   private avatarResults: AvatarGateResult[] = [];
   private mediaResults: MediaGateResult[] = [];
+  private marketResults: MarketGateResult[] = [];
   private wsResults: WsGateResult[] = [];
   private cueResults: CueGateResult[] = [];
 
@@ -117,6 +122,8 @@ export class ChaosController {
       config.avatarOnly !== undefined ? !!config.avatarOnly : DEFAULT_CONFIG.avatarOnly!;
     merged.mediaOnly =
       config.mediaOnly !== undefined ? !!config.mediaOnly : DEFAULT_CONFIG.mediaOnly!;
+    merged.marketOnly =
+      config.marketOnly !== undefined ? !!config.marketOnly : DEFAULT_CONFIG.marketOnly!;
     merged.wsOnly = config.wsOnly !== undefined ? !!config.wsOnly : DEFAULT_CONFIG.wsOnly!;
     merged.cuesOnly = config.cuesOnly !== undefined ? !!config.cuesOnly : DEFAULT_CONFIG.cuesOnly!;
     merged.humanTalkOnly =
@@ -125,7 +132,12 @@ export class ChaosController {
       Array.isArray(config.talkGapsMs) && config.talkGapsMs.length
         ? config.talkGapsMs.map((n) => Math.max(0, Math.floor(Number(n)) || 0))
         : [...(DEFAULT_CONFIG.talkGapsMs || [0, 5000, 15000, 30000])];
-    merged.creatorCount =
+    if (merged.marketOnly) {
+      merged.personaDistribution = {
+        market: Math.max(1, Math.ceil(merged.agentCount / 2)),
+        lowballer_hustler: Math.max(1, Math.floor(merged.agentCount / 2)),
+      };
+    }    merged.creatorCount =
       typeof config.creatorCount === 'number'
         ? Math.max(1, config.creatorCount)
         : DEFAULT_CONFIG.creatorCount!;
@@ -153,6 +165,7 @@ export class ChaosController {
       !this.config.cuesOnly &&
       !this.config.wsOnly &&
       !this.config.mediaOnly &&
+      !this.config.marketOnly &&
       !this.config.avatarOnly &&
       !this.config.friendsOnly &&
       !this.config.liveOnly &&
@@ -166,6 +179,7 @@ export class ChaosController {
     if (this.config.cuesOnly) return 'cues';
     if (this.config.wsOnly) return 'ws';
     if (this.config.mediaOnly) return 'media';
+    if (this.config.marketOnly) return 'market';
     if (this.config.avatarOnly) return 'avatar';
     if (this.config.friendsOnly) return 'friends';
     if (this.config.liveOnly) return 'live';
@@ -184,15 +198,17 @@ export class ChaosController {
             ? 'ws'
             : this.config.mediaOnly
               ? 'media'
-              : this.config.avatarOnly
-                ? 'avatar'
-                : this.config.friendsOnly
-                  ? 'friends'
-                  : this.config.liveOnly
-                    ? 'live'
-                    : this.config.loungeOnly
-                      ? 'create'
-                      : 'full';
+              : this.config.marketOnly
+                ? 'market'
+                : this.config.avatarOnly
+                  ? 'avatar'
+                  : this.config.friendsOnly
+                    ? 'friends'
+                    : this.config.liveOnly
+                      ? 'live'
+                      : this.config.loungeOnly
+                        ? 'create'
+                        : 'full';
     const runDir = chaosLogger.beginRun(this.kindLabel());
     term.header({
       count: this.config.agentCount,
@@ -482,6 +498,75 @@ export class ChaosController {
     }
 
     this.avatarResults = results;
+    this.runOrder = results.map((r) => r.username);
+    this.isRunning = false;
+    return results.every((r) => r.ok);
+  }
+
+  /**
+   * Pair agents as seller/buyer. EUR and VLM listings; lowballer pays cross-currency when possible.
+   */
+  async runMarketGate(): Promise<boolean> {
+    this.gateKind = 'market';
+    this.isRunning = true;
+    const agents = Array.from(this.agents.values());
+    term.line(`market  list+buy+release  agents=${agents.length}  pairs=${Math.floor(agents.length / 2)}`);
+
+    const results: MarketGateResult[] = [];
+    let pairIdx = 0;
+    for (let i = 0; i + 1 < agents.length; i += 2) {
+      const seller = agents[i];
+      const buyer = agents[i + 1];
+      const listCurrency: 'EUR' | 'VLM' = pairIdx % 2 === 0 ? 'EUR' : 'VLM';
+      const buyerPersona = buyer.getPersona() || '';
+      const crossPay =
+        buyerPersona === 'lowballer_hustler' || pairIdx % 2 === 1
+          ? listCurrency === 'EUR'
+            ? 'VLM'
+            : 'EUR'
+          : listCurrency;
+      const price = listCurrency === 'EUR' ? 12.5 : 40;
+
+      await this.sleep(150);
+      const sell = await seller.runMarketSellerGate({ currency: listCurrency, price });
+      results.push(sell);
+      if (!sell.ok) {
+        term.fail(sell.username, sell.error || 'sell');
+        results.push({
+          ok: false,
+          username: buyer.getUsername(),
+          role: 'buyer',
+          error: 'seller failed',
+        });
+        pairIdx++;
+        term.progress(results.length, agents.length, results.filter((x) => !x.ok).length);
+        continue;
+      }
+
+      await this.sleep(150);
+      const buy = await buyer.runMarketBuyerGate({
+        listingId: sell.listingId!,
+        payCurrency: crossPay,
+      });
+      results.push(buy);
+      if (!buy.ok) term.fail(buy.username, buy.error || 'buy');
+      else if (this.config.verboseTerminal) {
+        term.line(
+          `ok  ${sell.username}→${buy.username}  ${listCurrency} pay=${crossPay} escrow=${buy.escrowId}`
+        );
+      }
+      pairIdx++;
+      term.progress(results.length, agents.length, results.filter((x) => !x.ok).length);
+    }
+
+    if (agents.length % 2 === 1) {
+      const solo = agents[agents.length - 1];
+      const sell = await solo.runMarketSellerGate({ currency: 'EUR', price: 10 });
+      results.push(sell);
+      if (!sell.ok) term.fail(sell.username, sell.error || 'solo sell');
+    }
+
+    this.marketResults = results;
     this.runOrder = results.map((r) => r.username);
     this.isRunning = false;
     return results.every((r) => r.ok);
@@ -867,7 +952,7 @@ export class ChaosController {
   async runFullPipeline(): Promise<boolean> {
     this.gateKind = 'full';
     term.line(
-      'full  auth → lounge → avatar → friends → talk → media → ws → cues  (create disabled)'
+      'full  auth → lounge → avatar → friends → talk → market → media → ws → cues  (create disabled)'
     );
 
     const stages: Array<{ name: string; ok: boolean }> = [];
@@ -885,6 +970,7 @@ export class ChaosController {
     await runStage('avatar', () => this.runAvatarGate());
     await runStage('friends', () => this.runFriendGate());
     await runStage('talk', () => this.runHumanTalkGate());
+    await runStage('market', () => this.runMarketGate());
     await runStage('media', () => this.runMediaGate());
     await runStage('ws', () => this.runWsGate());
     await runStage('cues', () => this.runCueGate());
@@ -948,6 +1034,15 @@ export class ChaosController {
       return;
     }
 
+    if (this.config.marketOnly) {
+      if (!(await this.runAuthGate())) {
+        process.exitCode = 1;
+        return;
+      }
+      if (!(await this.runMarketGate())) process.exitCode = 1;
+      return;
+    }
+
     if (this.config.friendsOnly) {
       if (!(await this.runAuthGate())) {
         process.exitCode = 1;
@@ -1007,7 +1102,8 @@ export class ChaosController {
       this.wsResults,
       this.cueResults,
       this.authResults,
-      this.loungeResults
+      this.loungeResults,
+      this.marketResults
     );
     const runDir = chaosLogger.getRunDir();
     const rel = runDir ? path.relative(process.cwd(), runDir) : 'chaos-logs/';

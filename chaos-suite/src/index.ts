@@ -27,6 +27,7 @@ function taskFlags(task: ChaosTask | undefined): Record<string, boolean> {
     cuesOnly: false,
     wsOnly: false,
     mediaOnly: false,
+    marketOnly: false,
     avatarOnly: false,
     friendsOnly: false,
     loungeOnly: false,
@@ -42,6 +43,8 @@ function taskFlags(task: ChaosTask | undefined): Record<string, boolean> {
       return { ...off, wsOnly: true };
     case 'media':
       return { ...off, mediaOnly: true };
+    case 'market':
+      return { ...off, marketOnly: true };
     case 'avatar':
       return { ...off, avatarOnly: true };
     case 'friends':
@@ -84,7 +87,7 @@ async function main() {
     (typeof fileConfig.duration === 'number' ? fileConfig.duration : 120_000);
 
   if (!cli.task && (cli.users != null || cli.durationMs != null)) {
-    console.error('missing -t / --task  (talk | avatar | auth | ws | media | friends | live | cues | create | full)');
+    console.error('missing -t / --task  (talk | avatar | auth | ws | media | market | friends | live | cues | create | full)');
     process.exit(2);
   }
 

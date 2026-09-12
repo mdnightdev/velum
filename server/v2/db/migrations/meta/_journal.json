@@ -29,6 +29,27 @@
       "when": 1789052400000,
       "tag": "0004_listing_moderation_hold",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789574400000,
+      "tag": "0005_wallets_user_currency_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789660800000,
+      "tag": "0006_reserves_currency_eur",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789747200000,
+      "tag": "0007_market_listing_escrow_currency",
+      "breakpoints": true
     }
   ]
 }

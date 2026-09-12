@@ -202,8 +202,8 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
       
       {/* KPI Ribbon */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-4 shrink-0">
-         <KpiCard title="Total Liquidity" value={`NT$ ${totalLiquidity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="Available Balance" />
-         <KpiCard title="24H Volume" value={`NT$ ${volume24h.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle={`${recentTxs.length} Transactions`} />
+         <KpiCard title="Total Liquidity" value={`€ ${totalLiquidity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="EUR + VLM + reserves" />
+         <KpiCard title="24H Volume" value={`€ ${volume24h.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle={`${recentTxs.length} Transactions`} />
          <KpiCard title="Total Accounts" value={bankAccounts.length.toString()} subtitle={`${frozenCount} Frozen`} />
          <KpiCard title="Frozen Accounts" value={frozenCount.toString()} subtitle={frozenCount > 0 ? "Requires Attention" : "All Operational"} alert={frozenCount > 0} />
       </div>
@@ -256,8 +256,32 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
                           {formatAccountId(acc.account_id)}
                         </td>
                         <td className="px-6 py-5 text-right font-mono text-text-primary font-medium text-[15px]">
-                          <span className="text-text-secondary font-sans font-normal text-xs mr-2">NT$</span>
-                          {(acc.balance_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {acc.currency === 'VLM' ? (
+                            <>
+                              {(acc.balance_cents / 100).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                              <span className="text-text-secondary font-sans font-normal text-xs ml-1">
+                                VLM
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-text-secondary font-sans font-normal text-xs mr-2">
+                                €
+                              </span>
+                              {(acc.balance_cents / 100).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                              {acc.currency && acc.currency !== 'EUR' ? (
+                                <span className="text-text-secondary font-sans font-normal text-[10px] ml-1">
+                                  {acc.currency}
+                                </span>
+                              ) : null}
+                            </>
+                          )}
                         </td>
                         <td className="px-6 py-5 text-center">
                           {acc.status === 'frozen' ? (
@@ -329,7 +353,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
                               {isDebit ? <ArrowDownRight className="w-4 h-4 opacity-70" /> : <ArrowUpRight className="w-4 h-4 opacity-70" />}
                               <span>{amountSign} {(tx.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
-                            <div className="text-text-secondary font-sans font-normal text-[10px] uppercase tracking-widest mt-1">NT$ Settled</div>
+                            <div className="text-text-secondary font-sans font-normal text-[10px] uppercase tracking-widest mt-1">EUR Settled</div>
                           </td>
                         </tr>
                       );
@@ -367,7 +391,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
                           USR-{req.user_id}
                         </td>
                         <td className="px-6 py-5 text-right font-mono font-medium text-[15px] text-text-primary">
-                          <span className="text-text-secondary font-sans font-normal text-xs mr-2">NT$</span>
+                          <span className="text-text-secondary font-sans font-normal text-xs mr-2">€</span>
                           {(req.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                         <td className="px-6 py-5 text-center">
@@ -553,13 +577,13 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
                   <DetailRow label="Routing Number" value={selectedAccount.routing_number} mono />
                   <DetailRow label="Account Number" value={selectedAccount.account_number} mono />
                   <DetailRow label="Beneficiary" value={selectedAccount.owner_name} />
-                  <DetailRow label="Currency" value="New Taiwan Dollar (NT$)" />
+                  <DetailRow label="Currency" value="Euro (EUR)" />
                 </div>
                 
                 <div className="mt-8 pt-6 border-t border-white-5 bg-white-2 -mx-6 px-6 -mb-6 pb-6 rounded-b-xl">
                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-text-secondary mb-3">Available Balance</div>
                   <div className="text-3xl text-text-primary font-mono tracking-tight font-medium mb-6">
-                    <span className="text-text-secondary font-sans text-sm mr-2 font-normal">NT$</span>
+                    <span className="text-text-secondary font-sans text-sm mr-2 font-normal">€</span>
                     {(selectedAccount.balance_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   
@@ -606,7 +630,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-text-secondary mb-3">Settlement Amount</div>
                   <div className={`text-3xl font-mono tracking-tight font-medium ${selectedTx.type === 'withdrawal' || selectedTx.type === 'escrow_hold' ? 'text-status-dnd' : 'text-status-online'}`}>
                     {(selectedTx.type === 'withdrawal' || selectedTx.type === 'escrow_hold') ? '-' : '+'}
-                    <span className="text-text-secondary font-sans text-sm mx-2 font-normal">NT$</span>
+                    <span className="text-text-secondary font-sans text-sm mx-2 font-normal">€</span>
                     {(selectedTx.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   
@@ -647,7 +671,7 @@ export default function AdminBank({ adminRole, adminFetch }: AdminBankProps) {
                 <div className="mt-8 pt-6 border-t border-white-5 bg-white-2 -mx-6 px-6 -mb-6 pb-6 rounded-b-xl">
                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-text-secondary mb-3">Amount</div>
                   <div className={`text-3xl font-mono tracking-tight font-medium ${selectedWithdrawal.status === 'PENDING_REVIEW' ? 'text-accent' : 'text-text-primary'}`}>
-                    <span className="text-text-secondary font-sans text-sm mr-2 font-normal">NT$</span>
+                    <span className="text-text-secondary font-sans text-sm mr-2 font-normal">€</span>
                     {(selectedWithdrawal.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   

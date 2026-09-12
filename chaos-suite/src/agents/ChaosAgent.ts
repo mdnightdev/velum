@@ -104,6 +104,17 @@ export interface AvatarGateResult {
   error?: string;
 }
 
+export interface MarketGateResult {
+  ok: boolean;
+  username: string;
+  role: 'seller' | 'buyer';
+  listingId?: number;
+  escrowId?: number;
+  currency?: string;
+  payCurrency?: string;
+  error?: string;
+}
+
 export interface MediaGateResult {
   ok: boolean;
   username: string;
@@ -1290,6 +1301,216 @@ export class ChaosAgent {
   }
 
   /**
+   * Seller: fund EUR wallet (dev deposit), create EUR|VLM listing.
+   * Buyer: fund → optional convert → purchase → RELEASE escrow.
+   */
+  async runMarketSellerGate(opts: {
+    currency: 'EUR' | 'VLM';
+    price: number;
+  }): Promise<MarketGateResult> {
+    const username = this.credentials.username;
+    const currency = opts.currency;
+    const price = opts.price;
+
+    try {
+      if (!this.client.isAuthenticated()) {
+        const login = await this.client.login();
+        chaosLogger.logAction(
+          this.config.agentId,
+          'login',
+          login.success,
+          login.latency || 0,
+          login.error
+        );
+        if (!login.success) {
+          return { ok: false, username, role: 'seller', error: login.error || 'login failed' };
+        }
+      }
+
+      const dep = await this.client.walletDeposit(200, 'EUR');
+      chaosLogger.logAction(
+        this.config.agentId,
+        'deposit',
+        dep.success,
+        dep.latency || 0,
+        dep.error || '200 EUR'
+      );
+      if (!dep.success) {
+        return { ok: false, username, role: 'seller', error: dep.error || 'deposit failed' };
+      }
+
+      const title = `Chaos ${currency} pack ${this.config.deviceIndex}`;
+      const description =
+        'Digital license pack for chaos market stress. Clean copy for auto-approve.';
+      const created = await this.client.createListing({
+        title,
+        description,
+        price,
+        currency,
+        category: 'General',
+      });
+      const listing = (created.data as { listing?: { id: number; status?: string } } | undefined)
+        ?.listing;
+      const listingId = listing?.id;
+      const held = listing?.status === 'PENDING_REVIEW';
+      chaosLogger.logAction(
+        this.config.agentId,
+        'list',
+        created.success && !!listingId && !held,
+        created.latency || 0,
+        held ? 'held_review' : created.error || `${currency}#${listingId || '?'}`
+      );
+      if (!created.success || !listingId) {
+        return {
+          ok: false,
+          username,
+          role: 'seller',
+          currency,
+          error: created.error || 'create listing failed',
+        };
+      }
+      if (held) {
+        return {
+          ok: false,
+          username,
+          role: 'seller',
+          listingId,
+          currency,
+          error: 'listing held for review',
+        };
+      }
+
+      return { ok: true, username, role: 'seller', listingId, currency };
+    } catch (e) {
+      return {
+        ok: false,
+        username,
+        role: 'seller',
+        currency,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }
+
+  async runMarketBuyerGate(opts: {
+    listingId: number;
+    payCurrency: string;
+    fundEur?: number;
+  }): Promise<MarketGateResult> {
+    const username = this.credentials.username;
+    const payCurrency = opts.payCurrency.toUpperCase();
+    const fundEur = opts.fundEur ?? 500;
+
+    try {
+      if (!this.client.isAuthenticated()) {
+        const login = await this.client.login();
+        chaosLogger.logAction(
+          this.config.agentId,
+          'login',
+          login.success,
+          login.latency || 0,
+          login.error
+        );
+        if (!login.success) {
+          return { ok: false, username, role: 'buyer', error: login.error || 'login failed' };
+        }
+      }
+
+      const dep = await this.client.walletDeposit(fundEur, 'EUR');
+      chaosLogger.logAction(
+        this.config.agentId,
+        'deposit',
+        dep.success,
+        dep.latency || 0,
+        dep.error || `${fundEur} EUR`
+      );
+      if (!dep.success) {
+        return { ok: false, username, role: 'buyer', error: dep.error || 'deposit failed' };
+      }
+
+      if (payCurrency !== 'EUR') {
+        const convertAmt = Math.max(50, Math.floor(fundEur * 0.6));
+        const conv = await this.client.convertCurrency('EUR', payCurrency, convertAmt);
+        chaosLogger.logAction(
+          this.config.agentId,
+          'convert',
+          conv.success,
+          conv.latency || 0,
+          conv.error || `EUR→${payCurrency} ${convertAmt}`
+        );
+        if (!conv.success) {
+          return {
+            ok: false,
+            username,
+            role: 'buyer',
+            payCurrency,
+            error: conv.error || 'convert failed',
+          };
+        }
+      }
+
+      const buy = await this.client.purchaseListing(opts.listingId, payCurrency);
+      const escrow = (buy.data as { escrow?: { id: number } } | undefined)?.escrow;
+      const escrowId = escrow?.id;
+      chaosLogger.logAction(
+        this.config.agentId,
+        'purchase',
+        buy.success && !!escrowId,
+        buy.latency || 0,
+        buy.error || `escrow#${escrowId || '?'}`
+      );
+      if (!buy.success || !escrowId) {
+        return {
+          ok: false,
+          username,
+          role: 'buyer',
+          listingId: opts.listingId,
+          payCurrency,
+          error: buy.error || 'purchase failed',
+        };
+      }
+
+      const rel = await this.client.escrowAction(escrowId, 'RELEASE');
+      chaosLogger.logAction(
+        this.config.agentId,
+        'release',
+        rel.success,
+        rel.latency || 0,
+        rel.error
+      );
+      if (!rel.success) {
+        return {
+          ok: false,
+          username,
+          role: 'buyer',
+          listingId: opts.listingId,
+          escrowId,
+          payCurrency,
+          error: rel.error || 'release failed',
+        };
+      }
+
+      return {
+        ok: true,
+        username,
+        role: 'buyer',
+        listingId: opts.listingId,
+        escrowId,
+        payCurrency,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        username,
+        role: 'buyer',
+        listingId: opts.listingId,
+        payCurrency,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }
+
+  /**
    * Upload one library media file; send media+caption to existing DM contacts
    * and a couple of joined Velum rooms. No avatar change, no friend requests.
    */
@@ -1462,6 +1683,10 @@ export class ChaosAgent {
 
   getUsername(): string {
     return this.credentials.username;
+  }
+
+  getPersona(): string {
+    return String(this.config.persona);
   }
 
   /** Join master + cue room for conversation-cue gate. */

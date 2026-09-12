@@ -13,7 +13,8 @@ export class ReserveRepository {
     if (!current) {
       const created = await tx.insert(reserves).values({
         reserveType,
-        balanceCents: deltaCents
+        balanceCents: deltaCents,
+        currency: 'EUR',
       }).returning();
       return created[0];
     }

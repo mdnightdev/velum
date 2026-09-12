@@ -7,6 +7,8 @@ import NotificationsMainDashboard from './SidebarTabs/NotificationsMainDashboard
 import LoungeMainDashboard from './SidebarTabs/LoungeMainDashboard';
 import LoungeWorkspace from './SidebarTabs/LoungeWorkspace';
 import DirectMainDashboard from './SidebarTabs/DirectMainDashboard';
+import WalletMainDashboard from './SidebarTabs/WalletMainDashboard';
+import MarketMainDashboard from './SidebarTabs/MarketMainDashboard';
 import SettingsDrawer from '../views/UserWorkspace/SettingsDrawer';
 import ProfileCard, { toUserProfileData } from './ProfileCard';
 import PullToRefresh from './PullToRefresh';
@@ -449,14 +451,19 @@ export default function DashboardLayout({
         <main className="flex-1 min-w-0 min-h-0 h-full relative flex flex-col overflow-hidden bg-velum-850 border-none rounded-none text-text-primary">
           <PullToRefresh disabled={(activeCategory === 'rooms' && !!activeLoungeId) || (activeCategory === 'direct' && !!activeChatPeer)}>
           {activeCategory === 'wallet' ? (
-            <div className="flex-1 overflow-hidden relative flex flex-col items-center justify-center gap-2 px-6 text-center">
-              <h1 className="text-lg font-semibold text-text-primary">Wallet</h1>
-              <p className="text-sm text-text-primary">Under development</p>
+            <div className="flex-1 overflow-hidden relative flex flex-col">
+              <WalletMainDashboard
+                currentUserId={user?.userId || 0}
+                isDark={isDark}
+              />
             </div>
           ) : activeCategory === 'market' ? (
-            <div className="flex-1 overflow-hidden relative flex flex-col items-center justify-center gap-2 px-6 text-center">
-              <h1 className="text-lg font-semibold text-text-primary">Market</h1>
-              <p className="text-sm text-text-primary">Under development</p>
+            <div className="flex-1 overflow-hidden relative flex flex-col overflow-y-auto">
+              <MarketMainDashboard
+                currentUserId={user?.userId || 0}
+                currentUserRole={user?.role || 'USER'}
+                isDark={isDark}
+              />
             </div>
           ) : activeCategory === 'tickets' ? (
             <div className="flex-1 overflow-hidden relative flex flex-col">

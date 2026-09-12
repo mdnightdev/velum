@@ -26,6 +26,10 @@ marketRouter.post('/listings/:id/purchase', authMiddleware, (req, res, next) => 
   marketController.purchaseEscrow(req as any, res).catch(next);
 });
 
+marketRouter.get('/escrows', authMiddleware, (req, res, next) => {
+  marketController.getMyEscrows(req, res).catch(next);
+});
+
 marketRouter.post('/escrow/action', authMiddleware, validate({ body: escrowActionSchema }), (req, res, next) => {
   marketController.processEscrowAction(req, res).catch(next);
 });

@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { db } from '../../../server/v2/db/client.js';
 import { users } from '../../../server/v2/db/schema/users.js';
 import { wallets, transactions } from '../../../server/v2/db/schema/wallets.js';
@@ -8,51 +7,102 @@ import { getRedisClient } from '../../../server/v2/db/redis.js';
 import { stateManager } from '../state/stateManager.js';
 import { printTable } from '../table.js';
 import type { CommandContext } from '../types.js';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql, and } from 'drizzle-orm';
+import {
+  ensureInstitutionalReservesEur,
+  institutionalDisplayName,
+  INSTITUTIONAL_CURRENCY,
+} from '../../../server/v2/services/institutionalBank.js';
+import { currencyConverter } from '../../../server/v2/services/currencyConverter.js';
+
+function formatEurCents(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`;
+}
 
 export async function handleBank(ctx: CommandContext): Promise<void> {
   const { sub, rawArgs, resolveUser, logAudit } = ctx;
 
   // 1. Bank Audit Summary
   if (sub === 'audit' || sub === 'bankau') {
-    const allWallets = await db.select().from(wallets).limit(1000);
-    const totalWalletBal = allWallets.reduce((acc, w) => acc + parseFloat(w.balance || '0'), 0);
+    await ensureInstitutionalReservesEur();
+    const nativeWallets = await db
+      .select()
+      .from(wallets)
+      .where(inArray(wallets.currency, ['EUR', 'VLM']))
+      .limit(1000);
+    const eurBal = nativeWallets
+      .filter((w) => w.currency === 'EUR')
+      .reduce((acc, w) => acc + parseFloat(w.balance || '0'), 0);
+    const vlmBal = nativeWallets
+      .filter((w) => w.currency === 'VLM')
+      .reduce((acc, w) => acc + parseFloat(w.balance || '0'), 0);
+
+    const secondary = await db
+      .select()
+      .from(wallets)
+      .where(inArray(wallets.currency, ['USD', 'GBP', 'JPY', 'CNY', 'TWD', 'CAD', 'AUD', 'CHF', 'SGD', 'HKD']))
+      .limit(2000);
+    let secondaryEur = 0;
+    for (const w of secondary) {
+      const major = parseFloat(w.balance || '0');
+      const rate = currencyConverter.getRate(w.currency, 'EUR');
+      if (rate != null) secondaryEur += major * rate;
+    }
+
     const allReserves = await reserveRepository.getAllReserves();
     const txCountRes = await db.select({ count: sql<number>`count(*)` }).from(transactions);
     const txCount = Number(txCountRes[0]?.count ?? 0);
 
     console.log(`[Bank Reconciliation]`);
-    console.log(`Active Wallets: ${allWallets.length} | User Deposits: $${totalWalletBal.toFixed(2)} USDT | Recorded Transactions: ${txCount}`);
+    console.log(
+      `User EUR: €${eurBal.toFixed(2)} | User VLM: ${vlmBal.toFixed(2)} VLM | Secondary→EUR: €${secondaryEur.toFixed(2)} | Txns: ${txCount}`
+    );
     if (allReserves.length > 0) {
-      console.log(`\n[Bank Reserves]`);
-      printTable(allReserves.map(r => ({
-        Bank: r.reserveType,
-        Balance: `$${(r.balanceCents / 100).toFixed(2)}`,
-        Updated: r.updatedAt ? new Date(r.updatedAt).toISOString().replace('T', ' ').substring(0, 19) : '-'
-      })));
+      console.log(`\n[Institutional Reserves — ${INSTITUTIONAL_CURRENCY}]`);
+      printTable(
+        allReserves.map((r) => ({
+          Bank: institutionalDisplayName(r.reserveType),
+          Balance: formatEurCents(r.balanceCents),
+          Currency: r.currency || INSTITUTIONAL_CURRENCY,
+          Updated: r.updatedAt
+            ? new Date(r.updatedAt).toISOString().replace('T', ' ').substring(0, 19)
+            : '-',
+        }))
+      );
     }
-    await logAudit('/bank/audit', 'SYSTEM', 'Reconciled banking summary');
+    await logAudit('/bank/audit', 'SYSTEM', 'Reconciled banking summary (EUR/VLM)');
     return;
   }
 
-  // 2. List Wallets & Bank Balances
+  // 2. List Wallets & Bank Balances (EUR + VLM native)
   if (sub === 'wallets' || sub === 'list' || sub === 'banks' || sub === 'ls') {
-    const allWallets = await db.select().from(wallets).limit(100);
-    printTable(allWallets.map(w => ({
-      ID: w.id,
-      UserID: w.userId,
-      Balance: `${w.balance} ${w.currency}`,
-      Frozen: stateManager.isWalletFrozen(w.id.toString()) ? 'Y' : 'N'
-    })));
-    
+    await ensureInstitutionalReservesEur();
+    const nativeWallets = await db
+      .select()
+      .from(wallets)
+      .where(inArray(wallets.currency, ['EUR', 'VLM']))
+      .limit(200);
+    printTable(
+      nativeWallets.map((w) => ({
+        ID: w.id,
+        UserID: w.userId,
+        Balance: w.currency === 'EUR' ? `€${w.balance}` : `${w.balance} VLM`,
+        Currency: w.currency,
+        Frozen: stateManager.isWalletFrozen(w.id.toString()) ? 'Y' : 'N',
+      }))
+    );
+
     const allReserves = await reserveRepository.getAllReserves();
     if (allReserves.length > 0) {
       console.log();
-      printTable(allReserves.map(r => ({
-        Bank: r.reserveType,
-        Balance: `$${(r.balanceCents / 100).toFixed(2)}`,
-        Updated: r.updatedAt ? new Date(r.updatedAt).toISOString().split('T')[0] : '-'
-      })));
+      printTable(
+        allReserves.map((r) => ({
+          Bank: institutionalDisplayName(r.reserveType),
+          Balance: formatEurCents(r.balanceCents),
+          Currency: r.currency || INSTITUTIONAL_CURRENCY,
+          Updated: r.updatedAt ? new Date(r.updatedAt).toISOString().split('T')[0] : '-',
+        }))
+      );
     }
     return;
   }
@@ -136,8 +186,8 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     if (target === 'c') {
       try {
         const updated = await reserveRepository.updateBalance('Main Account', cents);
-        console.log(`Funded $${(cents / 100).toFixed(2)} to Main Account (${description}). New Balance: $${(((updated?.balanceCents || 0)) / 100).toFixed(2)}.`);
-        await logAudit('/bank/fund', 'Main Account', `Directly funded ${cents} cents (${description})`);
+        console.log(`Funded €${(cents / 100).toFixed(2)} to VELUM CENTRAL BANK (${description}). New Balance: €${(((updated?.balanceCents || 0)) / 100).toFixed(2)}.`);
+        await logAudit('/bank/fund', 'Main Account', `Directly funded ${cents} cents EUR (${description})`);
       } catch (err) {
         console.log(`Central Bank funding failed: ${(err as Error).message}`);
       }
@@ -148,7 +198,7 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     const vcb = await reserveRepository.getReserve('Main Account');
     const availableCents = vcb?.balanceCents || 0;
     if (availableCents < cents) {
-      console.log(`Insufficient funds in Main Account. Available: $${(availableCents / 100).toFixed(2)}, Required: $${(cents / 100).toFixed(2)}.`);
+      console.log(`Insufficient funds in Main Account. Available: €${(availableCents / 100).toFixed(2)}, Required: €${(cents / 100).toFixed(2)}.`);
       return;
     }
 
@@ -157,9 +207,9 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       try {
         const updatedVcb = await reserveRepository.updateBalance('Main Account', -cents);
         const updatedSb = await reserveRepository.updateBalance('Reserve Account', cents);
-        console.log(`Transferred $${(cents / 100).toFixed(2)} from Main Account to Reserve Account (${description}).`);
-        console.log(`Reserve Account Balance: $${(((updatedSb?.balanceCents || 0)) / 100).toFixed(2)} | Main Account Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
-        await logAudit('/bank/fund', 'Reserve Account', `Transferred ${cents} cents from Main Account (${description})`);
+        console.log(`Transferred €${(cents / 100).toFixed(2)} from VELUM CENTRAL BANK to SENTRY BANK (${description}).`);
+        console.log(`SENTRY BANK: €${(((updatedSb?.balanceCents || 0)) / 100).toFixed(2)} | VCB Remaining: €${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
+        await logAudit('/bank/fund', 'Reserve Account', `Transferred ${cents} cents EUR from Main Account (${description})`);
       } catch (err) {
         console.log(`Reserve Account funding failed: ${(err as Error).message}`);
       }
@@ -171,9 +221,9 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       try {
         const updatedVcb = await reserveRepository.updateBalance('Main Account', -cents);
         const updatedTrading = await reserveRepository.updateBalance('Trading Account', cents);
-        console.log(`Transferred $${(cents / 100).toFixed(2)} from Main Account to Trading Account (${description}).`);
-        console.log(`Trading Account Balance: $${(((updatedTrading?.balanceCents || 0)) / 100).toFixed(2)} | Main Account Remaining: $${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
-        await logAudit('/bank/fund', 'Trading Account', `Transferred ${cents} cents from Main Account (${description})`);
+        console.log(`Transferred €${(cents / 100).toFixed(2)} from VELUM CENTRAL BANK to VELUM TRADING ACCOUNT (${description}).`);
+        console.log(`Trading Account: €${(((updatedTrading?.balanceCents || 0)) / 100).toFixed(2)} | VCB Remaining: €${(((updatedVcb?.balanceCents || 0)) / 100).toFixed(2)}`);
+        await logAudit('/bank/fund', 'Trading Account', `Transferred ${cents} cents EUR from Main Account (${description})`);
       } catch (err) {
         console.log(`Trading Account funding failed: ${(err as Error).message}`);
       }
@@ -227,15 +277,14 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
     try {
       await db.transaction(async (tx) => {
         for (const item of resolvedGrants) {
-          // Find or create wallet for user
-          let userWallets = await tx.select().from(wallets).where(eq(wallets.userId, item.user.id)).limit(1);
+          let userWallets = await tx.select().from(wallets).where(and(eq(wallets.userId, item.user.id), eq(wallets.currency, 'EUR'))).limit(1);
           let wallet = userWallets[0];
 
           if (!wallet) {
             const created = await tx.insert(wallets).values({
               userId: item.user.id,
               balance: '0.00',
-              currency: 'USDT'
+              currency: 'EUR'
             }).returning();
             wallet = created[0];
           }
@@ -268,7 +317,7 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
             username: item.user.username,
             amount: item.amount,
             reference: txnRef,
-            newBalance: `${newBal} USDT`
+            newBalance: `€${newBal}`
           });
         }
       });
@@ -287,7 +336,7 @@ export async function handleBank(ctx: CommandContext): Promise<void> {
       console.log(`Grant completed for ${results.length} recipients:`);
       printTable(results.map(r => ({
         Recipient: r.username,
-        Granted: `+${r.amount.toFixed(2)} USDT`,
+        Granted: `+€${r.amount.toFixed(2)}`,
         Reference: r.reference,
         Balance: r.newBalance
       })));

@@ -1,43 +1,24 @@
 import React from 'react';
 import { MarketListing } from '../../types';
-import { ShoppingBag, Star, Terminal, Code, ShieldCheck, Database, Cpu, HelpCircle } from 'lucide-react';
+import { ShoppingBag, Star, Tag } from 'lucide-react';
 
-export const getTechCategoryDetails = (listing: MarketListing) => {
-  const text = (listing.title + ' ' + (listing.description || '')).toLowerCase();
-  if (text.includes('script') || text.includes('automation') || text.includes('cron') || text.includes('job') || text.includes('action')) {
-    return {
-      name: 'Automation Scripts',
-      icon: <Terminal className="w-5 h-5 text-accent" />,
-      bg: 'from-accent/5 to-accent/20 border-accent/10',
-    };
+export function formatListingPrice(amount: number, currency?: string): string {
+  const code = (currency || 'EUR').toUpperCase();
+  if (code === 'VLM') {
+    return `${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} VLM`;
   }
-  if (text.includes('audit') || text.includes('security') || text.includes('scan') || text.includes('protect') || text.includes('firewall')) {
-    return {
-      name: 'Security Audits',
-      icon: <ShieldCheck className="w-5 h-5 text-alert-success" />,
-      bg: 'bg-status-online-bg border-transparent',
-    };
+  try {
+    return new Intl.NumberFormat('en-IE', { style: 'currency', currency: code }).format(Number(amount || 0));
+  } catch {
+    return `${Number(amount || 0).toFixed(2)} ${code}`;
   }
-  if (text.includes('pipeline') || text.includes('data') || text.includes('sync') || text.includes('db') || text.includes('etl') || text.includes('query')) {
-    return {
-      name: 'Data Pipelines',
-      icon: <Database className="w-5 h-5 text-sky-400" />,
-      bg: 'from-sky-500/5 to-sky-500/20 border-sky-500/10',
-    };
-  }
-  if (text.includes('module') || text.includes('lib') || text.includes('package') || text.includes('source') || text.includes('core')) {
-    return {
-      name: 'Source Modules',
-      icon: <Cpu className="w-5 h-5 text-indigo-400" />,
-      bg: 'from-indigo-500/5 to-indigo-500/20 border-indigo-500/10',
-    };
-  }
-  return {
-    name: 'Developer Utilities',
-    icon: <Code className="w-5 h-5 text-status-away" />,
-    bg: 'bg-status-away-bg border-transparent',
-  };
-};
+}
+
+export function listingCategoryLabel(listing: MarketListing): string {
+  const raw = (listing.category || '').trim();
+  if (raw && raw.toLowerCase() !== 'all') return raw;
+  return 'General';
+}
 
 interface MarketListingsViewProps {
   listings: MarketListing[];
@@ -57,9 +38,7 @@ export function MarketListingsView({
   return (
     <div className="space-y-4">
       {loading ? (
-        <div className="text-[10px] text-text-secondary font-mono animate-pulse">
-          Loading...
-        </div>
+        <div className="text-xs text-text-secondary animate-pulse">Loading...</div>
       ) : listings.length === 0 ? (
         <div className="text-xs text-text-secondary bg-velum-800 border border-velum-600 p-6 rounded-xl text-center">
           No active listings.
@@ -70,7 +49,8 @@ export function MarketListingsView({
             const isOwner = Number(listing.seller_id) === currentUserId;
             const hasActiveSale = listing.discount_price !== undefined && listing.discount_price !== null;
             const activeDisplayPrice = hasActiveSale ? listing.discount_price! : listing.price;
-            const cat = getTechCategoryDetails(listing);
+            const category = listingCategoryLabel(listing);
+            const currency = listing.currency || 'EUR';
 
             return (
               <div 
@@ -79,16 +59,13 @@ export function MarketListingsView({
                 className="bg-velum-800 hover:bg-velum-750 border border-velum-600 hover:border-accent/40 rounded-xl p-3.5 flex flex-col justify-between space-y-3 transition-colors cursor-pointer group"
               >
                 <div className="space-y-2.5">
-                  {/* Category-specific icon card */}
-                  <div className={`h-20 rounded-lg bg-gradient-to-br ${cat.bg} border border-velum-600 flex flex-col items-center justify-center relative overflow-hidden shrink-0`}>
-                    <div className="absolute top-2 left-2 text-[9px] text-text-secondary font-medium uppercase">
-                      {cat.name}
-                    </div>
-                    {cat.icon}
+                  <div className="h-16 rounded-lg bg-velum-750 border border-velum-600 flex items-center justify-center gap-2 shrink-0">
+                    <Tag className="w-4 h-4 text-accent" />
+                    <span className="text-xs font-medium text-text-secondary">{category}</span>
                   </div>
 
                   <div className="flex justify-between items-start gap-2">
-                    <div className="space-y-1">
+                    <div className="space-y-1 min-w-0">
                       {listing.verification_status === 'PENDING_REVIEW' && (
                         <span className="text-[9px] uppercase bg-status-away/15 text-status-away px-1.5 py-0.5 rounded leading-none font-medium">
                           Pending
@@ -112,11 +89,11 @@ export function MarketListingsView({
                     <div className="text-right shrink-0">
                       {hasActiveSale && (
                         <span className="text-xs line-through text-text-disabled block font-mono">
-                          ${Number(listing.price || 0).toFixed(2)}
+                          {formatListingPrice(listing.price, currency)}
                         </span>
                       )}
                       <span className="text-xs font-bold font-mono text-accent">
-                        ${Number(activeDisplayPrice || 0).toFixed(2)}
+                        {formatListingPrice(activeDisplayPrice, currency)}
                       </span>
                     </div>
                   </div>
@@ -169,6 +146,7 @@ export function MarketListingsView({
                             : 'bg-accent text-black hover:bg-accent-hover'
                       }`}
                     >
+                      <ShoppingBag className="w-3.5 h-3.5" />
                       <span>
                         {isOwner 
                           ? 'Owned' 
@@ -177,16 +155,12 @@ export function MarketListingsView({
                           : listing.verification_status === 'PENDING_REVIEW' 
                           ? 'Pending' 
                           : listing.verification_status === 'REJECTED' 
-                          ? 'Rejected' 
+                          ? 'Unavailable'
                           : 'Buy'}
                       </span>
                     </button>
                   );
-                })() : (
-                  <div className="w-full text-center py-1.5 text-xs text-text-disabled border border-velum-600 bg-velum-750 rounded-lg">
-                    {listing.status}
-                  </div>
-                )}
+                })() : null}
               </div>
             );
           })}

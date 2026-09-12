@@ -1,10 +1,18 @@
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, or, inArray } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { listings, escrows, type Listing, type NewListing, type Escrow, type NewEscrow } from '../db/schema/index.js';
 import { moderationService } from '../services/moderationService.js';
 import { SystemBot } from '../services/systemBot.js';
 import { BotTemplates } from '../services/botTemplates.js';
 import { users } from '../db/schema/users.js';
+
+export type ListingWithSeller = Listing & { sellerUsername?: string | null };
+
+export type EscrowWithParties = Escrow & {
+  buyerUsername?: string | null;
+  sellerUsername?: string | null;
+  listingTitle?: string | null;
+};
 
 export class MarketRepository {
   async createListing(data: NewListing, tx: any = db): Promise<Listing> {
@@ -68,13 +76,74 @@ export class MarketRepository {
     return results[0] || null;
   }
 
-  async getListings(limit = 50, tx: any = db): Promise<Listing[]> {
-    return tx
-      .select()
+  async getListings(limit = 50, tx: any = db): Promise<ListingWithSeller[]> {
+    const rows = await tx
+      .select({
+        id: listings.id,
+        sellerId: listings.sellerId,
+        title: listings.title,
+        description: listings.description,
+        price: listings.price,
+        currency: listings.currency,
+        category: listings.category,
+        stock: listings.stock,
+        digitalDelivery: listings.digitalDelivery,
+        digitalPayload: listings.digitalPayload,
+        status: listings.status,
+        moderationReason: listings.moderationReason,
+        moderationLane: listings.moderationLane,
+        heldAt: listings.heldAt,
+        createdAt: listings.createdAt,
+        updatedAt: listings.updatedAt,
+        sellerUsername: users.username,
+      })
       .from(listings)
+      .leftJoin(users, eq(listings.sellerId, users.id))
       .where(eq(listings.status, 'ACTIVE'))
       .orderBy(desc(listings.createdAt))
       .limit(limit);
+    return rows as ListingWithSeller[];
+  }
+
+  async listEscrowsForUser(userId: number, limit = 50, tx: any = db): Promise<EscrowWithParties[]> {
+    const rows = await tx
+      .select({
+        id: escrows.id,
+        listingId: escrows.listingId,
+        buyerId: escrows.buyerId,
+        sellerId: escrows.sellerId,
+        amount: escrows.amount,
+        currency: escrows.currency,
+        paymentCurrency: escrows.paymentCurrency,
+        paymentAmount: escrows.paymentAmount,
+        status: escrows.status,
+        createdAt: escrows.createdAt,
+        listingTitle: listings.title,
+        sellerUsername: users.username,
+      })
+      .from(escrows)
+      .leftJoin(listings, eq(escrows.listingId, listings.id))
+      .leftJoin(users, eq(escrows.sellerId, users.id))
+      .where(or(eq(escrows.buyerId, userId), eq(escrows.sellerId, userId)))
+      .orderBy(desc(escrows.createdAt))
+      .limit(limit);
+
+    const buyerIds = [
+      ...new Set((rows as Array<{ buyerId: number }>).map((r) => r.buyerId)),
+    ] as number[];
+    const buyers =
+      buyerIds.length === 0
+        ? ([] as Array<{ id: number; username: string }>)
+        : ((await tx
+            .select({ id: users.id, username: users.username })
+            .from(users)
+            .where(inArray(users.id, buyerIds))) as Array<{ id: number; username: string }>);
+    const buyerMap = new Map(buyers.map((b) => [b.id, b.username]));
+
+    return rows.map((r: (typeof rows)[number]) => ({
+      ...r,
+      buyerUsername: buyerMap.get(r.buyerId) || null,
+    })) as EscrowWithParties[];
   }
 
   async updateListing(id: number, data: Partial<NewListing>, tx: any = db): Promise<Listing | null> {
@@ -133,10 +202,14 @@ export class MarketRepository {
     return results[0] || null;
   }
 
-  async updateEscrowStatus(id: number, status: 'HELD' | 'RELEASED' | 'DISPUTED' | 'REFUNDED', tx: any = db): Promise<Escrow | null> {
+  async updateEscrowStatus(
+    id: number,
+    status: 'HELD' | 'RELEASED' | 'DISPUTED' | 'REFUNDED',
+    tx: any = db
+  ): Promise<Escrow | null> {
     const updated = await tx
       .update(escrows)
-      .set({ status, updatedAt: new Date() })
+      .set({ status })
       .where(eq(escrows.id, id))
       .returning();
     return updated[0] || null;

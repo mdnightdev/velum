@@ -9,6 +9,13 @@ import { cards } from '../db/schema/cards.js';
 import { wallets } from '../db/schema/wallets.js';
 import { eq, and } from 'drizzle-orm';
 import { currencyConverter } from '../services/currencyConverter.js';
+import {
+  ensureInstitutionalLiquidity,
+  RESERVE_VCB,
+  RESERVE_SENTRY,
+  WITHDRAWAL_FEE_PCT,
+  INSTITUTIONAL_CURRENCY,
+} from '../services/institutionalBank.js';
 
 const broadcastUserWalletUpdate = async (userId: number, balance?: string) => {
   try {
@@ -110,7 +117,7 @@ export class PaymentController {
         wallet = await bankRepository.createWallet({
           userId: req.user!.userId,
           balance: '0.00',
-          currency: 'USD'
+          currency: 'EUR'
         }, tx);
       }
       
@@ -169,7 +176,7 @@ export class PaymentController {
         wallet = await bankRepository.createWallet({
           userId: req.user!.userId,
           balance: '0.00',
-          currency: 'USD'
+          currency: 'EUR'
         }, tx);
       }
       
@@ -203,25 +210,26 @@ export class PaymentController {
 
   async recharge(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
-    const { amount_cents, payment_method_id, currency = 'USD' } = req.body;
-    
+    const { amount_cents, payment_method_id } = req.body;
+    const currency = INSTITUTIONAL_CURRENCY;
+
     const parsedAmount = parseInt(amount_cents, 10);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       throw new BadRequestError('Amount must be a positive number in cents.');
     }
-    
+
     const cardIdStr = (payment_method_id || '').replace('card_', '');
     const cardId = parseInt(cardIdStr, 10);
     if (isNaN(cardId)) {
       throw new BadRequestError('Invalid payment method.');
     }
 
-    await ensureReservesSeeded();
-    const vcbReserve = await reserveRepository.getReserve('Main Account');
-    const sbReserve = await reserveRepository.getReserve('Reserve Account');
+    await ensureInstitutionalLiquidity();
+    const vcbReserve = await reserveRepository.getReserve(RESERVE_VCB);
+    const sbReserve = await reserveRepository.getReserve(RESERVE_SENTRY);
 
     if ((vcbReserve?.balanceCents || 0) <= 0 && (sbReserve?.balanceCents || 0) <= 0) {
-      throw new BadRequestError('No banking liquidity available (Main Account and Reserve Account are empty).');
+      throw new BadRequestError('No banking liquidity available (VELUM CENTRAL BANK and SENTRY BANK are empty).');
     }
 
     const result = await db.transaction(async (tx) => {
@@ -231,88 +239,101 @@ export class PaymentController {
         throw new NotFoundError('Active card not found.');
       }
 
-      const isBank = card.cardType.toUpperCase().includes('BANK') || card.cardType.toUpperCase() === 'BANK_ACCOUNT';
+      const isBank =
+        card.cardType.toUpperCase().includes('BANK') || card.cardType.toUpperCase() === 'BANK_ACCOUNT';
       const isDebit = card.cardType.toUpperCase().includes('DEBIT');
 
+      // Bank/debit → Sentry; credit card → VCB
       if (isBank || isDebit) {
         if ((sbReserve?.balanceCents || 0) < parsedAmount) {
-          throw new BadRequestError('Reserve Account has insufficient liquidity for this transfer.');
+          throw new BadRequestError('SENTRY BANK has insufficient liquidity for this transfer.');
         }
-        await reserveRepository.updateBalance('Reserve Account', -parsedAmount, tx);
+        await reserveRepository.updateBalance(RESERVE_SENTRY, -parsedAmount, tx);
       } else {
         if ((vcbReserve?.balanceCents || 0) < parsedAmount) {
-          throw new BadRequestError('Main Account has insufficient liquidity for this credit.');
+          throw new BadRequestError('VELUM CENTRAL BANK has insufficient liquidity for this credit.');
         }
-        await reserveRepository.updateBalance('Main Account', -parsedAmount, tx);
+        await reserveRepository.updateBalance(RESERVE_VCB, -parsedAmount, tx);
       }
-      
+
       if (card.limitCents < parsedAmount) {
         throw new BadRequestError('Insufficient card limit.');
       }
-      
+
       const updatedCard = await cardRepository.updateLimit(card.id, card.limitCents - parsedAmount, tx);
       if (!updatedCard) {
         throw new NotFoundError('Failed to update card limit.');
       }
-      
-      let [wallet] = await tx.select().from(wallets).where(and(eq(wallets.userId, req.user!.userId), eq(wallets.currency, currency))).limit(1);
+
+      let wallet = await bankRepository.findWalletByUserIdAndCurrency(
+        req.user!.userId,
+        currency,
+        tx
+      );
       if (!wallet) {
-        [wallet] = await tx.insert(wallets).values({
-          userId: req.user!.userId,
-          balance: '0.00',
-          currency
-        }).returning();
+        wallet = await bankRepository.createWallet(
+          {
+            userId: req.user!.userId,
+            balance: '0.00',
+            currency,
+          },
+          tx
+        );
       }
-      
+
       const currentBalance = parseFloat(wallet.balance);
       const depositAmount = parsedAmount / 100;
       const newBalance = (currentBalance + depositAmount).toFixed(2);
-      
-      await tx.update(wallets).set({ balance: newBalance, updatedAt: new Date() }).where(eq(wallets.id, wallet.id));
-      
-      const transaction = await bankRepository.createTransaction({
-        reference: `REC-${generateRandomToken(6).toUpperCase()}`,
-        walletId: wallet.id,
-        type: 'DEPOSIT',
-        amount: depositAmount.toFixed(2),
-        status: 'COMPLETED',
-        description: `Recharge from card ${card.cardToken}`
-      }, tx);
-      
-      return { transaction, newBalance };
+
+      await bankRepository.updateBalance(wallet.id, newBalance, tx);
+
+      const sourceLabel = isBank || isDebit ? 'SENTRY BANK' : 'VELUM CENTRAL BANK';
+      const transaction = await bankRepository.createTransaction(
+        {
+          reference: `REC-${generateRandomToken(6).toUpperCase()}`,
+          walletId: wallet.id,
+          type: 'DEPOSIT',
+          amount: depositAmount.toFixed(2),
+          status: 'COMPLETED',
+          description: `Recharge ${depositAmount.toFixed(2)} ${currency} from ${sourceLabel} via ${card.cardToken}`,
+        },
+        tx
+      );
+
+      return { transaction, newBalance, sourceLabel };
     });
-    
+
     broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
 
     res.status(200).json({
       success: true,
+      currency,
+      funded_from: result.sourceLabel,
       transaction: result.transaction,
-      newBalance: result.newBalance
+      newBalance: result.newBalance,
     });
   }
 
   async withdraw(req: Request, res: Response): Promise<void> {
     if (!req.user) throw new NotFoundError('User context missing.');
-    const { amount_cents, payout_method_id, currency = 'USD' } = req.body;
-    
+    const { amount_cents, payout_method_id } = req.body;
+    const currency = INSTITUTIONAL_CURRENCY;
+
     const parsedAmount = parseInt(amount_cents, 10);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       throw new BadRequestError('Amount must be a positive number in cents.');
     }
-    
+
     const cardIdStr = (payout_method_id || '').replace('card_', '');
     const cardId = parseInt(cardIdStr, 10);
     if (isNaN(cardId)) {
       throw new BadRequestError('Invalid payout method.');
     }
 
-    await ensureReservesSeeded();
-    const vcbReserve = await reserveRepository.getReserve('Main Account');
-    const sbReserve = await reserveRepository.getReserve('Reserve Account');
+    await ensureInstitutionalLiquidity();
 
-    if ((vcbReserve?.balanceCents || 0) <= 0 && (sbReserve?.balanceCents || 0) <= 0) {
-      throw new BadRequestError('No banking liquidity available (Main Account and Reserve Account are empty).');
-    }
+    const feeCents = Math.round(parsedAmount * WITHDRAWAL_FEE_PCT);
+    const netPayoutCents = parsedAmount - feeCents;
 
     const result = await db.transaction(async (tx) => {
       const cardResults = await tx.select().from(cards).where(eq(cards.id, cardId)).limit(1);
@@ -320,51 +341,58 @@ export class PaymentController {
       if (!card || !card.isActive || card.userId !== req.user!.userId) {
         throw new NotFoundError('Active payout method not found.');
       }
-      
-      let [wallet] = await tx.select().from(wallets).where(and(eq(wallets.userId, req.user!.userId), eq(wallets.currency, currency))).limit(1);
+
+      const wallet = await bankRepository.findWalletByUserIdAndCurrencyForUpdate(
+        req.user!.userId,
+        currency,
+        tx
+      );
       if (!wallet) {
         throw new NotFoundError(`Wallet for ${currency} not found.`);
       }
-      
+
       const currentBalance = parseFloat(wallet.balance);
       const withdrawAmount = parsedAmount / 100;
-      
+
       if (currentBalance < withdrawAmount) {
         throw new BadRequestError('Insufficient wallet balance.');
       }
-      
+
       const newBalance = (currentBalance - withdrawAmount).toFixed(2);
-      await tx.update(wallets).set({ balance: newBalance, updatedAt: new Date() }).where(eq(wallets.id, wallet.id));
-      
-      await cardRepository.updateLimit(card.id, card.limitCents + parsedAmount, tx);
+      await bankRepository.updateBalance(wallet.id, newBalance, tx);
 
-      const isBank = card.cardType.toUpperCase().includes('BANK') || card.cardType.toUpperCase() === 'BANK_ACCOUNT';
-      const isDebit = card.cardType.toUpperCase().includes('DEBIT');
-
-      if (isBank || isDebit) {
-        await reserveRepository.updateBalance('Reserve Account', parsedAmount, tx);
-      } else {
-        await reserveRepository.updateBalance('Main Account', parsedAmount, tx);
+      // Full amount into Sentry, then net payout leaves Sentry → method; fee retained by Sentry.
+      await reserveRepository.updateBalance(RESERVE_SENTRY, parsedAmount, tx);
+      if (netPayoutCents > 0) {
+        await reserveRepository.updateBalance(RESERVE_SENTRY, -netPayoutCents, tx);
       }
-      
-      const transaction = await bankRepository.createTransaction({
-        reference: `WTH-${generateRandomToken(6).toUpperCase()}`,
-        walletId: wallet.id,
-        type: 'WITHDRAWAL',
-        amount: withdrawAmount.toFixed(2),
-        status: 'COMPLETED',
-        description: `Withdrawal to method ${card.cardToken}`
-      }, tx);
-      
+      await cardRepository.updateLimit(card.id, card.limitCents + netPayoutCents, tx);
+
+      const transaction = await bankRepository.createTransaction(
+        {
+          reference: `WTH-${generateRandomToken(6).toUpperCase()}`,
+          walletId: wallet.id,
+          type: 'WITHDRAWAL',
+          amount: withdrawAmount.toFixed(2),
+          status: 'COMPLETED',
+          description: `Withdraw ${withdrawAmount.toFixed(2)} ${currency} → SENTRY BANK (fee ${(WITHDRAWAL_FEE_PCT * 100).toFixed(1)}% = ${(feeCents / 100).toFixed(2)} ${currency} retained; net ${(netPayoutCents / 100).toFixed(2)} to ${card.cardToken})`,
+        },
+        tx
+      );
+
       return { transaction, newBalance };
     });
-    
+
     broadcastUserWalletUpdate(req.user!.userId, result.newBalance);
 
     res.status(200).json({
       success: true,
+      currency,
+      fee_pct: WITHDRAWAL_FEE_PCT,
+      fee_cents: feeCents,
+      net_payout_cents: netPayoutCents,
       transaction: result.transaction,
-      newBalance: result.newBalance
+      newBalance: result.newBalance,
     });
   }
 
@@ -482,7 +510,7 @@ export class PaymentController {
       throw new BadRequestError('Amount must be a positive number in cents.');
     }
 
-    const conversionId = `exc_${generateRandomToken(12).toLowerCase()}`;
+    const conversionId = `exc_${generateRandomToken(10).toLowerCase()}`;
     const { rate, grossConverted, platformSpread, netCredited } = currencyConverter.calculateExchange(parsedAmount, fromCurrency, toCurrency);
 
     const result = await db.transaction(async (tx) => {
@@ -513,21 +541,21 @@ export class PaymentController {
       await tx.update(wallets).set({ balance: newToBalance, updatedAt: new Date() }).where(eq(wallets.id, toWallet.id));
 
       await bankRepository.createTransaction({
-        reference: conversionId,
+        reference: `${conversionId}_d`.slice(0, 32),
         walletId: fromWallet.id,
-        type: 'WITHDRAWAL',
+        type: 'EXCHANGE_OUT',
         amount: deductAmount.toFixed(2),
         status: 'COMPLETED',
-        description: `CURRENCY_EXCHANGE: Exchanged ${deductAmount.toFixed(2)} ${fromCurrency} for ${(netCredited / 100).toFixed(2)} ${toCurrency} (Platform Fee: ${(platformSpread / 100).toFixed(2)} ${toCurrency})`
+        description: `${conversionId}: Exchanged ${deductAmount.toFixed(2)} ${fromCurrency} for ${(netCredited / 100).toFixed(2)} ${toCurrency} (Platform Fee: ${(platformSpread / 100).toFixed(2)} ${toCurrency})`
       }, tx);
 
       await bankRepository.createTransaction({
-        reference: conversionId,
+        reference: `${conversionId}_c`.slice(0, 32),
         walletId: toWallet.id,
-        type: 'DEPOSIT',
+        type: 'EXCHANGE_IN',
         amount: (netCredited / 100).toFixed(2),
         status: 'COMPLETED',
-        description: `CURRENCY_EXCHANGE: Received exchange of ${deductAmount.toFixed(2)} ${fromCurrency} (Net: ${(netCredited / 100).toFixed(2)} ${toCurrency})`
+        description: `${conversionId}: Received exchange of ${deductAmount.toFixed(2)} ${fromCurrency} (Net: ${(netCredited / 100).toFixed(2)} ${toCurrency})`
       }, tx);
 
       return { newFromBalance, newToBalance };
@@ -560,21 +588,6 @@ export class PaymentController {
     res.status(200).json({ 
       rates: currencyConverter.getAllRates() 
     });
-  }
-}
-
-async function ensureReservesSeeded() {
-  const vcb = await reserveRepository.getReserve('Main Account');
-  if (!vcb) {
-    await reserveRepository.updateBalance('Main Account', 1000000000);
-  }
-  const sb = await reserveRepository.getReserve('Reserve Account');
-  if (!sb) {
-    await reserveRepository.updateBalance('Reserve Account', 500000000);
-  }
-  const escrow = await reserveRepository.getReserve('Trading Account');
-  if (!escrow) {
-    await reserveRepository.updateBalance('Trading Account', 0);
   }
 }
 

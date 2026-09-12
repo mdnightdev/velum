@@ -92,6 +92,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
   const [loading, setLoading] = useState(true);
 
   const [preferredFiat, setPreferredFiat] = useState('USD');
+  const [preferredInitialized, setPreferredInitialized] = useState(false);
   
   // Modal states
   const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
@@ -130,7 +131,21 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
       
       if (balRes.ok) {
         const data = await balRes.json();
-        setBalances(Array.isArray(data) ? data : (data?.balances || (data?.wallet ? [data.wallet] : [])));
+        const next = Array.isArray(data) ? data : (data?.balances || (data?.wallet ? [data.wallet] : []));
+        setBalances(next);
+        // First load only: pick largest non-VLM holding. Never force EUR.
+        if (!preferredInitialized) {
+          const fiats = next
+            .filter((b: { currency_code?: string }) => b.currency_code && b.currency_code !== 'VLM')
+            .sort(
+              (a: { balance_cents?: number }, b: { balance_cents?: number }) =>
+                (b.balance_cents || 0) - (a.balance_cents || 0)
+            );
+          const pick = fiats[0]?.currency_code || 'USD';
+          setPreferredFiat(pick);
+          setExchangeFrom(pick);
+          setPreferredInitialized(true);
+        }
       }
       if (curRes.ok) {
         const data = await curRes.json();
@@ -197,11 +212,11 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
     const direct = findRate(from, to);
     if (direct !== null) return direct;
 
-    // Convert through USD bridge
-    const fromToUsd = findRate(from, 'USD');
-    const usdToTo = findRate('USD', to);
-    if (fromToUsd !== null && usdToTo !== null) {
-      return fromToUsd * usdToTo;
+    // Convert through EUR bridge
+    const fromToEur = findRate(from, 'EUR');
+    const eurToTo = findRate('EUR', to);
+    if (fromToEur !== null && eurToTo !== null) {
+      return fromToEur * eurToTo;
     }
 
     return 0;
@@ -257,7 +272,10 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
   }, 0);
 
   const formatCurrency = (amount: number, currencyCode?: string) => {
-    const code = (currencyCode || 'USD').replace('_SIM', '');
+    const code = (currencyCode || preferredFiat || 'USD').replace('_SIM', '');
+    if (code === 'VLM') {
+      return `${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} VLM`;
+    }
     try {
       return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(amount);
     } catch (e) {
@@ -270,19 +288,20 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
     setExchangeError(''); setExchangeSuccess('');
     try {
       const sId = getSessionId();
-      const res = await fetch('/v2/payments/exchange', {
+      const amount = parseFloat(exchangeAmount.replace(/[^0-9.]/g, ''));
+      const res = await fetch('/v2/bank/convert', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${sId}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fromCurrency: exchangeFrom,
           toCurrency: exchangeTo,
-          amountCents: Math.floor(parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')) * 100)
+          amount: amount.toFixed(2),
         })
       });
       const data = await res.json();
-      if (!res.ok) setExchangeError(data.error || 'Exchange failed');
+      if (!res.ok) setExchangeError(data.error || 'Swap failed');
       else {
-        setExchangeSuccess(`Exchanged successfully.`);
+        setExchangeSuccess('Swapped.');
         loadData(); 
         setExchangeAmount('0.00');
         setTimeout(() => setIsExchangeModalOpen(false), 1500);
@@ -296,9 +315,8 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
     try {
       const sId = getSessionId();
       const endpoint = fundingType === 'RECHARGE' ? '/v2/payments/recharge' : '/v2/payments/withdraw';
-      const bodyPayload: any = { 
+      const bodyPayload: Record<string, unknown> = { 
         amount_cents: Math.floor(parseFloat(fundingAmount.replace(/[^0-9.]/g, '')) * 100),
-        currency: preferredFiat
       };
       if (fundingType === 'RECHARGE') bodyPayload.payment_method_id = fundingMethod;
       else bodyPayload.payout_method_id = fundingMethod;
@@ -384,10 +402,6 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
   const mainFiatBalanceObj = balancesList.find(b => b.currency_code === preferredFiat);
   const mainFiatBalanceCents = mainFiatBalanceObj ? mainFiatBalanceObj.balance_cents : 0;
 
-  const secondaryBalanceObj = balancesList.find(b => b.currency_code !== 'VLM' && b.currency_code !== preferredFiat && b.balance_cents > 0);
-  const secondaryCurrency = secondaryBalanceObj ? secondaryBalanceObj.currency_code : (preferredFiat === 'EUR' ? 'USD' : 'EUR');
-  const secondaryBalanceCents = secondaryBalanceObj ? secondaryBalanceObj.balance_cents : 0;
-
   return (
     <div className="flex-1 bg-transparent p-0 select-none font-sans overflow-y-auto w-full text-text-primary">
       
@@ -412,7 +426,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
       {activeTab === 'overview' && (
         <div className="space-y-4">
           
-          {/* Hero Balance */}
+          {/* Hero Balance — user-selected primary fiat (not EUR-locked) + VLM */}
           <div className="flex flex-col items-center justify-center py-6 bg-velum-800 border border-velum-600 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-medium text-text-secondary">Balance</span>
@@ -420,7 +434,10 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
                 <CustomDropdown 
                   options={fiatOptions} 
                   value={preferredFiat} 
-                  onChange={setPreferredFiat}
+                  onChange={(val) => {
+                    setPreferredInitialized(true);
+                    setPreferredFiat(val);
+                  }}
                 />
               </div>
             </div>
@@ -454,25 +471,26 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
               <span className="text-xs font-medium text-text-primary">Withdraw</span>
             </button>
             <button 
-              onClick={() => setIsExchangeModalOpen(true)}
+              onClick={() => {
+                setExchangeFrom(preferredFiat);
+                setExchangeTo('VLM');
+                setIsExchangeModalOpen(true);
+              }}
               className="flex flex-col items-center justify-center p-3 bg-velum-800 border border-velum-600 rounded-xl hover:border-accent/40 transition-colors gap-1.5 cursor-pointer"
             >
               <div className="w-9 h-9 bg-accent/15 rounded-full flex items-center justify-center text-accent">
                 <ArrowRightLeft className="w-4 h-4" />
               </div>
-              <span className="text-xs font-medium text-text-primary">Exchange</span>
+              <span className="text-xs font-medium text-text-primary">Swap</span>
             </button>
           </div>
 
-          {/* Asset Wallets Section */}
+          {/* Asset Wallets — VLM + selected primary + other holdings (multi-currency, not EUR-locked) */}
           <div className="space-y-2">
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
-              {/* Box 1: VLM */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
               <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between h-24">
                 <div className="flex justify-between items-start">
-                  <span className="text-xs text-text-secondary font-medium">
-                    Velum
-                  </span>
+                  <span className="text-xs text-text-secondary font-medium">Velum</span>
                   <div className="p-1 bg-accent/10 rounded-md text-accent">
                     <Activity className="w-3.5 h-3.5" />
                   </div>
@@ -481,18 +499,13 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
                   <span className="text-base sm:text-lg font-bold text-text-primary truncate font-mono">
                     {(vlmBalanceCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className="text-xs text-text-secondary">
-                    VLM
-                  </span>
+                  <span className="text-xs text-text-secondary">VLM</span>
                 </div>
               </div>
 
-              {/* Box 2: Main Fiat */}
               <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between h-24">
                 <div className="flex justify-between items-start">
-                  <span className="text-xs text-text-secondary font-medium">
-                    Primary
-                  </span>
+                  <span className="text-xs text-text-secondary font-medium">Primary</span>
                   <div className="p-1 bg-velum-750 rounded-md text-text-primary">
                     <Landmark className="w-3.5 h-3.5" />
                   </div>
@@ -507,25 +520,37 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
                 </div>
               </div>
 
-              {/* Box 3: Secondary Fiat */}
-              <div className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between h-24">
-                <div className="flex justify-between items-start">
-                  <span className="text-xs text-text-secondary font-medium">
-                    Secondary
-                  </span>
-                  <div className="p-1 bg-velum-750 rounded-md text-text-primary">
-                    <Building className="w-3.5 h-3.5" />
+              {activeBalances
+                .filter(
+                  (b) =>
+                    b.currency_code !== 'VLM' &&
+                    b.currency_code !== preferredFiat &&
+                    (b.balance_cents || 0) > 0
+                )
+                .slice(0, 4)
+                .map((b) => (
+                  <div
+                    key={b.currency_code}
+                    className="p-3 rounded-xl border border-velum-600 bg-velum-800 flex flex-col justify-between h-24"
+                  >
+                    <div className="flex justify-between items-start">
+                      <span className="text-xs text-text-secondary font-medium">
+                        {(b.currency_code || '').replace('_SIM', '')}
+                      </span>
+                      <div className="p-1 bg-velum-750 rounded-md text-text-primary">
+                        <Building className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-base sm:text-lg font-bold text-text-primary truncate font-mono">
+                        {formatCurrency((b.balance_cents || 0) / 100, b.currency_code)}
+                      </span>
+                      <span className="text-xs text-text-secondary">
+                        {(b.currency_code || '').replace('_SIM', '')}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-base sm:text-lg font-bold text-text-primary truncate font-mono">
-                    {formatCurrency(secondaryBalanceCents / 100, secondaryCurrency)}
-                  </span>
-                  <span className="text-xs text-text-secondary">
-                    {(secondaryCurrency || 'EUR').replace('_SIM', '')}
-                  </span>
-                </div>
-              </div>
+                ))}
             </div>
           </div>
 
@@ -587,7 +612,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
             <button onClick={() => setIsExchangeModalOpen(false)} className="absolute top-4 right-4 p-1.5 text-text-secondary hover:text-text-primary rounded-lg transition-colors cursor-pointer">
               <X className="w-4 h-4" />
             </button>
-            <h3 className="text-sm font-semibold mb-4 text-text-primary">Exchange Currency</h3>
+            <h3 className="text-sm font-semibold mb-4 text-text-primary">Swap</h3>
             
             {exchangeError && <div className="p-2.5 mb-3 text-xs text-status-dnd bg-status-dnd/10 rounded-lg border border-status-dnd/30">{exchangeError}</div>}
             {exchangeSuccess && <div className="p-2.5 mb-3 text-xs text-status-online bg-status-online/10 rounded-lg border border-status-online/30">{exchangeSuccess}</div>}
@@ -628,7 +653,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
               </div>
 
               <div className="pt-2">
-                <button type="submit" disabled={parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-2.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">Exchange</button>
+                <button type="submit" disabled={parseFloat(exchangeAmount.replace(/[^0-9.]/g, '')) === 0} className="w-full py-2.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">Swap</button>
               </div>
             </form>
           </div>
@@ -652,7 +677,7 @@ export default function WalletMainDashboard({ currentUserId, isDark }: WalletMai
             
             <form onSubmit={handleFunding} className="space-y-3">
               <div className="p-3 bg-velum-750 border border-velum-600 rounded-lg">
-                <span className="text-xs text-text-secondary block mb-1">Amount ({preferredFiat})</span>
+                <span className="text-xs text-text-secondary block mb-1">Amount (EUR)</span>
                 <input 
                   type="text" 
                   value={fundingAmount} onChange={e => handleAmountMaskChange(e.target.value, setFundingAmount)} 

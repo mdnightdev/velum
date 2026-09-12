@@ -23,15 +23,15 @@ export function MarketEscrowsView({
   if (escrows.length === 0) return null;
 
   return (
-    <div className="space-y-4 pt-6 border-t border-white-5">
+    <div className="space-y-4 pt-6 border-t border-velum-600">
       <div className="flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4 text-alert-success" />
-        <h3 className="text-xs font-mono font-black uppercase tracking-wider text-white">
-          Escrows ({escrows.length})
+        <ShieldCheck className="w-4 h-4 text-accent" />
+        <h3 className="text-xs font-medium text-text-primary">
+          Orders ({escrows.length})
         </h3>
       </div>
       
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         {escrows.map((escrow) => (
           <EscrowTransactionCard
             key={escrow.transaction_id}
